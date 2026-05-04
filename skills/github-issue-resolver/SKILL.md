@@ -68,7 +68,9 @@ Format matches the existing `pr-evaluator-health-checks` / `issue-resolver-fast-
 
 ## Test selection during iteration
 
-§7 baseline, §8 post-edit sanity, and every §10.6 iteration run the project's static-checks block followed — in §10.6 only — by a Claude-selected set of test suites scoped to *this iteration's diff*. The full canonical suite (every unit test + every UI test) is **not** run inside this skill at any gate; that's `github-pr-evaluator`'s sole responsibility. The point of this design is fast feedback during development: a one-Service edit should run that Service's tests, not a 10-minute UI suite.
+§7 baseline runs the project's static-checks block. **§8 (after the first round of code changes, before the first push) and every §10.6 iteration (after addressing review feedback, before the next push)** run the static-checks block followed by a Claude-selected set of test suites scoped to the diff vs the integration target — this is the **pre-push verification gate** described below. Both gates are mandatory before a push; never push code without one of them having run green. The full canonical suite (every unit test + every UI test) is **not** run inside this skill at any gate; that's `github-pr-evaluator`'s sole responsibility. The point of this design is fast feedback during development: a one-Service edit should run that Service's tests, not a 10-minute UI suite.
+
+The bug this design avoids: if the test gate lived only inside §10.6, a clean first-pass review approval (review approves without requesting changes) would skip §10.6 entirely and a PR would land with zero tests run beyond static checks. §8 closes that gap.
 
 **These conventions apply only when step 7 applies.** Comment-only flows (questions, blocked issues, duplicates, doc/typo edits) skip steps 7/8/10/11 entirely and use none of this.
 
@@ -100,15 +102,15 @@ Read both blocks once at the start of step 7 and remember them for the rest of t
 
 **Backward compatibility.** If `issue-resolver-test-target` is absent but `issue-resolver-fast-checks` contains an inline test invocation (older convention), run that block as a flat command list and skip the selection step. Many projects haven't yet split the two; the skill should still work.
 
-If neither block is present, fall back to the `pr-evaluator-health-checks` block (the project's canonical suite) at the gate where tests are needed (only §10.6 — §7 and §8 stay static-only). This is the worst case, but it preserves correctness on projects that haven't declared either issue-resolver-side block.
+If neither block is present, fall back to the `pr-evaluator-health-checks` block (the project's canonical suite) at the gates where tests are needed (§8 and §10.6 — §7 stays static-only). This is the worst case, but it preserves correctness on projects that haven't declared either issue-resolver-side block.
 
 ### Per-step behaviour
 
 | Step | Static checks | Test selection sub-agent | Test execution |
 |---|---|---|---|
 | §7 baseline | Yes | No (no diff yet) | No |
-| §8 post-edit verification | Yes | No | No |
-| §10.6 review-loop iteration | Yes | Yes | Yes (when sub-agent returns a non-empty COMMAND) |
+| §8 pre-push verification (after code changes, before §9 push) | Yes | Yes | Yes (when sub-agent returns a non-empty COMMAND) |
+| §10.6 review-loop iteration (after addressing feedback, before re-push) | Yes | Yes | Yes (when sub-agent returns a non-empty COMMAND) |
 | Post-`review`-approved | — | — | No (removed; pr-evaluator's full suite replaces it) |
 | §11 final verification | — | — | No (removed; pr-evaluator's full suite replaces it) |
 
@@ -116,7 +118,7 @@ The §7 baseline gate is now narrower in scope: "is the project's static toolcha
 
 ### Test-selection sub-agent
 
-§10.6 spawns a read-only `Explore` agent for selection. Reasoning happens entirely inside the sub-agent so the main conversation never sees the diff hunks, the test directory listings, or the grep output — only the sub-agent's two-section verdict. The sub-agent uses Bash/Read/Glob/Grep against the worktree to read the diff, list each declared target's directory, and grep for changed symbols.
+§8 and §10.6 each spawn a read-only `Explore` agent for selection. Reasoning happens entirely inside the sub-agent so the main conversation never sees the diff hunks, the test directory listings, or the grep output — only the sub-agent's two-section verdict. The sub-agent uses Bash/Read/Glob/Grep against the worktree to read the diff, list each declared target's directory, and grep for changed symbols.
 
 **Prompt template** (substitute the placeholders at call time):
 
@@ -654,9 +656,14 @@ For code changes:
   - From the main working tree, run `git worktree add -b issue-<number>-<short-slug> .worktrees/issue-<number>-<short-slug>`.
   - `cd .worktrees/issue-<number>-<short-slug>` — every subsequent command runs from there. Announce the path to the user.
   - Run the project's worktree-setup commands per "Worktree setup & teardown commands" above before any code edits or test runs.
-- Make the changes
-- Run the static-checks block (`<!-- issue-resolver-fast-checks -->`) as a quick pre-push sanity check. The block contains lints, codegen, and layer-import boundary checks — no test invocations belong here. Do **not** run any test suite at this step — §10.6 (review-loop iteration) is the next mandatory test gate, and §10 is mandatory for any PR. Eliminating duplicate test runs is intentional; see "Test selection during iteration" above. (If the project has no `<!-- issue-resolver-fast-checks -->` block declared, skip this sanity check rather than run anything heavier — §10.6 will catch any regressions.)
-- Keep the diff focused on the issue — don't drive-by-fix unrelated things
+- Make the changes.
+- **Run the pre-push verification gate before §9 push.** Three steps in this order, per "Test selection during iteration" above:
+  1. **Static checks** — run the `<!-- issue-resolver-fast-checks -->` block inline, fail-fast in declaration order. Outputs are small (lints, codegen, layer-import boundary checks); no need to delegate.
+  2. **Test selection** — spawn an `Explore` sub-agent with the prompt template from "Test-selection sub-agent." Substitute the worktree path, the integration target, and the project's `<!-- issue-resolver-test-target -->` block. The sub-agent returns `COMMAND:` (a ready-to-run shell command, or `(none)`) and `RATIONALE:` (one or two sentences). Print the rationale to the user as the gate's status line.
+  3. **Test execution** — if `COMMAND:` is `(none)`, skip execution. Otherwise run the command; if it begins with `xcodebuild` (or invokes a wrapper that runs `xcodebuild`), delegate to `apple-platform-build-tools:builder`.
+
+  Tests must be green before §9. Don't push red, and don't fall back to "no tests" when the sub-agent's heuristics could have widened — re-spawn the sub-agent if the rationale looks wrong. **Do not skip this gate on the assumption that §10.6 will catch regressions** — §10.6 only fires when the review loop iterates (i.e., review requests changes). On a clean first-pass approval the workflow goes §8 → §9 → §10 (approves) → §11 with no §10.6 — so the gate at §8 is the only test invocation that runs before the PR is opened.
+- Keep the diff focused on the issue — don't drive-by-fix unrelated things.
 
 For comment-only responses (questions, blocked issues, duplicates):
 - Draft the comment as a markdown file in the working directory so the user can review before posting
@@ -702,7 +709,7 @@ Loop:
 
    Otherwise, continue.
 5. **Address the feedback** — both `review`'s and any unaddressed human reviewer feedback. Make the requested changes on the same branch.
-6. **Run the iteration's gate** before pushing — three steps in this order, per "Test selection during iteration" above:
+6. **Run the pre-push verification gate** before pushing — same three steps as §8, per "Test selection during iteration" above:
    1. **Static checks** — run the `<!-- issue-resolver-fast-checks -->` block inline, fail-fast in declaration order. Outputs are small (lints, codegen, layer-import boundary checks); no need to delegate.
    2. **Test selection** — spawn an `Explore` sub-agent with the prompt template from "Test-selection sub-agent" above. Substitute the worktree path, integration target, and the project's `<!-- issue-resolver-test-target -->` block. The sub-agent reads the diff, lists each declared target's directory, applies the heuristics, and returns two sections: `COMMAND:` (a ready-to-run shell command, or `(none)`) and `RATIONALE:` (one or two sentences). Print the rationale to the user as the iteration's status line — that's how the user audits the selection.
    3. **Test execution** — if `COMMAND:` is `(none)`, skip execution and continue. Otherwise, run the command. If it begins with `xcodebuild` (or invokes a wrapper that runs `xcodebuild`), delegate to `apple-platform-build-tools:builder`; otherwise run inline.
@@ -721,7 +728,7 @@ Only after `review` reports approval should the PR be considered ready to merge.
 
 ### 11. Summarise for the user
 
-The summary MUST include a clearly-labeled **Iteration test status** line that names the last §10.6 iteration's result: green, skipped (no tests selected — name the rationale), or red (a list of failing tests with their failure mode). If anything is red at this point, fix it before pushing — don't bury it in follow-up notes. The skill does not run a final canonical-suite gate at this step; the comprehensive run happens once at PR-readiness time inside `github-pr-evaluator`. State this explicitly in the summary so the user knows what's still ahead: e.g. *"Iteration test status: green at <SHA> (selected ProposalServiceTests). The full unit + UI suite will run in github-pr-evaluator before merge."*
+The summary MUST include a clearly-labeled **Iteration test status** line that names the result of the most recent pre-push verification gate (§8 on a clean first-pass approval, §10.6 on the last iteration when the review loop ran): green, skipped (no tests selected — name the rationale), or red (a list of failing tests with their failure mode). If anything is red at this point, fix it before pushing — don't bury it in follow-up notes. The skill does not run a final canonical-suite gate at this step; the comprehensive run happens once at PR-readiness time inside `github-pr-evaluator`. State this explicitly in the summary so the user knows what's still ahead: e.g. *"Iteration test status: green at <SHA> (selected ProposalServiceTests, run at §8 pre-push). The full unit + UI suite will run in github-pr-evaluator before merge."*
 
 Then: a short summary of what you did, what you posted (if anything), and any remaining open questions or follow-up work. If you created or reused a worktree, include its path and the manual cleanup sequence. The `github-pr-evaluator` skill runs both phases automatically after a green merge (its §14); the manual form below is for runs that don't go through the evaluator (declined merge, manual close, abandoned issue):
 
@@ -741,6 +748,7 @@ If the resolved issue was a **story** under an open epic, include two additional
 - **Don't implement code without grounding in project docs.** If `docs/prd.md`, `docs/architecture.md`, or `CLAUDE.md` exists, read it before designing the change and cite the relevant sections in the PR. Skipping this leads to implementations that violate non-negotiable project rules (layer boundaries, banned APIs, naming, scope) that the docs encode.
 - **Don't skip the green-baseline check for the integration target.** The integration target is `main` for regular issues and the epic integration branch for stories under an open epic. A story under an open epic *inherits* the epic-level baseline and shouldn't re-run it — unless `main` has been merged into the epic branch since that baseline, or a prior story under the epic landed under an explicit baseline override. The point of the gate is correct failure attribution and not shipping over a broken codebase, not running tests for their own sake. If the baseline is red, stop and surface every failing test — silent fixes scope-creep the PR. Acceptable next moves are the same as in step 7: detour first, or explicit user override with a documented reason.
 - **Don't silently fix unrelated pre-existing failures.** If the baseline reveals broken tests outside the scope of this issue, surface them — don't fold the fix in without telling the user. It scope-creeps the PR and obscures what your change actually did.
+- **Don't push code without running the §8 pre-push verification gate.** The test gate runs at §8 (before the first push) AND at §10.6 (after addressing review feedback). Both are mandatory pre-push gates. On a clean first-pass review approval, §10.6 never fires — the §8 gate is the only test invocation that runs before the PR is opened. Skipping §8's tests on the assumption that "review will catch it" or "pr-evaluator will catch it" is a bug: the `review` skill is a code-quality reviewer that does not run tests, and `pr-evaluator` runs at PR-readiness time *after* the PR is already open with possibly-broken code on the branch.
 - **Don't run the full unit + UI suite inside this skill.** The full canonical suite runs once per PR HEAD SHA inside `github-pr-evaluator`. Reproducing it here defeats the targeted-tests strategy and re-imposes the cost-per-iteration this design exists to avoid. If you find yourself reaching for the `<!-- pr-evaluator-health-checks -->` block, you've drifted off the path.
 - **Don't fall back to zero tests when uncertain.** "Zero tests" is reserved for empty-diff and pure-docs paths. Any code change that the sub-agent can't narrow with confidence should hit the project's `broad-change-fallback` (typically "all unit tests, no UI") for the unit target. UI uncertainty defers to pr-evaluator (the `none` broad-change-fallback path) — that's intentional. But never push code with zero tests run on the theory that "pr-evaluator will catch it" when widening was the right call.
 - **Don't inline the test-selection reasoning in main context.** The diff hunks, directory listings, and grep output stay inside the `Explore` sub-agent. Main context sees only the resolved `COMMAND:` and the one-line `RATIONALE:`. Inlining the reasoning regresses on token cost and clutters the conversation; pulling diff content into main context is exactly what the sub-agent indirection prevents.
