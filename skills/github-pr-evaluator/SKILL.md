@@ -255,7 +255,51 @@ Steps for the heuristic path:
      type (>5 test files mention it), a persistence-model schema, generated
      config, or any change you cannot narrow with confidence.
    - If a target declares a fallback as `none`, do not widen for that target.
-5. Pure-docs / comment-only diffs → COMMAND: (none).
+5. UI blast-radius exploration. Name/symbol proximity is fine for unit tests
+   but a poor proxy for UI tests, because UI tests are integration tests that
+   transit shared view-tree state. A small diff in a high-fanout view (the
+   running app's root, a top-level navigation container, a view that gates
+   the rest of the UI behind a sheet) can break unrelated UI tests, and
+   step 3's symbol-grep won't catch it. Before finalising the UI test set,
+   do a focused exploration pass:
+
+   a. For each modified Swift file under the project's source tree, decide
+      whether it is a View. A View is anything declaring `: View` or whose
+      name matches the project's view-naming convention (e.g. `*View.swift`).
+
+   b. For each modified View, trace its consumers: `grep -rln "<TypeName>("`
+      across the source tree (excluding tests). Build a small list of "Views
+      that use this View." If any consumer has UI tests (by symbol grep or
+      name proximity), those UI tests are candidates regardless of whether
+      they reference the diff directly.
+
+   c. Treat any of these as broad UI impact and widen the UI selection to
+      the per-target broad-change-fallback (or, if that is `none`, to the
+      union of every UI test file that transits the affected view-tree
+      surface):
+
+      - The diff modifies the app entry point (`@main`) or the top-level
+        body composition reachable from it.
+      - The diff modifies a View instantiated in another View's `body`, and
+        that other View is reached by existing UI tests.
+      - The diff adds, removes, or modifies a presentation modifier on a
+        root-reachable View — `.sheet`, `.fullScreenCover`, `.alert`,
+        `.confirmationDialog`, `.popover`, `.overlay`. These insert global
+        UI surface that intercepts unrelated tests.
+      - The diff changes `@Environment` or `.environment(...)` injection
+        at or near the app root, or modifies launch-environment reading or
+        initial-state gating logic.
+
+   d. When uncertain about a UI file's blast radius, widen rather than
+      narrow. The targeted-selection win on UI is bounded (UI tests are
+      already expensive per case); the cost of merging a root-view
+      regression masquerading as a leaf change is the entire next baseline,
+      plus the diagnostic cost. The asymmetry strongly favours widening.
+
+   You decide how deep to read. Stop when you can name the affected surface
+   confidently or when further reads aren't changing the test set; widen
+   rather than continue exploring.
+6. Pure-docs / comment-only diffs → COMMAND: (none).
 
 Output exactly two sections, in this order, with these literal headers:
 
@@ -272,7 +316,9 @@ label `full-suite-required` matched → full-suite-command." Otherwise name
 the selected suites and the heuristic that produced them.>
 ```
 
-The skill parses these two sections. Print `RATIONALE:` to the user verbatim as the gate's status line — that's how the user audits the selection. Set `TIER`:
+The step-5 exploration pass is the heart of the selection's safety against root-view regressions: a small diff in a high-fanout view can break unrelated UI tests, and name proximity won't catch it. Trust the sub-agent to decide how deep to read; widening is the correct default when blast radius is uncertain. The full `RATIONALE:` is also written into the cache comment in §5.6, so post-mortems can audit *why* a given run was targeted vs. full.
+
+The skill parses these two sections. Print `RATIONALE:` to the user verbatim as the gate's status line — that's how the user audits the selection in real time. Capture it as `SELECTION_REASONING` for use in the cache comment. Set `TIER`:
 - `full` if `COMMAND:` matches the config's `full-suite-command`
 - `targeted` otherwise (including `(none)`)
 
@@ -309,6 +355,12 @@ Compose the comment body:
 SHA: <full-sha>
 TIER: <targeted | full>
 Source: COMMANDS.md / CLAUDE.md
+
+**Selection reasoning** (from §5.5.2 sub-agent):
+> <SELECTION_REASONING verbatim — the sub-agent's RATIONALE: section. Multi-line
+> rationales render as one block-quote line per logical line. Omit the entire
+> block when test selection didn't run, e.g. when static checks failed before
+> §5.5.2 fired.>
 
 | Command | Status | Duration |
 |---|---|---|
@@ -695,4 +747,4 @@ Order in static-checks matters: put fast commands first so the sequence fails qu
 
 **Legacy single-block declaration.** Older projects still declare a single `<!-- pr-evaluator-health-checks -->` block containing both static checks and the test invocation as a flat command list. The skill detects this and runs the legacy block as-is (full suite every time), skipping the test-selection sub-agent. This keeps un-migrated projects working, but loses the targeted-selection benefit; offer to migrate when convenient.
 
-The cache comment (posted by §5.6) uses the marker `<!-- pr-evaluator-health-cache:v1 -->` and is keyed to the PR HEAD SHA. It now also records `TIER: targeted | full` so a re-evaluation can tell what kind of run produced the cached result. The cache is updated automatically whenever HEAD changes; do not edit it manually.
+The cache comment (posted by §5.6) uses the marker `<!-- pr-evaluator-health-cache:v1 -->` and is keyed to the PR HEAD SHA. It records `TIER: targeted | full` so a re-evaluation can tell what kind of run produced the cached result, and a `**Selection reasoning:**` block with the §5.5.2 sub-agent's verbatim `RATIONALE:` so post-mortems can audit *why* a given run was scoped the way it was. The cache is updated automatically whenever HEAD changes; do not edit it manually.
