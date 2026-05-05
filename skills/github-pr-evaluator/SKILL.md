@@ -108,7 +108,7 @@ CACHE_COMMENT=$(gh api "repos/<owner>/<repo>/issues/<N>/comments" \
 
 If a cache comment is found, parse the `SHA:` line from its body and compare to `HEAD_SHA`:
 
-- **SHA matches `HEAD_SHA`** → the branch hasn't changed since the last check. Parse `HEALTH_OK` from the body (true if the first line contains "all green ✅", false if "failed ❌"). Set `HEALTH_BODY` to "Health check: re-using cached result at `<short-sha>`." Skip directly to step 6.
+- **SHA matches `HEAD_SHA`** → the branch hasn't changed since the last check. Parse `HEALTH_OK` from the body (true if the first line contains "all green ✅", false if "failed ❌"). Parse the `TIER:` line if present (`targeted` or `full`); a comment without a `TIER:` line is from a pre-targeting cache and is interpreted as `full`. Set `HEALTH_BODY` to "Health check: re-using cached result at `<short-sha>` (tier: `<tier>`)." Skip directly to step 6. (Note: if the cached tier is `targeted` and the user has explicitly asked for the full canonical suite this run — e.g., "re-evaluate PR #X with full" — treat the cache as a miss instead. This is rare and only triggered by explicit user direction; ordinary re-evaluations honour the cache as-is.)
 - **SHA differs (stale)** → record `OLD_CACHE_ID` from the comment. You'll delete the stale comment in step 5.6 before posting the new one. Continue to 5.3.
 
 If no cache comment exists, continue to 5.3.
@@ -119,30 +119,56 @@ Check `statusCheckRollup` from the step 3 fetch. If it is a non-empty array and 
 
 If the rollup is empty or contains any non-success entry (pending, failure, neutral, cancelled), continue to 5.4. Repos with no GitHub Actions always have an empty rollup and always fall through here.
 
-#### 5.4 Discover this repo's health-check commands
+#### 5.4 Discover this repo's health-check blocks
 
-Scan `CLAUDE.md` at the repo root — and any file it `@`-includes that is reachable from the root — for a block delimited by HTML comments:
+Scan `COMMANDS.md` and `CLAUDE.md` at the repo root — and any file either `@`-includes that is reachable from the root — for three marker-delimited blocks:
 
 ```
-<!-- pr-evaluator-health-checks -->
+<!-- pr-evaluator-static-checks -->
 - `<command>` — <description>
-- `<command>` — <description>
-<!-- /pr-evaluator-health-checks -->
+...
+<!-- /pr-evaluator-static-checks -->
+
+<!-- pr-evaluator-test-target -->
+- wrapper: `<test-runner command>`
+- full-suite-command: `<command for the full canonical suite>`
+- targets:
+  - `<TargetName>` (unit | UI)
+    - naming: <how source files map to suite identifiers>
+    - helpers-fallback: <command, or "none">
+    - broad-change-fallback: <command, or "none">
+  - ...
+<!-- /pr-evaluator-test-target -->
+
+<!-- pr-evaluator-escalation-labels -->
+- `<label-name>` — <description>
+- ...
+<!-- /pr-evaluator-escalation-labels -->
 ```
 
-Each list item is a single Markdown list entry. Parse the first backtick-quoted span as the command and everything after ` — ` as the human label. Order matters: commands run in declaration order and the sequence is fail-fast.
+- **Static checks** (`pr-evaluator-static-checks`) — fail-fast list of always-run hygiene (codegen, dependency resolution, lints, layer-import boundary checks). One Markdown list entry per command, backtick-quoted, followed by ` — ` and a short description. **No test invocations belong here** — tests are handled separately by the test-target block.
+- **Test target** (`pr-evaluator-test-target`) — configuration for the test-selection sub-agent (see §5.5). Prose-structured Markdown — read it as natural language; don't try to parse it. The `full-suite-command` line is what gets returned when escalation rules trigger.
+- **Escalation labels** (`pr-evaluator-escalation-labels`) — list of GitHub PR labels that force the full-suite command instead of targeted selection. Empty or absent block = no label-based escalation.
 
-**If no block is found:** tell the user which files were searched, then ask:
+Read all three blocks once and remember them for the rest of this step.
 
-> "No `<!-- pr-evaluator-health-checks -->` block found in CLAUDE.md. Which commands should I run to verify this branch is green? (Or say 'skip health check for now'.)"
+**Backward compatibility — projects that haven't migrated.** Older projects still declare a single `<!-- pr-evaluator-health-checks -->` block containing both static checks and the test invocation. If `pr-evaluator-static-checks` is absent but `pr-evaluator-health-checks` is present, treat the legacy block as the full command list and run it as-is — skip the test-selection sub-agent step. This produces the legacy behaviour (full suite every time) and keeps the skill working on un-migrated projects. If `pr-evaluator-test-target` is absent but `issue-resolver-test-target` is present (the project has migrated `github-issue-resolver` but not `github-pr-evaluator`), reuse the issue-resolver block with one assumption: the `full-suite-command` defaults to the wrapper command with no flags (so for `wrapper: ./scripts/xcb.sh`, the full-suite command is `./scripts/xcb.sh`).
 
-If the user supplies commands, use them for this run. After a green result, offer to add the block to CLAUDE.md — but do not write to it without explicit confirmation. If the user opts to skip, set `HEALTH_OK=null`, `HEALTH_BODY="Health check: skipped — no health-check block found in CLAUDE.md."`, and jump to step 6.
+**If neither static-checks nor health-checks blocks are found:** tell the user which files were searched, then ask:
 
-#### 5.5 Run the commands
+> "No `<!-- pr-evaluator-static-checks -->` or `<!-- pr-evaluator-health-checks -->` block found in COMMANDS.md or CLAUDE.md. Which commands should I run to verify this branch? (Or say 'skip health check for now'.)"
 
-This is the sole canonical full-suite gate. `github-issue-resolver` runs only Claude-selected unit and UI tests during its review-loop iterations (per "Test selection during iteration" in that skill); the comprehensive run — every test plan, lint, and type-check — fires here for the first time per PR HEAD SHA. If the run is red, that's the first authoritative signal that something needs fixing, so don't soft-pedal failures back to the user — surface them directly.
+If the user supplies commands, use them for this run as a flat command list (skip the sub-agent step). After a green result, offer to add the static-checks block — but do not write to it without explicit confirmation. If the user opts to skip, set `HEALTH_OK=null`, `HEALTH_BODY="Health check: skipped — no static-checks block found."`, and jump to step 6.
 
-Run inside a clean checkout of the PR head. If a worktree at `.worktrees/<branch>` already exists (from the issue resolver workflow), reuse it. Otherwise create one:
+#### 5.5 Run the gate
+
+The local gate is a three-step sequence: static checks (always), test selection (a sub-agent decides which tests are warranted), test execution. Targeted by default; escalates to the full canonical suite when the PR type or labels warrant it. The full canonical suite is **not** the default any more — it runs only for epic-integration PRs and explicitly-labelled PRs. The broader safety net is CI on the integration target (already short-circuited at §5.3); when CI is green at this SHA, the local gate doesn't run at all.
+
+If a legacy `pr-evaluator-health-checks` block was found at §5.4 with no `pr-evaluator-static-checks` counterpart, run that block as a flat command list (the legacy code path) and skip steps 2–3 below. Everything else in §5.5.0 (worktree creation/setup) still applies.
+
+##### 5.5.0 Worktree
+
+Run inside a clean checkout of the PR head. If a worktree at `.worktrees/<branch>` already exists (from the issue-resolver workflow), reuse it. Otherwise create one:
 
 ```bash
 git fetch origin <branch> --quiet
@@ -151,9 +177,11 @@ git worktree add ".worktrees/<branch>" "origin/<branch>" 2>/dev/null \
       git -C ".worktrees/<branch>" checkout <HEAD_SHA>)
 ```
 
-**After creating a worktree** (the `git worktree add` arm above; not the reuse arm), run the project's worktree-setup commands. Discovery: scan `COMMANDS.md` and `CLAUDE.md` at the repo root, plus any file `@`-included from either, for a `<!-- worktree-setup -->` block. Each list item is one Markdown bullet — backtick-quoted command followed by ` — ` and a description (same format as the health-check block below). Run each command from inside the worktree (`cd .worktrees/<branch>`), in declaration order, fail-fast. On failure, stop and surface the failing command and the last 50 lines of its output — health checks against an unprovisioned worktree are unreliable. If no block is present, no-op silently. The teardown counterpart runs in step 14 paired with worktree removal. (`github-issue-resolver` documents the same convention in detail under "Worktree setup & teardown commands".)
+**After creating a worktree** (the `git worktree add` arm above; not the reuse arm), run the project's worktree-setup commands. Discovery: scan `COMMANDS.md` and `CLAUDE.md` at the repo root, plus any file `@`-included from either, for a `<!-- worktree-setup -->` block. Each list item is one Markdown bullet — backtick-quoted command followed by ` — ` and a description (same format as the static-checks block above). Run each command from inside the worktree (`cd .worktrees/<branch>`), in declaration order, fail-fast. On failure, stop and surface the failing command and the last 50 lines of its output — gates against an unprovisioned worktree are unreliable. If no block is present, no-op silently. The teardown counterpart runs in step 14 paired with worktree removal. (`github-issue-resolver` documents the same convention in detail under "Worktree setup & teardown commands".)
 
-For each command in declared order:
+##### 5.5.1 Static checks
+
+For each command in `<!-- pr-evaluator-static-checks -->` in declared order:
 
 ```bash
 START=$(date +%s)
@@ -163,9 +191,108 @@ END=$(date +%s)
 DURATION=$((END - START))
 ```
 
-On the first non-zero exit: stop. Mark every remaining command `⏭ skipped`. Set `HEALTH_OK=false`. Capture the last 50 lines of the failing log as `FAIL_TAIL`.
+On the first non-zero exit: stop. Mark every remaining command (and the test-execution step below) `⏭ skipped`. Set `HEALTH_OK=false`. Capture the last 50 lines of the failing log as `FAIL_TAIL`. Skip ahead to §5.6 to write the cache comment.
 
-**Apple-platform note:** when a command begins with `xcodebuild`, delegate to the `apple-platform-build-tools:builder` subagent — it absorbs the verbose build log and returns only pass/fail plus the first error. For all other commands, run inline.
+##### 5.5.2 Test selection
+
+Spawn a read-only `Explore` sub-agent for selection. Reasoning happens inside the sub-agent so the main conversation never sees the diff hunks, the test directory listings, or the grep output — only the sub-agent's two-section verdict.
+
+Determine the PR type from data already in memory (per the "If the PR is a story PR" / "If the PR is an epic integration PR" sections below):
+- `pr_type: epic-integration` if `headRefName` matches `epic/<N>-<slug>` AND `baseRefName == main`
+- `pr_type: story` if `baseRefName` matches `epic/<N>-<slug>`
+- `pr_type: regular` otherwise
+
+Collect the PR's GitHub labels from the step-3 fetch (`labels` array). If any label name matches an entry in the `pr-evaluator-escalation-labels` block, set `escalation_label_matched: <label-name>`; otherwise empty.
+
+Spawn the sub-agent with this prompt template (substitute the placeholders at call time):
+
+```
+You are selecting which test suites to run for a Claude Code github-pr-evaluator
+gate against an open PR. Your output drives the next test command; the rest of the
+workflow does not see your reasoning, so be explicit in your rationale.
+
+Inputs:
+- Worktree path: <absolute path to .worktrees/<branch>>
+- PR base branch (diff base): <baseRefName>
+- PR HEAD SHA: <headRefOid>
+- PR type: <regular | story | epic-integration>
+- Escalation label matched (if any): <label name, or empty>
+- Test-target config (verbatim from the project's COMMANDS.md / CLAUDE.md):
+  <contents of the <!-- pr-evaluator-test-target --> block>
+
+Escalation rules — apply in this order, BEFORE running heuristics:
+
+1. If PR type is `epic-integration` → return the full-suite command from the
+   config's `full-suite-command` line. The whole point of an epic-integration
+   PR is verifying that all child stories integrate cleanly against `main` —
+   targeted selection on the merged diff would defeat the purpose of this gate.
+2. If an escalation label matched → return the full-suite command. The user has
+   explicitly asked for the canonical run on this PR.
+
+Otherwise, apply the heuristics below.
+
+Steps for the heuristic path:
+
+1. Compute the diff: `git diff origin/<base>...HEAD` from the worktree (where
+   <base> is the PR base branch from the inputs above). Read both file paths
+   and hunk contents — don't decide based on paths alone. If empty, return
+   COMMAND: (none) and a one-line rationale.
+2. List each declared target's directory: `ls <target>/` for each target.
+3. Apply these heuristics in order, building a union of suite identifiers
+   across all declared targets:
+   a. Direct filename mapping per the target's `naming` rule.
+   b. Test files modified directly → include their suite.
+   c. Symbol references — identify symbols introduced, modified, removed, or
+      renamed in the diff (types, functions, accessibility identifiers, error
+      cases, string-catalog keys). For renames, search both old and new names.
+      `grep -l` across each target's directory; include any test file that
+      mentions any matching symbol.
+   d. `@testable import` tracking — a test file that imports a sub-module
+      touched by the diff is a candidate even if no explicit symbol matches.
+4. Apply per-target widening rules from the config:
+   - Helpers-fallback triggers when a test-side helper changes.
+   - Broad-change-fallback triggers when the diff changes a widely-referenced
+     type (>5 test files mention it), a persistence-model schema, generated
+     config, or any change you cannot narrow with confidence.
+   - If a target declares a fallback as `none`, do not widen for that target.
+5. Pure-docs / comment-only diffs → COMMAND: (none).
+
+Output exactly two sections, in this order, with these literal headers:
+
+COMMAND:
+<single shell command using the wrapper from the config plus -only-testing
+flags for each selected suite, OR the full-suite-command from the config when
+an escalation rule fired, OR one of the per-target fallback commands, OR the
+literal string `(none)` if zero suites selected>
+
+RATIONALE:
+<one or two sentences. If an escalation rule fired, name it explicitly:
+"Escalation: epic-integration PR → full-suite-command." or "Escalation: PR
+label `full-suite-required` matched → full-suite-command." Otherwise name
+the selected suites and the heuristic that produced them.>
+```
+
+The skill parses these two sections. Print `RATIONALE:` to the user verbatim as the gate's status line — that's how the user audits the selection. Set `TIER`:
+- `full` if `COMMAND:` matches the config's `full-suite-command`
+- `targeted` otherwise (including `(none)`)
+
+##### 5.5.3 Test execution
+
+If `COMMAND:` is `(none)`, skip execution. Set `HEALTH_OK=true` for the test phase (no tests selected ≠ failure). Skip ahead to §5.6.
+
+Otherwise, run the command from inside the worktree:
+
+```bash
+START=$(date +%s)
+(cd ".worktrees/<branch>" && eval "<COMMAND>") > "/tmp/health-test.log" 2>&1
+EXIT=$?
+END=$(date +%s)
+DURATION=$((END - START))
+```
+
+If the command begins with `xcodebuild` (or invokes a wrapper that runs `xcodebuild`, like `./scripts/xcb.sh`), delegate to the `apple-platform-build-tools:builder` subagent — it absorbs the verbose build log and returns only pass/fail plus the first error. For all other commands, run inline.
+
+On non-zero exit: set `HEALTH_OK=false`. Capture the last 50 lines as `FAIL_TAIL` for the cache comment.
 
 #### 5.6 Write the cache comment
 
@@ -176,13 +303,15 @@ Compose the comment body:
 **Health checks** at `<short-sha>` — <all green ✅ | N failed ❌> — <ISO-8601 UTC timestamp>
 
 SHA: <full-sha>
-Source: CLAUDE.md
+TIER: <targeted | full>
+Source: COMMANDS.md / CLAUDE.md
 
 | Command | Status | Duration |
 |---|---|---|
 | `<cmd-1>` | ✅ pass | 1.2s |
 | `<cmd-2>` | ❌ fail (exit 1) | 3.8s |
 | `<cmd-3>` | ⏭ skipped | — |
+| `<COMMAND from §5.5.2>` | ✅ pass | 28s |
 
 <details>
 <summary>Failed: `<cmd-2>` — last 50 lines</summary>
@@ -462,6 +591,9 @@ Detection: `headRefName` matches `epic/<N>-<slug>` AND `baseRefName == main`.
 ## Common pitfalls
 
 - Don't approve when `HEALTH_OK == false` — health-check failure is a hard block regardless of how well the PR satisfies the issue. The branch must be green before any approval.
+- Don't run the full canonical suite for every PR. Targeted selection is the default; the full suite is reserved for epic-integration PRs (where the diff *is* the integration risk surface) and PRs flagged by the project's `<!-- pr-evaluator-escalation-labels -->` block. CI on the integration target is the broader safety net for anything targeted misses; lean on it rather than re-running the whole suite locally for every story PR.
+- Don't run targeted selection for an epic-integration PR. The diff vs `main` is the union of all child stories — exactly the integration risk this gate exists to verify. Targeted there would miss cross-story interactions. The sub-agent's escalation rules already enforce this; don't override them.
+- Don't trust a targeted run alone for cross-cutting changes. When the sub-agent invokes a `broad-change-fallback` or returns "all unit tests" with UI deferred, that's a signal: check whether CI on the integration target is green at this SHA. If CI hasn't run or is red, surface that to the user and prefer the full canonical suite. The `RATIONALE:` line is your audit log — read it.
 - Don't approve a PR whose latest `/review` run left unresolved flagged issues — cite them in the rejection body.
 - Don't recommend rebase for this project — it's allowed but unused. Squash is the grain; go with it.
 - Don't run `gh pr merge` automatically — the user must confirm the merge in step 12. Once confirmed, run all cleanup (worktree removal, story issue close, epic checkbox) without asking again.
@@ -476,7 +608,7 @@ Detection: `headRefName` matches `epic/<N>-<slug>` AND `baseRefName == main`.
 - Don't use `--auto` — the repo has `allow_auto_merge: false`.
 - Don't conflate issue-fit and code-quality. Issue-fit (this skill) asks "did the PR deliver what the issue asked for." Code quality (`/review`) asks "is this code well-written." Both are necessary; neither substitutes for the other.
 - Don't rely on `Fixes #<story-number>` to auto-close a story issue — story PRs merge into `epic/<N>-<slug>`, not `main`, so GitHub records the linkage but never fires the close. Step 13 closes the story issue explicitly.
-- Don't silently write the `<!-- pr-evaluator-health-checks -->` block to CLAUDE.md — always ask the user for confirmation before modifying project files.
+- Don't silently write any of the three configuration blocks (`<!-- pr-evaluator-static-checks -->`, `<!-- pr-evaluator-test-target -->`, `<!-- pr-evaluator-escalation-labels -->`) to `COMMANDS.md` / `CLAUDE.md` — always ask the user for confirmation before modifying project files.
 - Don't run worktree-teardown when the merge didn't run. Teardown is paired with worktree removal; if the worktree stays, teardown stays deferred. The user will either re-invoke the evaluator (which retries the merge → cleanup pair) or run the manual cleanup sequence (`github-issue-resolver` §11) themselves. Running teardown without removing the worktree leaves a worktree whose resources have been released — tests started from there would silently fail against missing dependencies.
 - Don't fail the cleanup step if teardown fails. Teardown is best-effort: log the failure and continue to `git worktree remove`. A leaked resource is recoverable (the user can find and clean it up manually); a stuck worktree blocks future runs against the same branch.
 
@@ -489,31 +621,73 @@ Detection: `headRefName` matches `epic/<N>-<slug>` AND `baseRefName == main`.
 - `reviewDecision == REVIEW_REQUIRED` and it's owed to a specific reviewer who hasn't acted — ask whether to proceed or wait.
 - The PR has no `closingIssuesReferences` — ask which issue it addresses before running the scope evaluation, or confirm that it's intentionally standalone (e.g., a chore or doc update).
 - Branch protection returns something other than 403 that suggests a stricter-than-expected merge policy.
-- No `<!-- pr-evaluator-health-checks -->` block is found in CLAUDE.md — ask which commands to run (or whether to skip).
+- Neither a `<!-- pr-evaluator-static-checks -->` nor a legacy `<!-- pr-evaluator-health-checks -->` block is found in `COMMANDS.md` / `CLAUDE.md` — ask which commands to run (or whether to skip).
 
 ## Repo health-check declaration
 
-A repository declares its merge-readiness commands by placing a fenced block in `CLAUDE.md` (or any file `CLAUDE.md` `@`-includes that is reachable from the repo root). The block is delimited by HTML comments so it's invisible in rendered Markdown:
+A repository declares the gate's behaviour through three marker-delimited blocks in `COMMANDS.md` or `CLAUDE.md` (or any file either `@`-includes that is reachable from the repo root). All three are invisible in rendered Markdown.
+
+**1. Static checks** (`<!-- pr-evaluator-static-checks -->`) — fail-fast list of always-run hygiene. Runs first at every gate. Commands use repo-root-relative paths; the skill `cd`s into the branch worktree before invoking each.
 
 ```markdown
-<!-- pr-evaluator-health-checks -->
+<!-- pr-evaluator-static-checks -->
 - `<command>` — <description>
 - `<command>` — <description>
-<!-- /pr-evaluator-health-checks -->
+<!-- /pr-evaluator-static-checks -->
 ```
 
-Each item is a single Markdown list entry: a backtick-quoted command followed by ` — ` and a short human description. Commands run in declaration order and are fail-fast — the first non-zero exit stops the sequence and marks remaining commands as skipped. Commands may use repo-root-relative paths (e.g. `./scripts/lint.sh`); the skill always `cd`s into the branch worktree before invoking each one.
+**2. Test target** (`<!-- pr-evaluator-test-target -->`) — configuration for the test-selection sub-agent (see §5.5.2). Prose-structured Markdown. Declares the test wrapper, the `full-suite-command` used when escalation rules trigger, and per-target naming conventions and fallback rules.
+
+```markdown
+<!-- pr-evaluator-test-target -->
+- wrapper: `<test-runner command>`
+- full-suite-command: `<full canonical suite command>`
+- targets:
+  - `<TargetName>` (unit | UI)
+    - naming: <how source files map to suite identifiers>
+    - helpers-fallback: <command, or "none">
+    - broad-change-fallback: <command, or "none">
+<!-- /pr-evaluator-test-target -->
+```
+
+**3. Escalation labels** (`<!-- pr-evaluator-escalation-labels -->`) — list of GitHub PR labels that force the full-suite command. Empty or absent block = no label-based escalation.
+
+```markdown
+<!-- pr-evaluator-escalation-labels -->
+- `full-suite-required` — <description>
+- `pre-release` — <description>
+<!-- /pr-evaluator-escalation-labels -->
+```
 
 **Example** (food-journal):
 
 ```markdown
-<!-- pr-evaluator-health-checks -->
+<!-- pr-evaluator-static-checks -->
 - `./scripts/check-layer-imports.sh` — Layer-import boundary lint (fast, <5s)
-- `./scripts/run-swiftlint.sh` — SwiftLint (CI=1 promotes to --strict)
-- `xcodebuild test -project FoodJournal.xcodeproj -scheme FoodJournal -configuration Debug -destination 'platform=iOS Simulator,name=iPhone 17 Pro'` — Build + full unit/UI test suite
-<!-- /pr-evaluator-health-checks -->
+- `CI=1 ./scripts/run-swiftlint.sh` — SwiftLint in CI strict mode
+<!-- /pr-evaluator-static-checks -->
+
+<!-- pr-evaluator-test-target -->
+- wrapper: `./scripts/xcb.sh`
+- full-suite-command: `./scripts/xcb.sh`
+- targets:
+  - `FoodJournalTests` (unit)
+    - naming: source `<X>.swift` ↔ `FoodJournalTests/<X>Tests.swift`; suite identifier `FoodJournalTests/<X>Tests`.
+    - helpers-fallback: `./scripts/xcb.sh -only-testing FoodJournalTests`
+    - broad-change-fallback: `./scripts/xcb.sh -only-testing FoodJournalTests`
+  - `FoodJournalUITests` (UI)
+    - naming: flow-oriented; map by symbol references and `@testable import`.
+    - helpers-fallback: `./scripts/xcb.sh -only-testing FoodJournalUITests`
+    - broad-change-fallback: none
+<!-- /pr-evaluator-test-target -->
+
+<!-- pr-evaluator-escalation-labels -->
+- `full-suite-required` — bypass targeted selection
+<!-- /pr-evaluator-escalation-labels -->
 ```
 
-Order matters: put fast commands first so the sequence fails quickly on simple errors without waiting for a multi-minute build.
+Order in static-checks matters: put fast commands first so the sequence fails quickly on simple errors without waiting for a multi-minute build.
 
-The health-check cache comment (posted by step 5.6) uses the marker `<!-- pr-evaluator-health-cache:v1 -->` and is keyed to the PR HEAD SHA. It is updated automatically whenever HEAD changes; do not edit it manually.
+**Legacy single-block declaration.** Older projects still declare a single `<!-- pr-evaluator-health-checks -->` block containing both static checks and the test invocation as a flat command list. The skill detects this and runs the legacy block as-is (full suite every time), skipping the test-selection sub-agent. This keeps un-migrated projects working, but loses the targeted-selection benefit; offer to migrate when convenient.
+
+The cache comment (posted by §5.6) uses the marker `<!-- pr-evaluator-health-cache:v1 -->` and is keyed to the PR HEAD SHA. It now also records `TIER: targeted | full` so a re-evaluation can tell what kind of run produced the cached result. The cache is updated automatically whenever HEAD changes; do not edit it manually.
