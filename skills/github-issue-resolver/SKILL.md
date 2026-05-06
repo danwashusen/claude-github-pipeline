@@ -768,7 +768,17 @@ Loop:
    gh pr comment <pr-number> --repo <owner/repo> --body-file review-feedback.md
    ```
    Show the user the feedback before posting, same as any other GitHub write.
-4. **Check the verdict.** If `review` reports the PR is approved to merge, exit the loop and go to step 11. The full canonical suite will run once at PR-readiness time inside `github-pr-evaluator` — there's no in-loop final gate here.
+4. **Check the verdict, and extract any actionable items.** "Approved" alone is not the exit condition — reviewers routinely approve with non-blocking suggestions (`Medium —`, `Low —`, `Nitpick —`, "Approved with minor fixes") that they still expect fixed before merge. Walk the review body and classify each suggestion:
+
+   - **Actionable now** — the reviewer named a concrete change and did not route it elsewhere. Severity label is informational, not gating; what matters is whether a fix is expected on this PR.
+   - **Explicitly deferred** — the reviewer used language like "fast-follow", "follow-up", "out of scope", "future PR", "could be a separate change", "not blocking", or otherwise routed the item elsewhere.
+   - **Decision required** — the suggestion touches architecture, breaks an API, or carries a tradeoff the user should weigh in on. (Stop and ask, per the loop guard rail below.)
+
+   Exit the loop and go to step 11 only when **both** are true: (a) the verdict is approved, **and** (b) zero actionable-now items remain. If actionable-now items exist on an "approved" verdict, fall through to step 5 and address them — the user opted into the loop by invoking the skill, and a verdict like "approved with minor fixes" is the loop telling you it isn't done yet, not a green light to exit. Bouncing those items back as a fresh user prompt forces the user to manually re-invoke an "address feedback" pass and undoes the loop's value.
+
+   When you do exit, carry the explicitly-deferred items into step 11's summary so the user can decide whether to file follow-up issues.
+
+   The full canonical suite will run once at PR-readiness time inside `github-pr-evaluator` — there's no in-loop final gate here.
 
    Otherwise, continue.
 5. **Address the feedback** — both `review`'s and any unaddressed human reviewer feedback. Make the requested changes on the same branch.
@@ -823,6 +833,7 @@ If the resolved issue was a **story** under an open epic, include two additional
 - **Don't post without showing the user first.** Comments and PRs are public and notify subscribers.
 - **Don't open a PR for a question.** Some issues are resolved by an answer, not a code change.
 - **Don't skip the review loop.** For any PR, `review` must approve before the work is considered done. No exceptions, no "this change is too small to review."
+- **Don't exit the loop just because the verdict says "approved".** Reviews routinely approve with `Medium`, `Low`, or `Nitpick` items the reviewer still expects fixed (e.g., "Approved with minor fixes"). Per §10.4, exit only when the verdict is approved **and** zero actionable-now items remain. Items tagged "fast-follow", "follow-up", or "out of scope" are deferred — list them in §11's summary, don't fix them. Items without that routing are addressable in this PR — fix them in-loop, push, and let the next review confirm. Bouncing minor fixes back as a fresh user prompt forces the user to manually re-invoke "address feedback" and defeats the loop's purpose.
 - **Don't post review feedback on the issue.** Review feedback on a PR goes on the PR, not on the originating issue.
 - **Don't mis-route comments between issue and PR.** Use the rubric in "Where comments go" — problem questions go on the issue, solution questions go on the PR. Cross-posting or wrong-routing fragments the discussion and leaves future contributors hunting.
 - **Don't assume the issue is still relevant.** If the thread has gone quiet for a long time, flag this and ask whether to proceed.
