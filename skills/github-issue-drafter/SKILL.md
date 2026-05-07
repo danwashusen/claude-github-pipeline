@@ -1,6 +1,6 @@
 ---
 name: github-issue-drafter
-description: Drafts well-structured GitHub issues from informal developer feedback and files them via the `gh` CLI. Use this skill whenever the user describes a bug they hit, an incomplete or half-built feature they noticed, or a new feature idea — and wants it captured as a GitHub issue. Trigger this even when the user does not explicitly say "make an issue" — phrases like "I should track this," "let's file this," "we need to remember to fix X," "log this for later," or simply describing a problem in a repo context all qualify. Works best when the user is inside a git repository directory. Uses repo issue templates and labels if they exist, otherwise applies a consistent built-in format. Reads the project PRD (if one exists at `docs/prd.md` or similar) to ground feature framing and surface tensions between feedback and spec.
+description: Drafts well-structured GitHub issues from informal developer feedback and files them via the `gh` CLI. Use this skill whenever the user describes a bug they hit, an incomplete or half-built feature they noticed, or a new feature idea — and wants it captured as a GitHub issue. Trigger this even when the user does not explicitly say "make an issue" — phrases like "I should track this," "let's file this," "we need to remember to fix X," "log this for later," or simply describing a problem in a repo context all qualify. Also use this skill to **revise an existing issue** when the user references one by number/URL with revision intent — phrases like "revise #N," "update issue #N," "improve #N," "does #N still match the docs?", or "rewrite the description of #N." Works best when the user is inside a git repository directory. Uses repo issue templates and labels if they exist, otherwise applies a consistent built-in format. Reads the project PRD (if one exists at `docs/prd.md` or similar) to ground feature framing and surface tensions between feedback and spec. Every drafted or revised issue is automatically validated by an isolated review sub-agent that checks the issue against the project's PRD, architecture, constitution, and current codebase before the user sees the final draft.
 ---
 
 # GitHub Issue Drafter
@@ -13,10 +13,111 @@ Turn informal developer feedback into well-structured GitHub issues. The user is
 2. **Check the repo** for existing conventions (templates, labels) — use them if present.
 3. **Gather missing context** by asking the user, but only what's actually needed.
 4. **Draft** the issue (title + body + labels + priority).
-5. **Show the draft** to the user and wait for confirmation.
-6. **File** via `gh issue create` only after the user approves.
+5. **Run the sub-agent review loop** and fold in findings (up to 3 passes). See "Sub-agent review loop" below.
+6. **Show the draft** (with any unresolved review findings) to the user and wait for confirmation.
+7. **File** via `gh issue create` only after the user approves.
 
-Never skip step 5. Filed issues are annoying to clean up, and a 10-second confirmation prevents that.
+Never skip step 6. Filed issues are annoying to clean up, and a 10-second confirmation prevents that.
+
+For revising an **existing** filed issue (when the user references one by number with revision intent), use the parallel flow in "Revise mode" below — same review loop, but starting from a `gh issue view` instead of a fresh draft and ending in `gh issue edit` instead of `gh issue create`.
+
+## Revise mode
+
+Triggered when the user references an existing issue with revision intent: "revise #N," "update issue #N," "improve #N," "does #N still match the docs?", "rewrite the description of #N," and similar. Issues drift — the codebase moves, decisions in the comment thread supersede the original body, the PRD changes — so this mode exists to refresh a stale issue against today's reality without re-filing.
+
+The flow mirrors the core loop, but starts from a filed issue and ends in `gh issue edit`. It shares the sub-agent review loop with new-issue drafting (step 5 in the core loop).
+
+### Step R1: Identify the issue
+
+Parse the issue number or URL from the user's message. If the user said something ambiguous like "the dashboard ticket," ask which one — same rule as in "Detecting related issues."
+
+### Step R2: Fetch the issue and its full thread
+
+Use the same two-call pattern the resolver uses, so you read everything before forming an opinion:
+
+```bash
+gh issue view <N> --comments --json number,title,body,state,labels,author,createdAt,updatedAt,comments,assignees,milestone,url
+gh issue view <N> --json closedByPullRequestsReferences,projectItems
+```
+
+Also check for in-flight PRs that may already be acting on this issue:
+
+```bash
+gh pr list --state open --search "<N> in:body" --json number,title,author,isDraft,headRefName,url,updatedAt
+```
+
+If a PR exists, surface it before editing — the user may want to coordinate, or to wait until the PR merges before reshaping the issue body.
+
+### Step R3: Identify the latest direction from the thread
+
+Long threads matter. The original body is often outdated by the time someone asks you to revise it — the substantive direction-setting may have happened five comments down. Earlier proposals are superseded if a maintainer or the OP has agreed to a different approach. Don't re-litigate decided questions.
+
+Write a one-line state summary the user can correct before you do any work:
+
+> "Original body says X; comment thread by @maintainer on 2026-04-12 agreed to do W instead — I'll revise toward W. Correct?"
+
+This anchors the rest of the response and lets the user adjust if you've misread the thread.
+
+### Step R4: Run the review loop on the existing body
+
+Same loop as for drafts (see "Sub-agent review loop" below). Feed the sub-agent the existing title + body + labels + the type (bug | incomplete | feature | epic | story). Mode is `revise <N>` — the sub-agent fetches the live state for itself and walks the comment thread under the latest-decisions dimension.
+
+### Step R5: Show a diff-style draft
+
+Don't repaint untouched sections. Show only what changes:
+
+```
+Title: Old → New      (omit if unchanged)
+Labels: + new-label, - removed-label   (omit if unchanged)
+
+Body changes:
+## <section> (changed)
+<old> → <new>
+
+## <section> (added)
+<new>
+
+## <section> (removed)
+(no replacement)
+```
+
+If a section is unchanged, just say "(other sections unchanged)" — the user doesn't need to re-read the whole body.
+
+### Step R6: Confirm and apply
+
+Wait for explicit confirmation. Then:
+
+```bash
+# Body
+cat > /tmp/revised-body.md <<'EOF'
+<new body>
+EOF
+gh issue edit <N> --body-file /tmp/revised-body.md
+
+# Title — only if changed
+gh issue edit <N> --title "<new title>"
+
+# Labels — only the deltas
+gh issue edit <N> --add-label "<...>" --remove-label "<...>"
+
+rm /tmp/revised-body.md
+```
+
+Capture the URL `gh` returns and share it with the user.
+
+### Special case — revising an Epic
+
+After revising the Epic body, also re-audit child stories. Walk the `## Stories` checklist and fetch each linked story:
+
+```bash
+gh issue view <story-#> --json number,state,title,body,labels
+```
+
+Reconcile the body's checkboxes with each story's actual state (closed → checked; open → unchecked) and run the **dependency-graph story-ordering check** (dimension 5 of the review loop) against the current set of stories. If ordering findings come back, surface them with evidence and a proposed re-ordering — the user confirms before the body is edited. Don't silently swap bullets.
+
+### Special case — revising a Story
+
+Verify the `**Epic:** #<epic-#>` backlink still points at an open Epic. If the Epic has closed, surface that and ask whether to retire the Story (close it), detach the backlink, or relink to a different Epic. Don't quietly leave a Story dangling under a closed Epic.
 
 ## Step 1: Classify the feedback
 
@@ -143,14 +244,14 @@ An Epic is for work where each child is **independently shippable** — a separa
 - [ ] <Story 2 title>
 ```
 
-File it, capture the Epic `#NN`.
+Run the sub-agent review loop on the Epic body before filing. Story-ordering (dimension 5) is **skipped** at this stage — there are no story bodies yet for the sub-agent to reason across. Pass dimensions 1, 2, 3, 6 only. File the Epic, capture the `#NN`.
 
 **Stage 2 — Offer child-story filing.** After the Epic is filed, ask once:
 
 > "Want me to file each story as a child issue too, or leave them as bullets for now?"
 
 - **No** → done. The user can promote bullets to real issues later by hand.
-- **Yes** → for each story: draft using the Story template with `**Epic:** #<epic-#> — <Epic title>` already filled in, confirm with the user (step 5, one story at a time — don't batch), file with the `story` label, collect the resulting `#NN`.
+- **Yes** → for each story: draft using the Story template with `**Epic:** #<epic-#> — <Epic title>` already filled in, run the sub-agent review loop (story-ordering check is deferred to Stage 3 stitching since dependencies span siblings), confirm with the user (step 6, one story at a time — don't batch), file with the `story` label, collect the resulting `#NN`.
 
 **Stage 3 — Stitch the Epic body.** Once all stories are filed, patch the Epic to replace placeholder bullets with real links:
 
@@ -159,6 +260,8 @@ File it, capture the Epic `#NN`.
 - [ ] #42 — Story 1 title
 - [ ] #43 — Story 2 title
 ```
+
+Before applying the patched body, run the **full** review loop on the stitched Epic — including story-ordering (dimension 5). The sub-agent now has filed story numbers and bodies to reason across, so dependency-graph ordering can actually fire. If ordering findings come back, surface them with evidence and a proposed re-ordering, then let the user confirm before the bullet order is changed. Don't silently swap bullets.
 
 ```bash
 cat > /tmp/epic-body.md <<'EOF'
@@ -340,7 +443,111 @@ Apply labels in this order of preference:
 
 Don't over-label. Three labels max unless the user asks for more.
 
-## Step 5: Show the draft and confirm
+## Step 5: Sub-agent review loop
+
+Before showing the draft to the user, hand it to an isolated review sub-agent. The sub-agent runs **without the conversation history** — it sees only the issue's own content, the repo, and the project docs. If it can't make sense of the issue using just those inputs, neither will a teammate reading the issue six months from now. That's the test the loop is designed to apply.
+
+This step runs for both new drafts and revisions of existing issues. Don't skip it. The cost of one read-only sub-agent invocation is small compared to the cost of a confidently-wrong issue surfaced to the team.
+
+### Why a sub-agent (not just a self-check)
+
+You drafted the issue while holding informal feedback, prior turns, the user's tone, the original problem description — context that won't appear in the filed body. From that vantage point you can't tell whether the body stands on its own. The sub-agent is the cheap way to simulate a fresh reader. Resist the urge to "save a turn" by skipping it; self-review under load tends to be charitable in exactly the wrong direction.
+
+### Invocation contract
+
+Invoke an `Explore` sub-agent with the prompt template at `references/issue-reviewer-prompt.md`. Inline the draft into the prompt and pass the structural inputs:
+
+```
+Agent({
+  subagent_type: "Explore",
+  description: "Review GitHub issue draft for coherence",
+  prompt: <contents of references/issue-reviewer-prompt.md
+           with placeholders filled: draft, mode, repo_root,
+           dimensions, related_drafts>
+})
+```
+
+The sub-agent receives:
+
+- **Draft** — title, body, labels, priority, type (`bug` | `incomplete` | `feature` | `epic` | `story`).
+- **Mode** — `draft` (no number yet) or `revise <N>` (existing filed issue — sub-agent fetches the live state via `gh issue view` and walks the comment thread itself).
+- **Repo root** — absolute path so the sub-agent can read `docs/`, `CLAUDE.md`, and grep the source tree.
+- **Dimensions** — the explicit list of checks to run (see below). Pass only the dimensions that apply for the current type/mode.
+- **Related drafts** — for an Epic with child stories already drafted, pass each sibling story's title + body so the sub-agent can reason across them for dependency-graph ordering.
+
+The sub-agent does **not** receive: the conversation history, the user's original informal feedback, your draft notes, the user's tone or prior turns. The isolation property is what makes the review meaningful — leaking conversation context defeats the purpose.
+
+### Review dimensions
+
+Six dimensions. Each yields zero or more findings, each finding carries severity + concrete evidence.
+
+| # | Dimension | Checks | Example finding |
+|---|---|---|---|
+| 1 | **Doc coherence** | Cross-reference body against `docs/prd.md`, `docs/architecture.md`, `docs/constitution.md`, `CLAUDE.md`. Same three patterns the existing skill already uses for the PRD: contradicts / extends / gap. | `Body proposes 'allow editing submitted entries' — PRD §4 says entries are immutable after submit. Either body or PRD must move. Recommend adding a 'PRD impact' note flagging the contradiction.` |
+| 2 | **Codebase coherence** | grep/find every API, file, type, component, behavior named in the body. Confirm presence in current code. | `Body references 'OldService.foo()'; no such symbol in current codebase (closest match: NewService.foo at Services/NewService.swift:42). Likely renamed during refactor — update reference or describe the renamed surface.` |
+| 3 | **Internal coherence** | Title matches body claim; acceptance criteria support the stated goal; "what's missing" is actually missing per the code; Story Epic backlink is correctly formatted; Out-of-scope doesn't contradict in-scope. | `Acceptance criterion #3 ('exports as PDF') doesn't appear in the user story or background — looks orphaned. Either justify in body or drop.` |
+| 4 | **Latest-decisions** *(revise mode only)* | Walk the comment thread; identify the most recent substantive direction-setting comment; compare body to that direction. | `Comment by @maintainer on 2026-04-12 settles on 'approach B' but body still describes approach A. Revise body toward B; cite the comment.` |
+| 5 | **Story ordering** *(Epic mode only, after stories exist)* | Build a dependency graph: for each story, infer dependencies from the files/APIs/types it references and what it claims to deliver. Compare topological order to the Epic's `## Stories` listed order. | `Story 3 'Add export-to-CSV button' depends on the export service introduced by Story 5 'Build export service'. Listed order has 3 before 5; topological order is 5 → 3. Recommend swapping.` |
+| 6 | **Completeness** *(primarily draft mode)* | Required template sections present? User story for features? Definition of done for stories? Reproduction for bugs? | `Bug template requires 'Steps to reproduce'; section is empty. Either fill in (ask the user) or include a [to be filled in] placeholder so the gap is visible at triage.` |
+
+Pass the relevant dimensions per type/mode. Bugs run 1, 2, 3, 6 (and 4 if revising). Features run 1, 2, 3, 6 (and 4 if revising). Epics at Stage 1 (filing) run 1, 2, 3, 6 — story ordering can't fire yet. Epics at Stage 3 (after stitching) run all six. Stories run 1, 2, 3, 6 (and 4 if revising); story-ordering applies to the parent Epic, not the individual story.
+
+### Severity and evidence
+
+Each finding carries one of three severities:
+
+- **Blocker** — the issue is concretely wrong: referenced API doesn't exist; PRD directly contradicts; story order makes a story unimplementable until a later story ships. Must be addressed before filing.
+- **Suggestion** — would meaningfully improve clarity or alignment. Address by default; the user may defer with reason.
+- **Nit** — small polish (typo, slight rewording for searchability). Apply silently or skip; never block on these.
+
+**Evidence is mandatory.** Every finding must cite at least one of:
+
+- A specific line/section of the issue body (quote it).
+- A specific file path + line range or section in the docs/codebase.
+- A specific comment by author + date in the issue thread (revise mode).
+
+Findings without evidence are **dropped** before iterating. "Seems unclear" without a quote and an alternative wording does not pass the bar. This anti-fabrication rule is the same one the rest of the skill applies to drafting ("Never invent reproduction steps, error messages, or behavior the user didn't describe") — extend it to the reviewer.
+
+### Loop control
+
+```
+draft = orchestrator.initial_draft
+prev_findings = []
+for pass in 1..3:
+  findings = sub_agent.review(draft, mode, repo_root, dimensions)
+  drop_findings_without_evidence(findings)
+  if findings is empty:
+    exit_clean()
+    break
+  if same_finding_repeated_with_no_progress(findings, prev_findings):
+    exit_circular(draft, findings)
+    break
+  draft = orchestrator.apply(findings, draft)   # blockers always; suggestions by default; nits silently or skipped
+  prev_findings = findings
+else:
+  exit_cap_reached(draft, findings)
+
+show_to_user(draft, unresolved_findings_if_any)
+```
+
+Three exit conditions:
+
+- **Clean** — pass returns no findings (after evidence-filtering). Show only the draft.
+- **Cap reached** — three passes done, findings still remain. Show the draft AND the remaining findings; let the user decide whether to file as-is, fix manually, or push back on the reviewer.
+- **Circular** — the same finding (matched by dimension + evidence-quote) appears in two consecutive passes without measurable progress. Stop. The reviewer might be wrong, or the orchestrator's revision might be missing something the user needs to clarify. Surface both the latest draft and the recurring finding to the user; don't burn the third pass guessing.
+
+The cap and the circular guard exist for the same reason: don't iterate forever on a finding that's either wrong, unactionable, or needs human judgment. Fold what you can, surface what you can't.
+
+### What the user sees at the confirmation gate
+
+Existing flow (Step 6) shows the draft. New behavior:
+
+- **Clean exit** — show the draft. Optional one-line note: `(reviewed in N pass(es); no issues)`. Don't make a meal of it.
+- **Cap or circular exit** — show the draft AND a "Review notes" block listing each unresolved finding with severity, evidence, and the recommended remediation. The user can choose to file anyway, fix the body manually, or tell you to take another pass with adjusted guidance.
+
+Keep the cost low when the loop is clean. Surface real disagreements when they exist. Don't pad the user-visible output with reviewer noise.
+
+## Step 6: Show the draft and confirm
 
 Present the full draft like this:
 
@@ -360,7 +567,7 @@ Should I file this, or want to tweak anything first?
 
 Wait for explicit confirmation. "Yes," "file it," "looks good, go" — fine. Silence or a follow-up question — keep iterating.
 
-## Step 6: File the issue
+## Step 7: File the issue
 
 Use `gh issue create` with `--title`, `--body-file` (write body to a temp file to avoid shell escaping nightmares with multiline content and backticks), and `--label` flags:
 
@@ -415,6 +622,12 @@ When the user opts into child-story filing after the Epic is created:
 **Repo has issue templates but they don't fit.** Use the closest one and adapt. If genuinely none fits (e.g., they only have a "bug" template and the user wants to file a feature), use the built-in feature template.
 
 **The feedback is too thin to file a useful issue.** Push back gently: "This is a bit thin — do you have a [reproduction step / persona / what 'done' looks like]? Otherwise we can file a stub and flesh it out later." Filing stubs is fine if the user prefers; just be honest about what's missing in the body.
+
+**Revise mode: the referenced issue is closed.** Surface it before doing any work — "#N is closed (closed by PR #M on date X). Revise the closed issue, reopen it first, or file a follow-up issue?" Closed issues sometimes get reopened intentionally; sometimes the user meant a different number. Ask, don't guess.
+
+**Revise mode: the referenced issue doesn't exist or you can't access it.** `gh` errors out with 404 / no permissions. Report the exact error and ask the user to check the number/repo. Don't fall back to drafting a new issue silently.
+
+**Review loop keeps surfacing the same finding across passes.** That's the circular exit. The reviewer might be wrong, or the orchestrator's revision might be missing something the user needs to clarify. Surface the latest draft + the recurring finding to the user; don't burn the third pass guessing. Common recovery: ask the user "the reviewer keeps saying X — is this real, or should we override?"
 
 ## Why this matters
 
