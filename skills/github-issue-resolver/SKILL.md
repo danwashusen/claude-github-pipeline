@@ -281,6 +281,76 @@ Concretely, the prompt should look like: *"Run this exact command from this exac
 
 This mirrors `github-pr-evaluator` §5.5.3. The targeted-tests strategy means each invocation runs only the selected suites, so the build log per iteration is much shorter than a full-suite run anyway — but the delegation layer is still useful and keeps the convention consistent across both skills.
 
+## Retry ladder for the verification gate
+
+The pre-push verification gate (§8 before the first push, §10.6 after each round of review feedback) treats "tests must be green before push" as a goal, not a license to retry indefinitely. Without a cap, a complex UI-test failure can spiral into a sequence of small fixes — tweak, re-run a 10–20 minute UI suite, tweak, re-run, repeat — that burns hours of wall-clock time and produces nothing the review loop couldn't have surfaced in the first place. The cost compounds because each iteration re-pays the cold-build and simulator-boot overhead, and small fixes on a shallow read of a failure usually don't help anyway.
+
+The ladder below caps a single visit to the gate at **3 test runs total** before escalation, and forces a research breakpoint between cheap fixes and any deep fix. It applies identically at §8 and §10.6.
+
+### The ladder
+
+| Run | Trigger | Allowed action after |
+|---|---|---|
+| 1 (initial) | First invocation of the gate this visit | If green → §9 (or §10.7 from §10.6). If red → 1 cheap fix. |
+| 2 | After cheap fix #1 | If green → §9. If red AND the failing-test set strictly changed (some original failures resolved) → 1 more cheap fix allowed. If red AND the failing-test set is sticky (same set or grew) → **research breakpoint, mandatory**, even though only 2 runs have happened. |
+| 3 (deep) | After research-informed fix | If green → §9. If red → **escalate to user** per "Escalation" below. No further runs this visit. |
+
+A "cheap fix" is a small, narrowly-targeted edit (typo, missing accessibilityIdentifier, off-by-one, obvious binding mistake) on the immediate failure mode. A "deep fix" is a structural change informed by the research breakpoint — restructuring a gesture, lifting state, changing a focus model, etc.
+
+### The adaptive cheap-fix rule
+
+Whether the second cheap fix is allowed depends on whether the first cheap fix made *any* of the originally-failing tests pass. Compare the failing-test sets across runs:
+
+- **Strictly changed** (e.g., run 1 fails {A, B}; run 2 fails {B, C}): at least one originally-failing test newly passed. The first fix worked on something; the new failure is plausibly a separately-trivial issue. One more cheap fix is allowed.
+- **Sticky** (run 2 fails {A, B} again, or {A, B, C}): no originally-failing test resolved. The model's read of the failure is wrong. Force the research breakpoint immediately.
+
+This rule exists because the small-fix spiral's signature is exactly *sticky failures with shrinking patches*: each iteration tweaks the same code path on the same wrong hypothesis. Detecting non-progress at run 2 cuts off the spiral before it doubles.
+
+### Test selection on retry
+
+Run 1 and run 3 use the test-selection sub-agent's full verdict on the cumulative diff. Run 2 does **not** — it skips the sub-agent and re-runs only the tests that failed in run 1.
+
+| Run | Selection mechanism |
+|---|---|
+| 1 | Full sub-agent verdict on cumulative diff (per "Test selection during iteration" above). |
+| 2 | **Skip the sub-agent.** Build the command directly: `<wrapper> test -only-testing <Suite>/<TestMethod>` for each test that failed in run 1, joined into a single invocation. Use the failing tests' fully-qualified identifiers as reported by the previous run. |
+| 3 | Full sub-agent verdict on cumulative diff. The deep fix may have changed the blast radius (lifted state, restructured a view tree, modified a root-reachable view), so the sub-agent's heuristics — especially the UI blast-radius rules at step 5 of the prompt template — need a fresh look. |
+
+The narrowing at run 2 is a deliberate departure from "trust the sub-agent on every gate visit." The justification: the sub-agent's job is selecting tests *given a diff*; on a cheap-fix retry the only new information is which specific tests failed, and the parent already has that. Re-running the sub-agent would either re-derive the same broad selection (no win) or narrow incorrectly without seeing the failure list (worse). Bypassing it on run 2 is faster and more correct for the cheap-fix case.
+
+A previously-passing test that the cheap fix breaks will not be caught at run 2 — it will surface at run 3 (where the sub-agent's full verdict runs again on the now-larger diff) or, failing that, in `github-pr-evaluator`'s full canonical run at PR-readiness time. That gap is acceptable: the cheap fix is by definition small, and the safety net at pr-evaluator is exactly the reason this skill runs targeted tests rather than the canonical suite. The alternative — re-running the broad selection on every retry — is what produced the small-fix spiral this ladder exists to prevent.
+
+### Research breakpoint requirements
+
+When the ladder forces a research breakpoint (run 2 was sticky, or run 2 was a second cheap fix that also failed), the next step is **not** a code change. It's a forced, structured information-gathering pass. The point is to replace the model's shallow read of the failure — which has now demonstrably failed twice — with a real understanding before any deep fix is attempted.
+
+During the breakpoint:
+
+1. **Read each failing test's full output** — the assertion message, the stack frame, and the relevant simulator log lines. Not just the one-line summary the test runner prints.
+2. **For UI tests, capture `app.debugDescription`** from inside the failing test and read the dump. CLAUDE.md mandates this on element-lookup timeouts; restate the mandate here. The accessibility tree usually points at the cause directly (collapsed parent, hidden element, identifier dropped, glass surface absorbing children).
+3. **Spawn one `Explore` sub-agent** with: the failing test files, the source they exercise, the recent diff (`git diff <integration-target>...HEAD`). Have it return three things, in order:
+   - What is *actually* failing (not what the test name suggests, not what the assertion line says — what's happening in the code paths the test transits)
+   - What code paths the failing tests transit, including any indirection (gesture → focus → state → view re-render)
+   - What structural change is implied by (a) and (b) — explicitly *not* a tweak
+
+No code edits during the breakpoint. The deep fix happens only after the sub-agent returns and the model has internalised its findings.
+
+### Escalation
+
+When run 3 (the research-informed deep fix) is also red, stop. Do not run §8/§10.6 a fourth time. Surface to the user the failure analysis and three equally-weighted paths forward, with no default:
+
+1. **Push with documented reds.** Open the PR (or push to the existing branch) with a `## Known failures` section in the PR body listing each red test, the reproduction signal, and what was tried. Let `review` decide whether any of the reds are blocking. Best when the failures look like CI/timing flakiness or genuinely separate edge cases that don't block the headline change.
+2. **Defer the failing tests with linked issues.** Open one or more follow-up issue(s) describing the failure. Add `XCTSkip` / `@available` gates around the failing test(s) with `// TODO(#NNN)` referencing the new issue. Push the rest green. Best when the failure is a real structural problem that needs more design than fits this PR.
+3. **Restructure.** Abandon the current approach. Return to a planning conversation, with the research-breakpoint findings as input, and propose a different shape. Best when the deep fix revealed that the original approach itself was wrong (e.g., a gesture that fundamentally fights the parent's gesture system).
+
+The summary at §11 records which path was taken and why. The user picks; the skill does not pick a default.
+
+### What the ladder is and isn't
+
+It **is** a cap on retries within a single visit to the gate. Each entry to §8 starts a fresh ladder (run 1 again). Each entry to §10.6 (one per review-loop iteration) starts a fresh ladder. The §10.4 outer-loop cap of 5 review iterations governs how many times `review` can flag changes; this ladder governs how many times the model may re-run tests within one of those iterations.
+
+It **isn't** a license to give up after one failure. Run 1 failing is normal — that's why the gate exists. The ladder activates when the model is about to enter a small-fix spiral, not on every red run.
+
 ## Workflow
 
 ### 1. Identify the issue
@@ -725,7 +795,7 @@ For code changes:
   2. **Test selection** — spawn an `Explore` sub-agent with the prompt template from "Test-selection sub-agent." Substitute the worktree path, the integration target, and the project's `<!-- issue-resolver-test-target -->` block. The sub-agent returns `COMMAND:` (a ready-to-run shell command, or `(none)`) and `RATIONALE:` (one or two sentences). Print the rationale to the user as the gate's status line.
   3. **Test execution** — if `COMMAND:` is `(none)`, skip execution. Otherwise run the command; if it begins with `xcodebuild` (or invokes a wrapper that runs `xcodebuild`), delegate to `apple-platform-build-tools:builder`.
 
-  Tests must be green before §9. Don't push red, and don't fall back to "no tests" when the sub-agent's heuristics could have widened — re-spawn the sub-agent if the rationale looks wrong. **Do not skip this gate on the assumption that §10.6 will catch regressions** — §10.6 only fires when the review loop iterates (i.e., review requests changes). On a clean first-pass approval the workflow goes §8 → §9 → §10 (approves) → §11 with no §10.6 — so the gate at §8 is the only test invocation that runs before the PR is opened.
+  If run 1 is green, proceed to §9. If run 1 is red, follow the ladder in "Retry ladder for the verification gate" above — at most 3 runs this visit, with a forced research breakpoint between cheap and deep fixes, escalating to the user if the deep fix also fails. Don't fall back to "no tests" when the sub-agent's heuristics could have widened — re-spawn the sub-agent if the rationale looks wrong. **Do not skip this gate on the assumption that §10.6 will catch regressions** — §10.6 only fires when the review loop iterates (i.e., review requests changes). On a clean first-pass approval the workflow goes §8 → §9 → §10 (approves) → §11 with no §10.6 — so the gate at §8 is the only test invocation that runs before the PR is opened.
 - Keep the diff focused on the issue — don't drive-by-fix unrelated things.
 
 For comment-only responses (questions, blocked issues, duplicates):
@@ -787,7 +857,7 @@ Loop:
    2. **Test selection** — spawn an `Explore` sub-agent with the prompt template from "Test-selection sub-agent" above. Substitute the worktree path, integration target, and the project's `<!-- issue-resolver-test-target -->` block. The sub-agent reads the diff, lists each declared target's directory, applies the heuristics, and returns two sections: `COMMAND:` (a ready-to-run shell command, or `(none)`) and `RATIONALE:` (one or two sentences). Print the rationale to the user as the iteration's status line — that's how the user audits the selection.
    3. **Test execution** — if `COMMAND:` is `(none)`, skip execution and continue. Otherwise, run the command. If it begins with `xcodebuild` (or invokes a wrapper that runs `xcodebuild`), delegate to `apple-platform-build-tools:builder`; otherwise run inline.
 
-   Tests must be green. If new failures appear, fix them in the same iteration — do not push red tests on the theory that you'll catch it next round. If `COMMAND:` was `(none)` (e.g., docs-only iteration), there's nothing to be green or red — `github-pr-evaluator`'s full canonical run will exercise the change at PR-readiness time. Don't push red tests under any circumstance, and don't fall back to "run zero tests" when the sub-agent's heuristics could have widened — re-spawn the sub-agent if the rationale looks wrong.
+   If run 1 is green, proceed to step 7 (commit and push). If run 1 is red, follow the ladder in "Retry ladder for the verification gate" above — at most 3 runs this visit, with a forced research breakpoint between cheap and deep fixes, escalating to the user if the deep fix also fails. (Each entry to §10.6 starts a fresh ladder; the §10.4 outer-loop cap governs how many times this whole step can repeat.) If `COMMAND:` was `(none)` (e.g., docs-only iteration), there's nothing to be green or red — `github-pr-evaluator`'s full canonical run will exercise the change at PR-readiness time. Don't fall back to "run zero tests" when the sub-agent's heuristics could have widened — re-spawn the sub-agent if the rationale looks wrong.
 7. **Commit and push.** Reply on the PR (briefly) describing what changed in response to which points of feedback.
 8. **Go back to step 1.** Re-read accumulated feedback, re-invoke `review` on the updated PR.
 
@@ -827,6 +897,9 @@ If the resolved issue was a **story** under an open epic, include two additional
 - **Don't inline the test-selection reasoning in main context.** The diff hunks, directory listings, and grep output stay inside the `Explore` sub-agent. Main context sees only the resolved `COMMAND:` and the one-line `RATIONALE:`. Inlining the reasoning regresses on token cost and clutters the conversation; pulling diff content into main context is exactly what the sub-agent indirection prevents.
 - **Don't skip the rationale audit.** Print the sub-agent's `RATIONALE:` line to the user verbatim before executing the command. The user must see what was selected and why; silent selection is a regression even when correct, and bad selections are how this design fails — make them visible so they can be corrected.
 - **Don't let the build subagent become a coder.** When delegating to `apple-platform-build-tools:builder`, the prompt MUST scope the subagent to "run the command and report result" only. No code edits, no failure-investigation expansion, no automatic re-runs with different flags. A subagent that silently turns a 30-second test run into a 55-minute diagnose-edit-rebuild loop hides changes from your commit history and the user's audit trail, and breaks the review-loop's contract that you control when code changes happen. If the build subagent reports a failure, surface it; don't hand it carte blanche to fix things.
+- **Don't iterate small fixes when failures are sticky.** Two §8 (or §10.6) runs with the same failing test means the underlying understanding is wrong, not the patch. Take the research breakpoint per "Retry ladder for the verification gate" — read the full failure output, capture `app.debugDescription` for UI tests, spawn an `Explore` sub-agent for structural read of the failure. Continuing to tweak burns 10–20 minutes per attempt with no information gain, and the same loop bounded by the build subagent's pitfall above applies one layer up: the *parent* model running tweak → re-run → tweak → re-run is the same anti-pattern, just at a different layer.
+- **Don't `rm` snapshot goldens to force regeneration.** A failing snapshot test means a pixel-level visual change that needs human eyes — the whole point of snapshot tests is to surface those. Surface the diff to the user and ask before deleting. Auto-regenerating goldens silently accepts visual regressions and defeats the test category's purpose. If the user confirms the visual change is intended, *then* delete and regenerate; record the confirmation in the PR body so reviewers can audit.
+- **§8 is the pre-push gate, not the dev inner loop.** Iterate at unit-test granularity locally first — the project's wrapper supports `-only-testing FoodJournalTests/<SuiteName>` and Swift Testing suites typically run in well under a minute. Reserve the §8 invocation (which legitimately includes UI tests via the test-selection sub-agent's widening rules) for the once-before-push integration check. Treating every code change as "make change → §8 → react" turns a 30-second feedback cycle into a 20-minute one and is the most direct cause of the small-fix spiral.
 - **Don't read only the PR diff.** PR comments and code review threads (especially line-level review comments, which require a separate API call) are where decisions actually got made. Skipping them leads to redoing rejected work or contradicting settled directions.
 - **Don't trust the issue title alone.** The title often reflects the original report; the actual problem may have shifted in the comments.
 - **Don't re-litigate decided questions.** If a maintainer said "let's go with approach B" three comments ago, go with approach B.
