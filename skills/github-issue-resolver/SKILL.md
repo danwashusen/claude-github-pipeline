@@ -340,7 +340,7 @@ No code edits during the breakpoint. The deep fix happens only after the sub-age
 When run 3 (the research-informed deep fix) is also red, stop. Do not run §8/§10.6 a fourth time. Surface to the user the failure analysis and three equally-weighted paths forward, with no default:
 
 1. **Push with documented reds.** Open the PR (or push to the existing branch) with a `## Known failures` section in the PR body listing each red test, the reproduction signal, and what was tried. Let `review` decide whether any of the reds are blocking. Best when the failures look like CI/timing flakiness or genuinely separate edge cases that don't block the headline change.
-2. **Defer the failing tests with linked issues.** Open one or more follow-up issue(s) describing the failure. Add `XCTSkip` / `@available` gates around the failing test(s) with `// TODO(#NNN)` referencing the new issue. Push the rest green. Best when the failure is a real structural problem that needs more design than fits this PR.
+2. **Defer the failing tests with linked issues.** File one follow-up issue per failure (or one umbrella issue if the failures share a root cause) via the sub-agent protocol in "Follow-up issue tracking" above — urgency `file-now`, type `deferred-test`. The filed URLs become `// TODO(#NNN)` markers and `XCTSkip("Deferred to #NNN — <reason>")` reasons before push. Push the rest green. Best when the failure is a real structural problem that needs more design than fits this PR.
 3. **Restructure.** Abandon the current approach. Return to a planning conversation, with the research-breakpoint findings as input, and propose a different shape. Best when the deep fix revealed that the original approach itself was wrong (e.g., a gesture that fundamentally fights the parent's gesture system).
 
 The summary at §11 records which path was taken and why. The user picks; the skill does not pick a default.
@@ -350,6 +350,129 @@ The summary at §11 records which path was taken and why. The user picks; the sk
 It **is** a cap on retries within a single visit to the gate. Each entry to §8 starts a fresh ladder (run 1 again). Each entry to §10.6 (one per review-loop iteration) starts a fresh ladder. The §10.4 outer-loop cap of 5 review iterations governs how many times `review` can flag changes; this ladder governs how many times the model may re-run tests within one of those iterations.
 
 It **isn't** a license to give up after one failure. Run 1 failing is normal — that's why the gate exists. The ladder activates when the model is about to enter a small-fix spiral, not on every red run.
+
+## Follow-up issue tracking
+
+Follow-up items — adjacent bugs noticed during planning, incomplete features the diff exposed, deferred tests the retry-ladder or review loop punted, baseline detours that need their own PR — surface at four moments in this workflow: §7 baseline (pre-existing failures need a detour), the retry-ladder's escalation option 2 (defer failing tests), §10.4 (reviewer routes items to follow-up), and §11 summary (post-merge cleanup). Historically each moment improvised its own filing: some items got captured in PR-body lines that aged out of memory, others got hand-crafted `gh issue create` bodies that bypassed the project's `github-issue-drafter` skill and ended up with inconsistent format and missing parent references. The point of this section is to make filing follow-ups a single, predictable protocol that reuses the drafter's structure (PRD-grounded, sub-agent-reviewed, type-specific sections) rather than re-inventing it in each touch point.
+
+### The follow-up registry
+
+Maintain a working list — kept in your own conversation context, no file persistence needed — of follow-up items as they surface. Each entry has five fields:
+
+- **Type** — `bug` | `incomplete-feature` | `deferred-test` | `revise-existing`. The drafter has a section template for each; classification matters because it determines the body structure.
+- **Title hint** — one-line summary, drafter-style (e.g. *"Conflict prompt UI tests deferred under predictive-bar occlusion on .expanded × .session"*).
+- **Description** — 2–5 sentences naming what's wrong / what's needed / why deferred. The drafter takes this as the informal feedback and shapes the body around it.
+- **Parent reference** — the current PR URL or issue #, plus the parent epic # if applicable. Without this, the filed issue is orphaned.
+- **Urgency** — `file-now` or `file-at-checkpoint` (see "Hybrid timing" below).
+
+### Filing vs. capturing — the decision rule
+
+Not every observation deserves a filed issue. Distinguish:
+
+- **File as issue** when the follow-up represents distinct trackable work: a bug to fix, an incomplete feature to finish, a deferred test to re-enable, or a revision to an existing issue body.
+- **Capture in PR body / §11 summary** when the follow-up is procedural / informational only: drift notes ("epic-203 is behind main by 16 commits"), epic checkbox-sync reminders, "watch out for X in the next iteration."
+
+Criterion: would a future contributor, reading the PR body alone, have all they need to act? If yes, PR-body note suffices. If they'd need a separate place to discuss, plan, or assign — file an issue. Conflating the two is how trackable work gets lost: a one-line PR-body bullet is invisible the moment the PR merges.
+
+### Hybrid timing
+
+When each touch point files matters because some items need a real issue number in the same iteration's commits (TODO markers, XCTSkip reasons, PR-body cross-links).
+
+| Source of follow-up | Urgency | When to file |
+|---|---|---|
+| Defer-by-retry (retry-ladder escalation option 2) | `file-now` | Before pushing the iteration's commits — the `// TODO(#NNN)` markers and `XCTSkip("Deferred to #NNN — …")` reasons need real issue numbers in the same push. Filing after-the-fact and amending the markers in a follow-up commit clutters history and risks the markers being missed. |
+| Defer-by-review (§10.4 deferred items) | `file-now` | Same reason — review-deferred items often include test changes that need real issue numbers before the iteration's commit. |
+| §7 baseline-failure detour (option a) | `file-now` | Before resuming the original work — the detour PR resolves the filed issue, and the original PR's body will cite the detour. |
+| Planning-time discoveries (§6 doc grounding turned up adjacent work) | `file-at-checkpoint` | End of §10, after review approval, before §11 — batched. These don't gate any commit, so deferring to one moment is cleaner than interrupting the planning phase. |
+| Implementation-time discoveries (mid-§8, the model notices a related bug) | `file-at-checkpoint` | Same checkpoint. Note them in the registry as they surface; file at end-of-§10. |
+
+### The end-of-§10 checkpoint
+
+After §10's review loop reports approval and before §11's summary, present the `file-at-checkpoint` items in the registry to the user:
+
+> *"These follow-ups surfaced during this resolution but weren't filed in-flight. File them?"*
+>
+> *[list each item: title hint, type, one-sentence description]*
+
+The user batch-approves, edits the list, or drops items. Only after batch approval do you spawn the sub-agents (one per item). Then weave URLs back into §11's summary.
+
+### Filing protocol — sub-agent proxy-confirms via the drafter
+
+For each item that the user has approved for filing, spawn a `general-purpose` sub-agent with this prompt (substitute the placeholders at call time):
+
+```
+You are filing one GitHub follow-up issue on behalf of the
+github-issue-resolver skill. Invoke the `github-issue-drafter` skill,
+proxy-confirm the draft, and return the filed issue URL.
+
+Item to file:
+- Type: <bug | incomplete-feature | deferred-test | revise-existing>
+- Title hint: <one-line summary>
+- Description: <2–5 sentences explaining the follow-up>
+- Parent reference: PR <URL>, issue #<N>, epic #<E> (if applicable)
+- Repository: <owner/repo>
+
+Steps:
+
+1. Invoke the github-issue-drafter skill, passing the description above as
+   the informal feedback. State the type hint, title hint, and parent
+   reference clearly so the drafter has them at classification time.
+
+2. The drafter will run its own sub-agent review loop (it validates against
+   the project's PRD, architecture, constitution, and current code state).
+   Let it complete its review-loop passes — don't try to shortcut them.
+
+3. The drafter will reach its step-6 user-confirmation gate ("Show the
+   draft and wait for confirmation"). You act as the user at this gate.
+   Run three checks:
+
+   a. Type — does the drafter's chosen type match the hint? If the drafter
+      decided differently (e.g., classified as `incomplete-feature` when
+      you hinted `bug`), accept the drafter's call IF its rationale is
+      sound. The drafter sees the description directly and may classify
+      better than the hint; only override if the drafter has clearly
+      misread the description.
+
+   b. Parent reference — is the parent PR/issue/epic preserved in the
+      body's Related-issues section? The drafter's bug, story, feature,
+      and incomplete-feature formats all have this section. Without it
+      the filed issue is orphaned. If missing, reply to the drafter:
+      "Please add the parent reference (PR <URL>, parent issue #<N>) to
+      the Related-issues section."
+
+   c. Substance — does the body's What's-wrong / What's-missing /
+      Definition-of-done content match the description? If the drafter
+      hallucinated detail the description doesn't support, reply with a
+      one-sentence correction.
+
+4. Approve if all three checks pass. If any check fails, reply with the
+   correction and let the drafter iterate. Cap at 2 correction rounds —
+   if the third draft still fails any check, stop and return an error to
+   the parent with the latest draft inline so the parent can decide.
+
+5. After approval, the drafter runs `gh issue create` (or `gh issue edit`
+   in revise mode) and returns the URL. Capture that URL.
+
+Return only:
+- The filed URL (or "error: <reason>" if you stopped at step 4's cap)
+- The drafter's final type (in case it overrode the hint)
+- A one-line note if you raised any correction before approving
+
+Do NOT file an issue yourself with `gh issue create`. The drafter does
+this inside its own flow. Your role is to invoke, proxy-confirm, return.
+```
+
+The sub-agent isolates the drafter's verbose work (PRD reading, classification questioning, nested sub-agent review loop) from the resolver's main context. The resolver sees one round-trip per item: input brief → output URL.
+
+### URL weaving — close the loop
+
+Once an item is filed, the resolver does three things with the URL:
+
+1. **Replace temporary `// TODO(?)` markers** in code with `// TODO(#NNN)` referencing the filed issue. Same for `XCTSkip("Deferred to ?…")` — rewrite to `XCTSkip("Deferred to #NNN — <reason>")`. Don't push the iteration without this rewrite; markers without real numbers age into noise.
+2. **Update the PR body's `## Follow-ups` section** with a list item per filed issue (use `gh pr edit --body-file` or a one-shot append). Add the section if it doesn't exist. Putting follow-up links in the body (not a comment) makes them durable: comments scroll, the body persists.
+3. **Thread the URLs into §11's summary** under a "Follow-ups filed" bullet, separate from the "Procedural notes" bullet that holds the capture-in-PR-body items.
+
+A filed follow-up isn't complete until all three weaves are done.
 
 ## Workflow
 
@@ -470,7 +593,45 @@ git rev-list --count origin/main..origin/epic/<N>-<slug>   # ahead
 git rev-list --count origin/epic/<N>-<slug>..origin/main   # behind (drift)
 ```
 
-If the epic branch is behind `main`, rectify this before proceeding — story work landing on a stale epic branch will inherit the drift and make the integration PR harder to merge. Set up a worktree on the epic branch and rebase onto `main`:
+This is the only path in the skill that rectifies epic-vs-main drift (by rebase or by merge — see "Choose strategy" below). Story runs under this epic surface drift as an informational state-summary note but never act on it (see "If the issue is a Story" → "Determine the PR base").
+
+If the epic branch is behind `main`, rectify this before proceeding — story work landing on a stale epic branch will inherit the drift and make the integration PR harder to merge. The procedure is **assess → choose strategy → execute**. Rebase and merge are both first-class strategies; the choice is rule-driven with the user able to override.
+
+**Assess before rectifying.** Gather the signals that decide between rebase and merge:
+
+```bash
+# Commits the epic is behind main by (already computed above; reuse).
+COMMITS_BEHIND=$(git rev-list --count origin/epic/<N>-<slug>..origin/main)
+
+# Fork point.
+FORK_POINT=$(git merge-base origin/main origin/epic/<N>-<slug>)
+
+# Has main been merged into the epic before? (Consistency signal.)
+PRIOR_MAIN_MERGES=$(git log --merges "$FORK_POINT"..origin/epic/<N>-<slug> \
+  --grep="Merge.*main\|Merge branch 'main'" --oneline | wc -l | tr -d ' ')
+
+# Open story PRs against this epic — rebasing force-pushes the base they target.
+OPEN_STORY_PRS=$(gh pr list --repo <owner/repo> --base epic/<N>-<slug> \
+  --state open --json number,headRefName,author,url)
+
+# File overlap between the two diverged diffs (predicts conflict surface).
+EPIC_FILES=$(git diff --name-only "$FORK_POINT"..origin/epic/<N>-<slug>)
+MAIN_FILES=$(git diff --name-only "$FORK_POINT"..origin/main)
+OVERLAP=$(comm -12 <(echo "$EPIC_FILES" | sort) <(echo "$MAIN_FILES" | sort) | wc -l | tr -d ' ')
+```
+
+Print the signals to the user as a table — `commits behind`, `prior main-merges`, `open story PRs` (with numbers + authors if non-empty), `overlapping files`. This is the audit trail for the strategy choice below.
+
+**Choose strategy.** Apply the decision rule top to bottom; first match wins:
+
+1. **`OPEN_STORY_PRS` non-empty** → **merge**. Rationale: rebase force-pushes `epic/<N>-<slug>`, which rewrites every story PR's base and forces each story author to fetch + reset. Merge preserves the existing epic commits and lets story PRs continue without disruption.
+2. **`PRIOR_MAIN_MERGES` ≥ 1** → **merge**. Rationale: history consistency. Once an epic has received merges from `main`, switching back to rebase makes the history harder to read for the integration reviewer.
+3. **`OVERLAP` ≥ 5** → **merge**. Rationale: rebase replays each epic commit individually, so each overlapping file is potentially resolved N times (once per epic commit that touches it). Merge resolves each overlapping file exactly once.
+4. **Otherwise** → **rebase**. Rationale: small, clean drift — preserve linear history.
+
+State the chosen strategy and the one-sentence rationale to the user. **Proceed unless the user overrides.** Overriding is a one-word reply (`rebase` or `merge`); record the override in the state summary so the eventual integration-PR description mentions which path was taken and why.
+
+**Path A — Rebase.** Set up a worktree on the epic branch (reuse if one already exists per the worktree rules):
 
 ```bash
 git worktree add .worktrees/epic-<N>-<slug> epic/<N>-<slug>
@@ -484,7 +645,63 @@ Show the user the rebase plan (commit list) before running it. If the rebase suc
 git push --force-with-lease origin epic/<N>-<slug>
 ```
 
-If the rebase produces conflicts, run `git rebase --abort`, surface the conflicting files to the user, and stop — ask the user to resolve the conflicts manually before continuing.
+If the rebase produces conflicts, follow the **Conflict handling** procedure below — do not `git rebase --abort` yet.
+
+**Path B — Merge.** Set up a worktree on the epic branch (reuse if one already exists per the worktree rules):
+
+```bash
+git worktree add .worktrees/epic-<N>-<slug> epic/<N>-<slug>
+cd .worktrees/epic-<N>-<slug>
+git fetch origin main
+git merge origin/main
+```
+
+If the merge is clean, git creates a merge commit. Show the user the merge commit message and the list of `main` commits being brought in (e.g. `git log --oneline HEAD^..HEAD^2`). Confirm before pushing:
+
+```bash
+git push origin epic/<N>-<slug>
+```
+
+This is a **normal push** — no `--force-with-lease`. Merge does not rewrite epic history, so open story PRs against `epic/<N>-<slug>` continue without disruption. (If `git push` is rejected because someone else advanced the epic branch since fetch, surface this to the user and re-run the assess phase rather than force-pushing.)
+
+If the merge produces conflicts, follow the **Conflict handling** procedure below — do not `git merge --abort` yet.
+
+**Conflict handling.** Whichever path is running, on conflict the procedure is the same:
+
+1. **Capture the conflict set.**
+   ```bash
+   git diff --name-only --diff-filter=U > /tmp/conflict-files.txt
+   ```
+   Show the user the list. If the user prefers to handle conflicts manually, `git rebase --abort` or `git merge --abort` and stop here.
+
+2. **Gather context for the sub-agent.** The sub-agent needs to see the conflict set as a whole, not file-by-file — a single commit on either side often touches multiple files in coordinated ways (renames, signature changes, paired test/implementation files), and resolving each file in isolation produces locally-plausible but globally-broken results. Collect:
+
+   - Every conflicted file (with the `<<<<<<<` / `=======` / `>>>>>>>` markers as-is).
+   - **Epic-side commit context.** `git log "$FORK_POINT"..origin/epic/<N>-<slug> --oneline` for the overview; for each commit that touched any conflicted file, `git show <sha>` to capture the commit message + the non-conflicted hunks (so the sub-agent sees the pattern, not just the collision points).
+   - **Main-side commit context.** Same as above for `"$FORK_POINT"..origin/main`.
+   - **Epic-side PR/issue context.** The parent epic's `## Goal` and `## Stories` checklist, plus the merged story PR refs (which tell the sub-agent what landed during this epic's life).
+   - **Main-side PR/issue context.** `gh pr list --repo <owner/repo> --base main --state merged --search "merged:>=<fork-date>" --json number,title,url` — what landed in `main` since fork.
+
+3. **Spawn the sub-agent.** Use the `general-purpose` subagent (it needs both read tools and the ability to write a proposal). Prompt template:
+
+   > You are resolving a git conflict set that arose from `<path>` of `epic/<N>-<slug>` onto `main`. Treat all conflicted files as one coherent unit — a single commit on either side often touches multiple files together, so resolving files in isolation produces broken results.
+   >
+   > Inputs:
+   > - Conflicted files with markers: `<paths + contents>`
+   > - Epic-side commit context (since fork): `<git log + git show output>`
+   > - Main-side commit context (since fork): `<git log + git show output>`
+   > - Epic Goal / Stories context: `<epic issue excerpt>`
+   > - Main merged PRs since fork: `<gh pr list output>`
+   >
+   > Output one coherent resolution proposal across all files. For each file: the proposed final contents (or unified-diff-style edits), and a one-paragraph rationale explaining which side prevailed and why, plus any cross-file consequences (e.g. "kept the rename from the epic side; updated four call sites that arrived from main to use the new name"). If the conflict set is very large (more than ~20 files), first cluster files into logical groups (rename group, signature-change group, schema group, independent group) and emit one proposal per group with cross-group references where they matter.
+   >
+   > Do NOT edit any files. Return text only.
+
+4. **Review and apply.** Show the user the whole proposal in one go (or grouped, for large sets). Ask for approval — wholesale ("apply all"), group-level ("apply rename group, skip schema group"), or rejection ("abort, I'll resolve manually"). On approval, **the skill** applies the proposed edits via the `Edit` tool — the sub-agent only proposes; the skill never lets the sub-agent write. On rejection, `git rebase --abort` or `git merge --abort` and stop.
+
+5. **Continue.** After edits are applied, stage and continue: `git add <files>` then `git rebase --continue` (Path A) or `git commit` to finalise the merge commit (Path B). If a second conflict round fires (e.g., rebase replaying the next commit hits new conflicts), re-enter conflict handling with the new conflict set.
+
+**Post-rectification.** The epic HEAD has changed; the prior baseline (if any) is no longer trusted. Run the project's full canonical suite in the worktree. On green, post a fresh `Baseline established` comment on the epic issue, recording the new `Epic branch SHA` (the post-rectification HEAD) and the new `Main SHA` (`git merge-base origin/main HEAD` — equals `origin/main`'s current tip for the rebase path; equals the `main` SHA that was merged in for the merge path). Without this, story-flow trust checks will detect the divergence and stop every subsequent story run. On red, handle per step 7's standard red-baseline procedure (detour-first or explicit override).
 
 **If the branch does not exist on origin** → the epic infrastructure hasn't been bootstrapped yet. The epic-as-target run is the canonical place to do this — story runs deliberately stop and redirect here rather than bootstrap silently, so a missing step in the user's workflow stays visible. Offer to bootstrap now (this includes a remote write — show the user and confirm before each step).
 
@@ -568,11 +785,11 @@ gh issue list --repo <owner/repo> --label epic --state all \
 
 - **One match (branch exists)** → evaluate the epic-level baseline trust state before creating the story worktree. Fetch the epic issue's comments and work through the trust checks from step 7:
   1. Find the most recent `Baseline established` comment. **If none exists** (epic predates this rule, or the bootstrap comment was never posted), **stop** and direct the user to run this skill on epic #`<N>` first — the epic-as-target run handles the legacy "branch exists, comment missing" recovery in the same place as first-time bootstrap. Do not silently establish a baseline from the story flow; see the "Zero matches and the parent epic is open" branch below for the same reasoning.
-  2. Compute `git merge-base origin/main origin/epic/<N>-<slug>`. If it differs from the `Main SHA` in the baseline comment, `main` has been merged into the epic branch since that baseline — re-run the baseline on the epic branch HEAD and post a fresh comment.
+  2. Compute `git merge-base origin/main origin/epic/<N>-<slug>`. If it differs from the `Main SHA` in the baseline comment, the epic has moved since that baseline (rebase or merge). The epic-as-target run posts a fresh `Baseline established` comment after rectifying drift per phase E of "Check the integration branch" — if such a newer comment exists with matching SHAs, use it. Otherwise re-run the baseline on the epic branch HEAD and post a fresh comment.
   3. If a `Baseline override` comment exists dated after the latest baseline comment, re-run the baseline on the epic branch HEAD and post a fresh comment.
   4. Otherwise, skip the baseline. Record the inheritance in the state summary and proceed.
 
-  In all cases, also check drift. If `origin/main` is ahead of `origin/epic/<N>-<slug>`, rectify it **now — before creating the story worktree** — by rebasing the epic branch onto `main` using the same procedure described in the Epic section above. A story worktree branched off a stale epic branch inherits the drift and makes the integration PR harder to merge.
+  In all cases, also compute epic-vs-main drift once for visibility — `git rev-list --count origin/epic/<N>-<slug>..origin/main` (commits the epic is behind `main` by). If non-zero, record this in the state summary as a drift note (e.g. `Epic branch is N commits behind main — rectify by running this skill on epic #<N>`). **Do not rebase the epic branch from the story flow.** Epic-vs-main drift is owned by the epic-as-target run; from the story flow it is informational only. The §11 summary's drift-note guidance (see "Filing vs. capturing — the decision rule") covers the same shape of note.
 
 - **Zero matches and the parent epic is open** → the epic's integration branch has not been bootstrapped yet. **Stop.** Tell the user, in roughly these words:
 
@@ -597,8 +814,6 @@ Follow all the same worktree rules (nesting guard, `.gitignore` check, reuse rul
 > This story targets the `epic/<N>-<slug>` integration branch and will reach `main` via the integration PR for epic #<N>.
 
 This prevents reviewers from expecting a direct `main` merge.
-
-**Drift check before pushing.** Drift was already addressed before the story worktree was created (see above). If for some reason `origin/main` has advanced again between worktree creation and push (e.g., a concurrent merge), surface this to the user — re-run the rebase on the epic branch before pushing the story branch.
 
 **After the story PR merges.** The parent epic's body still shows `- [ ]` for this story — GitHub task lists don't auto-tick on PR merge. Flag this in step 11's summary so the user or a future epic-targeted run can sync the checkbox.
 
@@ -627,6 +842,14 @@ Before creating any branch, decide what to do based on what's already in flight:
    - **Taking over a stale PR**: pick a new local branch name (e.g. `issue-<N>-takeover`) and run `git worktree add -b <new-branch> .worktrees/<new-branch> <stale-pr-branch>`.
 4. `cd .worktrees/<dir>` — every subsequent command in this run is from there. Announce the path to the user.
 5. Run the project's worktree-setup commands per "Worktree setup & teardown commands" above. Step 2's reuse exit skips this — those commands already ran when the worktree was first created.
+6. **Check the story branch for drift against its base.** The story branch's integration target is the epic branch (or `main`, for stories with no open parent epic). Compute:
+
+   ```bash
+   git fetch origin <base-branch>
+   git rev-list --count <story-branch>..origin/<base-branch>
+   ```
+
+   If non-zero, surface to the user before continuing — the story branch is behind its base, and any new commits will land on stale ground. Offer to merge the base into the story branch (preferred for an open PR — keeps the PR's commit history intact for reviewers) or to rebase (only if the user prefers and the PR review state allows it). Do not auto-rebase a branch with an open PR.
 
 If the skill is invoked from inside another worktree, locate the main working tree first (`git worktree list --porcelain`, take the first `worktree` entry) and run `git worktree add` with paths relative to that main tree's root — don't nest.
 
@@ -772,7 +995,7 @@ These two comment types are the only state needed to evaluate trust across story
 **Interpret the results.**
 
 - **All green.** Note this in your state summary and proceed to step 8. Now any failure that appears after your changes is attributable to your changes.
-- **Pre-existing failures unrelated to the issue.** Stop and surface to the user with the specific failures. Do not proceed on a red base. The point of the baseline is to attribute later failures correctly; that attribution falls apart the moment unrelated red is left in the tree, and it lets a PR ship over a broken codebase. Acceptable next moves, all chosen by the user: (a) detour first — open a separate issue/PR that turns the suite green, then resume; (b) explicit user override with a documented reason recorded in the PR body's out-of-scope notes. If this is a story under an open epic, also post a "Baseline override" comment on the epic issue (see "Persistence" in "Where to run it" above) so the next story under this epic knows to re-establish the baseline. Do not silently fix unrelated failures — that scope-creeps the PR and obscures what your change actually did.
+- **Pre-existing failures unrelated to the issue.** Stop and surface to the user with the specific failures. Do not proceed on a red base. The point of the baseline is to attribute later failures correctly; that attribution falls apart the moment unrelated red is left in the tree, and it lets a PR ship over a broken codebase. Acceptable next moves, all chosen by the user: (a) detour first — file a follow-up issue per "Follow-up issue tracking" above (urgency: `file-now`, type: `bug`), then open a separate detour PR that resolves it; resume this resolution once the detour merges and the baseline turns green; (b) explicit user override with a documented reason recorded in the PR body's out-of-scope notes. If this is a story under an open epic, also post a "Baseline override" comment on the epic issue (see "Persistence" in "Where to run it" above) so the next story under this epic knows to re-establish the baseline. Do not silently fix unrelated failures — that scope-creeps the PR and obscures what your change actually did.
 - **Pre-existing failures that overlap with the issue.** These may be the bug itself, or a symptom. Note them in the state summary — they likely become the test cases your fix needs to turn green.
 - **Base branch is broken.** Stop and surface to the user. There's no useful "green baseline" to compare against, and feature work on top of a broken base will compound the problem.
 
@@ -846,7 +1069,7 @@ Loop:
 
    Exit the loop and go to step 11 only when **both** are true: (a) the verdict is approved, **and** (b) zero actionable-now items remain. If actionable-now items exist on an "approved" verdict, fall through to step 5 and address them — the user opted into the loop by invoking the skill, and a verdict like "approved with minor fixes" is the loop telling you it isn't done yet, not a green light to exit. Bouncing those items back as a fresh user prompt forces the user to manually re-invoke an "address feedback" pass and undoes the loop's value.
 
-   When you do exit, carry the explicitly-deferred items into step 11's summary so the user can decide whether to file follow-up issues.
+   When you do exit, file each explicitly-deferred item as a follow-up issue per "Follow-up issue tracking" above — urgency `file-now`, type chosen per the reviewer's framing (`bug` if the deferred item is a real defect, `incomplete-feature` if it's a half-built capability the reviewer flagged, `deferred-test` if it's a test the reviewer accepted should be skipped). The filed URLs land in this iteration's PR body `## Follow-ups` section before push. Procedural-only items (informational caveats with no tracked work) are not filed — carry them into §11's summary as notes instead.
 
    The full canonical suite will run once at PR-readiness time inside `github-pr-evaluator` — there's no in-loop final gate here.
 
@@ -871,9 +1094,25 @@ Only after `review` reports approval should the PR be considered ready to merge.
 
 ### 11. Summarise for the user
 
+**Outcome rubric — does this resolution end with a pr-evaluator handoff?**
+
+Classify the run's outcome before writing the summary; it determines whether the closing **Next step** line in this section fires.
+
+| Outcome | Closing pr-evaluator handoff |
+|---|---|
+| Story / bug-fix / refactor PR opened or updated (§8 or §10 paths reached push) | **Emit.** This is the default code-change outcome and the case the handoff exists for. |
+| Epic-integration PR opened or updated (epic-target run finishing an epic) | **Emit, explicitly.** The integration PR carries more merge risk than any single story PR — pr-evaluator runs the full canonical suite, evaluates the change against the epic's `## Definition of done`, and recommends a merge strategy. The handoff matters more here, not less. |
+| Comment-only answer (question, clarification, decision capture; no diff, no PR) | **Skip.** There is no PR for pr-evaluator to evaluate; mentioning it would confuse the user. |
+| Triage / classification only (relabel, retitle, link to a duplicate; no PR) | **Skip.** Same reason. |
+| Abandoned / declined / stale-issue close (user opted out of opening a PR) | **Skip.** Same reason. |
+
+If the run produced *both* a comment and a PR (e.g., posted a "starting work" comment then opened the PR), treat it as a PR outcome — the PR is what pr-evaluator acts on.
+
+**Before writing the summary, run the end-of-§10 follow-up checkpoint.** Per "Follow-up issue tracking" above, present the registry's `file-at-checkpoint` items (planning-time and implementation-time discoveries that weren't filed in-flight) to the user for batch approval, file via the sub-agent protocol, weave URLs into TODO markers and the PR body's `## Follow-ups` section. This is the resolution's last chance to convert trackable observations into filed issues before §11 closes things out; observations that aren't filed here become PR-body lines that age into noise.
+
 The summary MUST include a clearly-labeled **Iteration test status** line that names the result of the most recent pre-push verification gate (§8 on a clean first-pass approval, §10.6 on the last iteration when the review loop ran): green, skipped (no tests selected — name the rationale), or red (a list of failing tests with their failure mode). If anything is red at this point, fix it before pushing — don't bury it in follow-up notes. The skill does not run a final canonical-suite gate at this step; the comprehensive run happens once at PR-readiness time inside `github-pr-evaluator`. State this explicitly in the summary so the user knows what's still ahead: e.g. *"Iteration test status: green at <SHA> (selected ProposalServiceTests, run at §8 pre-push). The full unit + UI suite will run in github-pr-evaluator before merge."*
 
-Then: a short summary of what you did, what you posted (if anything), and any remaining open questions or follow-up work. If you created or reused a worktree, include its path and the manual cleanup sequence. The `github-pr-evaluator` skill runs both phases automatically after a green merge (its §14); the manual form below is for runs that don't go through the evaluator (declined merge, manual close, abandoned issue):
+Then: a short summary of what you did, what you posted (if anything), and a **Follow-ups** section split into two bullets — *Filed* (URLs of issues filed via the protocol, both `file-now` and `file-at-checkpoint`) and *Procedural notes* (informational items captured in the PR body, not filed as issues per the filing-vs-capturing criterion). If you created or reused a worktree, include its path and the manual cleanup sequence. The `github-pr-evaluator` skill runs both phases automatically after a green merge (its §14); the manual form below is for runs that don't go through the evaluator (declined merge, manual close, abandoned issue):
 
 1. From inside the worktree, run the project's worktree-teardown commands (see "Worktree setup & teardown commands"). If `COMMANDS.md` declares no `<!-- worktree-teardown -->` block, skip this step.
 2. From the main checkout, run `git worktree remove .worktrees/<branch-name>`.
@@ -883,6 +1122,12 @@ Don't run cleanup yourself: a worktree may hold unpushed work, and teardown may 
 If the resolved issue was a **story** under an open epic, include two additional reminders:
 - The parent epic's `## Stories` checkbox for this story is still `- [ ]` — it won't auto-tick on PR merge. A future epic-targeted run (or the user manually) needs to sync it.
 - The change has landed on the epic integration branch, not `main`. It will reach `main` via the integration PR for epic #N once all stories under that epic are complete.
+
+**Next step (PR outcomes only — per the rubric above).** Append the line below as the final entry in the §11 summary, after all other content. Skip it entirely for comment-only, triage-only, and abandoned-issue outcomes — those have no PR for pr-evaluator to evaluate.
+
+> **Next step.** Run the `github-pr-evaluator` skill against PR #<N> (<URL>) to evaluate issue-fit against the originating issue and recommend the right merge strategy. The resolver leaves the PR reviewed-by-`/review` for code quality and verified by targeted tests at §8/§10.6, but the canonical-suite run, issue-fit evaluation, and merge-strategy selection happen inside `github-pr-evaluator` — that's the gate between "reviewed" and "merged cleanly".
+
+Substitute `<N>` and `<URL>` with the actual PR number and URL from this run. For an epic-integration PR, the same line applies — pr-evaluator handles both story and integration PRs.
 
 ## Common pitfalls
 
@@ -916,7 +1161,7 @@ If the resolved issue was a **story** under an open epic, include two additional
 - **Don't auto-clean worktrees.** A worktree may contain unpushed commits or in-flight edits. Cleanup is the user's call.
 - **Don't open a single feature PR for an epic.** Epics are containers; child stories are where code lands. Opening a monolithic PR for an epic conflates resolution with implementation and makes the PR unreviewable.
 - **Don't target `main` for a story under an open epic.** The whole point of the integration branch is to keep `main` stable while the epic is in flight. If a story PR points at `main`, that defeats the model. The base must be `epic/<N>-<slug>` while the epic is open.
-- **Don't let the epic branch drift silently.** Check epic-branch drift on every epic-context run and rebase immediately when drift is found — before any story worktree is created or implementation begins. Use `--force-with-lease` when pushing the rebased epic branch. Long-lived branches that aren't rebased periodically become unmergeable.
+- **Don't let the epic branch drift silently — but only act from epic-as-target runs.** Check epic-vs-main drift on every epic-as-target run and rectify when drift is found, choosing rebase or merge per the rule in "Check the integration branch" → "Choose strategy". When rebasing, push with `--force-with-lease` (never bare `--force`); when merging, push normally. Story runs surface epic-vs-main drift as an informational state-summary note only — they never rectify the epic branch, because the rectification crosses responsibility boundaries and a story-flow rebase would force-push under sibling story PRs. Long-lived branches that aren't periodically synced with main become unmergeable, but the rectification belongs to the epic owner.
 - **Don't recompute the epic branch slug — discover it.** The slug rule is deterministic for the bootstrap path, but the epic title can change *after* a branch is created, and a stricter or shorter informal slug rule on a future run silently fails to match. This is exactly how issue #102 was hit: run 1 created `epic/102-visual-redesign`, run 2 computed `epic/102-daily-journal-visual-redesign`, and an exact-match existence check would have orphaned all the story commits already on the original branch. Always discover by prefix (`git ls-remote --heads origin "epic/<N>-*"`) and use whatever name comes back. Recompute only when discovery returns zero matches and you're on the bootstrap path.
 - **Don't run epic baseline in the main checkout.** Both bootstrap (first-time creation of `epic/<N>-<slug>`) and legacy recovery (branch exists but no `Baseline established` comment) use a worktree at `.worktrees/epic-<N>-<slug>`. Running the canonical suite in the main checkout would force a `git checkout main`, prevent the user from using the main checkout for unrelated work during the long suite run, and contradict the skill's "main checkout stays untouched" invariant that every other epic and story flow already respects.
 - **Don't merge the integration PR without running the review loop.** The integration PR lands the entire epic on `main` at once — it carries more risk than a single story PR. Apply step 10 to it just as you would any story PR.
@@ -927,6 +1172,9 @@ If the resolved issue was a **story** under an open epic, include two additional
 - **Don't skip worktree-setup on the create arm.** A worktree without its setup commands run is in a partially-initialised state — tests may run against missing resources (a simulator that doesn't exist, a port that's already in use, a database that wasn't seeded). Run setup immediately after every `git worktree add` succeeds, before any test, lint, or build.
 - **Don't run worktree-setup on the reuse arm.** A reused worktree already has its resources from the original create event. Re-running setup risks double-provisioning: a second simulator alongside the first, a port collision, a fresh database that wipes the worktree's existing state. The reuse arm is a "skip setup" arm by design.
 - **Don't auto-clean a worktree without running teardown first.** Teardown releases the resources setup created — orphan simulators, orphan containers, leaked ports — so skipping it leaks them silently. The skill never auto-removes worktrees in any case (manual cleanup is the user's call), but when the user does cleanup, the sequence matters: teardown first, then `git worktree remove`. The §11 reminder names both.
+- **Don't hand-craft follow-up issue bodies.** Every follow-up that warrants an issue goes through the sub-agent protocol in "Follow-up issue tracking". Hand-crafting (writing the body inline, running `gh issue create` directly) bypasses the drafter's PRD-grounded review loop and produces issues with inconsistent format, missing parent references, and unvalidated framing against the project's architecture / constitution. The drafter exists exactly for this — its classification, body templates, and sub-agent review are what make filed issues consistent across the repo. Use it.
+- **Don't conflate filing with capturing.** Procedural reminders (drift, epic-checkbox sync, "watch out for X in the next iteration") belong in the PR body or §11 notes, not as filed issues. Issues are for trackable work that needs a separate place to discuss, plan, or assign; PR-body notes are for informational caveats a future contributor can act on with the PR context alone. Filing both as issues clutters the backlog; capturing both as PR-body notes loses the trackable ones. Use the filing-vs-capturing criterion in "Follow-up issue tracking".
+- **Don't omit the pr-evaluator handoff on PR outcomes.** §11's closing **Next step** line is the resolver's explicit handoff to the merge-readiness gate. Without it, users finish a resolution thinking the work is done — but the resolver has only run `/review` for code quality and targeted tests for verification; issue-fit against the originating issue, full canonical-suite execution, and merge-strategy selection happen inside `github-pr-evaluator`. Dropping the line leaves the user to remember on their own that pr-evaluator exists, which is exactly the dropoff this handoff is designed to prevent. Emit it on every PR outcome, including epic-integration PRs (where the merge risk is higher and the handoff matters more, not less).
 
 ## When to ask the user
 
@@ -940,6 +1188,5 @@ Ask before doing significant work when:
 - An existing worktree for the target branch is in an unexpected state (uncommitted changes, on a different branch, or otherwise not a clean reuse). A clean tree on the right branch is fine to proceed on without asking.
 - A story issue matches multiple parent epics, and it's unclear which one applies.
 - A story has no parent epic and you're about to create it as a standalone PR to `main` — surface this so the user can confirm it's not meant to be under an open epic.
-- The epic integration branch is significantly behind `main` (enough that a merge conflict is likely) — surface this before creating a new story worktree off the stale epic branch.
 
 Otherwise, proceed and let the user review at the "ready to post" gate.
