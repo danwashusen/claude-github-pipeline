@@ -1,6 +1,6 @@
 ---
 name: github-issue-resolver
-description: Investigate and resolve a specific GitHub issue end-to-end via the `gh` CLI. Trigger when the user gives an issue number/URL or asks to "look at", "work on", "fix", "implement", "resolve", "triage", or "respond to" an issue — bugs, features, questions, or refactors. Reads the issue and its full comment thread (separating stale early discussion from latest decisions), checks for existing open/draft/prior PRs to avoid trampling in-progress work, decides the response type, does the work, and posts a comment or opens a PR. For code changes, opens or continues a PR and loops with the `review` skill until approved. Reads `docs/prd.md`, `docs/architecture.md`, and `CLAUDE.md` to ground implementations. Recognises epics (long-lived `epic/<N>-<slug>` integration branch, child-story audit, integration PR) and stories under an open epic (PR base = epic branch). Use even on casual mentions ("look at #423?", "what is left in the auth epic?") — don't handle GitHub issues without it.
+description: Investigate and resolve a specific GitHub issue end-to-end via the `gh` CLI. Trigger when the user gives an issue number/URL or asks to "look at", "work on", "fix", "implement", "resolve", "triage", or "respond to" an issue — bugs, features, questions, or refactors. Reads the issue and its full comment thread (separating stale early discussion from latest decisions), on a fresh implementation start audits the issue body for fitness-to-implement (doc tensions, cross-issue contract drift, underspecified contracts) and routes blocker findings to `github-issue-drafter` in revise mode before any code work begins, skips the audit when continuing an in-flight PR, checks for existing open/draft/prior PRs to avoid trampling in-progress work, decides the response type, does the work, and posts a comment or opens a PR. For code changes, opens or continues a PR and loops with the `review` skill until approved. Reads `docs/prd.md`, `docs/architecture.md`, and `CLAUDE.md` to ground implementations. Recognises epics (long-lived `epic/<N>-<slug>` integration branch, child-story audit, integration PR) and stories under an open epic (PR base = epic branch). Use even on casual mentions ("look at #423?", "what is left in the auth epic?") — don't handle GitHub issues without it.
 ---
 
 # GitHub Issue Resolver
@@ -516,8 +516,8 @@ This is the most important step. After reading the thread, explicitly identify:
 - **Who's blocked on what** — is the issue blocked on the user, on a maintainer review, on an upstream dependency, or ready to be worked?
 - **Issue type** — bug / feature / question / refactor / discussion / duplicate / **epic** / **story**. This determines what "resolved" means.
 - **Epic / Story detection.** Check the issue's `labels` array:
-  - Label includes `epic` (case-insensitive) → or title starts with `Epic:` → treat as an Epic; skip to the "If the issue is an Epic" section after step 4.
-  - Label includes `story` → treat as a Story; skip to the "If the issue is a Story" section after step 4.
+  - Label includes `epic` (case-insensitive) → or title starts with `Epic:` → treat as an Epic; run step 4.5 (audit) first, then skip to the "If the issue is an Epic" section.
+  - Label includes `story` → treat as a Story; run step 4.5 (audit) first, then skip to the "If the issue is a Story" section.
   - Neither → continue with the standard workflow.
 
 Write this state summary out loud (briefly) before doing any work. It anchors the rest of the response and lets the user correct you if you've misread the thread.
@@ -538,6 +538,99 @@ Match the work to the issue type:
 | **Story** | Resolve like a normal feature/bug, but: (a) read the parent epic's `## Goal` and `## Background` as additional grounding; (b) target the parent epic's integration branch, not `main`; (c) PR title and body reference both the story and the parent epic. See "If the issue is a Story" below. |
 
 If the issue type is genuinely unclear from the thread, ask the user before doing significant work.
+
+### 4.5 Audit the issue is fit to implement
+
+Before any worktree is created, any baseline is run, or any code is written, audit the issue body for fitness-to-implement. The drafter's review loop catches incoherent issues at filing time; this audit catches the analogous problems that accumulate **after** an issue is filed — doc drift, code drift, the latest comment-thread direction not folded back into the body, and (for Epics) sibling stories that have drifted away from each other on field names, signatures, and contract surfaces. Catching these before a worktree exists is dramatically cheaper than catching them mid-implementation, mid-review, or at integration time.
+
+The motivating case that triggered this gate: a workshop session on Epic #119 surfaced 8 cross-issue contract drifts (field-name mismatches, signature disagreements, missing entries in a closed-set enumeration) plus 3 doc tensions plus 4 underspecified contracts — all in issue bodies that looked filed-and-ready until read side-by-side against the project's docs and the sibling stories. If the resolver had started implementation work on any of those stories without the audit, the drifts would have surfaced as confused review comments or a broken integration — at a much higher per-finding cost than fixing the bodies up front.
+
+**The audit only fires on a fresh implementation start.** Once a PR is open against this issue, the issue body is no longer the document being acted on — the PR is. Re-invocations of the resolver during the review loop, pushes addressing review feedback, and other continuations of in-flight work skip the audit entirely. The gate below uses the existing-PR signals step 2 already fetched (`closedByPullRequestsReferences` and the `gh pr list ... in:body` result) to decide — no new `gh` calls. Each decision is logged to the state summary so a future invocation can see why the audit ran or didn't.
+
+| Pre-audit signal (from step 2's already-fetched data) | Audit fires? | State-summary line |
+|---|---|---|
+| Issue is an Epic (any label match per step 3's Epic/Story detection) | **Yes** | `Audit: firing (Epic-as-target run)` — Epic bodies + sibling Story bodies drift constantly between visits; dimension 5 is the value-add on every Epic visit. |
+| No open or draft PR references the issue, and `closedByPullRequestsReferences` is empty or holds only closed/abandoned PRs | **Yes** | `Audit: firing (no prior PR)` — fresh implementation start. |
+| Closed/merged PR exists but did **not** resolve the issue (partial fix, reverted, abandoned, per step 5's table) | **Yes** | `Audit: firing (fresh attempt over abandoned PR #M)` — treat as fresh. |
+| Open or draft PR by **you**, referencing this issue | **No** | `Audit: skipped (continuing PR #M)` — step 5 will route to "continue existing PR" → worktree reuse. |
+| Open or draft PR by **someone else**, referencing this issue | **No** | `Audit: skipped (competing PR #M by @other)` — step 5 will surface the PR to the user; no implementation will start in this run. |
+
+If the gate skips, fall through to step 5 immediately — do not show the user any audit-related prompt (no "skip audit" question, no findings, no override choice). The gate's decision is the answer. If the user explicitly asks for an audit anyway (e.g., "audit #N even though there's an open PR"), re-fire by hand using the same prompt template; that's an explicit user request, not the default flow.
+
+**When this step applies (after the gate fires).** Code-change response types only — bug / feature / refactor / Epic / Story. Skip for comment-only responses (question, blocked-on-info, duplicate, already-fixed); there is no implementation to be unfit for.
+
+**Sub-agent invocation.** Spawn an `Explore` sub-agent with the prompt template at `references/issue-audit-prompt.md`. Inline the placeholders:
+
+```
+Agent({
+  subagent_type: "Explore",
+  description: "Audit issue fitness-to-implement before code work",
+  prompt: <contents of references/issue-audit-prompt.md
+           with placeholders filled: issue_number, issue_type, repo_owner,
+           repo_name, repo_root, dimensions, related_issues>
+})
+```
+
+The sub-agent runs **without** the conversation history, the user's task description, or the state summary from step 3 — same isolation rule the drafter uses, same justification: if the sub-agent can't tell whether the issue is implementable using only the body + docs + codebase + sibling-issue content, neither can a developer picking it up cold. Leaking conversation context into the audit defeats the gate's purpose.
+
+**Dimensions to pass.** Six are defined in the prompt; pass the subset that applies to the issue type:
+
+| Type | Dimensions passed |
+|---|---|
+| Bug | 1, 2, 3, 4, 6 |
+| Feature / refactor | 1, 2, 3, 4, 6 |
+| Epic | 1, 2, 3, 4, 5, 6 (with every child Story body in `related_issues`) |
+| Story under open Epic | 1, 2, 3, 4, 5, 6 (with parent Epic + every sibling Story body in `related_issues`) |
+| Story with no parent Epic | 1, 2, 3, 4, 6 |
+
+Dimension 5 (cross-issue contract drift) only fires when sibling content is passed in — it's the dimension the drafter's reviewer doesn't carry, because at draft time siblings don't exist yet. Dimension 6 (implementation readiness) flags vague placeholders, undefined field shapes, undefined enum cases, and missing layer-boundary assignments — the bar is *implementable*, not just *file-able*.
+
+**Loop control.** Same shape as the drafter's review loop:
+
+```
+prev_findings = []
+for pass in 1..3:
+  findings = audit_sub_agent.run(issue_number, type, dimensions, related_issues)
+  drop_findings_without_evidence(findings)
+  if findings is empty:
+    exit_clean()
+    break
+  if same_finding_repeated_with_no_progress(findings, prev_findings):
+    exit_circular(findings)
+    break
+  # Unlike the drafter, the resolver does NOT apply findings itself.
+  # Surface them to the user and route to the drafter (see "Surfacing findings" below).
+  remediation_result = route_to_user(findings)
+  if remediation_result == "drafter_completed":
+    # Drafter has filed gh issue edit; refetch and re-audit
+    prev_findings = findings
+    continue
+  else:
+    break  # user overrode, aborted, or chose "proceed with these findings"
+else:
+  exit_cap_reached(findings)
+```
+
+The cap and circular guard exist for the same reason as in the drafter: don't iterate forever on a finding that's either wrong, unactionable, or needs human judgment.
+
+**Surfacing findings.** Classify the audit run before deciding what to do:
+
+- **Gated off** — the pre-audit gate above decided not to fire (continuing your own PR, competing PR by another author, or comment-only response type). The state-summary line was already recorded by the gate. Continue to the original fork (step 5 / Epic flow / Story flow) without prompting the user about the audit.
+- **Clean** — audit fired and returned zero findings after evidence-filtering. Print one line in the state summary: `Audit: clean (N pass(es))`. Continue to the original fork (step 5 / Epic flow / Story flow).
+- **Suggestions / nits only** — print the findings inline (severity, dimension, evidence, recommended remediation) but continue without stopping. The user can interrupt the run if any look load-bearing on second read.
+- **One or more BLOCKERs** — **stop**. Print every finding with severity, dimension, the affected issue number (for Epic / Story modes, dimension 5 findings name the sibling issue where the conflict lives), evidence, and recommended remediation. Then offer three named choices:
+
+  1. **Revise via drafter** *(default)*. Invoke the sister skill `github-issue-drafter` via the `Skill` tool with arguments shaped like `revise #N — apply these audit findings: <evidence block>`. The drafter runs its own review loop on the proposed revision, shows the user a diff, files `gh issue edit` on approval, and returns. Then refetch the issue (`gh issue view <N> --comments --json …`) and run the audit again from pass 1. If the audit was on an Epic and dimension 5 found drift across multiple sibling Stories, route the drafter sequentially per affected issue — Epic body first if its contract is the source of truth, then each affected Story — so each drafter handoff is one issue at a time (mirrors how the user-led workshop session for Epic #119 proceeded: one `gh issue edit` per issue, in topological order). After all handoffs land, refetch every affected issue and re-audit.
+
+  2. **Override and proceed.** The user states a one-sentence reason. Record the override in the state summary as `Audit override: <reason>`. Append the same line to the eventual PR body in step 9 under an `## Audit override` section so the override is visible to reviewers in the PR. Blockers don't disappear with this option — they become documented technical debt routed through PR review.
+
+  3. **Abort.** The resolver stops. No worktree is created. No code work begins. Tell the user the audit's findings are the artifact of this run.
+
+**The user-override skip.** For trivial issues (a one-line typo fix, a small bug fix where the user has confidence the body is fine), the audit is overhead. If the user replies `skip audit` (or `bypass audit`) at the gate prompt — or has said as much before this point — record `Audit skipped by user override` in the state summary, surface it in the step 11 summary so it lands in the PR body alongside any other overrides, and continue. The skip is durable for this run only; a re-invocation re-runs the audit from scratch.
+
+**Cap-reached exit handling.** If three passes complete and findings remain (some types of drift are hard to fully express in body text — they may need a code-side decision before the body can be specified), surface the remaining findings to the user the same way as a blocker exit. The same three choices apply.
+
+**Where the audit ends and step 5 begins.** A clean audit (or a recorded override / skip) is the precondition for everything after this point. Step 5 (existing-work check) and step 6 (doc grounding) inherit the post-audit issue body — step 6 in particular cites the doc sections that informed the approach, which is a different artifact from the audit's findings table. The work is sequential: audit catches drift, step 6 writes the doc-grounding statement for the PR body. Do not skip step 6 on the assumption that the audit's dimension-1 findings already cover doc grounding — they cover *tensions*, not *citations*.
 
 ## If the issue is an Epic
 
@@ -1043,6 +1136,8 @@ For code changes (all `git push` and `gh pr create` commands run from inside the
   ```
 
   PR body must include `Fixes #<number>` (or `Closes #<number>`) so GitHub auto-links and auto-closes on merge. It must also include a `## Doc grounding` section near the top listing the PRD/Architecture/CLAUDE.md sections that informed the approach (per step 6). Omit this section only if no project docs were present.
+
+  **Carry forward step 4.5's audit overrides.** If step 4.5 was run and ended in an `Audit override: <reason>` (or `Audit skipped by user override`) recorded in the state summary, include a `## Audit override` section in the PR body quoting the override line verbatim. Reviewers see the override the same way they see scope decisions — visible and challengeable in PR review. If the audit ran clean (or was a comment-only flow where it didn't apply), omit this section.
 
 In both cases, capture the PR number/URL — you'll need it for the review loop.
 
