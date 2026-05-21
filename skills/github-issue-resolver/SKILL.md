@@ -732,7 +732,7 @@ cd .worktrees/epic-<N>-<slug>
 git rebase origin/main
 ```
 
-Show the user the rebase plan (commit list) before running it. If the rebase succeeds, push with `--force-with-lease` (never bare `--force`) and confirm with the user before doing so:
+Run the rebase. If it succeeds, push with `--force-with-lease` (never bare `--force`):
 
 ```bash
 git push --force-with-lease origin epic/<N>-<slug>
@@ -749,7 +749,7 @@ git fetch origin main
 git merge origin/main
 ```
 
-If the merge is clean, git creates a merge commit. Show the user the merge commit message and the list of `main` commits being brought in (e.g. `git log --oneline HEAD^..HEAD^2`). Confirm before pushing:
+If the merge is clean, git creates a merge commit. Push it:
 
 ```bash
 git push origin epic/<N>-<slug>
@@ -796,9 +796,9 @@ If the merge produces conflicts, follow the **Conflict handling** procedure belo
 
 **Post-rectification.** The epic HEAD has changed; the prior baseline (if any) is no longer trusted. Run the project's full canonical suite in the worktree. On green, post a fresh `Baseline established` comment on the epic issue, recording the new `Epic branch SHA` (the post-rectification HEAD) and the new `Main SHA` (`git merge-base origin/main HEAD` — equals `origin/main`'s current tip for the rebase path; equals the `main` SHA that was merged in for the merge path). Without this, story-flow trust checks will detect the divergence and stop every subsequent story run. On red, handle per step 7's standard red-baseline procedure (detour-first or explicit override).
 
-**If the branch does not exist on origin** → the epic infrastructure hasn't been bootstrapped yet. The epic-as-target run is the canonical place to do this — story runs deliberately stop and redirect here rather than bootstrap silently, so a missing step in the user's workflow stays visible. Offer to bootstrap now (this includes a remote write — show the user and confirm before each step).
+**If the branch does not exist on origin** → the epic infrastructure hasn't been bootstrapped yet. The epic-as-target run is the canonical place to do this — story runs deliberately stop and redirect here rather than bootstrap silently, so a missing step in the user's workflow stays visible. Bootstrap now (this includes a remote write).
 
-Before the numbered steps below, derive the slug per "Computing a fresh slug" in the "Resolving the epic branch name" section above; the resulting `epic/<N>-<slug>` is the `<branch>` for the rest of this bootstrap. Show the user the computed name before proceeding so a typo or unexpected slug surfaces before the first remote write.
+Before the numbered steps below, derive the slug per "Computing a fresh slug" in the "Resolving the epic branch name" section above; the resulting `epic/<N>-<slug>` is the `<branch>` for the rest of this bootstrap.
 
 Every step runs from the new epic worktree; the main checkout is never touched:
 
@@ -836,11 +836,11 @@ If a fresh worktree was created (not reused), run the project's worktree-setup c
 
 1. Confirm the integration branch exists. Verify that every story's PR has merged into it by checking each story PR's `baseRefName` via `gh pr list --search "closes #<N> OR fixes #<N>"` and inspecting `--json baseRefName`. Flag any story whose PR targeted `main` directly.
 2. Set up a worktree on the epic branch (follow the worktree rules in the section above), merge `origin/main` into it if drift exists, run the full canonical suite, and report results.
-3. If the suite is green, draft an integration PR body (`epic/<N>-<slug>` → `main`) listing every story PR that landed in it, citing the epic's `## Goal` and DoD checklist, and including `Fixes #<epic-number>` so GitHub auto-closes the epic on merge. Show the draft and confirm before running:
+3. If the suite is green, draft an integration PR body (`epic/<N>-<slug>` → `main`) listing every story PR that landed in it, citing the epic's `## Goal` and DoD checklist, and including `Fixes #<epic-number>` so GitHub auto-closes the epic on merge. Then open the PR:
    ```bash
    gh pr create --repo <owner/repo> --base main --head epic/<N>-<slug> --title "Epic #<N>: <title>" --body-file integration-pr.md
    ```
-4. Run the review loop (step 10) on the integration PR. After it merges, draft the body-tick diff (flip every `- [ ]` → `- [x]` in Stories and DoD, including stretch items marked as "deferred"), and a closing summary comment. Show both to the user and confirm before:
+4. Run the review loop (step 10) on the integration PR. After it merges, draft the body-tick diff (flip every `- [ ]` → `- [x]` in Stories and DoD, including stretch items marked as "deferred"), and a closing summary comment. Then run:
    ```bash
    gh issue edit <N> --repo <owner/repo> --body-file updated-body.md
    ```
@@ -1062,7 +1062,7 @@ If neither event fires, skip the baseline and record in the state summary: `Inhe
 
 If there is no `Baseline established` comment on the epic issue (the epic predates this rule, or the comment was never posted), the epic infrastructure has not been bootstrapped. Stop and direct the user to run the skill on the epic ticket — the epic-as-target run handles both the first-time bootstrap (push branch + run baseline + post comment) and the legacy "branch exists, comment missing" recovery in one place. Bootstrapping from the story flow is deliberately not allowed; see "If the issue is a Story" → "Branch does not exist and the parent epic is open" for the exact stop-and-redirect message.
 
-**Persistence — two comment formats posted on the epic issue.** Post both after user confirmation (same "show before posting" rule that applies to all GitHub writes in this skill).
+**Persistence — two comment formats posted on the epic issue.** Post both.
 
 *Baseline established* — posted whenever the skill runs a green baseline for this epic. Normally posted by the epic-as-target bootstrap (first run on the epic ticket); also re-posted from the story flow when a trust-decay event invalidates the inherited baseline (see "Trust state" above):
 
@@ -1115,11 +1115,9 @@ For code changes:
 - Keep the diff focused on the issue — don't drive-by-fix unrelated things.
 
 For comment-only responses (questions, blocked issues, duplicates):
-- Draft the comment as a markdown file in the working directory so the user can review before posting
+- Draft the comment as a markdown file in the working directory, then post it
 
 ### 9. Report back to GitHub
-
-**Always show the user what you're about to post and get confirmation before posting.** Posting is one-way and visible to everyone watching the issue.
 
 For a comment-only response:
 ```bash
@@ -1155,7 +1153,6 @@ Loop:
    ```bash
    gh pr comment <pr-number> --repo <owner/repo> --body-file review-feedback.md
    ```
-   Show the user the feedback before posting, same as any other GitHub write.
 4. **Check the verdict, and classify every issue and suggestion in the review.** "Approved" alone is not the exit condition — reviewers routinely approve with non-blocking suggestions (`Medium —`, `Low —`, `Nitpick —`, "Approved with minor fixes") that they still expect fixed before merge. Issues (defects the reviewer flagged) and suggestions (improvements the reviewer recommended) are gated identically; what matters is whether the item is **addressable on this PR**. Walk the review body and classify each item:
 
    - **Addressable actionable (default).** Any concrete change the reviewer named falls here **unless** it satisfies one of the explicit deferral triggers below. Severity labels (`Medium —`, `Low —`, `Nitpick —`) and reviewer politeness ("could be a fast-follow", "not blocking if you prefer", "consider for a future PR", "deferrable", "informational only") do **not** by themselves move an item out of this bucket. The reviewer flagged it; address it.
@@ -1253,7 +1250,6 @@ Substitute `<N>`, `<URL>`, and `<ISSUE>` with the actual PR number, URL, and ori
 - **Don't read only the PR diff.** PR comments and code review threads (especially line-level review comments, which require a separate API call) are where decisions actually got made. Skipping them leads to redoing rejected work or contradicting settled directions.
 - **Don't trust the issue title alone.** The title often reflects the original report; the actual problem may have shifted in the comments.
 - **Don't re-litigate decided questions.** If a maintainer said "let's go with approach B" three comments ago, go with approach B.
-- **Don't post without showing the user first.** Comments and PRs are public and notify subscribers.
 - **Don't open a PR for a question.** Some issues are resolved by an answer, not a code change.
 - **Don't skip the review loop.** For any PR, `review` must approve before the work is considered done. No exceptions, no "this change is too small to review."
 - **Don't exit the loop just because the verdict says "approved".** Reviews routinely approve with `Medium`, `Low`, or `Nitpick` items — issues *and* suggestions — that the reviewer still expects fixed (e.g., "Approved with minor fixes"). Per §10.4, exit only when the verdict is approved **and** zero Addressable or Cheap-fix-override items remain after the resolver's own re-classification. Items the reviewer routes elsewhere with a **concrete tracking target** (filed as #N, depends on un-landed sibling, citable PRD/scope exclusion) are deferred and filed as follow-ups. Soft politeness alone ("could be fast-follow", "not blocking", "deferrable", "informational only", "future PR", "consider for a future change") is **not** sufficient — the resolver re-classifies per §10.4's rubric before exiting, and the **default for any concretely-named change is Addressable**. The Cheap-fix override addresses ≤ ~20-line fixes on already-modified files even when the reviewer defers them. Bouncing minor fixes back as a fresh user prompt forces the user to manually re-invoke "address feedback" and defeats the loop's purpose.
@@ -1294,4 +1290,4 @@ Ask before doing significant work when:
 - A story issue matches multiple parent epics, and it's unclear which one applies.
 - A story has no parent epic and you're about to create it as a standalone PR to `main` — surface this so the user can confirm it's not meant to be under an open epic.
 
-Otherwise, proceed and let the user review at the "ready to post" gate.
+Otherwise, proceed.
