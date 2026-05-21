@@ -1156,13 +1156,13 @@ Loop:
    gh pr comment <pr-number> --repo <owner/repo> --body-file review-feedback.md
    ```
    Show the user the feedback before posting, same as any other GitHub write.
-4. **Check the verdict, and extract any actionable items.** "Approved" alone is not the exit condition — reviewers routinely approve with non-blocking suggestions (`Medium —`, `Low —`, `Nitpick —`, "Approved with minor fixes") that they still expect fixed before merge. Walk the review body and classify each suggestion:
+4. **Check the verdict, and classify every issue and suggestion in the review.** "Approved" alone is not the exit condition — reviewers routinely approve with non-blocking suggestions (`Medium —`, `Low —`, `Nitpick —`, "Approved with minor fixes") that they still expect fixed before merge. Issues (defects the reviewer flagged) and suggestions (improvements the reviewer recommended) are gated identically; what matters is whether the item is **addressable on this PR**. Walk the review body and classify each item:
 
-   - **Actionable now** — the reviewer named a concrete change and did not route it elsewhere. Severity label is informational, not gating; what matters is whether a fix is expected on this PR.
+   - **Addressable actionable (issue or suggestion)** — the reviewer named a concrete change and did not route it elsewhere. Includes both issues and suggestions; severity label (`Medium —`, `Low —`, `Nitpick —`, etc.) is informational, not gating; what matters is whether a fix is expected on this PR.
    - **Explicitly deferred** — the reviewer used language like "fast-follow", "follow-up", "out of scope", "future PR", "could be a separate change", "not blocking", or otherwise routed the item elsewhere.
    - **Decision required** — the suggestion touches architecture, breaks an API, or carries a tradeoff the user should weigh in on. (Stop and ask, per the loop guard rail below.)
 
-   Exit the loop and go to step 11 only when **both** are true: (a) the verdict is approved, **and** (b) zero actionable-now items remain. If actionable-now items exist on an "approved" verdict, fall through to step 5 and address them — the user opted into the loop by invoking the skill, and a verdict like "approved with minor fixes" is the loop telling you it isn't done yet, not a green light to exit. Bouncing those items back as a fresh user prompt forces the user to manually re-invoke an "address feedback" pass and undoes the loop's value.
+   Exit the loop and go to step 11 only when **both** are true: (a) the verdict is approved, **and** (b) zero addressable actionable issues or suggestions remain. If any addressable actionable item — issue *or* suggestion — exists on an "approved" verdict, fall through to step 5 and address it. The user opted into the loop by invoking the skill, and a verdict like "approved with minor fixes" or "approved, with these nits" is the loop telling you it isn't done yet, not a green light to exit. Bouncing those items back as a fresh user prompt forces the user to manually re-invoke an "address feedback" pass and undoes the loop's value.
 
    When you do exit, file each explicitly-deferred item as a follow-up issue per "Follow-up issue tracking" above — urgency `file-now`, type chosen per the reviewer's framing (`bug` if the deferred item is a real defect, `incomplete-feature` if it's a half-built capability the reviewer flagged, `deferred-test` if it's a test the reviewer accepted should be skipped). The filed URLs land in this iteration's PR body `## Follow-ups` section before push. Procedural-only items (informational caveats with no tracked work) are not filed — carry them into §11's summary as notes instead.
 
@@ -1185,7 +1185,7 @@ Guard rails for the loop:
 - If `review` flags something that requires a decision the user should make (architectural choice, scope change, breaking-change tradeoff), stop and ask the user instead of guessing.
 - Cap the loop at a reasonable number of iterations (e.g., 5) before checking in with the user, even if progress is being made.
 
-Only after `review` reports approval should the PR be considered ready to merge. Merging itself is the user's call unless they've explicitly told you to merge.
+Only after `review` reports approval **and** every addressable actionable issue or suggestion has been resolved should the PR be considered ready to merge. Merging itself is the user's call unless they've explicitly told you to merge.
 
 ### 11. Summarise for the user
 
@@ -1220,9 +1220,9 @@ If the resolved issue was a **story** under an open epic, include two additional
 
 **Next step (PR outcomes only — per the rubric above).** Append the line below as the final entry in the §11 summary, after all other content. Skip it entirely for comment-only, triage-only, and abandoned-issue outcomes — those have no PR for pr-evaluator to evaluate.
 
-> **Next step.** Run the `github-pr-evaluator` skill against PR #<N> (<URL>) to evaluate issue-fit against the originating issue and recommend the right merge strategy. The resolver leaves the PR reviewed-by-`/review` for code quality and verified by targeted tests at §8/§10.6, but the canonical-suite run, issue-fit evaluation, and merge-strategy selection happen inside `github-pr-evaluator` — that's the gate between "reviewed" and "merged cleanly".
+> **Next step.** Run the `github-pr-evaluator` skill against PR #<N> (<URL>) to evaluate issue-fit against the originating issue (#<ISSUE>) and recommend the right merge strategy. The resolver leaves the PR reviewed-by-`/review` for code quality and verified by targeted tests at §8/§10.6, but the canonical-suite run, issue-fit evaluation, and merge-strategy selection happen inside `github-pr-evaluator` — that's the gate between "reviewed" and "merged cleanly".
 
-Substitute `<N>` and `<URL>` with the actual PR number and URL from this run. For an epic-integration PR, the same line applies — pr-evaluator handles both story and integration PRs.
+Substitute `<N>`, `<URL>`, and `<ISSUE>` with the actual PR number, URL, and originating issue number from this run. For an epic-integration PR, `<ISSUE>` is the epic issue number; pr-evaluator handles both story and integration PRs. If the PR closes multiple issues (e.g., `Fixes #A, Closes #B`), substitute the issue number the resolver was invoked with — that's the issue whose intent the resolver tracked through implementation.
 
 ## Common pitfalls
 
@@ -1246,7 +1246,7 @@ Substitute `<N>` and `<URL>` with the actual PR number and URL from this run. Fo
 - **Don't post without showing the user first.** Comments and PRs are public and notify subscribers.
 - **Don't open a PR for a question.** Some issues are resolved by an answer, not a code change.
 - **Don't skip the review loop.** For any PR, `review` must approve before the work is considered done. No exceptions, no "this change is too small to review."
-- **Don't exit the loop just because the verdict says "approved".** Reviews routinely approve with `Medium`, `Low`, or `Nitpick` items the reviewer still expects fixed (e.g., "Approved with minor fixes"). Per §10.4, exit only when the verdict is approved **and** zero actionable-now items remain. Items tagged "fast-follow", "follow-up", or "out of scope" are deferred — list them in §11's summary, don't fix them. Items without that routing are addressable in this PR — fix them in-loop, push, and let the next review confirm. Bouncing minor fixes back as a fresh user prompt forces the user to manually re-invoke "address feedback" and defeats the loop's purpose.
+- **Don't exit the loop just because the verdict says "approved".** Reviews routinely approve with `Medium`, `Low`, or `Nitpick` items — issues *and* suggestions — that the reviewer still expects fixed (e.g., "Approved with minor fixes"). Per §10.4, exit only when the verdict is approved **and** zero addressable actionable issues or suggestions remain. Items tagged "fast-follow", "follow-up", or "out of scope" are deferred — list them in §11's summary, don't fix them. Items without that routing are addressable in this PR — fix them in-loop, push, and let the next review confirm. Bouncing minor fixes back as a fresh user prompt forces the user to manually re-invoke "address feedback" and defeats the loop's purpose.
 - **Don't post review feedback on the issue.** Review feedback on a PR goes on the PR, not on the originating issue.
 - **Don't mis-route comments between issue and PR.** Use the rubric in "Where comments go" — problem questions go on the issue, solution questions go on the PR. Cross-posting or wrong-routing fragments the discussion and leaves future contributors hunting.
 - **Don't assume the issue is still relevant.** If the thread has gone quiet for a long time, flag this and ask whether to proceed.
