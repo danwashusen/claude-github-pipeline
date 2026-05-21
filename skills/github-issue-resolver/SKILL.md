@@ -347,7 +347,7 @@ The summary at §11 records which path was taken and why. The user picks; the sk
 
 ### What the ladder is and isn't
 
-It **is** a cap on retries within a single visit to the gate. Each entry to §8 starts a fresh ladder (run 1 again). Each entry to §10.6 (one per review-loop iteration) starts a fresh ladder. The §10.4 outer-loop cap of 5 review iterations governs how many times `review` can flag changes; this ladder governs how many times the model may re-run tests within one of those iterations.
+It **is** a cap on retries within a single visit to the gate. Each entry to §8 starts a fresh ladder (run 1 again). Each entry to §10.6 (one per review-loop iteration) starts a fresh ladder. The §10 sub-agent's 5-iteration outer-loop cap governs how many times `review` can flag changes; this ladder governs how many times the model may re-run tests within one of those iterations.
 
 It **isn't** a license to give up after one failure. Run 1 failing is normal — that's why the gate exists. The ladder activates when the model is about to enter a small-fix spiral, not on every red run.
 
@@ -1143,56 +1143,171 @@ In both cases, capture the PR number/URL — you'll need it for the review loop.
 
 **This step is mandatory for any issue resolved with code changes. Do not skip it, do not merge, and do not consider the work done until review approves the PR.**
 
-After the PR is opened, invoke the **`review` skill** to evaluate the PR. The `review` skill decides what's in scope for review and whether the PR is ready to merge — don't second-guess it. If the skill is re-invoked later to address review comments, step 5's reuse rule will land you back in the existing worktree — don't create a parallel one.
+After the PR is opened, the resolver **dispatches a single sub-agent** that drives the `review` skill through the loop until the exit condition holds. The sub-agent invokes `review`, applies the §10.4 classification rubric, addresses feedback, runs the §10.6 pre-push verification gate, commits, pushes, and re-iterates — entirely within its own execution scope. If the skill is re-invoked later (a human reviewer commented, the previous run was interrupted), step 5's reuse rule lands you back in the existing worktree and the sub-agent dispatch happens again — the sub-agent's prompt is told it may be picking up mid-flow.
 
-Loop:
+**Why a sub-agent.** In-conversation loops have an unavoidable pull toward turn boundaries after long sub-tasks. The `review` invocation routinely runs 10–20 minutes; when it returns a verdict — even one that correctly names Addressable items per §10.4 — the model's next natural beat is "summarize what just happened and stop" rather than "loop back and address the items." Three rounds of tightening §10.4's rubric prose and adding Common-pitfall warnings did not fix this; the prose was correct and the model still stopped at the verdict (the `/tmp/review-loop.md` transcript on PR #416 is the exemplar — a review that explicitly cited the §10.4 rubric and recommended "address item 1" still landed at a turn boundary). Sub-agents are goal-directed by construction: they run to completion within their tool budget and don't share the interactive session's pull toward natural pauses. The dispatch boundary is the structural fix; the prose remains the contract the sub-agent works against.
 
-1. **Re-read accumulated PR feedback first.** Before invoking `review` again on later iterations, pull the latest PR comments and code review threads (using the same `gh pr view --comments`, `gh api .../reviews`, and `gh api .../comments` commands from step 5). Human reviewers may have weighed in between iterations, and their feedback should be addressed alongside whatever `review` reports.
-2. **Invoke the `review` skill** on the open PR (pass the PR number/URL).
-3. **Post the review feedback as a comment on the PR** (not the issue):
-   ```bash
-   gh pr comment <pr-number> --repo <owner/repo> --body-file review-feedback.md
-   ```
-4. **Check the verdict, and classify every issue and suggestion in the review.** "Approved" alone is not the exit condition — reviewers routinely approve with non-blocking suggestions (`Medium —`, `Low —`, `Nitpick —`, "Approved with minor fixes") that they still expect fixed before merge. Issues (defects the reviewer flagged) and suggestions (improvements the reviewer recommended) are gated identically; what matters is whether the item is **addressable on this PR**. Walk the review body and classify each item:
+**Spawn the sub-agent.** Use the `Agent` tool with `subagent_type: "general-purpose"`, `description: "Drive PR #<N> through the review loop"`, and the prompt template below. Inline every input placeholder at dispatch time. The sub-agent has full tool access — `Skill` for invoking `review`, `Bash` + `Read` + `Edit` + `Write` for code changes, `Agent` for nested test-selection and build delegations, `AskUserQuestion` for guard-rail decisions. **Do not invoke `review` directly from the main conversation** — the dispatch boundary is what prevents the failure mode this section exists to fix.
 
-   - **Addressable actionable (default).** Any concrete change the reviewer named falls here **unless** it satisfies one of the explicit deferral triggers below. Severity labels (`Medium —`, `Low —`, `Nitpick —`) and reviewer politeness ("could be a fast-follow", "not blocking if you prefer", "consider for a future PR", "deferrable", "informational only") do **not** by themselves move an item out of this bucket. The reviewer flagged it; address it.
-   - **Explicitly deferred** — reserved for items meeting **at least one** of these objective triggers. The reviewer's prose is evidence; the resolver re-checks. Soft framing alone never qualifies:
-     - **Concrete routing target.** The reviewer cites a specific issue/PR number that already exists or is filed as part of this resolution (`#N`, "tracked in #M", "filed as follow-up below"). A vague "future PR" or "a separate change" without a number is *not* a concrete target.
-     - **Structural blocker.** The fix can't ship in this PR — depends on a sibling story not yet merged; requires an API break whose consumers are outside this PR's scope; requires a schema migration the PR's scope excludes.
-     - **PRD / scope explicit exclusion.** The item is outside the issue's stated scope as documented in the issue body, the parent epic's DoD, `docs/prd.md`, `docs/architecture.md`, `docs/constitution.md`, or `CLAUDE.md`. Soft scope arguments ("keeps the PR scope pure") don't qualify — the exclusion must be citable.
-   - **Cheap-fix override.** If an item meets a deferral trigger above but the fix is **≤ ~20 lines of edits on files this PR already modifies** and doesn't require new tests, new files in the diff, or scope expansion — address it in-loop anyway. Deferral exists to keep PR scope tight; trivial doc, comment, identifier, or formatting fixes aren't scope creep. The override does *not* apply to code changes that pull new files into the diff or that need a fresh test.
-   - **Decision required** — the suggestion touches architecture, breaks an API, or carries a tradeoff the user should weigh in on. (Stop and ask, per the loop guard rail below.)
+**Sub-agent prompt template** (substitute placeholders at dispatch time):
 
-   Worked examples (verbatim review snippets the rubric has to handle correctly — these come from the failure mode this rubric was tightened to fix):
+```
+You are running the github-issue-resolver §10 review loop for PR #<N>. The
+resolver has dispatched you because in-conversation loops do not reliably
+exit on "approved with N Addressable items" — they stop at the turn
+boundary instead. Your job is to drive this PR through the loop until the
+exit condition holds, then return a structured summary.
 
-   - **Example A — soft defer is Addressable.** Review text: *"Defer to story #403 if you prefer to keep this PR scope-pure — docs-first ambiguity is fine and the mapping is obvious to a reader who has the enum in hand."* → **Addressable**. The reviewer offered deferral as an option ("if you prefer"), did not file a concrete tracking issue for the fix itself, and the item is a 1-line doc clarification on a file the PR already changes.
-   - **Example B — concrete routing is deferred.** Review text: *"Variant-B's mixed-mode UX is design work that belongs in story #403's UX brief — filing as follow-up issue #N."* → **Explicitly deferred**. Concrete tracking issue (`#N`) plus a citable structural rationale (the parent epic's story breakdown).
-   - **Example C — "future doc-amend" triggers Cheap-fix override.** Review text: *"The single paragraph packs four rules … a future doc-amend (or this PR if you'd like) could break it into bullets."* → **Cheap-fix override**. "Future doc-amend" matches deferral language, but the fix is ~5 lines on a file the PR already modifies — address in-loop.
+Inputs:
+- PR number: #<N>
+- PR URL: <url>
+- Repo: <owner/repo>
+- Worktree path: <absolute path> — cwd for every tool call you make
+- Originating issue: #<ISSUE>
+- Parent epic: #<EPIC>  (or "none")
+- Integration target branch: <branch>
+- Doc-grounding statement (from §6, use when defending implementation
+  choices in review responses): <statement>
+- §4.5 audit overrides carried into the PR body (if any): <text or "none">
+- Project test-config blocks (issue-resolver-fast-checks, issue-resolver-
+  test-target): inline contents, or "read from COMMANDS.md / CLAUDE.md in
+  the worktree".
+- Resume hint: this loop may be picking up mid-flow (an earlier sub-agent
+  run was interrupted, or a human reviewer commented between invocations).
+  Re-read PR comments + reviews on the first iteration before classifying.
 
-   Exit the loop and go to step 11 only when **both** are true: (a) the verdict is approved, **and** (b) zero Addressable or Cheap-fix-override items remain after the resolver's own re-classification. The reviewer's own summary ("zero blocking", "all deferrable", "nothing addressable", "fast-follow only") does **not** make (b) true on its own — re-classify every listed item against the rubric above before exiting. The reviewer can frame items politely; the resolver decides whether they're addressable on this PR. If the re-classification finds any Addressable or Cheap-fix-override item, the loop continues — even when the reviewer's verdict line says "approved with zero blocking". A verdict like "approved with minor fixes" or "approved, with these nits" is the loop telling you it isn't done yet, not a green light to exit. Bouncing those items back as a fresh user prompt forces the user to manually re-invoke an "address feedback" pass and undoes the loop's value.
+Read SKILL.md for §10.4 (the classification rubric), §10.6 (the pre-push
+verification gate), the "Retry ladder for the verification gate" section,
+and the "Follow-up issue tracking" section. Apply them as written.
 
-   When you do exit, file each explicitly-deferred item as a follow-up issue per "Follow-up issue tracking" above — urgency `file-now`, type chosen per the reviewer's framing (`bug` if the deferred item is a real defect, `incomplete-feature` if it's a half-built capability the reviewer flagged, `deferred-test` if it's a test the reviewer accepted should be skipped). The filed URLs land in this iteration's PR body `## Follow-ups` section before push. Procedural-only items (informational caveats with no tracked work) are not filed — carry them into §11's summary as notes instead.
+Each iteration:
 
-   The full canonical suite will run once at PR-readiness time inside `github-pr-evaluator` — there's no in-loop final gate here.
+1. Re-read accumulated PR feedback. Use the gh commands documented in
+   step 5 (`gh pr view --comments`, `gh api .../reviews`,
+   `gh api .../comments`, `gh pr diff`). Include comments from human
+   reviewers that arrived since the previous iteration.
+2. Invoke the `review` skill via the Skill tool on PR #<N>.
+3. Post `review`'s feedback as a PR comment:
+   `gh pr comment <N> --body-file review-feedback.md`. Review feedback
+   goes on the PR, not on the originating issue.
+4. Classify every issue and suggestion per §10.4. The reviewer's own
+   "approved" verdict line is NOT the exit condition — re-classify each
+   listed item using the rubric's Addressable / Explicitly-deferred /
+   Cheap-fix-override / Decision-required buckets. The cheap-fix override
+   applies to ≤ ~20-line fixes on already-modified files even when the
+   reviewer offered to defer.
+5. Address every Addressable and Cheap-fix-override item. File every
+   Explicitly-deferred item via the "Follow-up issue tracking" sub-agent
+   protocol (urgency `file-now`, type per the reviewer's framing) and
+   capture the returned URLs for the return summary.
+6. Run the pre-push verification gate per §10.6 (static checks →
+   test-selection sub-agent → test execution). The retry ladder per the
+   "Retry ladder for the verification gate" section caps a single visit
+   at 3 runs with a forced research breakpoint between cheap and deep
+   fixes.
+7. Commit. Push. Reply on the PR briefly describing what changed in
+   response to which points of feedback. This per-iteration comment is
+   how the user follows the loop on GitHub even though the parent
+   conversation isn't streaming your tool calls.
+8. Loop back to step 1.
 
-   Otherwise, continue.
-5. **Address the feedback** — both `review`'s and any unaddressed human reviewer feedback. Make the requested changes on the same branch.
-6. **Run the pre-push verification gate** before pushing — same three steps as §8, per "Test selection during iteration" above:
-   1. **Static checks** — run the `<!-- issue-resolver-fast-checks -->` block inline, fail-fast in declaration order. Outputs are small (lints, codegen, layer-import boundary checks); no need to delegate.
-   2. **Test selection** — spawn an `Explore` sub-agent with the prompt template from "Test-selection sub-agent" above. Substitute the worktree path, integration target, and the project's `<!-- issue-resolver-test-target -->` block. The sub-agent reads the diff, lists each declared target's directory, applies the heuristics, and returns two sections: `COMMAND:` (a ready-to-run shell command, or `(none)`) and `RATIONALE:` (one or two sentences). Print the rationale to the user as the iteration's status line — that's how the user audits the selection.
-   3. **Test execution** — if `COMMAND:` is `(none)`, skip execution and continue. Otherwise, run the command. If it begins with `xcodebuild` (or invokes a wrapper that runs `xcodebuild`), delegate to `apple-platform-build-tools:builder`; otherwise run inline.
+Exit condition — both must hold:
+- The `review` verdict is approved.
+- After your own re-classification per §10.4, zero Addressable or
+  Cheap-fix-override items remain.
 
-   If run 1 is green, proceed to step 7 (commit and push). If run 1 is red, follow the ladder in "Retry ladder for the verification gate" above — at most 3 runs this visit, with a forced research breakpoint between cheap and deep fixes, escalating to the user if the deep fix also fails. (Each entry to §10.6 starts a fresh ladder; the §10.4 outer-loop cap governs how many times this whole step can repeat.) If `COMMAND:` was `(none)` (e.g., docs-only iteration), there's nothing to be green or red — `github-pr-evaluator`'s full canonical run will exercise the change at PR-readiness time. Don't fall back to "run zero tests" when the sub-agent's heuristics could have widened — re-spawn the sub-agent if the rationale looks wrong.
-7. **Commit and push.** Reply on the PR (briefly) describing what changed in response to which points of feedback.
-8. **Go back to step 1.** Re-read accumulated feedback, re-invoke `review` on the updated PR.
+Guard rails — invoke AskUserQuestion directly when any of these fire,
+then use the user's answer in this same run and continue. Do not return
+early on a guard-rail decision.
 
-Guard rails for the loop:
+- Same-feedback-twice deadlock. You addressed a flagged item; the next
+  iteration's review flags the same item with no acknowledgement of your
+  fix. Don't iterate a third time on the same disagreement. Ask: continue
+  with a different angle (and which angle), accept current state and exit
+  with the item filed as a deferred follow-up, or abort the loop.
+- Decision required. `review` flags an architectural choice, an API
+  break, or a scope-change tradeoff. Don't guess. Present the decision
+  to the user with the reviewer's framing and the candidate paths.
+- 5-iteration cap. After the 5th iteration without an exit, ask whether
+  to continue (and for how many more), accept current state, or abort.
+  Don't loop silently past the cap.
 
-- If the same feedback recurs across iterations without progress (you've tried twice and `review` is still flagging the same thing), stop and surface the disagreement to the user — don't spin indefinitely.
-- If `review` flags something that requires a decision the user should make (architectural choice, scope change, breaking-change tradeoff), stop and ask the user instead of guessing.
-- Cap the loop at a reasonable number of iterations (e.g., 5) before checking in with the user, even if progress is being made.
+Return ONLY this JSON (no prose around it):
 
-Only after `review` reports approval **and** every addressable actionable issue or suggestion has been resolved should the PR be considered ready to merge. Merging itself is the user's call unless they've explicitly told you to merge.
+{
+  "status": "approved" | "capped" | "aborted",
+  "iterations": <int>,
+  "final_pushed_sha": "<sha>",
+  "final_iteration_test_status": "green at <sha> (selected ...)"
+    | "skipped (no tests selected — <rationale>)"
+    | "red — <list of failing tests>",
+  "items_addressed": [
+    {"severity": "Medium" | "Low" | "Nitpick" | "...",
+     "summary": "one-line description of what was changed"}
+  ],
+  "items_filed_as_followups": [
+    {"url": "<filed issue URL>",
+     "type": "bug" | "incomplete-feature" | "deferred-test"
+       | "revise-existing",
+     "summary": "one-line description"}
+  ],
+  "items_carried_as_procedural_notes": [
+    {"summary": "one-line note for the resolver to capture in §11"}
+  ],
+  "user_decisions": [
+    {"trigger": "same-feedback-twice" | "decision-required"
+       | "5-iteration-cap",
+     "prompt": "the question text the user saw",
+     "answer": "the user's selected option / free-text"}
+  ]
+}
+```
+
+**Consume the return summary.** Parse the JSON the sub-agent returns and use it to drive §11 directly — do not re-derive any of these values from the PR or the worktree:
+
+- `final_iteration_test_status` feeds §11's `Iteration test status` line verbatim.
+- `items_filed_as_followups` feeds §11's *Follow-ups → Filed* bullets (one bullet per entry, with URL).
+- `items_carried_as_procedural_notes` feeds §11's *Follow-ups → Procedural notes* bullets.
+- Each entry in `user_decisions` adds one line to *Procedural notes* naming the trigger and the user's choice, so any guard rail that fired stays visible to the user reading §11.
+- `status` and `final_pushed_sha` drive §11's outcome rubric. A non-empty `final_pushed_sha` means a PR was opened or updated, which fires the pr-evaluator handoff per the rubric in §11.
+
+**Resume contract.** A re-invocation of the resolver while a PR is still open and under review (the existing step 5 reuse path) dispatches a *fresh* sub-agent — sub-agents don't persist state across runs. The prompt's "Resume hint" line tells the sub-agent it may be picking up mid-flow; it re-reads PR comments and reviews on the first iteration before classifying, which surfaces any human reviewer activity that landed between invocations. A run that exited via the guard-rail's "abort" path leaves the loop in a known stop-state; re-invoking re-dispatches the sub-agent, which sees the prior abort in the PR comment history and decides whether the original blocker is now resolvable.
+
+#### §10.4 — Classification rubric
+
+The sub-agent applies this rubric on every iteration. The rubric is documented at the section level so a reader can audit a sub-agent return against it and so the sub-agent prompt above can reference it by anchor.
+
+"Approved" alone is not the exit condition — reviewers routinely approve with non-blocking suggestions (`Medium —`, `Low —`, `Nitpick —`, "Approved with minor fixes") that they still expect fixed before merge. Issues (defects the reviewer flagged) and suggestions (improvements the reviewer recommended) are gated identically; what matters is whether the item is **addressable on this PR**. Walk the review body and classify each item:
+
+- **Addressable actionable (default).** Any concrete change the reviewer named falls here **unless** it satisfies one of the explicit deferral triggers below. Severity labels (`Medium —`, `Low —`, `Nitpick —`) and reviewer politeness ("could be a fast-follow", "not blocking if you prefer", "consider for a future PR", "deferrable", "informational only") do **not** by themselves move an item out of this bucket. The reviewer flagged it; address it.
+- **Explicitly deferred** — reserved for items meeting **at least one** of these objective triggers. The reviewer's prose is evidence; the sub-agent re-checks. Soft framing alone never qualifies:
+  - **Concrete routing target.** The reviewer cites a specific issue/PR number that already exists or is filed as part of this resolution (`#N`, "tracked in #M", "filed as follow-up below"). A vague "future PR" or "a separate change" without a number is *not* a concrete target.
+  - **Structural blocker.** The fix can't ship in this PR — depends on a sibling story not yet merged; requires an API break whose consumers are outside this PR's scope; requires a schema migration the PR's scope excludes.
+  - **PRD / scope explicit exclusion.** The item is outside the issue's stated scope as documented in the issue body, the parent epic's DoD, `docs/prd.md`, `docs/architecture.md`, `docs/constitution.md`, or `CLAUDE.md`. Soft scope arguments ("keeps the PR scope pure") don't qualify — the exclusion must be citable.
+- **Cheap-fix override.** If an item meets a deferral trigger above but the fix is **≤ ~20 lines of edits on files this PR already modifies** and doesn't require new tests, new files in the diff, or scope expansion — address it in-loop anyway. Deferral exists to keep PR scope tight; trivial doc, comment, identifier, or formatting fixes aren't scope creep. The override does *not* apply to code changes that pull new files into the diff or that need a fresh test.
+- **Decision required** — the suggestion touches architecture, breaks an API, or carries a tradeoff the user should weigh in on. Fire the sub-agent's "Decision required" guard rail (see the prompt above): present the choice via `AskUserQuestion`, use the user's answer, continue.
+
+Worked examples (verbatim review snippets the rubric has to handle correctly — these come from the failure mode this rubric was tightened to fix):
+
+- **Example A — soft defer is Addressable.** Review text: *"Defer to story #403 if you prefer to keep this PR scope-pure — docs-first ambiguity is fine and the mapping is obvious to a reader who has the enum in hand."* → **Addressable**. The reviewer offered deferral as an option ("if you prefer"), did not file a concrete tracking issue for the fix itself, and the item is a 1-line doc clarification on a file the PR already changes.
+- **Example B — concrete routing is deferred.** Review text: *"Variant-B's mixed-mode UX is design work that belongs in story #403's UX brief — filing as follow-up issue #N."* → **Explicitly deferred**. Concrete tracking issue (`#N`) plus a citable structural rationale (the parent epic's story breakdown).
+- **Example C — "future doc-amend" triggers Cheap-fix override.** Review text: *"The single paragraph packs four rules … a future doc-amend (or this PR if you'd like) could break it into bullets."* → **Cheap-fix override**. "Future doc-amend" matches deferral language, but the fix is ~5 lines on a file the PR already modifies — address in-loop.
+
+Exit the loop only when **both** are true: (a) the verdict is approved, **and** (b) zero Addressable or Cheap-fix-override items remain after the sub-agent's re-classification. The reviewer's own summary ("zero blocking", "all deferrable", "nothing addressable", "fast-follow only") does **not** make (b) true on its own — re-classify every listed item against the rubric above before exiting. The reviewer can frame items politely; the sub-agent decides whether they're addressable on this PR. If the re-classification finds any Addressable or Cheap-fix-override item, the loop continues — even when the reviewer's verdict line says "approved with zero blocking". A verdict like "approved with minor fixes" or "approved, with these nits" is the loop telling you it isn't done yet, not a green light to exit.
+
+When you do exit, file each explicitly-deferred item as a follow-up issue per "Follow-up issue tracking" above — urgency `file-now`, type chosen per the reviewer's framing (`bug` if the deferred item is a real defect, `incomplete-feature` if it's a half-built capability the reviewer flagged, `deferred-test` if it's a test the reviewer accepted should be skipped). The filed URLs land in this iteration's PR body `## Follow-ups` section before push and in the sub-agent's `items_filed_as_followups` return field. Procedural-only items (informational caveats with no tracked work) are not filed — emit them in `items_carried_as_procedural_notes` for §11's summary.
+
+The full canonical suite will run once at PR-readiness time inside `github-pr-evaluator` — there's no in-loop final gate here.
+
+#### §10.6 — Pre-push verification gate
+
+Run inside the sub-agent's loop on every iteration that produced code changes (per the sub-agent prompt's step 6). Same three-step gate as §8, per "Test selection during iteration" above:
+
+1. **Static checks** — run the `<!-- issue-resolver-fast-checks -->` block inline, fail-fast in declaration order. Outputs are small (lints, codegen, layer-import boundary checks); no need to delegate.
+2. **Test selection** — spawn an `Explore` sub-agent with the prompt template from "Test-selection sub-agent" above. Substitute the worktree path, integration target, and the project's `<!-- issue-resolver-test-target -->` block. The sub-agent reads the diff, lists each declared target's directory, applies the heuristics, and returns two sections: `COMMAND:` (a ready-to-run shell command, or `(none)`) and `RATIONALE:` (one or two sentences). Capture the rationale in the iteration's PR-status comment so the user can audit the selection.
+3. **Test execution** — if `COMMAND:` is `(none)`, skip execution and continue. Otherwise, run the command. If it begins with `xcodebuild` (or invokes a wrapper that runs `xcodebuild`), delegate to `apple-platform-build-tools:builder`; otherwise run inline.
+
+If run 1 is green, proceed to the sub-agent's step 7 (commit and push). If run 1 is red, follow the ladder in "Retry ladder for the verification gate" above — at most 3 runs this visit, with a forced research breakpoint between cheap and deep fixes, escalating to the user via the sub-agent's `AskUserQuestion` if the deep fix also fails. (Each entry to §10.6 starts a fresh ladder; the §10 5-iteration outer-loop cap governs how many times this whole gate can repeat.) If `COMMAND:` was `(none)` (e.g., docs-only iteration), there's nothing to be green or red — `github-pr-evaluator`'s full canonical run will exercise the change at PR-readiness time. Don't fall back to "run zero tests" when the sub-agent's heuristics could have widened — re-spawn the sub-agent if the rationale looks wrong.
 
 ### 11. Summarise for the user
 
@@ -1212,9 +1327,9 @@ If the run produced *both* a comment and a PR (e.g., posted a "starting work" co
 
 **Before writing the summary, run the end-of-§10 follow-up checkpoint.** Per "Follow-up issue tracking" above, present the registry's `file-at-checkpoint` items (planning-time and implementation-time discoveries that weren't filed in-flight) to the user for batch approval, file via the sub-agent protocol, weave URLs into TODO markers and the PR body's `## Follow-ups` section. This is the resolution's last chance to convert trackable observations into filed issues before §11 closes things out; observations that aren't filed here become PR-body lines that age into noise.
 
-The summary MUST include a clearly-labeled **Iteration test status** line that names the result of the most recent pre-push verification gate (§8 on a clean first-pass approval, §10.6 on the last iteration when the review loop ran): green, skipped (no tests selected — name the rationale), or red (a list of failing tests with their failure mode). If anything is red at this point, fix it before pushing — don't bury it in follow-up notes. The skill does not run a final canonical-suite gate at this step; the comprehensive run happens once at PR-readiness time inside `github-pr-evaluator`. State this explicitly in the summary so the user knows what's still ahead: e.g. *"Iteration test status: green at <SHA> (selected ProposalServiceTests, run at §8 pre-push). The full unit + UI suite will run in github-pr-evaluator before merge."*
+The summary MUST include a clearly-labeled **Iteration test status** line that names the result of the most recent pre-push verification gate (§8 on a clean first-pass approval, §10.6 on the last iteration when the review loop ran): green, skipped (no tests selected — name the rationale), or red (a list of failing tests with their failure mode). When the run went through §10's review loop, **read this from the sub-agent return's `final_iteration_test_status` field** verbatim — do not re-derive it from the worktree or the PR. If anything is red at this point, fix it before pushing — don't bury it in follow-up notes. The skill does not run a final canonical-suite gate at this step; the comprehensive run happens once at PR-readiness time inside `github-pr-evaluator`. State this explicitly in the summary so the user knows what's still ahead: e.g. *"Iteration test status: green at <SHA> (selected ProposalServiceTests, run at §8 pre-push). The full unit + UI suite will run in github-pr-evaluator before merge."*
 
-Then: a short summary of what you did, what you posted (if anything), and a **Follow-ups** section split into two bullets — *Filed* (URLs of issues filed via the protocol, both `file-now` and `file-at-checkpoint`) and *Procedural notes* (informational items captured in the PR body, not filed as issues per the filing-vs-capturing criterion). If you created or reused a worktree, include its path and the manual cleanup sequence. The `github-pr-evaluator` skill runs both phases automatically after a green merge (its §14); the manual form below is for runs that don't go through the evaluator (declined merge, manual close, abandoned issue):
+Then: a short summary of what you did, what you posted (if anything), and a **Follow-ups** section split into two bullets — *Filed* (URLs of issues filed via the protocol, both `file-now` and `file-at-checkpoint`) and *Procedural notes* (informational items captured in the PR body, not filed as issues per the filing-vs-capturing criterion). When the run went through §10's review loop, the sub-agent return populates both bullets directly: `items_filed_as_followups` provides the *Filed* entries (one bullet per URL), `items_carried_as_procedural_notes` provides the *Procedural notes* entries, and each `user_decisions` entry adds one additional *Procedural notes* line naming the guard rail that fired and the user's choice (so any same-feedback-twice, decision-required, or 5-iteration-cap intervention stays visible). If you created or reused a worktree, include its path and the manual cleanup sequence. The `github-pr-evaluator` skill runs both phases automatically after a green merge (its §14); the manual form below is for runs that don't go through the evaluator (declined merge, manual close, abandoned issue):
 
 1. From inside the worktree, run the project's worktree-teardown commands (see "Worktree setup & teardown commands"). If `COMMANDS.md` declares no `<!-- worktree-teardown -->` block, skip this step.
 2. From the main checkout, run `git worktree remove .worktrees/<branch-name>`.
@@ -1252,7 +1367,8 @@ Substitute `<N>`, `<URL>`, and `<ISSUE>` with the actual PR number, URL, and ori
 - **Don't re-litigate decided questions.** If a maintainer said "let's go with approach B" three comments ago, go with approach B.
 - **Don't open a PR for a question.** Some issues are resolved by an answer, not a code change.
 - **Don't skip the review loop.** For any PR, `review` must approve before the work is considered done. No exceptions, no "this change is too small to review."
-- **Don't exit the loop just because the verdict says "approved".** Reviews routinely approve with `Medium`, `Low`, or `Nitpick` items — issues *and* suggestions — that the reviewer still expects fixed (e.g., "Approved with minor fixes"). Per §10.4, exit only when the verdict is approved **and** zero Addressable or Cheap-fix-override items remain after the resolver's own re-classification. Items the reviewer routes elsewhere with a **concrete tracking target** (filed as #N, depends on un-landed sibling, citable PRD/scope exclusion) are deferred and filed as follow-ups. Soft politeness alone ("could be fast-follow", "not blocking", "deferrable", "informational only", "future PR", "consider for a future change") is **not** sufficient — the resolver re-classifies per §10.4's rubric before exiting, and the **default for any concretely-named change is Addressable**. The Cheap-fix override addresses ≤ ~20-line fixes on already-modified files even when the reviewer defers them. Bouncing minor fixes back as a fresh user prompt forces the user to manually re-invoke "address feedback" and defeats the loop's purpose.
+- **Don't exit the loop just because the verdict says "approved".** Reviews routinely approve with `Medium`, `Low`, or `Nitpick` items — issues *and* suggestions — that the reviewer still expects fixed (e.g., "Approved with minor fixes"). Per §10.4, exit only when the verdict is approved **and** zero Addressable or Cheap-fix-override items remain after the sub-agent's own re-classification. Items the reviewer routes elsewhere with a **concrete tracking target** (filed as #N, depends on un-landed sibling, citable PRD/scope exclusion) are deferred and filed as follow-ups. Soft politeness alone ("could be fast-follow", "not blocking", "deferrable", "informational only", "future PR", "consider for a future change") is **not** sufficient — the sub-agent re-classifies per §10.4's rubric before exiting, and the **default for any concretely-named change is Addressable**. The Cheap-fix override addresses ≤ ~20-line fixes on already-modified files even when the reviewer defers them. The §10 sub-agent boundary now structurally enforces this — there is no main-conversation step where the model could "approve and stop"; the sub-agent runs to completion against its own exit condition — but the rubric still governs the sub-agent's classification, so the hazard this bullet exists for hasn't gone away, it just moved one layer in.
+- **Don't drive the review loop in the main conversation.** §10 dispatches a `general-purpose` sub-agent specifically because in-conversation loops have an unavoidable pull toward turn boundaries after long sub-tasks. The transcript at `/tmp/review-loop.md` (PR #416) is the exemplar: `review` correctly classified one Medium item as Addressable per §10.4 and even printed a "Recommended next step: address item 1" line, and the model still stopped at that turn boundary rather than looping back. The fix is structural, not prose — invoking `review` directly from the main conversation and trying to loop yourself reintroduces exactly the failure mode the sub-agent boundary exists to prevent. Always dispatch the sub-agent per the §10 "Spawn the sub-agent" instruction; never inline the loop's steps in the resolver's main flow.
 - **Don't post review feedback on the issue.** Review feedback on a PR goes on the PR, not on the originating issue.
 - **Don't mis-route comments between issue and PR.** Use the rubric in "Where comments go" — problem questions go on the issue, solution questions go on the PR. Cross-posting or wrong-routing fragments the discussion and leaves future contributors hunting.
 - **Don't assume the issue is still relevant.** If the thread has gone quiet for a long time, flag this and ask whether to proceed.
