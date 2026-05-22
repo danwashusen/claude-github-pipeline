@@ -519,6 +519,7 @@ This is the most important step. After reading the thread, explicitly identify:
   - Label includes `epic` (case-insensitive) → or title starts with `Epic:` → treat as an Epic; run step 4.5 (audit) first, then skip to the "If the issue is an Epic" section.
   - Label includes `story` → treat as a Story; run step 4.5 (audit) first, then skip to the "If the issue is a Story" section.
   - Neither → continue with the standard workflow.
+- **Early branch discovery.** §4.5's audit sub-agent reads code and docs from a specific git ref (see "Audit ref derivation" in §4.5), and that ref needs to be known *before* the audit fires. The discovery calls that historically lived inside the Epic / Story sections — `git ls-remote --heads origin "epic/<N>-*"` for Epic-as-target, and the parent-epic search (`gh issue list --label epic --state all --search "#<N> in:body"`) followed by `git ls-remote` for Story under-an-open-Epic — run here, at issue-type determination time, so §4.5 has the branch name in hand. The downstream "If the issue is an Epic" / "If the issue is a Story" sections continue to reference the discovery rules ("Resolving the epic branch name", parent-epic search) — when discovery has already run here, those become no-ops that reuse the recorded name. Multi-match clarification prompts and zero-match handling stay exactly where they're documented in those sections; the only change is *when* discovery executes.
 
 Write this state summary out loud (briefly) before doing any work. It anchors the rest of the response and lets the user correct you if you've misread the thread.
 
@@ -549,15 +550,34 @@ The motivating case that triggered this gate: a workshop session on Epic #119 su
 
 | Pre-audit signal (from step 2's already-fetched data) | Audit fires? | State-summary line |
 |---|---|---|
-| Issue is an Epic (any label match per step 3's Epic/Story detection) | **Yes** | `Audit: firing (Epic-as-target run)` — Epic bodies + sibling Story bodies drift constantly between visits; dimension 5 is the value-add on every Epic visit. |
-| No open or draft PR references the issue, and `closedByPullRequestsReferences` is empty or holds only closed/abandoned PRs | **Yes** | `Audit: firing (no prior PR)` — fresh implementation start. |
-| Closed/merged PR exists but did **not** resolve the issue (partial fix, reverted, abandoned, per step 5's table) | **Yes** | `Audit: firing (fresh attempt over abandoned PR #M)` — treat as fresh. |
+| Issue is an Epic (any label match per step 3's Epic/Story detection) | **Yes** | `Audit: firing (Epic-as-target run); audit_ref=<ref>` — Epic bodies + sibling Story bodies drift constantly between visits; dimension 5 is the value-add on every Epic visit. |
+| No open or draft PR references the issue, and `closedByPullRequestsReferences` is empty or holds only closed/abandoned PRs | **Yes** | `Audit: firing (no prior PR); audit_ref=<ref>` — fresh implementation start. |
+| Closed/merged PR exists but did **not** resolve the issue (partial fix, reverted, abandoned, per step 5's table) | **Yes** | `Audit: firing (fresh attempt over abandoned PR #M); audit_ref=<ref>` — treat as fresh. |
 | Open or draft PR by **you**, referencing this issue | **No** | `Audit: skipped (continuing PR #M)` — step 5 will route to "continue existing PR" → worktree reuse. |
 | Open or draft PR by **someone else**, referencing this issue | **No** | `Audit: skipped (competing PR #M by @other)` — step 5 will surface the PR to the user; no implementation will start in this run. |
 
 If the gate skips, fall through to step 5 immediately — do not show the user any audit-related prompt (no "skip audit" question, no findings, no override choice). The gate's decision is the answer. If the user explicitly asks for an audit anyway (e.g., "audit #N even though there's an open PR"), re-fire by hand using the same prompt template; that's an explicit user request, not the default flow.
 
 **When this step applies (after the gate fires).** Code-change response types only — bug / feature / refactor / Epic / Story. Skip for comment-only responses (question, blocked-on-info, duplicate, already-fixed); there is no implementation to be unfit for.
+
+**Audit ref derivation.** The audit sub-agent reads code and docs from one specific git ref — not from the orchestrator's working tree. The orchestrator's cwd is typically the main checkout sitting on `main`, but the issue's *integration target* may be a different branch (an epic branch, for example). Without an explicit ref, the audit reads from whatever the working tree happens to hold and fabricates BLOCKERs against symbols that exist on the actual integration branch — exactly the failure mode the Epic #154 run surfaced (audit grepped `main`, missed every epic-branch symbol). Derive `audit_ref` from issue context already known at this point:
+
+| Issue context | `audit_ref` |
+|---|---|
+| Bug / feature / refactor, no Epic context | `origin/main` |
+| Epic-as-target | `origin/<branch>` — the name discovered in step 3's "Early branch discovery" via `git ls-remote --heads origin "epic/<N>-*"` |
+| Story under an open parent Epic | `origin/<parent-epic-branch>` — the parent Epic's branch, discovered in step 3 alongside the story-type determination |
+| Story with no parent Epic, or parent Epic is closed | `origin/main` |
+
+If step 3's discovery hit the zero-match path for an Epic-as-target run (no `epic/<N>-*` branch on origin yet — bootstrap path), the audit still runs, with `audit_ref=origin/main`: the bootstrap epic branch would be created off `origin/main` anyway (per "If the branch does not exist on origin"), so the integration target is `main` at the time the audit fires.
+
+**Pre-dispatch fetch.** `git show <ref>` and `git grep … <ref>` require the ref locally. Before spawning the sub-agent, fetch the chosen branch:
+
+```bash
+git fetch --quiet origin <branch-from-audit-ref>
+```
+
+A failed fetch (network unavailable, ref doesn't exist on origin) is surfaced to the user and aborts the audit — the same shape as the existing `git fetch` calls in the Epic flow. Don't fall back to a stale local ref silently; the audit's correctness depends on reading the tip of the integration target.
 
 **Sub-agent invocation.** Spawn an `Explore` sub-agent with the prompt template at `references/issue-audit-prompt.md`. Inline the placeholders:
 
@@ -567,7 +587,7 @@ Agent({
   description: "Audit issue fitness-to-implement before code work",
   prompt: <contents of references/issue-audit-prompt.md
            with placeholders filled: issue_number, issue_type, repo_owner,
-           repo_name, repo_root, dimensions, related_issues>
+           repo_name, repo_root, dimensions, related_issues, audit_ref>
 })
 ```
 

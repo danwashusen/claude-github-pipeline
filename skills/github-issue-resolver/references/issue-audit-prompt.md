@@ -20,7 +20,8 @@ If you cannot tell from these inputs alone whether the issue is ready to be impl
   ```
 
 - **Type**: `<<issue_type>>` — one of `bug | feature | refactor | epic | story`. The orchestrator has already classified this from labels and body shape; you can trust it.
-- **Repo root**: `<<repo_root>>` — absolute path. Read `docs/prd.md`, `docs/architecture.md`, `docs/constitution.md`, `CLAUDE.md` if they exist (any of them may `@`-include further files; follow those references). Grep the source tree from this root.
+- **Repo root**: `<<repo_root>>` — absolute path to the orchestrator's git repository. Use this as the `git -C <<repo_root>>` working directory for every git plumbing call below. **Do not** `Read`, `grep`, or `find` the working tree under `<<repo_root>>` for project source or documentation — the working tree may be on a different branch than the audit is meant to evaluate (this is the failure mode the `<<audit_ref>>` input fixes). The single exception is files the audit knows are branch-stable for this run (e.g. tool output captured to a temp path).
+- **Audit ref**: `<<audit_ref>>` — the fully-qualified git ref whose tree you must evaluate against (for example `origin/main`, or `origin/epic/154-horizontal-day-paging-with-disabled-tomorrow-card`). The orchestrator chose this ref by mapping the issue to its integration target (regular issues → `origin/main`; Epic-as-target → the discovered `origin/epic/<N>-<slug>`; Story under an open Epic → the parent epic's `origin/epic/<N>-<slug>`) and fetched it before dispatching you. The ref is your sole source of truth for code and docs. Always read via `git -C <<repo_root>> show <<audit_ref>>:<path>` and search via `git -C <<repo_root>> grep <pattern> <<audit_ref>> -- <pathspec>`. Project docs (`docs/prd.md`, `docs/architecture.md`, `docs/constitution.md`, `CLAUDE.md`, and anything they `@`-include) can also differ between branches — read those through `git show <<audit_ref>>:` too, never via a plain `Read` of the working tree.
 - **Dimensions to check**: `<<dimensions>>` — a subset of {1, 2, 3, 4, 5, 6}. Run only the listed dimensions. Don't fabricate findings outside the list.
 - **Related issues**: `<<related_issues>>` — for an Epic, the list of child Story issue numbers extracted from `## Stories`. For a Story under an open Epic, the parent Epic number plus the list of sibling Story numbers. Empty for issues with no Epic/Story relationship. When this list is non-empty and dimension 5 is in scope, fetch each entry's body before reasoning across them:
 
@@ -33,12 +34,17 @@ If you cannot tell from these inputs alone whether the issue is ready to be impl
 
 Run only the dimensions named in the inputs.
 
-1. **Doc coherence.** Cross-reference the body against the project docs. Three patterns to flag:
+1. **Doc coherence.** Cross-reference the body against the project docs **as they exist at `<<audit_ref>>`**. Read each doc via `git -C <<repo_root>> show <<audit_ref>>:docs/prd.md` (and `architecture.md`, `constitution.md`, `CLAUDE.md`, plus any files those `@`-include). Branch drift on docs is common — a story that looks like it contradicts the PRD on `main` may match the PRD on the epic branch, and vice versa, so reading the working tree instead of `<<audit_ref>>` will produce false findings here. Three patterns to flag:
    - **Contradicts** — the body proposes something a doc explicitly forbids or counters. Cite the doc section.
    - **Extends** — the body extends product/architecture into territory the docs don't cover. Note for follow-up rather than block; if a doc-amend story already covers it elsewhere in the Epic, that downgrades the severity.
    - **Gap** — the body describes a behavior the docs already specify differently, or assumes a doc says something it doesn't. Cite both the body claim and the doc section.
 
-2. **Codebase coherence.** For every API, file path, type, component, function, error case, accessibility identifier, launch-environment key, or symbol the body names as **existing**, verify it's in the current tree (`grep -rn`, `find`, `Read`). For symbols the body says it will **introduce**, check that no symbol of the same name already exists (a name collision is a different bug). For symbols the body claims will be **renamed**, search both old and new names. If a referenced behavior is described as currently working, sanity-check that it actually works.
+2. **Codebase coherence.** For every API, file path, type, component, function, error case, accessibility identifier, launch-environment key, or symbol the body names as **existing**, verify it's in the tree at `<<audit_ref>>`. Use:
+   - `git -C <<repo_root>> grep -n "<symbol>" <<audit_ref>> -- <src-dir>` to search for a symbol.
+   - `git -C <<repo_root>> ls-tree -r --name-only <<audit_ref>> | grep "<filename>"` to verify a path.
+   - `git -C <<repo_root>> show <<audit_ref>>:<path>` to read a file's contents (and `| sed -n '<a>,<b>p'` to take a line range if the file is large).
+
+   For symbols the body says it will **introduce**, check that no symbol of the same name already exists at `<<audit_ref>>` (a name collision is a different bug). For symbols the body claims will be **renamed**, search both old and new names. If a referenced behavior is described as currently working, sanity-check that it actually works at `<<audit_ref>>`. Never substitute a plain `grep -rn` against the working tree — the cwd may be on a different branch than the audit's integration target, which silently produces wrong-tree findings.
 
 3. **Internal coherence.** Read the body as one piece. Does the title support the body's central claim? Do the acceptance criteria / Definition of Done support the stated goal? Is "what's missing" actually missing per the codebase? For Stories, does the `**Epic:** #<epic-#>` backlink format correctly and point at an open Epic? If an "Out of scope" line is present, does anything in scope contradict it?
 
@@ -125,11 +131,15 @@ None.
 
 ## Tool use hints
 
+All code and doc reads go through git plumbing against `<<audit_ref>>`. The working tree at `<<repo_root>>` is on whatever branch the orchestrator happened to start from — usually unrelated to the audit's integration target.
+
 - `gh issue view <N> --comments --json number,title,body,state,labels,author,createdAt,updatedAt,comments,assignees,milestone,url` — fetch the audited issue with its full thread.
 - `gh issue view <sibling-N> --json number,title,body,labels,state,url` — fetch a sibling issue's body for dimension 5.
-- `grep -rn "<symbol>" <repo_root>/<src-dir>` — verify a referenced API exists.
-- `find <repo_root> -name "<filename>"` — verify a referenced file path exists.
-- `git -C <repo_root> log -p --all -- <path>` — check whether a referenced file/symbol was recently removed or renamed (useful when codebase coherence fails).
-- `Read <repo_root>/docs/prd.md` (and architecture.md, constitution.md, CLAUDE.md) — load doc context once, then cite section names/headings when filing findings.
+- `git -C <<repo_root>> grep -n "<symbol>" <<audit_ref>> -- <src-dir>` — verify a referenced API exists at the integration target. Replaces the naive `grep -rn` against the working tree.
+- `git -C <<repo_root>> ls-tree -r --name-only <<audit_ref>> | grep "<filename>"` — verify a referenced file path exists at the integration target. Replaces `find … -name`.
+- `git -C <<repo_root>> show <<audit_ref>>:<path>` — read a file's full contents at the integration target. Replaces a plain `Read` of `<<repo_root>>/<path>` for any project source or doc. For large files, pipe through `sed -n '<a>,<b>p'` to take a line range.
+- `git -C <<repo_root>> log -p <<audit_ref>> -- <path>` — inspect history of a file along the integration target. Useful when a body cites a recently-removed or renamed symbol.
+- `git -C <<repo_root>> log -p --all -- <path>` — check whether a symbol exists anywhere in history (across branches). Use sparingly — most coherence checks should anchor on `<<audit_ref>>`.
+- Plain `Read` is acceptable only for files outside the project tree (e.g. tool output you've redirected to `/tmp/`). For anything tracked under `<<repo_root>>`, always go through `git show <<audit_ref>>:`.
 
-Be efficient: read each doc at most once, cache section structure mentally, and use grep before re-reading source files. The orchestrator may invoke you up to three times per issue (once per audit pass), so keep each pass focused on what changed since the previous pass.
+Be efficient: read each doc at most once, cache section structure mentally, and prefer `git grep` over re-reading source files. The orchestrator may invoke you up to three times per issue (once per audit pass), so keep each pass focused on what changed since the previous pass.
