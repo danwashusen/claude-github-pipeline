@@ -1,0 +1,292 @@
+---
+name: github-issue-planner
+description: Plan *how* to build an already-filed GitHub issue (or an entire Epic and its stories) before any code is written, and post a durable, verified implementation plan onto the issue via the `gh` CLI. This is a specialized multi-step workflow that writes to GitHub — not a quick inline answer: it researches the approach, grounds every decision in codebase precedent and the project docs (`docs/prd.md`, `docs/architecture.md`, `docs/architecture-notes.md`, `docs/ui-design.md`, `docs/constitution.md`, `CLAUDE.md`), surfaces any deviation for the user to approve, optionally ingests updated external docs the user supplies, validates the plan with an isolated review sub-agent, then posts it as an `<!-- implementation-plan:v1 -->` comment. It is the dedicated planning step **between** `github-issue-drafter` (files the issue) and `github-issue-resolver` (writes the code). Trigger whenever someone, referencing an issue number, wants the design / approach / architecture / layering / file-level changes / test strategy / sequencing settled and verified up front — e.g. "develop an implementation plan for #N", "research the best approach for #N", "work out the layering and file changes for #N", "how should we implement/build #N — figure out the design first", "before anyone writes code for #N, write the approach up on the issue", "plan this epic and its stories", or revising/refreshing a stale plan ("update the plan on #N", "re-plan #N against the new docs"). Treat phrasing like "implement", "build", or "step-by-step" as planning when the goal is settling strategy ahead of coding, not coding now; trigger even when the user doesn't say the word "plan". Do NOT use for: filing a new issue (that's `github-issue-drafter`), actually writing or fixing the code (that's `github-issue-resolver`), reviewing a diff or PR, choosing a merge strategy (that's `github-pr-evaluator`), or answering a documentation question.
+---
+
+# GitHub Issue Planner
+
+Turn a filed GitHub issue into a verified, best-practice **implementation plan** that the resolver can execute and the PR evaluator can verify against. The drafter answers *what* to build; the resolver answers by *building* it; this skill answers *how* it should be built — and captures that answer as a durable, reviewed artifact on the issue so the thinking isn't lost in an ephemeral planning session.
+
+The plan's job is to **lock the decisions** an implementer would otherwise have to re-derive: the architectural approach, layer assignments, file-level changes, data-model/schema impact, the test strategy, and (for multi-part work) sequencing. It deliberately does *not* spell out every line — see "Lock decisions, not lines" below. The resolver treats those locked decisions as binding; if implementation reveals one of them is wrong, the resolver routes back here in revise mode rather than silently working around it. This mirrors the existing drafter↔resolver audit loop: the issue body is the drafter's artifact, the plan is this skill's artifact, and both can be sent back for revision when reality diverges.
+
+## Prerequisites
+
+- `gh` CLI installed and authenticated (`gh auth status` to check). If it isn't, stop and tell the user — don't work around it.
+- Working directory is the repo the issue belongs to, OR the user supplied `--repo owner/name` context.
+- The issue already exists (this skill plans filed issues; it does not file them). If the user is describing something not yet filed, route them to `github-issue-drafter` first.
+
+## The core loop
+
+1. **Identify** the issue or epic — parse the number/URL.
+2. **Fetch** the issue, its full comment thread, and any existing plan comment. The presence of a plan comment switches you to **revise mode**.
+3. **Classify** the type (bug / incomplete / feature / epic / story) and **scale to the work** — a trivial fix doesn't need a full plan.
+4. **Ingest external sources** the user offers (your training knowledge may be stale).
+5. **Research and ground** the approach in codebase precedent and the project docs.
+6. **Surface deviations** from the docs and get the user's sign-off *before* finalising.
+7. **Draft** the plan against the schema below.
+8. **Verify** the plan with the isolated review sub-agent loop (up to 3 passes).
+9. **Confirm** with the user (a diff-style update in revise mode).
+10. **Persist** the plan as a marker comment + ensure the issue body's plan pointer.
+11. **Epic fan-out** — plan each filed child story and run a sequencing pass.
+
+Never skip step 6 (deviations are the user's call) or step 8 (an unverified plan is worse than no plan — it looks authoritative while being wrong).
+
+## Step 1–2: Identify and fetch
+
+Parse the issue number/URL the same way the resolver does. Then fetch everything in one pass before forming any opinion — the original body is often outdated by the time someone asks for a plan:
+
+```bash
+gh issue view <N> --repo <owner/repo> --comments \
+  --json number,title,body,state,labels,author,createdAt,updatedAt,comments,assignees,milestone,url
+
+# in-flight work — a plan is less useful (and may need coordinating) if a PR is already open
+gh pr list --repo <owner/repo> --state open --search "<N> in:body" \
+  --json number,title,author,isDraft,headRefName,url,updatedAt
+```
+
+**Check for an existing plan comment** (this is the revise-mode trigger):
+
+```bash
+gh api "repos/<owner>/<repo>/issues/<N>/comments" \
+  --jq '.[] | select(.body | startswith("<!-- implementation-plan:v1 -->")) | {id: .id, url: .html_url, body: .body}'
+```
+
+If a plan comment exists, go to **Revise mode** below. If an open PR exists, surface it before planning — the user may want to wait for it to land, or coordinate the plan with in-flight work.
+
+## Step 3: Classify and scale to the work
+
+Classify the issue the same way the drafter does — bug, incomplete feature, feature, epic, or story (read the `labels` array and the body shape). Then walk the comment thread for the **latest decision direction**: the substantive direction-setting may have happened several comments down, and earlier proposals are superseded once a maintainer or the author agreed to a different approach. Write a one-line state summary the user can correct before you do any research:
+
+> "Body proposes X; @maintainer on 2026-05-10 settled on approach W — I'll plan toward W. Correct?"
+
+**Scale to the work.** Planning has a cost, and over-planning a trivial change is its own failure mode. Judge honestly:
+
+- **One-line bug fix / typo / pure doc edit** → no plan needed. Say so and route the user straight to the resolver. Don't manufacture a plan just to have one.
+- **Small, well-understood bug** → a short plan (Approach + Changes + Test plan) is enough; skip the sections that would be empty.
+- **Feature, incomplete feature, story, epic** → the full machinery below. These are where a captured, verified plan earns its keep.
+
+## Step 4: Ingest external documentation sources
+
+Your training knowledge has a cutoff and the project may depend on framework versions or APIs newer than that. Before researching, ask once:
+
+> "Any updated external docs or links I should consult — new framework docs, an API reference, a design spec? Paste URLs or file paths and I'll treat them as authoritative over my own knowledge for the relevant tech."
+
+Pull what they give you (`WebFetch` for URLs, `Read` for files). When a provided source contradicts your prior knowledge about a library or API, **trust the source** — that's why the user gave it to you. Record which source informed which decision in the plan's `## External sources consulted` section so the resolver and evaluator can see the provenance (and re-check it if the source later changes).
+
+## Step 5: Research and ground the approach
+
+Read the project docs that constrain the work — don't plan against memory:
+
+```bash
+ls docs/prd.md docs/architecture.md docs/architecture-notes.md docs/ui-design.md docs/constitution.md CLAUDE.md 2>/dev/null
+```
+
+Read each that exists; follow `@`-references (`CLAUDE.md` pulls in `docs/constitution.md`). The split matters:
+
+- **`docs/architecture.md`** — *what* the architecture is (prescriptive: layer rules, decisions, APIs). Cite it for the shape of the solution.
+- **`docs/architecture-notes.md`** — *why* those decisions were made (Q&A rationale). Read this when you're tempted to deviate; the rationale often already addresses your case, and citing it keeps the plan aligned with intent rather than just letter.
+- **`docs/ui-design.md`** — the authority for any UI surface. Ground UI decisions in named components, sizes, and patterns it defines (e.g. `SectionCard`, the chat-size model) rather than inventing new ones.
+- **`docs/constitution.md`** — non-negotiable rules. A plan that proposes a constitution violation is a blocker, not a deviation to negotiate.
+
+Then **grep the codebase for precedent.** The strongest plans extend patterns that already exist:
+- Find the types, stores, services, and views the change touches; confirm the layer each belongs to (constitution §2).
+- Find a sibling feature that solved an analogous problem and mirror its structure.
+- Identify the concrete symbols, file paths, and signatures the implementation will add or modify — these become the `## Changes` section.
+
+**Every architectural decision in the plan must cite codebase precedent or an `architecture.md` / `architecture-notes.md` section. Every UI decision must cite `ui-design.md` precedent.** A decision with no cited grounding is either a deviation (surface it — step 6) or under-researched (keep digging).
+
+## Step 6: Surface deviations before finalising (interactive gate)
+
+If the best approach genuinely departs from the documented architecture, architecture-notes, ui-design, or established codebase precedent, **stop and raise it with the user before writing the plan**. Don't silently deviate, and don't bury the deviation in the plan hoping it slides through review.
+
+Present it plainly: what the docs/precedent say, what you propose instead, and why the deviation is worth it. The user decides:
+- **Approve the deviation** → record it in `## Deviations from project docs` with the agreement date, and consider whether the doc itself should be updated (mention it; the user may want a follow-up).
+- **Reject it** → re-plan within the documented approach.
+- **Update the doc first** → the deviation becomes the new norm; note that the doc edit is a prerequisite.
+
+A constitution violation is **not** a deviation to negotiate here — reshape the plan so it complies, or surface that the issue itself can't be built as specified (which may route back to the drafter in revise mode).
+
+## Step 7: Draft the plan
+
+Use this schema verbatim — the resolver and pr-evaluator parse these section headings. Omit sections marked optional when they'd be empty; never pad.
+
+```
+<!-- implementation-plan:v1 -->
+**Implementation plan** — #<N> <title> — planned <ISO-8601 UTC> at `<repo-short-sha>`
+
+## Approach
+<1–3 paragraphs: the strategy and why it's the right shape for this codebase>
+
+## Doc grounding
+<the PRD / architecture / architecture-notes / ui-design / constitution sections that
+constrain this, with §refs — the citations, not a restatement of the approach>
+
+## Architecture decisions
+- <decision> — <rationale> — [precedent: `path/to/File.swift:NN` | architecture.md §X | architecture-notes §Y | DEVIATION (agreed <date>) → see Deviations]
+- ...
+
+## UI decisions                  (omit if no UI surface)
+- <decision> — [precedent: ui-design §X | DEVIATION (agreed <date>)]
+
+## Changes (file-level)
+- `path/to/File.swift` — <what changes; new/modified types, methods, signatures; layer>
+- ...
+
+## Data model / schema impact     (omit if none)
+- <new/changed @Model fields, relationships, migration considerations per constitution §8>
+
+## Test plan
+- Unit: <suites to add/extend, per constitution §5 coverage targets>
+- UI: <XCUITest flows, accessibility identifiers, USE_MOCK_LLM expectations>
+
+## Sequencing                     (epics / multi-step only)
+1. <ordered steps; for epics, the story order with dependency reasoning>
+
+## External sources consulted     (omit if none)
+- <url or path> — <what decision it informed>
+
+## Deviations from project docs    (omit if none)
+- <what deviates> — <why> — agreed with user <date>
+
+## Open questions / risks
+- <anything the resolver should watch for; empty-state, edge cases, perf budgets>
+
+_Authored by `github-issue-planner` and verified in <N> review pass(es). The resolver treats
+the decisions above as binding; a plan-invalidating discovery routes back here in revise mode.
+Re-run this skill to revise — do not hand-edit._
+```
+
+For an **epic**, add two sections after `## Approach`: `## Story breakdown` (an ordered list of `- <story title> — <one-line scope>` entries reconciled against the epic body's `## Stories` list) and `## Integration strategy` (how the stories converge on the `epic/<N>-<slug>` branch and reach `main`). Per-story plans use the same schema on the story issue, with a leading `**Epic:** #<epic-#> — <epic title>` line above the marker comment's content.
+
+### Lock decisions, not lines
+
+The plan binds *decisions*, not *implementation detail*. Lock the architecture, the layer each new symbol lives in, the files that change, the data-model shape, the test strategy, and the sequence. Leave the line-level mechanics to the resolver — it's a capable implementer, and a plan that over-specifies becomes brittle the moment reality differs by an inch.
+
+The test for whether something belongs in the plan: *would getting this wrong send the implementation down the wrong path, or require re-litigation in review?* If yes, lock it. If it's a detail the resolver can settle correctly on its own, leave it out. This is the same bar the resolver's audit applies for "implementation readiness" — concrete enough to start without reverse-engineering, not so prescriptive it's a transcription of the diff.
+
+## Step 8: Verify the plan (isolated review loop)
+
+Before showing the plan to the user, hand it to an isolated review sub-agent — the same pattern the drafter and resolver use, for the same reason: you drafted the plan holding the conversation, the user's framing, and your research notes, none of which appear in the posted comment. From that vantage you can't tell whether the plan stands on its own. The sub-agent simulates a fresh implementer reading only the plan + the issue + the docs + the codebase. If it can't tell whether the plan is executable from those inputs alone, neither can the resolver.
+
+**Invocation.** Spawn an `Explore` sub-agent with the prompt template at `references/plan-reviewer-prompt.md`, filling the `<<placeholders>>`: the plan body, `mode` (`draft` or `revise <N>`), `issue_number`, `repo_owner`/`repo_name`, `repo_root`, `plan_ref` (the git ref the plan was built against — `origin/main`, or the epic branch for a story under an open epic), `dimensions`, `external_sources`, and `sibling_plans` (for an epic, each sibling story's plan). The sub-agent runs **without** the conversation history — that isolation is what makes the review meaningful.
+
+**Dimensions.** Six, defined in the prompt. Pass the subset that applies:
+
+| Type | Dimensions passed |
+|---|---|
+| Bug / feature / incomplete / story | 1, 2, 3, 4, 6 |
+| Epic (with sibling story plans) | 1, 2, 3, 4, 5, 6 |
+
+Dimension 5 (sequencing/dependency order) only fires for epics with sibling plans. Dimensions: 1 doc/constitution coherence, 2 codebase coherence, 3 goal coherence (the changes + tests actually satisfy the issue's acceptance criteria / DoD), 4 implementation readiness, 5 sequencing, 6 precedent grounding.
+
+**Loop control** — same shape as the drafter/resolver loops:
+
+```
+prev_findings = []
+for pass in 1..3:
+  findings = plan_reviewer.run(plan, mode, plan_ref, dimensions, sibling_plans)
+  drop_findings_without_evidence(findings)
+  if findings is empty:
+    exit_clean(); break
+  if same_finding_repeated_with_no_progress(findings, prev_findings):
+    exit_circular(findings); break
+  plan = apply(findings, plan)   # blockers always; suggestions by default; nits silently or skipped
+  prev_findings = findings
+else:
+  exit_cap_reached(findings)
+```
+
+Unlike the resolver's audit (which routes issue-body findings to the drafter), the planner **applies findings to its own plan directly** — the plan is this skill's artifact to fix. Blockers must be folded or the deviation surfaced to the user; a blocker that can't be resolved without a decision the user owns gets surfaced at step 9.
+
+**What the user sees at step 9:**
+- **Clean exit** → show the plan, optionally noting `(verified in N pass(es))`.
+- **Cap / circular exit** → show the plan AND a "Review notes" block listing each unresolved finding (severity, evidence, recommended remediation). The user decides whether to post as-is, fix manually, or push back on the reviewer.
+
+## Step 9: Confirm with the user
+
+For a fresh plan, show the full plan (title + body) and ask: "Post this plan to #N, or want to adjust anything first?" Wait for explicit confirmation.
+
+For a **revise**, show a diff-style update — only what changed — so the user doesn't re-read the whole thing:
+
+```
+## <section> (changed)
+<old> → <new>
+
+## <section> (added / removed)
+...
+(other sections unchanged)
+```
+
+## Step 10: Persist the plan
+
+Write the plan body to a temp file and post it as a comment (matching the pr-evaluator health-cache mechanics):
+
+```bash
+cat > /tmp/issue-plan.md <<'EOF'
+<plan body, starting with the <!-- implementation-plan:v1 --> marker>
+EOF
+
+# Revise mode: delete the stale plan comment first (captured in step 2)
+gh api -X DELETE "repos/<owner>/<repo>/issues/comments/<OLD_PLAN_COMMENT_ID>"
+
+gh issue comment <N> --repo <owner/repo> --body-file /tmp/issue-plan.md
+rm /tmp/issue-plan.md
+```
+
+Capture the returned comment URL. Then **ensure the issue body carries a plan pointer** so a human (and the drafter's revise mode) can see a plan exists. Fetch the current body, and if it has no pointer line, prepend one (preserve everything else verbatim):
+
+```
+> 📋 **Implementation plan:** see [the implementation-plan comment](<plan-comment-url>) — authored by `github-issue-planner`; re-run that skill to revise.
+```
+
+```bash
+gh issue edit <N> --repo <owner/repo> --body-file /tmp/body-with-pointer.md
+```
+
+Never add a second pointer if one already exists — update its URL in place if the plan comment was reposted. If editing the body would collide with the drafter (e.g. the user is mid-revise on the body), the pointer is low-stakes; skip it and tell the user rather than racing.
+
+## Step 11: Epic fan-out
+
+When the target is an **epic**:
+
+1. Plan the epic itself first (epic-level `## Approach`, `## Story breakdown`, `## Integration strategy`, `## Definition of done` grounding). Verify it with dimensions 1, 2, 3, 6 (sequencing can't fire yet if stories aren't planned). Post it.
+2. **Check whether the child stories are filed as issues.** Read the epic body's `## Stories` list:
+   - **Stories are filed** (`- [ ] #NN — title` lines) → plan each one (story schema with the `**Epic:** #N` backlink), confirm with the user one at a time, post each. Then run the verify loop's **dimension 5 (sequencing)** across the full set of sibling plans and surface any re-ordering with evidence for the user to approve.
+   - **Stories are not filed** (plain bullets, no `#NN`) → **stop after the epic-level plan.** Tell the user: "The child stories aren't filed yet. Run `github-issue-drafter` to file them (it owns issue creation), then re-run me on the epic and I'll plan each story and sequence them." Filing issues is the drafter's job, not the planner's — don't create them here.
+
+## Revise mode
+
+Triggered when a plan comment already exists (step 2) or the user asks to update/refresh a plan. Plans go stale: the codebase moves, the issue body gets revised, external docs change, the comment thread settles on a new direction. This mode refreshes the plan against today's reality.
+
+1. Fetch the existing plan comment (step 2) and the issue + thread. Note the plan's recorded SHA.
+2. Identify what changed since the plan was written — re-walk the thread for newer decisions, re-grep the codebase for symbols the plan names that may have drifted, re-read any external sources.
+3. Re-run steps 5–8 focused on what changed (don't re-derive untouched sections from scratch).
+4. Show a diff-style update (step 9), confirm, then delete-and-repost the comment (step 10) and refresh the body pointer's URL.
+
+**Revising an epic plan** also re-audits child story plans: reconcile the `## Story breakdown` against each story's current state and re-run the sequencing check. Surface re-ordering with evidence; don't silently swap.
+
+## Common pitfalls
+
+- **Don't plan an issue that isn't filed.** This skill plans existing issues. If the work isn't filed yet, route to `github-issue-drafter` first.
+- **Don't manufacture a plan for a trivial change.** A one-line fix doesn't need a plan; saying "this is trivial, go straight to the resolver" is the right answer, not a thin plan posted for form's sake.
+- **Don't over-specify.** Lock decisions, not lines. A plan that transcribes the diff is brittle and wastes the resolver's judgment. Bind what would send implementation down the wrong path; leave the rest.
+- **Don't deviate silently.** Any departure from architecture / architecture-notes / ui-design / precedent goes through the step-6 user gate and is recorded in `## Deviations`. A constitution violation isn't a deviation — reshape the plan or surface that the issue can't be built as written.
+- **Don't skip the verify loop.** An unverified plan is more dangerous than no plan: it carries the authority of a posted artifact while potentially referencing APIs that don't exist or contradicting the constitution. The isolated reviewer is the cheap guard against that.
+- **Don't leak conversation context into the reviewer.** The sub-agent must read only the plan + issue + docs + codebase. Injecting your framing defeats the fresh-reader test.
+- **Don't store the plan in the issue body.** The body is the drafter's artifact and gets repainted in its revise mode; a plan there would be clobbered. The marker comment is the durable home; the body only gets a one-line pointer.
+- **Don't file child stories from the planner.** When an epic's stories aren't filed, route to the drafter. Creating issues here blurs the boundary and skips the drafter's review loop.
+- **Don't fabricate citations or symbols.** Every `[precedent: …]` must point at a real file/section. If you can't cite it, it's a deviation or under-researched — handle it as one, don't invent a reference.
+- **Don't re-plan from scratch in revise mode.** Refresh what changed; leave untouched sections alone. Show the user a diff, not a wall.
+
+## When to ask the user
+
+- The repo or issue number is ambiguous.
+- The best approach deviates from the docs or precedent (always — step 6).
+- The thread shows unresolved disagreement between maintainers about the approach.
+- An epic's stories aren't filed yet (stop and route to the drafter).
+- An external source the user provided contradicts the project docs (whose intent wins?).
+- The verify loop ends in cap/circular with a blocker that needs a human decision.
+
+## Why this matters
+
+Planning is where the expensive mistakes are cheapest to prevent. A wrong architectural decision caught in a plan costs a paragraph to fix; the same decision caught in review costs a re-implementation, and caught at integration costs a re-integration. Capturing the plan as a verified, durable artifact — rather than letting it evaporate in a manual planning session — means the resolver executes a vetted approach, the PR evaluator can check the result against it, and the next person to touch the issue sees *how* it was meant to be built, not just *what*.

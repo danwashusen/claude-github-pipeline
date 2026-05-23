@@ -7,6 +7,8 @@ description: Drafts well-structured GitHub issues from informal developer feedba
 
 Turn informal developer feedback into well-structured GitHub issues. The user is mid-development on a product and notices things — bugs, gaps, ideas. Your job is to capture those cleanly so future-them (or their team) has enough context to act.
 
+This skill is the first stage of a pipeline: it files the issue; `github-issue-planner` later researches and attaches a verified implementation plan (stored as a comment, not in the body); `github-issue-resolver` then builds it. The practical consequence for **revise mode** is that an issue you drafted may have a plan comment attached after the fact — leave that comment alone, preserve its body pointer, and flag when a body revision may have invalidated it (see Revise mode).
+
 ## The core loop
 
 1. **Classify** the feedback: bug, incomplete feature, or new feature.
@@ -48,6 +50,15 @@ gh pr list --state open --search "<N> in:body" --json number,title,author,isDraf
 
 If a PR exists, surface it before editing — the user may want to coordinate, or to wait until the PR merges before reshaping the issue body.
 
+Also check whether a `github-issue-planner` plan is attached, because revising the body may invalidate it:
+
+```bash
+gh api "repos/<owner>/<repo>/issues/<N>/comments" \
+  --jq '.[] | select(.body | startswith("<!-- implementation-plan:v1 -->")) | {url: .html_url}'
+```
+
+If a plan comment exists, note its URL — you'll preserve the body's plan pointer and flag staleness at Step R6. **Never edit or delete the plan comment itself**; it's the planner's artifact, refreshed only by re-running that skill.
+
 ### Step R3: Identify the latest direction from the thread
 
 Long threads matter. The original body is often outdated by the time someone asks you to revise it — the substantive direction-setting may have happened five comments down. Earlier proposals are superseded if a maintainer or the OP has agreed to a different approach. Don't re-litigate decided questions.
@@ -87,8 +98,12 @@ If a section is unchanged, just say "(other sections unchanged)" — the user do
 
 Wait for explicit confirmation. Then:
 
+**Preserve the plan pointer.** If the issue body carries a `> 📋 **Implementation plan:**` pointer line (added by `github-issue-planner` at Step R2's check), keep it verbatim in the revised body — don't drop it, don't duplicate it, don't touch the plan comment it links to.
+
+**Flag a possibly-stale plan.** If a plan comment exists and this revision materially changes scope, acceptance criteria, or the contracts the plan was built against, the plan may now be stale. Tell the user once after applying the edit: "This revision changed <scope/AC/contracts>; the implementation plan on #N may now be stale — re-run `github-issue-planner` in revise mode to refresh it." The drafter does not edit the plan; refreshing it is the planner's job.
+
 ```bash
-# Body
+# Body (keep the plan-pointer line, if present, unchanged)
 cat > /tmp/revised-body.md <<'EOF'
 <new body>
 EOF

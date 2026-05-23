@@ -404,7 +404,7 @@ Do not post a cache comment when the user opted to skip (5.4 fallback).
 
 ### 6. Evaluate PR vs issue
 
-For each issue in `closingIssuesReferences`, evaluate four dimensions. Write your assessment before drafting the verdict — this is where the approve/comment decision gets made.
+For each issue in `closingIssuesReferences`, evaluate five dimensions. Write your assessment before drafting the verdict — this is where the approve/comment decision gets made.
 
 **Scope match.** Does the diff change what the issue asked to change, and only that? Drive-by edits unrelated to the issue's stated problem are a flag. Small incidental fixes (typos in touched files, missing `Localizable.xcstrings` entries required by the build) are acceptable if called out in the PR body.
 
@@ -412,13 +412,23 @@ For each issue in `closingIssuesReferences`, evaluate four dimensions. Write you
 
 **Doc grounding.** Per the project's issue resolver workflow, PR bodies must include a `## Doc grounding` section citing the PRD, Architecture doc, or CLAUDE.md sections that constrained the approach. A missing or vague doc-grounding section is a flag for any non-trivial feature or refactor. (Skip for: one-line bug fixes, pure doc/typo changes, and repos with no docs at all.)
 
+**Plan adherence.** The issue may carry a verified implementation plan authored by `github-issue-planner` and stored as a marker comment. Fetch it:
+
+```bash
+gh api "repos/<owner>/<repo>/issues/<issue-#>/comments" \
+  --jq '.[] | select(.body | startswith("<!-- implementation-plan:v1 -->")) | {url: .html_url, body: .body}'
+```
+
+- **Plan present** → check the diff against the plan's *locked decisions* (`## Architecture decisions`, `## Changes`, `## Data model / schema impact`, `## Test plan`). The plan locks decisions, not lines, so don't flag in-spirit implementation detail that differs harmlessly. But a **reversal of a locked decision** — a different architecture, a moved layer assignment, a data-model shape the plan didn't specify, a missing planned test — that is **not** disclosed (neither flagged + agreed in the plan's `## Deviations`, nor recorded as a `## Plan override` in the PR body) is a **gap → soft-reject (`--comment`)**, quoting the specific decision and the diverging diff. If the resolver was supposed to route a plan-invalidating discovery back to the planner (resolver step 8) and instead worked around it silently, this is exactly the dimension that catches it.
+- **Plan absent** → many issues predate the planner, or were trivial enough to skip it. Note "no implementation plan found — adherence not evaluated" in the verdict body and **do not hard-block** on its absence. Only issues that *have* a plan are held to adherence.
+
 **Story / epic context.** If this is a story PR, the base must be `epic/<N>-<slug>` (not `main`), and the PR body must contain the caveat "This story targets the `epic/<N>-<slug>` integration branch and will reach `main` via the integration PR for epic #N." If this is an epic integration PR, the base must be `main`, the head must be `epic/<N>-<slug>`, and the body must include `Fixes #<epic-number>` so GitHub auto-closes the epic on merge.
 
 ### 7. Decide the verdict
 
 **Approve** when:
 - `HEALTH_OK == true`
-- All four review dimensions pass
+- All review dimensions pass (including plan adherence when a plan is present)
 - No open `/review` issues remain from the latest run (or no `/review` has run and you've noted it)
 - `reviewDecision` is not `REVIEW_REQUIRED` waiting on another specific reviewer
 
@@ -667,6 +677,8 @@ Detection: `headRefName` matches `epic/<N>-<slug>` AND `baseRefName == main`.
 - Don't try to approve a PR that has `reviewDecision == REVIEW_REQUIRED` waiting on a named reviewer unless the user confirms. The approval will post, but it may confuse the pending reviewer.
 - Don't use `--auto` — the repo has `allow_auto_merge: false`.
 - Don't conflate issue-fit and code-quality. Issue-fit (this skill) asks "did the PR deliver what the issue asked for." Code quality (`/review`) asks "is this code well-written." Both are necessary; neither substitutes for the other.
+- Don't approve a PR that silently deviates from a stored plan. If the issue has a `github-issue-planner` plan and the diff reverses a locked decision without disclosing it (no `## Deviations` entry on the plan, no `## Plan override` in the PR body), that's a soft-reject — quote the decision and the diverging diff. Harmless in-spirit detail differences are fine; the plan locks decisions, not lines.
+- Don't require a plan on issues filed before the planner existed, or on trivial fixes. Plan adherence only binds issues that *have* a plan comment. Absence is noted, never a hard block.
 - Don't rely on `Fixes #<story-number>` to auto-close a story issue — story PRs merge into `epic/<N>-<slug>`, not `main`, so GitHub records the linkage but never fires the close. Step 13 closes the story issue explicitly.
 - Don't silently write any of the three configuration blocks (`<!-- pr-evaluator-static-checks -->`, `<!-- pr-evaluator-test-target -->`, `<!-- pr-evaluator-escalation-labels -->`) to `COMMANDS.md` / `CLAUDE.md` — always ask the user for confirmation before modifying project files.
 - Don't run worktree-teardown when the merge didn't run. Teardown is paired with worktree removal; if the worktree stays, teardown stays deferred. The user will either re-invoke the evaluator (which retries the merge → cleanup pair) or run the manual cleanup sequence (`github-issue-resolver` §11) themselves. Running teardown without removing the worktree leaves a worktree whose resources have been released — tests started from there would silently fail against missing dependencies.

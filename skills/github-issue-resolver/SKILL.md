@@ -7,6 +7,8 @@ description: Investigate and resolve a specific GitHub issue end-to-end via the 
 
 Resolve a GitHub issue by reading it carefully, doing the right kind of work for the issue type, and reporting back.
 
+This skill is the implementation stage of a pipeline: `github-issue-drafter` files the issue, `github-issue-planner` researches and verifies an implementation plan stored as a comment on it, and this skill *executes* that plan. For a non-trivial issue the resolver expects a finalized plan to exist (step 4.6) and treats its decisions as binding — see "Stick to the plan" in step 8. The planner replaces the manual plan-mode step; the resolver no longer re-derives the approach when a plan is present.
+
 ## Prerequisites
 
 - `gh` CLI installed and authenticated (`gh auth status` to check)
@@ -650,7 +652,46 @@ The cap and circular guard exist for the same reason as in the drafter: don't it
 
 **Cap-reached exit handling.** If three passes complete and findings remain (some types of drift are hard to fully express in body text — they may need a code-side decision before the body can be specified), surface the remaining findings to the user the same way as a blocker exit. The same three choices apply.
 
-**Where the audit ends and step 5 begins.** A clean audit (or a recorded override / skip) is the precondition for everything after this point. Step 5 (existing-work check) and step 6 (doc grounding) inherit the post-audit issue body — step 6 in particular cites the doc sections that informed the approach, which is a different artifact from the audit's findings table. The work is sequential: audit catches drift, step 6 writes the doc-grounding statement for the PR body. Do not skip step 6 on the assumption that the audit's dimension-1 findings already cover doc grounding — they cover *tensions*, not *citations*.
+**Where the audit ends and step 4.6 begins.** A clean audit (or a recorded override / skip) is the precondition for everything after this point. Next, step 4.6 requires a finalized implementation plan on the issue. Step 5 (existing-work check) and step 6 (doc grounding) then inherit the post-audit issue body — step 6 in particular cites the doc sections that informed the approach, which is a different artifact from the audit's findings table. The work is sequential: audit catches drift, the plan gate confirms a vetted approach exists, step 6 writes the doc-grounding statement for the PR body. Do not skip step 6 on the assumption that the audit's dimension-1 findings already cover doc grounding — they cover *tensions*, not *citations*.
+
+### 4.6 Require a finalized implementation plan
+
+The approach for a non-trivial issue should be worked out and verified *before* code work begins, not improvised mid-implementation. That planning is owned by the sister skill `github-issue-planner`, which researches the approach, grounds it in the docs and codebase precedent, verifies it with an isolated reviewer, and stores it as a durable comment on the issue. This gate makes the resolver **consume** that plan rather than re-derive the approach itself — the planner replaces the manual planning step. When a plan exists, you execute it; when it's missing on a non-trivial issue, you stop and ask for one.
+
+**When this gate fires.** Same shape as the §4.5 audit gate, using the existing-PR signals step 2 already fetched — no new `gh` calls:
+
+| Pre-gate signal | Gate fires? |
+|---|---|
+| Fresh implementation start (no prior PR, or only closed/abandoned PRs) | **Yes** |
+| Epic-as-target, or Story under an open Epic | **Yes** — consume the epic-level plan and/or this story's plan |
+| Open/draft PR by **you** (continuing) | **No** — the plan was consumed when work began; the PR is the artifact now |
+| Open/draft PR by **someone else** | **No** — step 5 surfaces it; no implementation starts this run |
+| Comment-only response (question, blocked, duplicate) | **No** — nothing to plan |
+| Trivial change (one-line fix, typo, pure doc edit) | **No** — these legitimately need no plan |
+
+**Fetch the plan comment** by its marker:
+
+```bash
+gh api "repos/<owner>/<repo>/issues/<N>/comments" \
+  --jq '.[] | select(.body | startswith("<!-- implementation-plan:v1 -->")) | {id: .id, url: .html_url, body: .body}'
+```
+
+**If a plan is present.** Parse it. The plan's `## Doc grounding` and `## Architecture decisions` are the design authority for this issue and **supersede** step 6's re-derivation — lift the grounding statement from the plan instead of re-deriving it (step 6 becomes "confirm and cite the plan's grounding," not "plan from scratch"). The plan's `## Architecture decisions`, `## Changes`, `## Data model / schema impact`, and `## Test plan` are the **locked decisions** you implement against. Record in the state summary: `Plan: present (<plan-comment-url>), planned at <sha>`.
+
+Then run a **plan-currency check** before trusting it. The plan records the SHA it was built against; the code may have moved since:
+- Compare the plan's recorded SHA to the current integration-target HEAD (`main`, or the epic branch for a story).
+- Spot-check that the files/symbols the plan's `## Changes` names still exist and still have the shape the plan assumes (`git grep`/`git show` against the integration target).
+
+If the plan is materially stale (the code it depends on has drifted, or the issue body has been revised in a way the plan predates), **don't silently proceed** — surface the drift and offer to route back to the planner in revise mode (invoke `github-issue-planner` via the `Skill` tool with `re-plan #N — the codebase/issue moved since the plan: <evidence>`), then re-fetch the refreshed plan. A clean currency check → proceed to step 5.
+
+**If a plan is missing on a non-trivial issue.** Stop. Tell the user:
+
+> "No finalized implementation plan on #N. Run `github-issue-planner` first and I'll execute it — or reply `proceed without a plan` to skip planning for this run."
+
+- **User runs the planner** → re-fetch the plan comment and continue.
+- **User overrides** (`proceed without a plan`) → record `Plan override: <reason>` in the state summary and carry it into the PR body under a `## Plan override` section in step 9 (mirrors the §4.5 audit-override mechanic), so the missing-plan decision is visible to reviewers. Then fall through to step 6's full doc-grounding re-derivation, since there's no plan to lift it from.
+
+Don't apply this gate to comment-only flows or trivial fixes — there's nothing to plan, and a forced gate there is pure friction.
 
 ## If the issue is an Epic
 
@@ -1015,6 +1056,8 @@ Every comment the skill posts becomes part of the thread on future runs. Step 2 
 
 **When this step applies.** Any code change beyond a one-line fix — features, refactors, and non-trivial bug fixes. Skip for: comment-only responses (questions, blocked issues, duplicates), one-line bug fixes, and pure doc/typo changes.
 
+**If a plan was consumed at step 4.6, lift the grounding from it.** A finalized `github-issue-planner` plan already did this research and verified it — its `## Doc grounding` and `## Architecture decisions` are the grounding statement. Restate (and cite) them as this step's output rather than re-deriving from scratch; you may still spot-check that the cited sections say what the plan claims. The rest of this step's full re-derivation applies only when step 4.6 ended in a `Plan override` (no plan to lift from) or the issue is trivial (gate didn't fire).
+
 **Check which docs are present:**
 
 ```bash
@@ -1118,6 +1161,7 @@ Record the baseline result before doing any work. The point is twofold: you can 
 
 For code changes:
 - Confirm the approach respects the doc grounding from step 6 — if implementation reveals a constraint conflict not visible at planning time, stop and surface it instead of working around it silently.
+- **Stick to the plan; route plan-invalidating discoveries back, don't work around them.** When a plan was consumed at step 4.6, its locked decisions (`## Architecture decisions`, `## Changes`, `## Data model / schema impact`, `## Test plan`) are binding. The plan locks *decisions*, not every line — implement freely within them. But if implementation reveals a locked decision is wrong or unbuildable (a planned API doesn't behave as assumed, a layer assignment can't hold, a data-model shape won't work), **stop and route back to `github-issue-planner` in revise mode** (invoke it via the `Skill` tool with `re-plan #N — implementation invalidated a locked decision: <evidence>`) rather than silently substituting your own approach. This mirrors how the §4.5 audit routes body problems back to the drafter: the plan is a verified, durable artifact, and a quiet workaround diverges the code from it, defeats the pr-evaluator's plan-adherence check, and loses the decision's provenance. A small, in-spirit detail the plan didn't anticipate is fine to settle yourself; a reversal of a locked decision is not.
 - If step 5 directed you to continue an existing PR's branch, you're already in its worktree — skip worktree creation.
 - Otherwise (fresh branch), create the worktree off the default branch:
   - Pick a slug: `issue-<number>-<short-slug>` (e.g. `issue-423-fix-null-token`).
@@ -1155,7 +1199,9 @@ For code changes (all `git push` and `gh pr create` commands run from inside the
 
   PR body must include `Fixes #<number>` (or `Closes #<number>`) so GitHub auto-links and auto-closes on merge. It must also include a `## Doc grounding` section near the top listing the PRD/Architecture/CLAUDE.md sections that informed the approach (per step 6). Omit this section only if no project docs were present.
 
-  **Carry forward step 4.5's audit overrides.** If step 4.5 was run and ended in an `Audit override: <reason>` (or `Audit skipped by user override`) recorded in the state summary, include a `## Audit override` section in the PR body quoting the override line verbatim. Reviewers see the override the same way they see scope decisions — visible and challengeable in PR review. If the audit ran clean (or was a comment-only flow where it didn't apply), omit this section.
+  **Link the plan.** If a plan was consumed at step 4.6, add a `## Plan` line near the top of the PR body linking the plan comment — e.g. `Implements the plan on #<N>: <plan-comment-url>`. This lets `github-pr-evaluator` find the plan to check adherence, and tells reviewers the diff was built to a vetted design. When the plan was lifted into `## Doc grounding`, the `## Plan` link is the provenance for that grounding.
+
+  **Carry forward step 4.5's audit overrides and step 4.6's plan override.** If step 4.5 ended in an `Audit override: <reason>` (or `Audit skipped by user override`), include a `## Audit override` section quoting it verbatim. If step 4.6 ended in a `Plan override: <reason>` (the user chose to proceed without a plan), include a `## Plan override` section quoting it verbatim. Reviewers see overrides the same way they see scope decisions — visible and challengeable in PR review. Omit either section when the corresponding gate ran clean or didn't apply.
 
 In both cases, capture the PR number/URL — you'll need it for the review loop.
 
@@ -1371,6 +1417,9 @@ Substitute `<N>`, `<URL>`, and `<ISSUE>` with the actual PR number, URL, and ori
 - **Don't ignore in-progress PRs.** Always check for an existing open or draft PR before creating a branch. Opening a duplicate PR wastes everyone's time and is rude.
 - **Don't take over someone else's PR silently.** If a PR by another author exists for this issue, surface it to the user before doing anything that would compete with or supersede it.
 - **Don't implement code without grounding in project docs.** If `docs/prd.md`, `docs/architecture.md`, or `CLAUDE.md` exists, read it before designing the change and cite the relevant sections in the PR. Skipping this leads to implementations that violate non-negotiable project rules (layer boundaries, banned APIs, naming, scope) that the docs encode.
+- **Don't start non-trivial code work without a finalized plan.** Step 4.6 gates on a `github-issue-planner` plan comment. Missing on a non-trivial issue → stop and ask for one (or take the user's explicit `proceed without a plan` override, recorded in the PR body). The plan is where the approach was researched and verified; improvising past a missing plan throws that away. Trivial fixes and comment-only flows are exempt — the gate doesn't fire for them.
+- **Don't re-plan when a plan exists.** When step 4.6 finds a plan, consume it — lift its grounding and implement its locked decisions. Re-deriving the approach in the main conversation duplicates the planner's verified work and risks diverging from the artifact the pr-evaluator will check against. The exception is the plan-currency check: if the code or issue body drifted since the plan's SHA, route back to the planner in revise mode rather than patching around the staleness.
+- **Don't silently deviate from a locked plan decision.** Implementing freely *within* the plan's decisions is expected; reversing one (a planned API, layer assignment, or data-model shape that turns out wrong) is not — stop and route back to `github-issue-planner` in revise mode with evidence. A quiet workaround diverges the diff from the plan, breaks pr-evaluator's adherence check, and loses the decision's provenance.
 - **Don't skip the green-baseline check for the integration target.** The integration target is `main` for regular issues and the epic integration branch for stories under an open epic. A story under an open epic *inherits* the epic-level baseline and shouldn't re-run it — unless `main` has been merged into the epic branch since that baseline, or a prior story under the epic landed under an explicit baseline override. The point of the gate is correct failure attribution and not shipping over a broken codebase, not running tests for their own sake. If the baseline is red, stop and surface every failing test — silent fixes scope-creep the PR. Acceptable next moves are the same as in step 7: detour first, or explicit user override with a documented reason.
 - **Don't silently fix unrelated pre-existing failures.** If the baseline reveals broken tests outside the scope of this issue, surface them — don't fold the fix in without telling the user. It scope-creeps the PR and obscures what your change actually did.
 - **Don't push code without running the §8 pre-push verification gate.** The test gate runs at §8 (before the first push) AND at §10.6 (after addressing review feedback). Both are mandatory pre-push gates. On a clean first-pass review approval, §10.6 never fires — the §8 gate is the only test invocation that runs before the PR is opened. Skipping §8's tests on the assumption that "review will catch it" or "pr-evaluator will catch it" is a bug: the `review` skill is a code-quality reviewer that does not run tests, and `pr-evaluator` runs at PR-readiness time *after* the PR is already open with possibly-broken code on the branch.
