@@ -293,11 +293,34 @@ The ladder below caps a single visit to the gate at **3 test runs total** before
 
 | Run | Trigger | Allowed action after |
 |---|---|---|
-| 1 (initial) | First invocation of the gate this visit | If green → §9 (or §10.7 from §10.6). If red → 1 cheap fix. |
+| 1 (initial) | First invocation of the gate this visit | If green → §9 (or §10.7 from §10.6). If red → **run the unrelated-failure triage first** ("Triage unrelated failures" below); then 1 cheap fix on any *remaining* diff-transiting failure. |
 | 2 | After cheap fix #1 | If green → §9. If red AND the failing-test set strictly changed (some original failures resolved) → 1 more cheap fix allowed. If red AND the failing-test set is sticky (same set or grew) → **research breakpoint, mandatory**, even though only 2 runs have happened. |
 | 3 (deep) | After research-informed fix | If green → §9. If red → **escalate to user** per "Escalation" below. No further runs this visit. |
 
 A "cheap fix" is a small, narrowly-targeted edit (typo, missing accessibilityIdentifier, off-by-one, obvious binding mistake) on the immediate failure mode. A "deep fix" is a structural change informed by the research breakpoint — restructuring a gesture, lifting state, changing a focus model, etc.
+
+### Triage unrelated failures: check for a known issue before spending the fix budget
+
+A red gate run does not always mean *your change* broke something. Targeted selection deliberately widens beyond the diff — the UI blast-radius rules and the broad-change-fallback pull in tests that don't transit your edit at all — and those tests can be red for reasons that predate this branch: a flaky UI interaction, an environmental timing bug, a genuinely separate defect someone has already filed. The expensive way to find that out is to revert your diff and re-run; it works, but it re-pays the cold-build and simulator-boot cost to answer a question GitHub may already answer for free. So triage cheaply first, before the ladder spends a single fix attempt.
+
+**When the triage fires.** On the *first* red run only. Partition the failing tests using the selection sub-agent's own rationale from this gate:
+
+- **Diff-transiting failures** — selected by a direct filename/symbol match (heuristics 3a–3d): the test exercises code your diff touched. A known issue does *not* excuse these — your change could break the same path the issue describes in a new way. Hand them straight to the ladder.
+- **Seemingly-unrelated failures** — pulled in only by widening (UI blast-radius rule 5, broad-change-fallback) and referencing no symbol or file in your diff. These, and only these, are the triage candidates.
+
+**The check.** For each seemingly-unrelated failing test, search the repo's open issues for the test and its symptom — one `gh` call, no revert:
+
+```bash
+gh issue list --repo <owner/repo> --state open \
+  --search "<failing test method> OR <failing suite name> OR <distinctive assertion keyword>" \
+  --json number,title,url
+```
+
+Read the candidate titles (and the body of any plausible hit) and decide whether one genuinely describes *this* failure — same test, same symptom — not a keyword collision.
+
+**On a confirmed match.** Treat the failure as a known pre-existing red: exclude it from this gate's pass/fail, record `Known pre-existing failure: <Suite>/<test> — tracked by #<NNN>` in the state summary, and add it to the PR body's `## Known failures` section with the issue link. Do **not** file a duplicate follow-up (the matched issue is the tracker), do **not** spend a cheap fix on it, and do **not** revert to confirm — the open issue plus the absent diff-relationship is sufficient evidence. If every red test this run matched a known issue, the gate passes for your diff → proceed to §9 (or §10.7). If diff-transiting failures remain, run the ladder for those only.
+
+**On no match.** The seemingly-unrelated failure has no tracker, so the shortcut doesn't apply — fall back to the ladder's normal path. The research breakpoint may revert the diff / re-run without your changes to settle whether the failure is pre-existing (still valid — just no longer the *first* thing tried). If the revert confirms it is pre-existing and untracked, that's a defer-by-retry follow-up: file it per "Follow-up issue tracking" (urgency `file-now`, type `bug` or `deferred-test`) so the next run's triage finds it.
 
 ### The adaptive cheap-fix rule
 
