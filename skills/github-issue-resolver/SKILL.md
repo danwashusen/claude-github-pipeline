@@ -9,6 +9,60 @@ Resolve a GitHub issue by reading it carefully, doing the right kind of work for
 
 This skill is the implementation stage of a pipeline: `github-issue-drafter` files the issue, `github-issue-planner` researches and verifies an implementation plan stored as a comment on it, and this skill *executes* that plan. For a non-trivial issue the resolver expects a finalized plan to exist (step 4.6) and treats its decisions as binding — see "Stick to the plan" in step 8. The planner replaces the manual plan-mode step; the resolver no longer re-derives the approach when a plan is present.
 
+### Asking the user a decision
+
+When you need a decision from the user — an approval gate, a choice between named
+paths, or a confirmation before a GitHub write — ask it through the `AskUserQuestion`
+tool, not as freeform prose. The tool renders the same multiple-choice card every
+time, so the user pattern-matches the decision at a glance instead of re-parsing a
+differently-worded question on each run.
+
+Shape every ask the same way:
+- One decision per question. `header` ≤ 12 chars (e.g. "Post plan", "Merge mode").
+  The `question` field carries the full prose you'd otherwise have typed.
+- 2–4 options. Each `label` is the action in imperative form ("Post it", "Squash",
+  "Approve"); each `description` says what that choice does and its consequence.
+- The tool always appends an "Other" free-text choice, so don't pad to four options
+  with a catch-all — leave room for the user to type a custom answer.
+- `multiSelect: true` only when the choices genuinely combine (rare here).
+- Ask once, act on the answer. Don't re-state the same gate in prose afterwards.
+
+When the candidate paths aren't fixed (e.g. "which of these issues did you mean?"),
+generate the options dynamically from what you found. When the answer is inherently
+open-ended (e.g. "paste any external doc URLs"), a prose ask is still fine — don't
+force it into options.
+
+`AskUserQuestion` is not available inside a sub-agent spawned via the `Agent` tool.
+Any gate that arises during sub-agent work must be surfaced by the sub-agent
+returning a structured "decision needed" signal to this main loop, which asks the
+user and re-dispatches with the answer. Never tell a sub-agent to call
+`AskUserQuestion` itself.
+
+### Delegating mechanical work to `github-ops`
+
+The expensive model is worth it for the implementation: reading the thread for
+the latest decision, the issue audit, writing code, applying review feedback.
+The judgment-free GitHub I/O is not — fetching the issue + thread, the open-PR
+check, the known-issue triage search, locating precedent in the codebase, and
+posting result comments. Delegate that to the **`github-ops`** sub-agent
+(`subagent_type: "github-ops"`, Sonnet + medium effort — spawn with **no `model`
+override**): `GATHER_ISSUE`, `LOCATE`, `PERSIST_COMMENT` (see
+`.claude/agents/github-ops.md`). It returns issue bodies and threads **verbatim**
+so the latest-decision read and the audit stay yours, and `LOCATE` returns only
+`path:line` pointers — you still `Read` the cited ranges yourself.
+
+**What does *not* delegate to `github-ops`:** the `git worktree` lifecycle and all
+local `git` work (add/commit/push, diffs, branch resolution) — that is cwd-stateful
+and belongs to this skill's main loop. And the existing judgment sub-agents — the
+issue **audit**, the **test-selection** `Explore` agent, the
+`apple-platform-build-tools:builder` delegation, and the drafter-proxy for
+follow-ups — stay exactly as they are; `github-ops` is only for the mechanical
+GitHub-API + locate work above.
+
+Like the other sub-agents, `github-ops` cannot call `AskUserQuestion`; on any
+ambiguity it returns `DECISION_NEEDED: <…>` and writes nothing — surface it here.
+`PERSIST_COMMENT` posts only the body you pass it, after your own gate.
+
 ## Prerequisites
 
 - `gh` CLI installed and authenticated (`gh auth status` to check)
@@ -362,13 +416,13 @@ No code edits during the breakpoint. The deep fix happens only after the sub-age
 
 ### Escalation
 
-When run 3 (the research-informed deep fix) is also red, stop. Do not run §8/§10.6 a fourth time. Surface to the user the failure analysis and three equally-weighted paths forward, with no default:
+When run 3 (the research-informed deep fix) is also red, stop. Do not run §8/§10.6 a fourth time. Surface the failure analysis, then ask the user to choose among three equally-weighted paths forward — no default — via `AskUserQuestion` (`header: "Tests red"`, options **Push with reds** / **Defer the tests** / **Restructure**, each described by the matching path below):
 
 1. **Push with documented reds.** Open the PR (or push to the existing branch) with a `## Known failures` section in the PR body listing each red test, the reproduction signal, and what was tried. Let `review` decide whether any of the reds are blocking. Best when the failures look like CI/timing flakiness or genuinely separate edge cases that don't block the headline change.
 2. **Defer the failing tests with linked issues.** File one follow-up issue per failure (or one umbrella issue if the failures share a root cause) via the sub-agent protocol in "Follow-up issue tracking" above — urgency `file-now`, type `deferred-test`. The filed URLs become `// TODO(#NNN)` markers and `XCTSkip("Deferred to #NNN — <reason>")` reasons before push. Push the rest green. Best when the failure is a real structural problem that needs more design than fits this PR.
 3. **Restructure.** Abandon the current approach. Return to a planning conversation, with the research-breakpoint findings as input, and propose a different shape. Best when the deep fix revealed that the original approach itself was wrong (e.g., a gesture that fundamentally fights the parent's gesture system).
 
-The summary at §11 records which path was taken and why. The user picks; the skill does not pick a default.
+The summary at §11 records which path was taken and why. The user picks; the skill does not pick a default. When you reach this gate from §8 you are the main loop — ask via `AskUserQuestion` directly. When you reach it from §10.6 you are inside the review sub-agent, where `AskUserQuestion` is unavailable — return `status: "needs_decision"` with `kind: "verification_failure"` and these three options instead, and the main loop asks.
 
 ### What the ladder is and isn't
 
@@ -511,23 +565,11 @@ If ambiguous (e.g., they said "issue 42" but you're in a monorepo or there's no 
 
 ### 2. Fetch the full issue context
 
-Always pull the issue **and all comments** in one go:
+Delegate the fetch to `github-ops` so you pull the issue, all comments, the linked/closing PR references, and any open PR in one pass:
 
-```bash
-gh issue view <number> --repo <owner/repo> --comments --json number,title,body,state,labels,author,createdAt,updatedAt,comments,assignees,milestone,url
-```
+> `GATHER_ISSUE(issue=<number>, repo=<owner/repo>, extra_json="closedByPullRequestsReferences,projectItems")`
 
-Also check for linked PRs and related issues:
-
-```bash
-gh issue view <number> --repo <owner/repo> --json closedByPullRequestsReferences,projectItems
-```
-
-And explicitly search for **any** open or draft PR that references the issue — `closedByPullRequestsReferences` only covers PRs that *would close* the issue, and only catches them if the linkage syntax was used. Open/in-progress PRs by other contributors often won't appear there:
-
-```bash
-gh pr list --repo <owner/repo> --state open --search "<issue-number> in:body" --json number,title,author,isDraft,headRefName,url,updatedAt
-```
+It returns the issue + full thread **verbatim**, the closing-PR / project references, and the open-PR list. The explicit open-PR search matters because `closedByPullRequestsReferences` only covers PRs that *would close* the issue (and only when the linkage syntax was used) — open/in-progress PRs by other contributors often won't appear there, so `github-ops` runs the `gh pr list … "<number> in:body"` search alongside it.
 
 Read everything before forming an opinion. Long threads matter — the original post is often outdated by the time someone asks you to work on it.
 
@@ -663,7 +705,7 @@ The cap and circular guard exist for the same reason as in the drafter: don't it
 - **Gated off** — the pre-audit gate above decided not to fire (continuing your own PR, competing PR by another author, or comment-only response type). The state-summary line was already recorded by the gate. Continue to the original fork (step 5 / Epic flow / Story flow) without prompting the user about the audit.
 - **Clean** — audit fired and returned zero findings after evidence-filtering. Print one line in the state summary: `Audit: clean (N pass(es))`. Continue to the original fork (step 5 / Epic flow / Story flow).
 - **Suggestions / nits only** — print the findings inline (severity, dimension, evidence, recommended remediation) but continue without stopping. The user can interrupt the run if any look load-bearing on second read.
-- **One or more BLOCKERs** — **stop**. Print every finding with severity, dimension, the affected issue number (for Epic / Story modes, dimension 5 findings name the sibling issue where the conflict lives), evidence, and recommended remediation. Then offer three named choices:
+- **One or more BLOCKERs** — **stop**. Print every finding with severity, dimension, the affected issue number (for Epic / Story modes, dimension 5 findings name the sibling issue where the conflict lives), evidence, and recommended remediation. Then ask via `AskUserQuestion` (header "Audit"; present the default option first): **Revise via drafter** / **Override w/ reason** / **Abort** — each detailed below:
 
   1. **Revise via drafter** *(default)*. Invoke the sister skill `github-issue-drafter` via the `Skill` tool with arguments shaped like `revise #N — apply these audit findings: <evidence block>`. The drafter runs its own review loop on the proposed revision, shows the user a diff, files `gh issue edit` on approval, and returns. Then refetch the issue (`gh issue view <N> --comments --json …`) and run the audit again from pass 1. If the audit was on an Epic and dimension 5 found drift across multiple sibling Stories, route the drafter sequentially per affected issue — Epic body first if its contract is the source of truth, then each affected Story — so each drafter handoff is one issue at a time (mirrors how the user-led workshop session for Epic #119 proceeded: one `gh issue edit` per issue, in topological order). After all handoffs land, refetch every affected issue and re-audit.
 
@@ -730,7 +772,7 @@ git ls-remote --heads origin "epic/<N>-*"
 
 - **One match** → use that branch name verbatim for every subsequent command in this run (worktree paths, fetch targets, push targets, `--base`, PR body references, the legacy-recovery worktree). If you need a slug for a worktree directory, extract it from the actual branch name. **Do not recompute it from the title.**
 - **Zero matches** → the integration branch hasn't been bootstrapped. Continue per "If the branch does not exist on origin" below (epic flow) or the existing stop-and-redirect message (story flow).
-- **Multiple matches** → flag every candidate to the user and ask which is canonical. Multiple matches usually indicate an orphaned bootstrap or a hand-created branch; silently picking one risks landing work on the wrong branch. Stop until the user resolves it.
+- **Multiple matches** → ask via `AskUserQuestion` (header "Epic branch") which is canonical, with one option per candidate branch (label = the branch name, description = its last-commit date and author so the user can tell them apart). Multiple matches usually indicate an orphaned bootstrap or a hand-created branch; silently picking one risks landing work on the wrong branch. Stop until the user resolves it.
 
 **Computing a fresh slug (bootstrap only).** Used only when discovery returns zero matches and the epic flow is bootstrapping a new branch. The derivation is:
 
@@ -874,7 +916,7 @@ If the merge produces conflicts, follow the **Conflict handling** procedure belo
    >
    > Do NOT edit any files. Return text only.
 
-4. **Review and apply.** Show the user the whole proposal in one go (or grouped, for large sets). Ask for approval — wholesale ("apply all"), group-level ("apply rename group, skip schema group"), or rejection ("abort, I'll resolve manually"). On approval, **the skill** applies the proposed edits via the `Edit` tool — the sub-agent only proposes; the skill never lets the sub-agent write. On rejection, `git rebase --abort` or `git merge --abort` and stop.
+4. **Review and apply.** Show the user the whole proposal in one go (or grouped, for large sets). Ask for approval via `AskUserQuestion` (header "Rectify epic"): **Apply all** — apply the whole proposal; **Apply some** — apply a subset (the user names which groups to keep or skip via the free-text "Other", e.g. "apply rename group, skip schema group"); **Abort — manual** — resolve the conflicts by hand. On apply, **the skill** applies the proposed edits via the `Edit` tool — the sub-agent only proposes; the skill never lets the sub-agent write. On abort, `git rebase --abort` or `git merge --abort` and stop.
 
 5. **Continue.** After edits are applied, stage and continue: `git add <files>` then `git rebase --continue` (Path A) or `git commit` to finalise the merge commit (Path B). If a second conflict round fires (e.g., rebase replaying the next commit hits new conflicts), re-enter conflict handling with the new conflict set.
 
@@ -955,7 +997,7 @@ gh issue list --repo <owner/repo> --label epic --state all \
 ```
 
 - **No parent epic found** → proceed as a regular feature/bug (PR base is `main`). Note this in the state summary so the user can decide whether to retroactively add this story to an epic.
-- **Multiple matches** → flag the ambiguity and ask which epic applies before continuing.
+- **Multiple matches** → ask via `AskUserQuestion` (header "Parent epic") which epic applies, one option per candidate epic (label = `#<N>`, description = the epic title), before continuing.
 - **Parent epic found** → read its `## Goal` and `## Background` sections. These provide the strategic grounding for why this story exists — use them alongside step 6's PRD/Architecture/CLAUDE.md docs. Cite the parent epic in the PR body's `## Doc grounding` section (e.g. `Parent epic #22 — Goal: …`).
 
 **Determine the PR base.** Resolve `<branch>` per "Resolving the epic branch name" in the Epic section above (discover by prefix; if multiple matches, stop and ask). The story flow never computes a fresh slug — that path lives only in the epic-as-target bootstrap. Treat the discovery result as one of three outcomes:
@@ -1003,8 +1045,8 @@ Before creating any branch, decide what to do based on what's already in flight:
 | Situation | What to do |
 |---|---|
 | **Open PR you authored, branch is yours** | Set up a worktree on the existing branch (see "Setting up the worktree" below), read the full PR context (see below), and continue from there. Skip the "create a branch" part of step 8. |
-| **Open PR by someone else, actively being worked on** | **Do not open a competing PR.** Surface this to the user with the PR link and the latest activity. Offer to review the existing PR, leave a constructive comment, or wait — let the user decide. |
-| **Open PR by someone else, gone stale (no recent activity, requested changes unaddressed for a long time)** | Still don't trample silently. Tell the user, link the stale PR, and ask whether to take it over (set up a worktree branched off the stale PR's branch with a new local branch, see "Setting up the worktree" below) or start fresh. |
+| **Open PR by someone else, actively being worked on** | **Do not open a competing PR.** Surface this to the user with the PR link and the latest activity, then ask via `AskUserQuestion` (header "Open PR"): **Review it** — run a review of the existing PR; **Leave a comment** — post a constructive comment; **Wait** — take no action for now. |
+| **Open PR by someone else, gone stale (no recent activity, requested changes unaddressed for a long time)** | Still don't trample silently. Tell the user and link the stale PR, then ask via `AskUserQuestion` (header "Stale PR"): **Take it over** — set up a worktree branched off the stale PR's branch with a new local branch (see "Setting up the worktree" below); **Start fresh** — branch off default per step 8. |
 | **Draft PR** | Treat the same as an open PR by the same author. Drafts are still claimed work. |
 | **Closed PR that resolved the issue** | The issue should already be closed. If it isn't, something's odd — flag it to the user before doing anything else. |
 | **Closed/merged PR that did *not* resolve the issue** (partial fix, reverted, abandoned) | Note this in the state summary, read the PR's full context (see below) to learn what was tried and why it didn't land, then proceed as the no-prior-PR case (a fresh worktree off default, per step 8). |
@@ -1097,7 +1139,7 @@ This grounding statement is the output of this step. State it before writing any
 
 **Surface tensions before proceeding.** Three patterns to watch for:
 
-- **The issue contradicts a doc.** E.g., the issue requests behaviour the constitution forbids (a banned API, a forbidden architectural pattern, a capability the PRD explicitly excludes). **Stop.** Surface the conflict to the user and ask how to proceed: update the doc, reshape the issue, or override with a documented reason. Do not silently work around it.
+- **The issue contradicts a doc.** E.g., the issue requests behaviour the constitution forbids (a banned API, a forbidden architectural pattern, a capability the PRD explicitly excludes). **Stop.** Surface the conflict and ask via `AskUserQuestion` (header "Doc conflict"): **Update the doc** — change the doc so the issue becomes buildable; **Reshape issue** — route back to `github-issue-drafter` to fit the docs; **Override w/ reason** — proceed against the doc with a one-line reason recorded in the PR body. Do not silently work around it.
 - **The issue extends the docs into territory they don't cover.** Note this to the user and proceed unless they want to update the docs first.
 - **The issue describes a gap between built behaviour and what a doc specifies.** Cite the relevant section in the grounding statement — this reframes "feature X is incomplete" as "feature X doesn't match PRD §Y," which is more actionable.
 
@@ -1206,12 +1248,13 @@ For comment-only responses (questions, blocked issues, duplicates):
 
 ### 9. Report back to GitHub
 
-For a comment-only response:
-```bash
-gh issue comment <number> --repo <owner/repo> --body-file comment.md
-```
+For a comment-only response, hand the drafted comment to `github-ops`:
 
-For code changes (all `git push` and `gh pr create` commands run from inside the worktree — same syntax, just a different cwd):
+> `PERSIST_COMMENT(target=issue, id=<number>, repo=<owner/repo>, body=<the drafted comment>)`
+
+It posts the body verbatim and returns the comment URL.
+
+For code changes (all `git push` and `gh pr create` commands run from inside the worktree — same syntax, just a different cwd; PR creation stays here in the main loop, coupled to the worktree push):
 
 - **If you're continuing an existing PR** (per step 5): just push the new commits to that branch. The PR updates automatically. Don't open a new one.
 - **If this is a fresh PR**: push the branch and open a PR:
@@ -1236,7 +1279,7 @@ After the PR is opened, the resolver **dispatches a single sub-agent** that driv
 
 **Why a sub-agent.** In-conversation loops have an unavoidable pull toward turn boundaries after long sub-tasks. The `review` invocation routinely runs 10–20 minutes; when it returns a verdict — even one that correctly names Addressable items per §10.4 — the model's next natural beat is "summarize what just happened and stop" rather than "loop back and address the items." Three rounds of tightening §10.4's rubric prose and adding Common-pitfall warnings did not fix this; the prose was correct and the model still stopped at the verdict (the `/tmp/review-loop.md` transcript on PR #416 is the exemplar — a review that explicitly cited the §10.4 rubric and recommended "address item 1" still landed at a turn boundary). Sub-agents are goal-directed by construction: they run to completion within their tool budget and don't share the interactive session's pull toward natural pauses. The dispatch boundary is the structural fix; the prose remains the contract the sub-agent works against.
 
-**Spawn the sub-agent.** Use the `Agent` tool with `subagent_type: "general-purpose"`, `description: "Drive PR #<N> through the review loop"`, and the prompt template below. Inline every input placeholder at dispatch time. The sub-agent has full tool access — `Skill` for invoking `review`, `Bash` + `Read` + `Edit` + `Write` for code changes, `Agent` for nested test-selection and build delegations, `AskUserQuestion` for guard-rail decisions. **Do not invoke `review` directly from the main conversation** — the dispatch boundary is what prevents the failure mode this section exists to fix.
+**Spawn the sub-agent.** Use the `Agent` tool with `subagent_type: "general-purpose"`, `description: "Drive PR #<N> through the review loop"`, and the prompt template below. Inline every input placeholder at dispatch time. The sub-agent has full tool access — `Skill` for invoking `review`, `Bash` + `Read` + `Edit` + `Write` for code changes, `Agent` for nested test-selection and build delegations. `AskUserQuestion` is deliberately **not** in its toolset — that tool isn't available inside a sub-agent spawned via the `Agent` tool. When a guard rail fires, the sub-agent returns a `needs_decision` payload and the main loop (this conversation) renders the question; see the guard-rail block below. **Do not invoke `review` directly from the main conversation** — the dispatch boundary is what prevents the failure mode this section exists to fix.
 
 **Sub-agent prompt template** (substitute placeholders at dispatch time):
 
@@ -1264,6 +1307,12 @@ Inputs:
 - Resume hint: this loop may be picking up mid-flow (an earlier sub-agent
   run was interrupted, or a human reviewer commented between invocations).
   Re-read PR comments + reviews on the first iteration before classifying.
+- Prior decisions: guard-rail answers the user already gave this run, as a
+  list of {trigger, answer} (or "none" on the first dispatch). When a guard
+  rail fires you return rather than ask; the main loop asks the user and
+  re-dispatches you with the answer here. Honour each one — don't re-raise a
+  gate the user already settled — and echo the full list back in
+  `user_decisions` so §11 can report them.
 
 Read SKILL.md for §10.4 (the classification rubric), §10.6 (the pre-push
 verification gate), the "Retry ladder for the verification gate" section,
@@ -1305,26 +1354,46 @@ Exit condition — both must hold:
 - After your own re-classification per §10.4, zero Addressable or
   Cheap-fix-override items remain.
 
-Guard rails — invoke AskUserQuestion directly when any of these fire,
-then use the user's answer in this same run and continue. Do not return
-early on a guard-rail decision.
+Guard rails — when any of these fire, do NOT ask the user yourself
+(`AskUserQuestion` isn't available inside a sub-agent spawned via the
+`Agent` tool). Instead, stop and return immediately with
+`status: "needs_decision"` and a populated `decision_request` (schema
+below) describing the choice. The main loop renders it via
+`AskUserQuestion` and re-dispatches a fresh you with the answer in the
+"Prior decisions" input, so you resume without re-hitting the same gate.
 
 - Same-feedback-twice deadlock. You addressed a flagged item; the next
   iteration's review flags the same item with no acknowledgement of your
-  fix. Don't iterate a third time on the same disagreement. Ask: continue
-  with a different angle (and which angle), accept current state and exit
-  with the item filed as a deferred follow-up, or abort the loop.
-- Decision required. `review` flags an architectural choice, an API
-  break, or a scope-change tradeoff. Don't guess. Present the decision
-  to the user with the reviewer's framing and the candidate paths.
-- 5-iteration cap. After the 5th iteration without an exit, ask whether
-  to continue (and for how many more), accept current state, or abort.
-  Don't loop silently past the cap.
+  fix. Don't iterate a third time on the same disagreement. Return a
+  decision_request — `kind: "deadlock"`, `header: "Review loop"`, options:
+  "Try another angle" (continue with a different fix — the user can name it
+  in the free-text "Other"), "Accept + defer" (exit, file the item as a
+  deferred follow-up), "Abort loop".
+- Decision required. `review` flags an architectural choice, an API break,
+  or a scope-change tradeoff. Don't guess. Return a decision_request —
+  `kind: "architectural"`, `header: "Decision"`, with one option per
+  candidate path the reviewer named, each `description` carrying the
+  reviewer's framing for that path.
+- 5-iteration cap. After the 5th iteration without an exit, return a
+  decision_request — `kind: "iteration_cap"`, `header: "Iter cap"`,
+  options: "Continue" (the user can say how many more in the free-text
+  "Other"), "Accept current" (exit with current state), "Abort". Don't
+  loop silently past the cap.
 
 Return ONLY this JSON (no prose around it):
 
 {
-  "status": "approved" | "capped" | "aborted",
+  "status": "approved" | "capped" | "aborted" | "needs_decision",
+  "decision_request":
+    {"kind": "deadlock" | "architectural" | "iteration_cap"
+       | "verification_failure",
+     "question": "the full question text the user will see",
+     "header": "<=12-char header per the guard rail / escalation>",
+     "options": [
+       {"label": "<imperative action>",
+        "description": "<what it does + its consequence>"}
+     ]}
+    | null,
   "iterations": <int>,
   "final_pushed_sha": "<sha>",
   "final_iteration_test_status": "green at <sha> (selected ...)"
@@ -1345,7 +1414,7 @@ Return ONLY this JSON (no prose around it):
   ],
   "user_decisions": [
     {"trigger": "same-feedback-twice" | "decision-required"
-       | "5-iteration-cap",
+       | "5-iteration-cap" | "verification-failure",
      "prompt": "the question text the user saw",
      "answer": "the user's selected option / free-text"}
   ]
@@ -1353,6 +1422,8 @@ Return ONLY this JSON (no prose around it):
 ```
 
 **Consume the return summary.** Parse the JSON the sub-agent returns and use it to drive §11 directly — do not re-derive any of these values from the PR or the worktree:
+
+First, branch on `status`. **`needs_decision` is not terminal** — the sub-agent hit a guard rail (or the §10.6 escalation) and stopped without finishing the loop. Render its `decision_request` through `AskUserQuestion` — the object's `question`, `header`, and `options` are exactly one question's worth of fields — record the chosen answer, then **re-dispatch a fresh sub-agent** with the same inputs plus this answer appended to the "Prior decisions" input. Repeat until the sub-agent returns a terminal status (`approved`, `capped`, or `aborted`). Each answer you collect this way also becomes one *Procedural notes* line in §11 (the terminal return echoes the full set in `user_decisions`). `decision_request` is `null` on terminal returns; the fields below are populated only then:
 
 - `final_iteration_test_status` feeds §11's `Iteration test status` line verbatim.
 - `items_filed_as_followups` feeds §11's *Follow-ups → Filed* bullets (one bullet per entry, with URL).
@@ -1374,7 +1445,7 @@ The sub-agent applies this rubric on every iteration. The rubric is documented a
   - **Structural blocker.** The fix can't ship in this PR — depends on a sibling story not yet merged; requires an API break whose consumers are outside this PR's scope; requires a schema migration the PR's scope excludes.
   - **PRD / scope explicit exclusion.** The item is outside the issue's stated scope as documented in the issue body, the parent epic's DoD, `docs/prd.md`, `docs/architecture.md`, `docs/constitution.md`, or `CLAUDE.md`. Soft scope arguments ("keeps the PR scope pure") don't qualify — the exclusion must be citable.
 - **Cheap-fix override.** If an item meets a deferral trigger above but the fix is **≤ ~20 lines of edits on files this PR already modifies** and doesn't require new tests, new files in the diff, or scope expansion — address it in-loop anyway. Deferral exists to keep PR scope tight; trivial doc, comment, identifier, or formatting fixes aren't scope creep. The override does *not* apply to code changes that pull new files into the diff or that need a fresh test.
-- **Decision required** — the suggestion touches architecture, breaks an API, or carries a tradeoff the user should weigh in on. Fire the sub-agent's "Decision required" guard rail (see the prompt above): present the choice via `AskUserQuestion`, use the user's answer, continue.
+- **Decision required** — the suggestion touches architecture, breaks an API, or carries a tradeoff the user should weigh in on. Don't guess. Trip the sub-agent's "Decision required" guard rail (see the prompt above): the sub-agent returns a `needs_decision` payload, the main loop asks the user via `AskUserQuestion`, and a fresh sub-agent resumes with the answer.
 
 Worked examples (verbatim review snippets the rubric has to handle correctly — these come from the failure mode this rubric was tightened to fix):
 
@@ -1396,7 +1467,7 @@ Run inside the sub-agent's loop on every iteration that produced code changes (p
 2. **Test selection** — spawn an `Explore` sub-agent with the prompt template from "Test-selection sub-agent" above. Substitute the worktree path, integration target, and the project's `<!-- issue-resolver-test-target -->` block. The sub-agent reads the diff, lists each declared target's directory, applies the heuristics, and returns two sections: `COMMAND:` (a ready-to-run shell command, or `(none)`) and `RATIONALE:` (one or two sentences). Capture the rationale in the iteration's PR-status comment so the user can audit the selection.
 3. **Test execution** — if `COMMAND:` is `(none)`, skip execution and continue. Otherwise, run the command. If it begins with `xcodebuild` (or invokes a wrapper that runs `xcodebuild`), delegate to `apple-platform-build-tools:builder`; otherwise run inline.
 
-If run 1 is green, proceed to the sub-agent's step 7 (commit and push). If run 1 is red, follow the ladder in "Retry ladder for the verification gate" above — at most 3 runs this visit, with a forced research breakpoint between cheap and deep fixes, escalating to the user via the sub-agent's `AskUserQuestion` if the deep fix also fails. (Each entry to §10.6 starts a fresh ladder; the §10 5-iteration outer-loop cap governs how many times this whole gate can repeat.) If `COMMAND:` was `(none)` (e.g., docs-only iteration), there's nothing to be green or red — `github-pr-evaluator`'s full canonical run will exercise the change at PR-readiness time. Don't fall back to "run zero tests" when the sub-agent's heuristics could have widened — re-spawn the sub-agent if the rationale looks wrong.
+If run 1 is green, proceed to the sub-agent's step 7 (commit and push). If run 1 is red, follow the ladder in "Retry ladder for the verification gate" above — at most 3 runs this visit, with a forced research breakpoint between cheap and deep fixes, escalating if the deep fix also fails — per the retry ladder's "Escalation" section, you return `status: "needs_decision"` with `kind: "verification_failure"` and the main loop asks the user (you cannot call `AskUserQuestion` from inside the sub-agent). (Each entry to §10.6 starts a fresh ladder; the §10 5-iteration outer-loop cap governs how many times this whole gate can repeat.) If `COMMAND:` was `(none)` (e.g., docs-only iteration), there's nothing to be green or red — `github-pr-evaluator`'s full canonical run will exercise the change at PR-readiness time. Don't fall back to "run zero tests" when the sub-agent's heuristics could have widened — re-spawn the sub-agent if the rationale looks wrong.
 
 ### 11. Summarise for the user
 

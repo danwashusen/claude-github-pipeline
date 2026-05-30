@@ -9,6 +9,55 @@ Turn informal developer feedback into well-structured GitHub issues. The user is
 
 This skill is the first stage of a pipeline: it files the issue; `github-issue-planner` later researches and attaches a verified implementation plan (stored as a comment, not in the body); `github-issue-resolver` then builds it. The practical consequence for **revise mode** is that an issue you drafted may have a plan comment attached after the fact — leave that comment alone, preserve its body pointer, and flag when a body revision may have invalidated it (see Revise mode).
 
+### Asking the user a decision
+
+When you need a decision from the user — an approval gate, a choice between named
+paths, or a confirmation before a GitHub write — ask it through the `AskUserQuestion`
+tool, not as freeform prose. The tool renders the same multiple-choice card every
+time, so the user pattern-matches the decision at a glance instead of re-parsing a
+differently-worded question on each run.
+
+Shape every ask the same way:
+- One decision per question. `header` ≤ 12 chars (e.g. "Post plan", "Merge mode").
+  The `question` field carries the full prose you'd otherwise have typed.
+- 2–4 options. Each `label` is the action in imperative form ("Post it", "Squash",
+  "Approve"); each `description` says what that choice does and its consequence.
+- The tool always appends an "Other" free-text choice, so don't pad to four options
+  with a catch-all — leave room for the user to type a custom answer.
+- `multiSelect: true` only when the choices genuinely combine (rare here).
+- Ask once, act on the answer. Don't re-state the same gate in prose afterwards.
+
+When the candidate paths aren't fixed (e.g. "which of these issues did you mean?"),
+generate the options dynamically from what you found. When the answer is inherently
+open-ended (e.g. "paste any external doc URLs"), a prose ask is still fine — don't
+force it into options.
+
+`AskUserQuestion` is not available inside a sub-agent spawned via the `Agent` tool.
+Any gate that arises during sub-agent work must be surfaced by the sub-agent
+returning a structured "decision needed" signal to this main loop, which asks the
+user and re-dispatches with the answer. Never tell a sub-agent to call
+`AskUserQuestion` itself.
+
+### Delegating mechanical work to `github-ops`
+
+The judgment in this skill — classification, PRD-tension calls, drafting, applying
+review findings — is what's worth a high-effort model. The judgment-free I/O is
+not: fetching an issue + thread for revise mode, reading referenced issues,
+checking templates/labels, and the `gh issue create` / `gh issue edit` writes.
+Delegate that to the **`github-ops`** sub-agent (`subagent_type: "github-ops"`,
+Sonnet + medium effort — spawn with **no `model` override**). It runs a named
+operation and returns faithful structured results: `GATHER_ISSUE`,
+`PERSIST_BODY`, `PERSIST_CREATE` (and `LOCATE` for codebase coherence) — see
+`.claude/agents/github-ops.md`. It returns bodies and threads **verbatim** so the
+classification and latest-direction judgment stay yours.
+
+Two guardrails carry over from the reviewer: `github-ops` cannot call
+`AskUserQuestion`, so on any ambiguity (issue not found, >1 plan comment, a body
+edit it can't safely reconcile) it returns `DECISION_NEEDED: <…>` and writes
+nothing — surface that here and re-dispatch. And every `PERSIST_*` runs only
+**after** the user clears the step-6 file/confirm gate; `github-ops` posts the
+approved title/body verbatim and never authors content.
+
 ## The core loop
 
 1. **Classify** the feedback: bug, incomplete feature, or new feature.
@@ -35,29 +84,15 @@ Parse the issue number or URL from the user's message. If the user said somethin
 
 ### Step R2: Fetch the issue and its full thread
 
-Use the same two-call pattern the resolver uses, so you read everything before forming an opinion:
+Delegate the fetch to `github-ops` so you read everything in one pass before forming an opinion:
 
-```bash
-gh issue view <N> --comments --json number,title,body,state,labels,author,createdAt,updatedAt,comments,assignees,milestone,url
-gh issue view <N> --json closedByPullRequestsReferences,projectItems
-```
+> `GATHER_ISSUE(issue=<N>, repo=<owner/repo>, marker_prefix="<!-- implementation-plan:v1 -->", extra_json="closedByPullRequestsReferences,projectItems")`
 
-Also check for in-flight PRs that may already be acting on this issue:
-
-```bash
-gh pr list --state open --search "<N> in:body" --json number,title,author,isDraft,headRefName,url,updatedAt
-```
+It returns the issue metadata + body and full comment thread **verbatim**, the closed-by-PR / project references, the open-PR list, and the plan comment if one is attached.
 
 If a PR exists, surface it before editing — the user may want to coordinate, or to wait until the PR merges before reshaping the issue body.
 
-Also check whether a `github-issue-planner` plan is attached, because revising the body may invalidate it:
-
-```bash
-gh api "repos/<owner>/<repo>/issues/<N>/comments" \
-  --jq '.[] | select(.body | startswith("<!-- implementation-plan:v1 -->")) | {url: .html_url}'
-```
-
-If a plan comment exists, note its URL — you'll preserve the body's plan pointer and flag staleness at Step R6. **Never edit or delete the plan comment itself**; it's the planner's artifact, refreshed only by re-running that skill.
+If a plan comment came back, note its URL — you'll preserve the body's plan pointer and flag staleness at Step R6. **Never edit or delete the plan comment itself**; it's the planner's artifact, refreshed only by re-running that skill.
 
 ### Step R3: Identify the latest direction from the thread
 
@@ -102,37 +137,19 @@ Wait for explicit confirmation. Then:
 
 **Flag a possibly-stale plan.** If a plan comment exists and this revision materially changes scope, acceptance criteria, or the contracts the plan was built against, the plan may now be stale. Tell the user once after applying the edit: "This revision changed <scope/AC/contracts>; the implementation plan on #N may now be stale — re-run `github-issue-planner` in revise mode to refresh it." The drafter does not edit the plan; refreshing it is the planner's job.
 
-```bash
-# Body (keep the plan-pointer line, if present, unchanged)
-cat > /tmp/revised-body.md <<'EOF'
-<new body>
-EOF
-gh issue edit <N> --body-file /tmp/revised-body.md
+Hand the approved revision to `github-ops` (it preserves the plan-pointer line if you carry it into `new_body`):
 
-# Title — only if changed
-gh issue edit <N> --title "<new title>"
+> `PERSIST_BODY(issue=<N>, repo=<owner/repo>, mode=replace, new_body=<new body, with the 📋 plan pointer kept verbatim if present>, title=<new title if changed>, labels_add=<…>, labels_remove=<…>)`
 
-# Labels — only the deltas
-gh issue edit <N> --add-label "<...>" --remove-label "<...>"
-
-rm /tmp/revised-body.md
-```
-
-Capture the URL `gh` returns and share it with the user.
+Pass only the deltas — omit `title` if unchanged, omit `labels_*` if there are none. `github-ops` returns the issue URL; share it with the user.
 
 ### Special case — revising an Epic
 
-After revising the Epic body, also re-audit child stories. Walk the `## Stories` checklist and fetch each linked story:
-
-```bash
-gh issue view <story-#> --json number,state,title,body,labels
-```
-
-Reconcile the body's checkboxes with each story's actual state (closed → checked; open → unchecked) and run the **dependency-graph story-ordering check** (dimension 5 of the review loop) against the current set of stories. If ordering findings come back, surface them with evidence and a proposed re-ordering — the user confirms before the body is edited. Don't silently swap bullets.
+After revising the Epic body, also re-audit child stories. Get the reconciliation from `github-ops` — `GATHER_EPIC(epic=<epic-#>, repo=<owner/repo>)` returns each `## Stories` entry as `{number, title, checked, state}`, pairing the body checkbox with the story's live state. Reconcile the checkboxes against that state (closed → checked; open → unchecked) and run the **dependency-graph story-ordering check** (dimension 5 of the review loop) against the current set of stories. If ordering findings come back, surface them with evidence and a proposed re-ordering — the user confirms before the body is edited. Don't silently swap bullets.
 
 ### Special case — revising a Story
 
-Verify the `**Epic:** #<epic-#>` backlink still points at an open Epic. If the Epic has closed, surface that and ask whether to retire the Story (close it), detach the backlink, or relink to a different Epic. Don't quietly leave a Story dangling under a closed Epic.
+Verify the `**Epic:** #<epic-#>` backlink still points at an open Epic. If the Epic has closed, surface that and ask via `AskUserQuestion` (header "Epic closed"): **Close the story** — retire the Story since its Epic is done; **Detach backlink** — remove the `**Epic:**` line and leave the Story standalone; **Relink to epic** — point the backlink at a different open Epic. Don't quietly leave a Story dangling under a closed Epic.
 
 ## Step 1: Classify the feedback
 
@@ -143,7 +160,7 @@ The three types map to very different structures, so getting this right matters.
 - **New feature / enhancement** — A capability that doesn't exist yet. Cues: "users should be able to," "it would be nice if," "we need a way to," "I want to add."
 - **Epic** — A multi-capability initiative too big to ship as a single PR; it decomposes into several Story issues. Cues: user lists multiple distinct capabilities in one breath ("we should do X, then Y, then Z"), scope crosses layers (UI + data + service), explicit phrasing like "this is going to be a big one," "multi-phase," "initiative," or the word "epic" itself. Heuristic: if the acceptance criteria the user has in their head won't fit in one shippable PR, it's likely an Epic.
 
-**Feature vs. Epic — ask, don't promote.** Scope is the user's call. When detection signals fire, confirm with a single question ("This sounds Epic-sized — file as one feature, or as an Epic with child stories?") rather than silently upgrading. Filing a feature when the user wanted an Epic (or vice versa) is annoying to undo.
+**Feature vs. Epic — ask, don't promote.** Scope is the user's call. When detection signals fire, confirm rather than silently upgrading — ask via `AskUserQuestion` (header "Issue size"): **One feature** — file it as a single feature issue; **Epic + child stories** — open an Epic and break the work into child stories. Filing a feature when the user wanted an Epic (or vice versa) is annoying to undo.
 
 If genuinely ambiguous between bug / feature / epic, ask the user — don't guess. A bug filed as a feature (or vice versa) creates triage friction later.
 
@@ -193,7 +210,7 @@ When a PRD is present, read it before drafting and use it in three ways:
 
    When there's no tension — the feedback fits cleanly within what the PRD already describes — omit this section. Don't add it just to show you read the PRD.
 
-**Authoritative but mutable.** The PRD wins on framing and terminology by default, but if the user's feedback genuinely conflicts with it, surface that to the user explicitly: *"The PRD currently says X, but your feedback suggests Y. Should I file the issue to update the PRD, the feature, or flag the conflict for discussion?"* The user decides which way to go — don't silently override either the PRD or their feedback.
+**Authoritative but mutable.** The PRD wins on framing and terminology by default, but if the user's feedback genuinely conflicts with it, surface that explicitly — state the conflict ("The PRD currently says X, but your feedback suggests Y") and ask via `AskUserQuestion` (header "PRD conflict"): **File to update PRD** — file the issue as a request to change the PRD; **File the feature** — file the feature as described, treating the PRD as the thing that's out of date; **Flag for discussion** — file it but flag the conflict for the team to resolve. The user decides which way to go — don't silently override either the PRD or their feedback.
 
 **When the PRD is most relevant:** new features (heavily — they extend or contradict scope) and incomplete features (moderately — gaps often map to PRD sections). Bugs rarely touch PRD; only mention it if the bug is actually a spec mismatch rather than a defect.
 
@@ -261,12 +278,10 @@ An Epic is for work where each child is **independently shippable** — a separa
 
 Run the sub-agent review loop on the Epic body before filing. Story-ordering (dimension 5) is **skipped** at this stage — there are no story bodies yet for the sub-agent to reason across. Pass dimensions 1, 2, 3, 6 only. File the Epic, capture the `#NN`.
 
-**Stage 2 — Offer child-story filing.** After the Epic is filed, ask once:
+**Stage 2 — Offer child-story filing.** After the Epic is filed, ask once via `AskUserQuestion` (header "Child issues"): **File each as child** — draft and file every story as its own child issue now; **Leave as bullets** — leave the `## Stories` placeholders as-is for now.
 
-> "Want me to file each story as a child issue too, or leave them as bullets for now?"
-
-- **No** → done. The user can promote bullets to real issues later by hand.
-- **Yes** → for each story: draft using the Story template with `**Epic:** #<epic-#> — <Epic title>` already filled in, run the sub-agent review loop (story-ordering check is deferred to Stage 3 stitching since dependencies span siblings), confirm with the user (step 6, one story at a time — don't batch), file with the `story` label, collect the resulting `#NN`.
+- **Leave as bullets** → done. The user can promote bullets to real issues later by hand.
+- **File each as child** → for each story: draft using the Story template with `**Epic:** #<epic-#> — <Epic title>` already filled in, run the sub-agent review loop (story-ordering check is deferred to Stage 3 stitching since dependencies span siblings), confirm with the user (step 6, one story at a time — don't batch), file with the `story` label, collect the resulting `#NN`.
 
 **Stage 3 — Stitch the Epic body.** Once all stories are filed, patch the Epic to replace placeholder bullets with real links:
 
@@ -276,15 +291,9 @@ Run the sub-agent review loop on the Epic body before filing. Story-ordering (di
 - [ ] #43 — Story 2 title
 ```
 
-Before applying the patched body, run the **full** review loop on the stitched Epic — including story-ordering (dimension 5). The sub-agent now has filed story numbers and bodies to reason across, so dependency-graph ordering can actually fire. If ordering findings come back, surface them with evidence and a proposed re-ordering, then let the user confirm before the bullet order is changed. Don't silently swap bullets.
+Before applying the patched body, run the **full** review loop on the stitched Epic — including story-ordering (dimension 5). The sub-agent now has filed story numbers and bodies to reason across, so dependency-graph ordering can actually fire. If ordering findings come back, surface them with evidence and a proposed re-ordering, then let the user confirm before the bullet order is changed. Don't silently swap bullets. Then apply via `github-ops`:
 
-```bash
-cat > /tmp/epic-body.md <<'EOF'
-<patched body>
-EOF
-gh issue edit <epic-#> --body-file /tmp/epic-body.md
-rm /tmp/epic-body.md
-```
+> `PERSIST_BODY(issue=<epic-#>, repo=<owner/repo>, mode=replace, new_body=<patched body>)`
 
 ### Story body shape
 
@@ -580,51 +589,25 @@ Priority: <priority>
 Should I file this, or want to tweak anything first?
 ```
 
-Wait for explicit confirmation. "Yes," "file it," "looks good, go" — fine. Silence or a follow-up question — keep iterating.
+Then ask via `AskUserQuestion` (header "File issue?"): **File it** — create the issue now via `gh issue create`; **Keep iterating** — hold off and refine the draft further. Treat anything other than an explicit "File it" — silence, a follow-up question, a tweak request, or a custom "Other" answer — as keep-iterating; never file without that explicit go-ahead.
 
 ## Step 7: File the issue
 
-Use `gh issue create` with `--title`, `--body-file` (write body to a temp file to avoid shell escaping nightmares with multiline content and backticks), and `--label` flags:
+Once the user has approved at step 6, hand the create to `github-ops`:
 
-```bash
-# Write body to temp file
-cat > /tmp/issue-body.md <<'EOF'
-<body content>
-EOF
+> `PERSIST_CREATE(repo=<owner/repo>, title=<approved title>, body=<approved body>, labels=[<label>, …])`
 
-# Create the issue
-gh issue create \
-  --title "<title>" \
-  --body-file /tmp/issue-body.md \
-  --label "bug" \
-  --label "priority:medium"
-```
-
-Capture the URL `gh` returns and share it with the user. Clean up the temp file after.
-
-If `gh` errors out (auth, label doesn't exist, etc.), report the exact error and what to do — don't silently retry with different flags.
+It returns the new issue URL and `#NN` — share the URL with the user. If `gh` errors out (auth, label doesn't exist, etc.), `github-ops` reports the exact error rather than retrying with different flags; relay it and adjust.
 
 ### Filing an Epic with child stories
 
-When the user opts into child-story filing after the Epic is created:
+When the user opts into child-story filing after the Epic is created, each write goes through `github-ops`:
 
-1. For each story in turn, write its body to `/tmp/story-body-N.md` (with the Epic backlink already filled in) and file it:
-   ```bash
-   cat > /tmp/story-body-N.md <<'EOF'
-   **Epic:** #<epic-#> — <Epic title>
-   ...
-   EOF
-   gh issue create \
-     --title "<story title>" \
-     --body-file /tmp/story-body-N.md \
-     --label "story"
-   ```
+1. For each story in turn (after its own per-story step-6 confirmation), file it with the Epic backlink already in the body:
+   > `PERSIST_CREATE(repo=<owner/repo>, title=<story title>, body=<"**Epic:** #<epic-#> — <Epic title>" + story body>, labels=["story"])`
 2. Collect each `#NN` as it's returned.
-3. After all stories are filed, write the patched Epic body to `/tmp/epic-body.md` with placeholder bullets replaced by `- [ ] #NN — <Story title>` entries, then edit the Epic:
-   ```bash
-   gh issue edit <epic-#> --body-file /tmp/epic-body.md
-   ```
-4. Clean up all temp files.
+3. After all stories are filed, patch the Epic body — replace placeholder bullets with `- [ ] #NN — <Story title>` entries — and apply it:
+   > `PERSIST_BODY(issue=<epic-#>, repo=<owner/repo>, mode=replace, new_body=<patched body>)`
 
 ## Handling edge cases
 
@@ -638,11 +621,11 @@ When the user opts into child-story filing after the Epic is created:
 
 **The feedback is too thin to file a useful issue.** Push back gently: "This is a bit thin — do you have a [reproduction step / persona / what 'done' looks like]? Otherwise we can file a stub and flesh it out later." Filing stubs is fine if the user prefers; just be honest about what's missing in the body.
 
-**Revise mode: the referenced issue is closed.** Surface it before doing any work — "#N is closed (closed by PR #M on date X). Revise the closed issue, reopen it first, or file a follow-up issue?" Closed issues sometimes get reopened intentionally; sometimes the user meant a different number. Ask, don't guess.
+**Revise mode: the referenced issue is closed.** Surface it before doing any work — state the closure ("#N is closed, closed by PR #M on date X") and ask via `AskUserQuestion` (header "Closed issue"): **Revise as-is** — edit the closed issue in place without reopening; **Reopen first** — reopen the issue, then revise it; **File follow-up** — leave the closed issue alone and file a new follow-up issue instead. Closed issues sometimes get reopened intentionally; sometimes the user meant a different number. Ask, don't guess.
 
 **Revise mode: the referenced issue doesn't exist or you can't access it.** `gh` errors out with 404 / no permissions. Report the exact error and ask the user to check the number/repo. Don't fall back to drafting a new issue silently.
 
-**Review loop keeps surfacing the same finding across passes.** That's the circular exit. The reviewer might be wrong, or the orchestrator's revision might be missing something the user needs to clarify. Surface the latest draft + the recurring finding to the user; don't burn the third pass guessing. Common recovery: ask the user "the reviewer keeps saying X — is this real, or should we override?"
+**Review loop keeps surfacing the same finding across passes.** That's the circular exit. The reviewer might be wrong, or the orchestrator's revision might be missing something the user needs to clarify. Surface the latest draft + the recurring finding to the user; don't burn the third pass guessing. Recovery: state the recurring finding ("the reviewer keeps saying X") and ask via `AskUserQuestion` (header "Review loop"): **It's real, keep fixing** — the finding is valid, take another revision pass at it; **Override and file** — the reviewer is wrong, file the draft as-is despite the finding.
 
 ## Why this matters
 

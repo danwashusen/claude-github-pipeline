@@ -7,6 +7,60 @@ description: Evaluate a pull request against its origin issue, post a formal Git
 
 Evaluate whether a PR actually delivers what its origin issue asked for, post a formal GitHub review (approve or soft-reject), and surface the right merge strategy with a ready-to-run command. This is the final gate between "code reviewed" and "merged cleanly into main."
 
+### Asking the user a decision
+
+When you need a decision from the user — an approval gate, a choice between named
+paths, or a confirmation before a GitHub write — ask it through the `AskUserQuestion`
+tool, not as freeform prose. The tool renders the same multiple-choice card every
+time, so the user pattern-matches the decision at a glance instead of re-parsing a
+differently-worded question on each run.
+
+Shape every ask the same way:
+- One decision per question. `header` ≤ 12 chars (e.g. "Post plan", "Merge mode").
+  The `question` field carries the full prose you'd otherwise have typed.
+- 2–4 options. Each `label` is the action in imperative form ("Post it", "Squash",
+  "Approve"); each `description` says what that choice does and its consequence.
+- The tool always appends an "Other" free-text choice, so don't pad to four options
+  with a catch-all — leave room for the user to type a custom answer.
+- `multiSelect: true` only when the choices genuinely combine (rare here).
+- Ask once, act on the answer. Don't re-state the same gate in prose afterwards.
+
+When the candidate paths aren't fixed (e.g. "which of these issues did you mean?"),
+generate the options dynamically from what you found. When the answer is inherently
+open-ended (e.g. "paste any external doc URLs"), a prose ask is still fine — don't
+force it into options.
+
+`AskUserQuestion` is not available inside a sub-agent spawned via the `Agent` tool.
+Any gate that arises during sub-agent work must be surfaced by the sub-agent
+returning a structured "decision needed" signal to this main loop, which asks the
+user and re-dispatches with the answer. Never tell a sub-agent to call
+`AskUserQuestion` itself.
+
+### Delegating mechanical work to `github-ops`
+
+The judgment in this skill — the issue-fit evaluation, the verdict, the merge-
+strategy call — is what's worth the expensive model. The judgment-free GitHub I/O
+is not: fetching the PR + diff + linked issues + prior reviews, the health-cache
+marker lookup, the implementation-plan lookup, and posting the cache comment and
+the final review. Delegate that to the **`github-ops`** sub-agent
+(`subagent_type: "github-ops"`, Sonnet + medium effort — spawn with **no `model`
+override**): `GATHER_PR`, `GATHER_ISSUE`, `PERSIST_COMMENT` (see
+`.claude/agents/github-ops.md`). It returns PR/issue bodies, threads, and the diff
+**verbatim** so the evaluation stays yours.
+
+**What does *not* delegate:** the §2 self-approval pre-check and the §5 branch-
+health gate (the **test-selection** `Explore` agent and the
+`apple-platform-build-tools:builder` delegation) stay exactly as they are — they
+are judgment/verification, not mechanical I/O. `github-ops` only runs the
+GitHub-API fetch/post above.
+
+Like the other sub-agents, `github-ops` cannot call `AskUserQuestion`; on any
+ambiguity it returns `DECISION_NEEDED: <…>` and writes nothing. Every
+`PERSIST_COMMENT` — including the final `pr-review` post — runs only **after** the
+relevant gate (the §10 draft-confirm for the review; the §2 self-approval check
+decides its `review_action` of `approve` vs `comment`). `github-ops` posts the
+body you pass and executes the `review_action` you specify; the verdict is yours.
+
 ## Prerequisites
 
 - `gh` CLI installed and authenticated (`gh auth status` to check)
@@ -39,29 +93,13 @@ If `$PR_AUTHOR == $CURRENT_USER`, note this now: the final review post must use 
 
 ### 3. Read the PR, linked issues, and prior reviews
 
-Fetch everything needed for evaluation in one pass:
+Fetch everything needed for evaluation in one pass via `github-ops`:
 
-```bash
-# Full PR context
-gh pr view <N> --repo <owner/repo> --comments \
-  --json number,title,body,state,isDraft,author,baseRefName,headRefName, \
-         commits,additions,deletions,changedFiles,closingIssuesReferences, \
-         comments,reviews,latestReviews,reviewDecision,mergeStateStatus, \
-         mergeable,statusCheckRollup,headRefOid,url
+> `GATHER_PR(pr=<N>, repo=<owner/repo>, include_diff=true, include_line_comments=true)`
 
-# The diff
-gh pr diff <N> --repo <owner/repo>
+It returns the full PR context (including `headRefOid`, the `statusCheckRollup`, and `closingIssuesReferences`), the **diff** verbatim, and the line-level `/review` comments (which aren't in the `--comments` payload). Then for every issue number in `closingIssuesReferences`, fetch the issue **with its plan comment** so step 6 already has it:
 
-# Line-level code review comments (NOT included in the --comments flag above)
-gh api repos/<owner>/<repo>/pulls/<N>/comments
-```
-
-Then for every issue number in `closingIssuesReferences`:
-
-```bash
-gh issue view <issue-#> --repo <owner/repo> --comments \
-  --json number,title,body,state,labels,comments,url
-```
+> `GATHER_ISSUE(issue=<issue-#>, repo=<owner/repo>, marker_prefix="<!-- implementation-plan:v1 -->")`
 
 **Draft PR guard.** If the PR `state` is `DRAFT`, stop here. Tell the user to mark it ready for review before evaluating.
 
@@ -98,13 +136,9 @@ SHORT_SHA=${HEAD_SHA:0:7}
 
 #### 5.2 Look for a prior cache comment
 
-Search the PR comments for the health cache marker:
+Get the health-cache marker comment from `github-ops` (it returns the `id` and `body` if one exists, or notes none):
 
-```bash
-CACHE_COMMENT=$(gh api "repos/<owner>/<repo>/issues/<N>/comments" \
-  --jq '.[] | select(.body | startswith("<!-- pr-evaluator-health-cache:v1 -->")) | {id: .id, body: .body}' \
-  | head -n 1)
-```
+> `GATHER_PR(pr=<N>, repo=<owner/repo>, marker_prefix="<!-- pr-evaluator-health-cache:v1 -->")`
 
 If a cache comment is found, parse the `SHA:` line from its body and compare to `HEAD_SHA`:
 
@@ -154,11 +188,12 @@ Read all three blocks once and remember them for the rest of this step.
 
 **Backward compatibility — projects that haven't migrated.** Older projects still declare a single `<!-- pr-evaluator-health-checks -->` block containing both static checks and the test invocation. If `pr-evaluator-static-checks` is absent but `pr-evaluator-health-checks` is present, treat the legacy block as the full command list and run it as-is — skip the test-selection sub-agent step. This produces the legacy behaviour (full suite every time) and keeps the skill working on un-migrated projects. If `pr-evaluator-test-target` is absent but `issue-resolver-test-target` is present (the project has migrated `github-issue-resolver` but not `github-pr-evaluator`), reuse the issue-resolver block with one assumption: the `full-suite-command` defaults to the wrapper command with no flags (so for `wrapper: ./scripts/xcb.sh`, the full-suite command is `./scripts/xcb.sh`).
 
-**If neither static-checks nor health-checks blocks are found:** tell the user which files were searched, then ask:
+**If neither static-checks nor health-checks blocks are found:** tell the user which files were searched, then call `AskUserQuestion` (`header: "Health check"`; question text: "No `<!-- pr-evaluator-static-checks -->` or `<!-- pr-evaluator-health-checks -->` block found in COMMANDS.md or CLAUDE.md. How should I verify this branch?") with options:
 
-> "No `<!-- pr-evaluator-static-checks -->` or `<!-- pr-evaluator-health-checks -->` block found in COMMANDS.md or CLAUDE.md. Which commands should I run to verify this branch? (Or say 'skip health check for now'.)"
+- **Skip for now** — set `HEALTH_OK=null` and proceed without running a local gate.
+- **I'll specify commands** — use the auto-appended "Other" free-text choice to type the exact commands to run for this branch.
 
-If the user supplies commands, use them for this run as a flat command list (skip the sub-agent step). After a green result, offer to add the static-checks block — but do not write to it without explicit confirmation. If the user opts to skip, set `HEALTH_OK=null`, `HEALTH_BODY="Health check: skipped — no static-checks block found."`, and jump to step 6.
+If the user supplies commands (via the "Other" free-text answer), use them for this run as a flat command list (skip the sub-agent step). After a green result, offer to add the static-checks block — but do not write to it without explicit confirmation. If the user opts to skip, set `HEALTH_OK=null`, `HEALTH_BODY="Health check: skipped — no static-checks block found."`, and jump to step 6.
 
 #### 5.5 Run the gate
 
@@ -382,17 +417,9 @@ Source: COMMANDS.md / CLAUDE.md
 _Cached by `github-pr-evaluator`. Do not edit; will be regenerated when HEAD changes._
 ```
 
-If a stale cache comment was found in 5.2, delete it first:
+Post the cache comment via `github-ops`, deleting the stale one in the same step if 5.2 found one:
 
-```bash
-gh api -X DELETE "repos/<owner>/<repo>/issues/comments/<OLD_CACHE_ID>"
-```
-
-Then post:
-
-```bash
-gh pr comment <N> --repo <owner/repo> --body-file /tmp/pr-health-cache.md
-```
+> `PERSIST_COMMENT(target=pr, id=<N>, repo=<owner/repo>, body=<the cache-comment body>, delete_marker_id=<OLD_CACHE_ID if stale>)`
 
 Capture the resulting comment URL for use in `HEALTH_BODY`.
 
@@ -412,12 +439,7 @@ For each issue in `closingIssuesReferences`, evaluate five dimensions. Write you
 
 **Doc grounding.** Per the project's issue resolver workflow, PR bodies must include a `## Doc grounding` section citing the PRD, Architecture doc, or CLAUDE.md sections that constrained the approach. A missing or vague doc-grounding section is a flag for any non-trivial feature or refactor. (Skip for: one-line bug fixes, pure doc/typo changes, and repos with no docs at all.)
 
-**Plan adherence.** The issue may carry a verified implementation plan authored by `github-issue-planner` and stored as a marker comment. Fetch it:
-
-```bash
-gh api "repos/<owner>/<repo>/issues/<issue-#>/comments" \
-  --jq '.[] | select(.body | startswith("<!-- implementation-plan:v1 -->")) | {url: .html_url, body: .body}'
-```
+**Plan adherence.** The issue may carry a verified implementation plan authored by `github-issue-planner` and stored as a marker comment — the §3 `GATHER_ISSUE` call already passed `marker_prefix="<!-- implementation-plan:v1 -->"`, so its `url` + `body` are in hand. (If you skipped that or need a fresh copy, re-run `GATHER_ISSUE(issue=<issue-#>, repo=<owner/repo>, marker_prefix="<!-- implementation-plan:v1 -->")`.)
 
 - **Plan present** → check the diff against the plan's *locked decisions* (`## Architecture decisions`, `## Changes`, `## Data model / schema impact`, `## Test plan`). The plan locks decisions, not lines, so don't flag in-spirit implementation detail that differs harmlessly. But a **reversal of a locked decision** — a different architecture, a moved layer assignment, a data-model shape the plan didn't specify, a missing planned test — that is **not** disclosed (neither flagged + agreed in the plan's `## Deviations`, nor recorded as a `## Plan override` in the PR body) is a **gap → soft-reject (`--comment`)**, quoting the specific decision and the diverging diff. If the resolver was supposed to route a plan-invalidating discovery back to the planner (resolver step 8) and instead worked around it silently, this is exactly the dimension that catches it.
 - **Plan absent** → many issues predate the planner, or were trivial enough to skip it. Note "no implementation plan found — adherence not evaluated" in the verdict body and **do not hard-block** on its absence. Only issues that *have* a plan are held to adherence.
@@ -517,25 +539,23 @@ Then proceed directly to step 11 — no confirmation needed.
 
 ### 11. Post the review
 
-Write the review body to a temp file and post:
+Hand the review body to `github-ops`, with the `review_action` set by the verdict (§7) and the §2 self-approval check:
 
-```bash
-cat > /tmp/pr-review-body.md <<'EOF'
-<review body content>
-EOF
+> `PERSIST_COMMENT(target=pr-review, id=<N>, repo=<owner/repo>, body=<review body>, review_action=<approve | comment | request-changes>)`
 
-gh pr review <N> --repo <owner/repo> --approve --body-file /tmp/pr-review-body.md
-# or: --comment  (self-authored or soft-rejection)
-```
-
-Capture the URL returned (or construct it from the PR URL) and share it with the user. Clean up the temp file.
+`review_action=approve` for an approval; `comment` for a soft-rejection **or** when the §2 self-approval pre-check flagged that you authored the PR (GitHub rejects self-`--approve` with 422 — the body stays identical, only the action changes). `github-ops` returns the review URL; share it with the user.
 
 ### 12. Offer to run the merge
 
-After the review posts, show the exact command and ask for explicit confirmation before running. Name the merge mode prominently so the user knows exactly what will happen.
+After the review posts, ask for explicit confirmation before running the merge via a single `AskUserQuestion` (`header: "Merge mode"`; question text: "Merge PR #\<N\>? I recommend the mode below for this PR.") with these options. Present the option matching the skill's recommended mode for this PR **first** — squash for story PRs, merge-commit for epic-integration PRs — so the recommended path is the lead choice; the other two are escape hatches:
 
-**Squash merge** — ask:
-> "Merge PR #\<N\> using **SQUASH** (`--squash`) with subject: `fix: resolve null token in onboarding (#143)`? Reply yes to proceed."
+- **Squash** — description carries the composed subject, e.g. `fix: resolve null token in onboarding (#143)`. Collapses the branch to a single commit on the base.
+- **Merge commit** — preserves all story squash commits as distinct entries in the base branch's history (epic integration).
+- **Don't merge yet** — post nothing further; leave the PR mergeable for the user to land later.
+
+The chosen option determines which command runs. Never use `--auto`.
+
+If the user chooses **Squash**:
 
 ```bash
 gh pr merge <N> --repo <owner/repo> --squash \
@@ -544,15 +564,12 @@ gh pr merge <N> --repo <owner/repo> --squash \
   --delete-branch   # append only if delete_branch_on_merge is false
 ```
 
-**Merge commit** (epic integration) — ask:
-> "Merge PR #\<N\> using a **MERGE COMMIT** (`--merge`) — this preserves all story squash commits as distinct entries in main's history. Reply yes to proceed."
+If the user chooses **Merge commit**:
 
 ```bash
 gh pr merge <N> --repo <owner/repo> --merge \
   --delete-branch   # if delete_branch_on_merge is false
 ```
-
-Run only on explicit user confirmation. Never use `--auto`.
 
 Temp files from steps 11–12 are cleaned up after use.
 
@@ -610,7 +627,7 @@ Clean up temp files after. If the checkbox is already `[x]` (another tool beat u
    git worktree remove .worktrees/<branch>
    ```
 
-3. **Delete temp files** created during this run: `/tmp/pr-review-body.md`, `/tmp/squash-body.md`, `/tmp/epic-body-current.md`, `/tmp/epic-body-updated.md`, `/tmp/pr-health-cache.md`, `/tmp/health-*.log`.
+3. **Delete temp files** created during this run: `/tmp/squash-body.md`, `/tmp/epic-body-current.md`, `/tmp/epic-body-updated.md`, `/tmp/health-*.log`. (The review-body and health-cache temp files are written and removed inside `github-ops`, not here.)
 
 Then print the final summary:
 - Review posted: URL
@@ -688,11 +705,11 @@ Detection: `headRefName` matches `epic/<N>-<slug>` AND `baseRefName == main`.
 ## When to ask the user
 
 - The PR has multiple `closingIssuesReferences` and their acceptance criteria conflict (e.g., one issue wants X, another wants not-X).
-- The latest `/review` run flagged issues that look unaddressed — confirm whether to treat them as a hard rejection or note them and proceed.
+- The latest `/review` run flagged issues that look unaddressed — call `AskUserQuestion` (`header: "Open review"`) with options **Hard rejection** (treat the unresolved `/review` points as a blocking soft-reject) / **Note + proceed** (cite them in the verdict body but don't block).
 - The composed squash subject's inferred `<type>` is ambiguous (issue labels and PR title disagree, or neither carries a Conventional-Commits prefix).
 - The PR is an epic integration PR and one or more `## Definition of done` items aren't evidently satisfied by the diff.
-- `reviewDecision == REVIEW_REQUIRED` and it's owed to a specific reviewer who hasn't acted — ask whether to proceed or wait.
-- The PR has no `closingIssuesReferences` — ask which issue it addresses before running the scope evaluation, or confirm that it's intentionally standalone (e.g., a chore or doc update).
+- `reviewDecision == REVIEW_REQUIRED` and it's owed to a specific reviewer who hasn't acted — call `AskUserQuestion` (`header: "Reviewer"`) with options **Proceed anyway** (post your approval now; merge may still be gated on the named reviewer) / **Wait for reviewer** (hold off until the named reviewer acts).
+- The PR has no `closingIssuesReferences` — call `AskUserQuestion` (`header: "Issue link"`) with options **Name the issue** (use the auto-appended "Other" free-text choice to type the issue number this PR addresses, then run the scope evaluation against it) / **Intentionally standalone** (no origin issue — e.g. a chore or doc update; skip the scope-against-issue check).
 - Branch protection returns something other than 403 that suggests a stricter-than-expected merge policy.
 - Neither a `<!-- pr-evaluator-static-checks -->` nor a legacy `<!-- pr-evaluator-health-checks -->` block is found in `COMMANDS.md` / `CLAUDE.md` — ask which commands to run (or whether to skip).
 

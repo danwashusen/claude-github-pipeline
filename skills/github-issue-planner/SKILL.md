@@ -9,6 +9,60 @@ Turn a filed GitHub issue into a verified, best-practice **implementation plan**
 
 The plan's job is to **lock the decisions** an implementer would otherwise have to re-derive: the architectural approach, layer assignments, file-level changes, data-model/schema impact, the test strategy, and (for multi-part work) sequencing. It deliberately does *not* spell out every line — see "Lock decisions, not lines" below. The resolver treats those locked decisions as binding; if implementation reveals one of them is wrong, the resolver routes back here in revise mode rather than silently working around it. This mirrors the existing drafter↔resolver audit loop: the issue body is the drafter's artifact, the plan is this skill's artifact, and both can be sent back for revision when reality diverges.
 
+### Asking the user a decision
+
+When you need a decision from the user — an approval gate, a choice between named
+paths, or a confirmation before a GitHub write — ask it through the `AskUserQuestion`
+tool, not as freeform prose. The tool renders the same multiple-choice card every
+time, so the user pattern-matches the decision at a glance instead of re-parsing a
+differently-worded question on each run.
+
+Shape every ask the same way:
+- One decision per question. `header` ≤ 12 chars (e.g. "Post plan", "Merge mode").
+  The `question` field carries the full prose you'd otherwise have typed.
+- 2–4 options. Each `label` is the action in imperative form ("Post it", "Squash",
+  "Approve"); each `description` says what that choice does and its consequence.
+- The tool always appends an "Other" free-text choice, so don't pad to four options
+  with a catch-all — leave room for the user to type a custom answer.
+- `multiSelect: true` only when the choices genuinely combine (rare here).
+- Ask once, act on the answer. Don't re-state the same gate in prose afterwards.
+
+When the candidate paths aren't fixed (e.g. "which of these issues did you mean?"),
+generate the options dynamically from what you found. When the answer is inherently
+open-ended (e.g. "paste any external doc URLs"), a prose ask is still fine — don't
+force it into options.
+
+`AskUserQuestion` is not available inside a sub-agent spawned via the `Agent` tool.
+Any gate that arises during sub-agent work must be surfaced by the sub-agent
+returning a structured "decision needed" signal to this main loop, which asks the
+user and re-dispatches with the answer. Never tell a sub-agent to call
+`AskUserQuestion` itself.
+
+### Delegating mechanical work to `github-ops`
+
+This skill is meant to run on a high-effort model — but only the *planning* is
+worth that: classification, grounding, deviation calls, drafting, applying
+review findings. The judgment-free I/O (fetching the issue + thread, looking up
+the plan comment, checking open PRs, reconciling the epic + its branch, locating
+precedent in the codebase, and posting/editing on GitHub) does not need it, and
+running it on the expensive model is most of what makes this skill feel slow.
+
+Delegate that I/O to the **`github-ops`** sub-agent (`subagent_type: "github-ops"`,
+pinned to Sonnet + medium effort — spawn it with **no `model` override** so the
+pinned tier applies). It runs the named operation and returns faithful structured
+results: `GATHER_ISSUE`, `GATHER_EPIC`, `LOCATE`, `PERSIST_COMMENT`,
+`PERSIST_BODY` (see `.claude/agents/github-ops.md` for the contract). It returns
+issue bodies and threads **verbatim** — never summarized — so every judgment
+below stays yours; `LOCATE` returns only `path:line` pointers, and you still
+`Read` the cited ranges yourself so the plan's citations are grounded in context
+you actually read.
+
+Like the reviewer, `github-ops` cannot call `AskUserQuestion`. If it hits an
+ambiguity or a write conflict it returns `DECISION_NEEDED: <…>` and performs no
+write; surface that to the user here and re-dispatch with the answer. And you
+only ever hand it a `PERSIST_*` after the user has cleared the step-9 gate — it
+posts the approved body verbatim, it never authors anything.
+
 ## Prerequisites
 
 - `gh` CLI installed and authenticated (`gh auth status` to check). If it isn't, stop and tell the user — don't work around it.
@@ -33,25 +87,11 @@ Never skip step 6 (deviations are the user's call) or step 8 (an unverified plan
 
 ## Step 1–2: Identify and fetch
 
-Parse the issue number/URL the same way the resolver does. Then fetch everything in one pass before forming any opinion — the original body is often outdated by the time someone asks for a plan:
+Parse the issue number/URL the same way the resolver does. Then fetch everything in one pass before forming any opinion — the original body is often outdated by the time someone asks for a plan. Delegate the fetch to `github-ops`:
 
-```bash
-gh issue view <N> --repo <owner/repo> --comments \
-  --json number,title,body,state,labels,author,createdAt,updatedAt,comments,assignees,milestone,url
+> `GATHER_ISSUE(issue=<N>, repo=<owner/repo>, marker_prefix="<!-- implementation-plan:v1 -->")`
 
-# in-flight work — a plan is less useful (and may need coordinating) if a PR is already open
-gh pr list --repo <owner/repo> --state open --search "<N> in:body" \
-  --json number,title,author,isDraft,headRefName,url,updatedAt
-```
-
-**Check for an existing plan comment** (this is the revise-mode trigger):
-
-```bash
-gh api "repos/<owner>/<repo>/issues/<N>/comments" \
-  --jq '.[] | select(.body | startswith("<!-- implementation-plan:v1 -->")) | {id: .id, url: .html_url, body: .body}'
-```
-
-If a plan comment exists, go to **Revise mode** below. If an open PR exists, surface it before planning — the user may want to wait for it to land, or coordinate the plan with in-flight work.
+It returns the issue metadata + body and the full comment thread **verbatim**, the existing plan comment (`id`, `url`, `body`) if one matched, and the open-PR list. The marker lookup doubles as the **revise-mode trigger**: if a plan comment came back, go to **Revise mode** below (its `id` is what step 10 deletes; if `github-ops` reports more than one plan comment, it returns `DECISION_NEEDED` — disambiguate with the user). If an open PR exists, surface it before planning — the user may want to wait for it to land, or coordinate the plan with in-flight work.
 
 ## Step 3: Classify and scale to the work
 
@@ -88,7 +128,11 @@ Read each that exists; follow `@`-references (`CLAUDE.md` pulls in `docs/constit
 - **`docs/ui-design.md`** — the authority for any UI surface. Ground UI decisions in named components, sizes, and patterns it defines (e.g. `SectionCard`, the chat-size model) rather than inventing new ones.
 - **`docs/constitution.md`** — non-negotiable rules. A plan that proposes a constitution violation is a blocker, not a deviation to negotiate.
 
-Then **grep the codebase for precedent.** The strongest plans extend patterns that already exist:
+Then **find the codebase precedent.** The strongest plans extend patterns that already exist. Delegate the *locating* to `github-ops` — it greps fast and cheap and hands back pointers, not conclusions:
+
+> `LOCATE(terms=<symbols/patterns/doc sections>, roots=<dirs>, ref=<epic branch if the working tree isn't on it>)`
+
+It returns a manifest of `path:line-start–line-end` hits with short excerpts. **You then `Read` the cited ranges yourself** — the interpretation, the layer call, and every `[precedent: …]` citation are yours, grounded in source you actually read (not in the excerpt). With the candidate sites in hand:
 - Find the types, stores, services, and views the change touches; confirm the layer each belongs to (constitution §2).
 - Find a sibling feature that solved an analogous problem and mirror its structure.
 - Identify the concrete symbols, file paths, and signatures the implementation will add or modify — these become the `## Changes` section.
@@ -99,10 +143,10 @@ Then **grep the codebase for precedent.** The strongest plans extend patterns th
 
 If the best approach genuinely departs from the documented architecture, architecture-notes, ui-design, or established codebase precedent, **stop and raise it with the user before writing the plan**. Don't silently deviate, and don't bury the deviation in the plan hoping it slides through review.
 
-Present it plainly: what the docs/precedent say, what you propose instead, and why the deviation is worth it. The user decides:
-- **Approve the deviation** → record it in `## Deviations from project docs` with the agreement date, and consider whether the doc itself should be updated (mention it; the user may want a follow-up).
-- **Reject it** → re-plan within the documented approach.
-- **Update the doc first** → the deviation becomes the new norm; note that the doc edit is a prerequisite.
+Present it plainly: what the docs/precedent say, what you propose instead, and why the deviation is worth it. Then ask the decision through `AskUserQuestion` (header `"Deviation"`), with the prose framing in the `question` field and these three options:
+- **Approve** — accept the deviation; record it in `## Deviations from project docs` with the agreement date, and consider whether the doc itself should be updated (mention it; the user may want a follow-up).
+- **Reject — re-plan** — drop the deviation and re-plan within the documented approach.
+- **Update doc first** — the deviation becomes the new norm; the doc edit becomes a prerequisite, noted in the plan.
 
 A constitution violation is **not** a deviation to negotiate here — reshape the plan so it complies, or surface that the issue itself can't be built as specified (which may route back to the drafter in revise mode).
 
@@ -200,11 +244,11 @@ Unlike the resolver's audit (which routes issue-body findings to the drafter), t
 
 **What the user sees at step 9:**
 - **Clean exit** → show the plan, optionally noting `(verified in N pass(es))`.
-- **Cap / circular exit** → show the plan AND a "Review notes" block listing each unresolved finding (severity, evidence, recommended remediation). The user decides whether to post as-is, fix manually, or push back on the reviewer.
+- **Cap / circular exit** → show the plan AND a "Review notes" block listing each unresolved finding (severity, evidence, recommended remediation). Then ask the decision through `AskUserQuestion` (header `"Review notes"`) with these options: **Post as-is** (post the plan with the unresolved findings carried as `## Open questions / risks`), **Fix manually** (hold off posting while you resolve the findings by hand), **Push back on reviewer** (challenge the findings as wrong before deciding).
 
 ## Step 9: Confirm with the user
 
-For a fresh plan, show the full plan (title + body) and ask: "Post this plan to #N, or want to adjust anything first?" Wait for explicit confirmation.
+For a fresh plan, show the full plan (title + body), then ask the decision through `AskUserQuestion` (header `"Post plan"`, substituting the real issue number for N) with two options: **Post to #N** (persist the plan as the marker comment per step 10) and **Adjust first** (hold off and revise the plan before posting). Wait for the answer before persisting.
 
 For a **revise**, show a diff-style update — only what changed — so the user doesn't re-read the whole thing:
 
@@ -219,39 +263,29 @@ For a **revise**, show a diff-style update — only what changed — so the user
 
 ## Step 10: Persist the plan
 
-Write the plan body to a temp file and post it as a comment (matching the pr-evaluator health-cache mechanics):
+Only reach this step after the step-9 gate. Hand the **approved** plan body to `github-ops` to post — it writes the body verbatim, it does not author it:
 
-```bash
-cat > /tmp/issue-plan.md <<'EOF'
-<plan body, starting with the <!-- implementation-plan:v1 --> marker>
-EOF
+> `PERSIST_COMMENT(target=issue, id=<N>, repo=<owner/repo>, body=<the approved plan, starting with the <!-- implementation-plan:v1 --> marker>, delete_marker_id=<OLD_PLAN_COMMENT_ID if revising>)`
 
-# Revise mode: delete the stale plan comment first (captured in step 2)
-gh api -X DELETE "repos/<owner>/<repo>/issues/comments/<OLD_PLAN_COMMENT_ID>"
+In revise mode, pass the stale plan comment's `id` (captured in step 2) as `delete_marker_id` so it's deleted before the repost. `github-ops` returns the new comment **URL** — capture it.
 
-gh issue comment <N> --repo <owner/repo> --body-file /tmp/issue-plan.md
-rm /tmp/issue-plan.md
-```
-
-Capture the returned comment URL. Then **ensure the issue body carries a plan pointer** so a human (and the drafter's revise mode) can see a plan exists. Fetch the current body, and if it has no pointer line, prepend one (preserve everything else verbatim):
+Then **ensure the issue body carries a plan pointer** so a human (and the drafter's revise mode) can see a plan exists. This pointer line:
 
 ```
 > 📋 **Implementation plan:** see [the implementation-plan comment](<plan-comment-url>) — authored by `github-issue-planner`; re-run that skill to revise.
 ```
 
-```bash
-gh issue edit <N> --repo <owner/repo> --body-file /tmp/body-with-pointer.md
-```
+> `PERSIST_BODY(issue=<N>, repo=<owner/repo>, mode=pointer, pointer_line=<the line above with the captured URL>)`
 
-Never add a second pointer if one already exists — update its URL in place if the plan comment was reposted. If editing the body would collide with the drafter (e.g. the user is mid-revise on the body), the pointer is low-stakes; skip it and tell the user rather than racing.
+`mode=pointer` is idempotent: it adds the line only if absent and updates the URL in place if the plan comment was reposted — never a second pointer. If the body looks mid-edit (a drafter revise in flight), `github-ops` returns `DECISION_NEEDED` rather than racing; the pointer is low-stakes, so skip it and tell the user.
 
 ## Step 11: Epic fan-out
 
 When the target is an **epic**:
 
 1. Plan the epic itself first (epic-level `## Approach`, `## Story breakdown`, `## Integration strategy`, `## Definition of done` grounding). Verify it with dimensions 1, 2, 3, 6 (sequencing can't fire yet if stories aren't planned). Post it.
-2. **Check whether the child stories are filed as issues.** Read the epic body's `## Stories` list:
-   - **Stories are filed** (`- [ ] #NN — title` lines) → plan each one (story schema with the `**Epic:** #N` backlink), confirm with the user one at a time, post each. Then run the verify loop's **dimension 5 (sequencing)** across the full set of sibling plans and surface any re-ordering with evidence for the user to approve.
+2. **Check whether the child stories are filed as issues.** Get the reconnaissance from `github-ops` rather than running the `gh`/`git` yourself — `GATHER_EPIC(epic=<N>, repo=<owner/repo>, dependency=<commit/file/PR a story depends on, if relevant>)` returns the epic body, the parsed `## Stories` list (each `{number, title, checked}`, or a flag that they're plain bullets with no `#NN`), the resolved `epic/<N>-<slug>` branch (local + remote — this is the `plan_ref` for each story), and whether the named dependency has landed on that branch. From that list:
+   - **Stories are filed** (`- [ ] #NN — title` lines) → plan each one (story schema with the `**Epic:** #N` backlink), then confirm with the user one story at a time through `AskUserQuestion` (header `"Post story"`) with these options: **Post it** (persist this story's plan per step 10), **Adjust first** (revise this story's plan before posting), **Skip this story** (leave this story unplanned for now and move to the next). Post each story per its answer. Then run the verify loop's **dimension 5 (sequencing)** across the full set of sibling plans and surface any re-ordering with evidence for the user to approve.
    - **Stories are not filed** (plain bullets, no `#NN`) → **stop after the epic-level plan.** Tell the user: "The child stories aren't filed yet. Run `github-issue-drafter` to file them (it owns issue creation), then re-run me on the epic and I'll plan each story and sequence them." Filing issues is the drafter's job, not the planner's — don't create them here.
 
 ## Revise mode
