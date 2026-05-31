@@ -77,13 +77,15 @@ posts the approved body verbatim, it never authors anything.
 4. **Ingest external sources** the user offers (your training knowledge may be stale).
 5. **Research and ground** the approach in codebase precedent and the project docs.
 6. **Surface deviations** from the docs and get the user's sign-off *before* finalising.
+6.5. **Surface genuine design decisions** the planner can't pin from precedent — get the user's call via the Decision gate, before drafting.
 7. **Draft** the plan against the schema below.
+7.5. **Pre-flight** — sweep the draft for hedge phrasings and resolve each one before invoking the reviewer.
 8. **Verify** the plan with the isolated review sub-agent loop (up to 3 passes).
 9. **Confirm** with the user (a diff-style update in revise mode).
 10. **Persist** the plan as a marker comment + ensure the issue body's plan pointer.
 11. **Epic fan-out** — plan each filed child story and run a sequencing pass.
 
-Never skip step 6 (deviations are the user's call) or step 8 (an unverified plan is worse than no plan — it looks authoritative while being wrong).
+Never skip step 6 or 6.5 (user-owned calls), step 7.5 (the cheap in-loop self-check that prevents the planner→resolver→planner round-trip), or step 8 (an unverified plan is worse than no plan — it looks authoritative while being wrong).
 
 ## Step 1–2: Identify and fetch
 
@@ -150,6 +152,23 @@ Present it plainly: what the docs/precedent say, what you propose instead, and w
 
 A constitution violation is **not** a deviation to negotiate here — reshape the plan so it complies, or surface that the issue itself can't be built as specified (which may route back to the drafter in revise mode).
 
+## Step 6.5: Surface genuine design decisions (interactive gate)
+
+Step 6 handles *deviations from the docs* — binary, about compliance ("docs say X, plan wants Y, approve?"). Step 6.5 handles *genuine design decisions* — open-ended, about tradeoff resolution between two approaches that both comply ("approaches X and Y both work; pick one").
+
+The default at this skill is that the planner resolves design questions **autonomously from precedent**: re-read the relevant code with `git show <plan_ref>:<path>`, find how a sibling feature settled the same shape, pin the choice with a `[precedent: …]` citation. Most "open" questions evaporate once you actually read the call site. Exhaust that path first — the round-trip cost of a user gate is real, and a precedent-grounded decision is more durable than a user picked one.
+
+Surface to the user **only** when:
+
+- Two approaches are equally grounded in precedent (no sibling pattern picks between them), AND
+- The choice has a user-visible consequence — UX, performance, future optionality, or a layer assignment that pulls one direction or the other.
+
+When both conditions hold, present the question through `AskUserQuestion` with `header: "Decision"`, the prose framing (issue context, candidate approaches, planner's recommendation as option 1) in `question`, and 2–4 concrete options as named approaches. Each option's `label` is the imperative ("Use trigger discriminator", "Add sibling method"); the `description` is one line on what that choice does and its consequence.
+
+The user's answer becomes a **locked decision** recorded in `## Architecture decisions` with `[user decision <date>]` as its citation source — that line carries the same binding weight as a `[precedent: …]` citation. The planner does not revisit it without a step-9 revise.
+
+If the planner is tempted to surface a design question that fails *either* gate above (precedent could decide it, or the consequence is invisible to the user), the question goes in `## Architecture decisions` with a precedent citation. Not in `## Risks & watchpoints`. Not deferred to the resolver.
+
 ## Step 7: Draft the plan
 
 Use this schema verbatim — the resolver and pr-evaluator parse these section headings. Omit sections marked optional when they'd be empty; never pad.
@@ -170,7 +189,7 @@ Use this schema verbatim — the resolver and pr-evaluator parse these section h
 constrain this, with §refs — the citations, not a restatement of the approach>
 
 ## Architecture decisions
-- <decision> — <rationale> — [precedent: `path/to/File.swift:NN` | architecture.md §X | architecture-notes §Y | DEVIATION (agreed <date>) → see Deviations]
+- <decision> — <rationale> — [precedent: `path/to/File.swift:NN` | architecture.md §X | architecture-notes §Y | user decision <date> | DEVIATION (agreed <date>) → see Deviations]
 - ...
 
 ## UI decisions                  (omit if no UI surface)
@@ -196,13 +215,29 @@ constrain this, with §refs — the citations, not a restatement of the approach
 ## Deviations from project docs    (omit if none)
 - <what deviates> — <why> — agreed with user <date>
 
-## Open questions / risks
-- <anything the resolver should watch for; empty-state, edge cases, perf budgets>
-- <false-positive traps: a target that still resolves through a temporary shim or
-  dual-emit, so a green run is not proof the change is complete — name the shim, the
-  file/line, and the condition that retires it (e.g. "`chatSurface.history` still
-  emits via a shim until #563; a test using it passes today but the migration is
-  incomplete — assert against the new identifier")>
+## Risks & watchpoints
+- <runtime invariant the resolver must preserve while implementing
+  (e.g. "keep the trigger gated on the empty-chat invariant so the
+  worst case is a single no-op, not a spurious bubble")>
+- <false-positive trap from a shim or dual-emit, with the named
+  retirement condition: a target that still resolves through a
+  temporary shim or dual-emit, so a green run is not proof the change
+  is complete — name the shim, the file/line, and the condition that
+  retires it (e.g. "`chatSurface.history` still emits via a shim until
+  #563; a test using it passes today but the migration is incomplete
+  — assert against the new identifier")>
+- <edge-case behaviour the plan has *already decided* how to handle,
+  surfaced so the resolver doesn't second-guess it (e.g. "cross-day
+  completion: no special handling needed because the Finalise button
+  isn't surfaced on a past day anyway")>
+
+**This section does not carry open design decisions.** Phrasings that
+defer a choice ("Resolver picks", "either approach is acceptable",
+"option A or option B", "TBD", "recommend", "could", "might",
+"consider", "evaluate during implementation", "implementer decides")
+do not belong here. They go in `## Architecture decisions` (pinned
+from precedent — see step 7.5) or surface to the user via the
+Decision gate at step 6.5 — never here.
 
 _Authored by `github-issue-planner` and verified in <N> review pass(es). The resolver treats
 the decisions above as binding; a plan-invalidating discovery routes back here in revise mode.
@@ -221,9 +256,52 @@ Per-story plans use the same schema on the story issue, with the `**Epic:** #<ep
 
 ### Lock decisions, not lines
 
-The plan binds *decisions*, not *implementation detail*. Lock the architecture, the layer each new symbol lives in, the files that change, the data-model shape, the test strategy, and the sequence. Leave the line-level mechanics to the resolver — it's a capable implementer, and a plan that over-specifies becomes brittle the moment reality differs by an inch.
+The plan binds *decisions*. Under-specification is the dominant failure mode at the planner→resolver seam — when the plan leaves a choice open, the resolver's audit catches it as a dimension-4 BLOCKER, the user routes back here in revise mode, and the planner ends up resolving the decision anyway by reading the same code it could have read on the first pass. Over-specification is real but secondary: a plan that transcribes the diff is brittle, but a plan that hedges on the diff *shape* is broken.
 
-The test for whether something belongs in the plan: *would getting this wrong send the implementation down the wrong path, or require re-litigation in review?* If yes, lock it. If it's a detail the resolver can settle correctly on its own, leave it out. This is the same bar the resolver's audit applies for "implementation readiness" — concrete enough to start without reverse-engineering, not so prescriptive it's a transcription of the diff.
+What the resolver may decide on its own is narrow — strictly line-level mechanics with no observable interface:
+
+- local variable naming inside a single method
+- code formatting and brace style
+- the exact form of a helper that lives inside one function and is not called from elsewhere
+- the textual wording of log messages and error strings (subject to the localisation and logging rules in `docs/constitution.md` §6 and §10)
+
+Everything else gets pinned in the plan:
+
+- every new symbol's **type signature** — name, parameter labels, return type, throws/async, generics
+- every new enum case's name, raw value, associated payload (or explicit "no payload"), and ordering/priority
+- every new field's type, nullability, units, initial value, and `@Relationship` shape (for `@Model` fields)
+- the **file path and layer** each new symbol lives in (per constitution §2)
+- the **choice between competing implementation patterns** when more than one is plausible — name the rejected alternatives and why, so a future reader doesn't re-open the question
+- the file path of every new test file; the suite/`// MARK: -` section for every new test added to an existing file
+- the **assertion intent** of each new test (what it asserts, not its exact code)
+- control-flow at every non-obvious branch point (e.g. *"on `.sessionCompleteIntent`, the switch arm is `case .sessionCompleteIntent: break`"*) — not the surrounding code, but the decision the branch encodes
+
+The test for whether something belongs in the plan: *would a competent implementer reading the plan cold have to pause and decide?* If yes, the plan decides it first. The earlier *"would re-litigation in review"* bar is too lax — by the time review fires, the round-trip cost is already paid.
+
+## Step 7.5: Pre-flight — resolve every open decision
+
+Before invoking the reviewer, sweep the draft yourself. The reviewer is expensive (a fresh sub-agent re-reading docs and codebase at `<plan_ref>`); catching hedges in-loop costs almost nothing. The reviewer should be the second line of defence, not the first.
+
+**Sweep for hedge phrasings.** Grep the draft for these (case-insensitive, regex-friendly):
+
+```
+resolver picks | implementer (picks|decides) | either approach | both are acceptable
+option \([ab]\) | option [AB] | TBD | to be decided | we'll figure out
+recommend(s|ed)? | could (go|use|be) | might (go|use|be) | consider (using|adding)
+evaluate during implementation | leave to (the )?resolver | (depends on|figure out) during
+```
+
+For each hit, choose **one** of the following — in this priority order, do not skip ahead:
+
+1. **Resolve from precedent.** Re-read the actual code at `<plan_ref>` with `git show <plan_ref>:<path>` (and `git grep` for the sibling pattern). Pin the decision by rewriting the bullet with a concrete answer and a `[precedent: path/to/File.swift:NN]` citation. Most hedges dissolve here — the planner already knows what to do, it just hasn't committed to it yet.
+
+2. **Surface as a Decision gate (step 6.5).** Used only when step 1 genuinely cannot decide — two approaches are equally grounded and the choice has a user-visible consequence. Loop back to step 6.5, get the user's call, fold the answer into `## Architecture decisions` with `[user decision <date>]`.
+
+3. **Demote to a watchpoint** under `## Risks & watchpoints` — legal **only** when the item is not a design decision. *"Floating-point drift on macro scaling: acceptable per PRD §10.3"* is a watchpoint (an accepted runtime trade-off with named rationale). *"Resolver picks the shape"* is a design decision and cannot be demoted.
+
+**Exit gate.** After the sweep, no hedge phrasing may remain anywhere in the plan body. The phrasings that may legitimately survive are: concrete decisions with precedent citations, deviations recorded in `## Deviations from project docs` with their agreed date, user-locked decisions with `[user decision <date>]`, and watchpoints in `## Risks & watchpoints`. If a hedge slips through, the dimension-4 reviewer will catch it at step 8 — but that's a passive backstop, not a substitute for this sweep.
+
+**Why this step exists.** The dominant failure mode of this skill is letting `Resolver picks the shape; both are acceptable` survive to the posted plan. The resolver's audit (its dimension 4) catches it, the user routes back here in revise mode, and the planner resolves the choice — by reading the same code at the same ref it could have read on the first pass. Step 7.5 closes the gap in-loop. The cost is one focused grep + a few targeted `git show` reads; the saving is a full plan round-trip and a delayed implementation.
 
 ## Step 8: Verify the plan (isolated review loop)
 
@@ -261,7 +339,9 @@ Unlike the resolver's audit (which routes issue-body findings to the drafter), t
 
 **What the user sees at step 9:**
 - **Clean exit** → show the plan, optionally noting `(verified in N pass(es))`.
-- **Cap / circular exit** → show the plan AND a "Review notes" block listing each unresolved finding (severity, evidence, recommended remediation). Then ask the decision through `AskUserQuestion` (header `"Review notes"`) with these options: **Post as-is** (post the plan with the unresolved findings carried as `## Open questions / risks`), **Fix manually** (hold off posting while you resolve the findings by hand), **Push back on reviewer** (challenge the findings as wrong before deciding).
+- **Cap / circular exit** → show the plan AND a "Review notes" block listing each unresolved finding (severity, dimension, evidence, recommended remediation). The next move depends on the **dimension** of the unresolved findings:
+  - **If any unresolved finding is a dimension-4 (implementation readiness) BLOCKER**, "Post as-is" is **not** an option — a dimension-4 BLOCKER is by definition an open design decision, and posting it would reintroduce the planner→resolver→planner round-trip this skill exists to prevent. Ask the decision through `AskUserQuestion` (header `"Review notes"`) with these options: **Surface as decision gate** (route through step 6.5 to pin the choice with `AskUserQuestion`, fold the answer into `## Architecture decisions`, then re-verify), **Fix manually** (hold off posting while you resolve the findings by hand), **Push back on reviewer** (challenge the findings as wrong — used when the reviewer mis-read a precedent or fabricated a contradiction).
+  - **If the unresolved findings are only dimensions 1, 2, 3, 5, or 6** (e.g. a doc gap the user is willing to accept, an under-grounded SUGGESTION the user judges acceptable), ask through `AskUserQuestion` (header `"Review notes"`) with: **Post as-is** (post the plan; non-dimension-4 findings may carry as watchpoints in `## Risks & watchpoints` *only if* they meet that section's "not a design decision" bar — otherwise they go in `## Deviations from project docs` with the user's agreement), **Fix manually**, **Push back on reviewer**.
 
 ## Step 9: Confirm with the user
 
@@ -321,6 +401,7 @@ Triggered when a plan comment already exists (step 2) or the user asks to update
 - **Don't plan an issue that isn't filed.** This skill plans existing issues. If the work isn't filed yet, route to `github-issue-drafter` first.
 - **Don't manufacture a plan for a trivial change.** A one-line fix doesn't need a plan; saying "this is trivial, go straight to the resolver" is the right answer, not a thin plan posted for form's sake.
 - **Don't over-specify.** Lock decisions, not lines. A plan that transcribes the diff is brittle and wastes the resolver's judgment. Bind what would send implementation down the wrong path; leave the rest.
+- **Don't punt design decisions to the implementer.** Phrasings like "Resolver picks the shape", "either approach is acceptable", "we could go with X or Y", "TBD", "recommend X" leak into the plan when the planner is unsure but doesn't want to dig. The cost is a full plan round-trip: the resolver's audit catches the hedge as a dimension-4 BLOCKER, the user routes back to the planner, and the planner resolves the decision anyway — by reading the same code at the same ref it could have read the first time. Step 7.5's sweep exists to prevent exactly this. Either resolve the decision from precedent (read the file, cite the pattern), or surface it as a Decision gate (step 6.5). Never both leave it open and post.
 - **Don't deviate silently.** Any departure from architecture / architecture-notes / ui-design / precedent goes through the step-6 user gate and is recorded in `## Deviations`. A constitution violation isn't a deviation — reshape the plan or surface that the issue can't be built as written.
 - **Don't skip the verify loop.** An unverified plan is more dangerous than no plan: it carries the authority of a posted artifact while potentially referencing APIs that don't exist or contradicting the constitution. The isolated reviewer is the cheap guard against that.
 - **Don't leak conversation context into the reviewer.** The sub-agent must read only the plan + issue + docs + codebase. Injecting your framing defeats the fresh-reader test.
