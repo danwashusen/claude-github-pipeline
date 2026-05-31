@@ -134,6 +134,114 @@ the linked/closing issue references, the check rollup, the `headRefOid`, the dif
 and line-level comments **verbatim** when requested, and the marker comment if
 present.
 
+### `LIST_OPEN(repo)`
+Read-only fleet overview of open work. Returns two lists — open epics with a
+child-progress summary, and orphan issues (open, not referenced by any open
+epic). Two `gh` calls, no per-story fan-out. Judgment-free: does NOT classify
+issues as ready/scoping/blocked and does NOT recommend a next pick — caller
+owns triage.
+
+1. Bulk-fetch every open issue in one call:
+   ```bash
+   gh issue list --repo <repo> --state open --limit 500 \
+     --json number,title,labels,milestone,url,body
+   ```
+2. Bucket each result:
+   - **epic** — carries the `epic` label OR body contains a `## Stories`
+     section (same rule as `GATHER_EPIC` / `STATUS` — keep the three ops
+     consistent).
+   - **other** — everything else (orphan-candidate until step 4).
+3. For each epic, parse its `## Stories` block for `#NN` references on both
+   `- [ ]` and `- [x]` bullets. Bullets without `#NN` are unfiled stubs —
+   count them separately as `unfiled_stories`; do not conflate with closed.
+4. Derive per-epic counts entirely from the open set already in hand —
+   **no extra `gh` calls per story**:
+   - `total_stories` = filed `#NN` references
+   - `open_stories` = filed refs whose number is in the open-issue set
+   - `closed_or_missing_stories` = `total_stories − open_stories`
+     (a referenced `#NN` not in the open set is either closed or was never
+     filed; the caller runs `STATUS(<epic>)` for per-story precision)
+   - `unfiled_stories` = bullets that had no `#NN`
+5. **Orphans** = open issues that are not epics AND whose number is not in
+   any open epic's filed `#NN` set. Note: closed epics are NOT walked — an
+   open child of a closed epic will appear in `## ORPHANS`. Caller
+   spot-checks with `STATUS` if it matters; widening to closed epics is a
+   caller-driven follow-up, not a default.
+
+Output: one `## RESULT` scalar block with `total_open_issues`, `epic_count`,
+`orphan_count`. Then a `## EPICS` block with one `### #<NN> — <title>`
+sub-section per open epic carrying `url`, `labels`, `total_stories`,
+`open_stories`, `closed_or_missing_stories`, `unfiled_stories`. Then an
+`## ORPHANS` block with one `### #<NN> — <title>` sub-section per orphan
+carrying `labels`, `milestone` (or `none`), `url`. Do not include issue
+bodies in output — they're fetched in step 1 only to detect `## Stories`.
+
+### `STATUS(issue, repo)`
+Read-only progress snapshot for an issue and (if it's an epic) every child
+story. The surface behind "what's left on epic #N?" / "is #N landed yet?"
+questions — judgment-free; caller picks "next" and owns any branch writes.
+
+For any issue, gather three things:
+1. **Metadata + closing PRs** —
+   ```bash
+   gh issue view <issue> --repo <repo> \
+     --json number,title,state,labels,url,closedByPullRequestsReferences
+   ```
+   `closedByPullRequestsReferences` carries the GitHub-recognised "closes #N"
+   links and is authoritative for **closed** issues. Each entry's
+   `{number, state, mergedAt, url, isDraft}` becomes the issue's PR status.
+2. **In-flight PR candidates** (only if the issue is open OR step 1 returned
+   nothing) — fall back to a body search:
+   ```bash
+   gh pr list --repo <repo> --state all --search "<issue> in:body" \
+     --json number,title,state,isDraft,mergedAt,url,headRefName,updatedAt
+   ```
+   If this returns multiple PRs for the same issue, list them all — do NOT
+   pick one. (Note: this is a heuristic — `gh` substring-matches the issue
+   number in PR bodies, so `#5` can match `#55`/`#555`. Surface the full list
+   and let the caller disambiguate.)
+3. **Implementation-plan marker** — presence only (the body is in
+   `GATHER_ISSUE`, not here):
+   ```bash
+   gh api "repos/<owner>/<repo>/issues/<issue>/comments" \
+     --jq '[.[] | select(.body | startswith("<!-- implementation-plan:v1 -->")) | {id, url: .html_url}] | length'
+   ```
+
+If the issue carries an `epic` label OR its body contains a `## Stories`
+section, treat it as an epic and additionally:
+4. Fetch the body (`gh issue view <issue> --repo <repo> --json body`) and
+   parse `## Stories` for `- [ ] #NN — title` / `- [x] #NN — title` lines
+   into `{ number, title_in_body, checked }`. Bullets without a `#NN` are
+   unfiled stories — keep their title text and flag `unfiled: true`.
+5. For each filed story, repeat steps 1–3.
+6. Report the epic's integration branch state — **read-only**, no fetch /
+   merge / push (those are caller-driven writes):
+   ```bash
+   git branch -a | grep "epic/<issue>-"                              # local + remote refs
+   git worktree list --porcelain | grep -A2 "epic/<issue>-"          # is it checked out anywhere
+   git rev-list --left-right --count <local-ref>...origin/<branch>   # ahead/behind vs its own remote
+   git rev-list --left-right --count <local-ref>...origin/main       # ahead/behind vs main
+   ```
+   If the local ref doesn't exist, say so; do not create it.
+
+Output: one `## RESULT` block of scalars for the top-level issue —
+`number`, `title`, `state`, `is_epic`, `pr_number`, `pr_state` (one of
+`merged|open|draft|closed|none`), `pr_url`, `plan_marker_present` (bool),
+and for epics also `epic_branch_local`, `epic_branch_remote`,
+`epic_branch_worktree_path` (or `none`), `epic_ahead_remote`,
+`epic_behind_remote`, `epic_ahead_main`, `epic_behind_main`.
+
+If `is_epic=true`, follow with a `## STORIES` block — one `### #NN — title`
+sub-section per story in the order the epic body lists them, each carrying
+the same per-issue scalars (`state`, `pr_number`, `pr_state`, `pr_url`,
+`plan_marker_present`). If multiple PR candidates resolved for a story,
+list all of them under `pr_candidates` rather than collapsing. Unfiled
+bullets go in a trailing `## UNFILED STORIES` block listing their titles.
+
+Judgment-free: do NOT recommend a next story, rank work, declare the epic
+"ready", or classify story health. The caller composes those decisions
+from the scalars you return.
+
 ### `LOCATE(terms|symbols|doc_sections, roots?, ref?)`
 Find where things live so the caller can read precisely. Use `Grep`/`Glob`, or
 `git grep <pattern> <ref>` when a `ref` is given (e.g. an epic branch the working
