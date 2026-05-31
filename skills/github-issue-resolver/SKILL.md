@@ -1303,20 +1303,39 @@ In both cases, capture the PR number/URL — you'll need it for the review loop.
 
 **This step is mandatory for any issue resolved with code changes. Do not skip it, do not merge, and do not consider the work done until review approves the PR.**
 
-After the PR is opened, the resolver **dispatches a single sub-agent** that drives the `review` skill through the loop until the exit condition holds. The sub-agent invokes `review`, applies the §10.4 classification rubric, addresses feedback, runs the §10.6 pre-push verification gate, commits, pushes, and re-iterates — entirely within its own execution scope. If the skill is re-invoked later (a human reviewer commented, the previous run was interrupted), step 5's reuse rule lands you back in the existing worktree and the sub-agent dispatch happens again — the sub-agent's prompt is told it may be picking up mid-flow.
+After the PR is opened, the resolver runs an **outer loop in the main conversation** that, on each iteration, invokes the `review` skill once and then dispatches a single sub-agent to act on the verdict. The sub-agent applies the §10.4 classification rubric, addresses feedback, runs the §10.6 pre-push verification gate, commits, pushes, and returns a structured JSON summary — entirely within its own execution scope. The main loop reads the JSON, decides whether to loop again, and re-invokes `review` on the new SHA. If the skill is re-invoked later (a human reviewer commented, the previous run was interrupted), step 5's reuse rule lands you back in the existing worktree and the outer loop runs again from the top — the sub-agent's prompt is told it may be picking up mid-flow.
 
-**Why a sub-agent.** In-conversation loops have an unavoidable pull toward turn boundaries after long sub-tasks. The `review` invocation routinely runs 10–20 minutes; when it returns a verdict — even one that correctly names Addressable items per §10.4 — the model's next natural beat is "summarize what just happened and stop" rather than "loop back and address the items." Three rounds of tightening §10.4's rubric prose and adding Common-pitfall warnings did not fix this; the prose was correct and the model still stopped at the verdict (the `/tmp/review-loop.md` transcript on PR #416 is the exemplar — a review that explicitly cited the §10.4 rubric and recommended "address item 1" still landed at a turn boundary). Sub-agents are goal-directed by construction: they run to completion within their tool budget and don't share the interactive session's pull toward natural pauses. The dispatch boundary is the structural fix; the prose remains the contract the sub-agent works against.
+**Why this shape — and the constraint that forces it.** Two structural facts from the [Claude Code sub-agents reference](https://code.claude.com/docs/en/sub-agents) determine where `review` has to run. First, sub-agents spawned via the `Agent` tool can only invoke **project, user, and plugin skills** through the `Skill` tool — *bundled* skills (`/code-review`) and *built-in* commands (`/review`) are not reachable from inside a sub-agent. Second, sub-agents cannot spawn sub-agents, so even if `/code-review` were reachable, its own internal fan-out (it orchestrates parallel Sonnet sub-agents) would be blocked one layer in. The `review` invocation therefore has to happen in the main conversation; trying to do it from inside an `Agent`-dispatched sub-agent forces the sub-agent to improvise a manual review and return prose, which is exactly the failure observed on PR #607 (chat log captured at `/tmp/review-skill.md`).
 
-**Spawn the sub-agent.** Use the `Agent` tool with `subagent_type: "general-purpose"`, `description: "Drive PR #<N> through the review loop"`, and the prompt template below. Inline every input placeholder at dispatch time. The sub-agent has full tool access — `Skill` for invoking `review`, `Bash` + `Read` + `Edit` + `Write` for code changes, `Agent` for nested test-selection and build delegations. `AskUserQuestion` is deliberately **not** in its toolset — that tool isn't available inside a sub-agent spawned via the `Agent` tool. When a guard rail fires, the sub-agent returns a `needs_decision` payload and the main loop (this conversation) renders the question; see the guard-rail block below. **Do not invoke `review` directly from the main conversation** — the dispatch boundary is what prevents the failure mode this section exists to fix.
+**The earlier shape and why it had to change.** Previous revisions of this section put the entire review loop — `review` invocation included — inside a single sub-agent, because in-conversation loops have an unavoidable pull toward turn boundaries after long sub-tasks (e.g., the `/tmp/review-loop.md` transcript on PR #416, where the main loop classified items correctly and then stopped at the verdict). The sub-agent boundary was the structural fix. That fix is no longer available now that the bundled-skill constraint is documented; the compromise is to keep the goal-directed sub-agent for the *loop body* (classification, edits, §10.6 gate, push) where its goal-directedness matters most, while accepting the narrower turn-boundary risk between sub-agent return and the next `review` call. Mitigations: the main loop's only natural beat after reading the sub-agent's JSON is the next tool call (re-invoke `review` if more iterations needed, or proceed to §11) — see also the "Don't stop after the sub-agent returns" pitfall added below.
+
+**Outer-loop control (main conversation).** One iteration of the loop is:
+
+1. **Invoke `review`** via the `Skill` tool: `Skill(skill="review", args="<PR#>")`. The skill runs in the main conversation; its findings land in your context as the skill completes. Capture that output — write the verdict text verbatim to `/tmp/gh-resolver-<ISSUE>/review-verdict.md` (`mkdir -p` first). If `/review` did not itself post a PR comment (check the last few comments on PR #<N> via `gh pr view <N> --comments`), post the verdict file as one yourself: `gh pr comment <N> --body-file /tmp/gh-resolver-<ISSUE>/review-verdict.md`. The PR comment is how the user follows the loop on GitHub; the verdict file is what the sub-agent classifies.
+2. **Dispatch the sub-agent** immediately. Use the `Agent` tool with `subagent_type: "general-purpose"`, `description: "Act on review verdict for PR #<N>"`, and the prompt template below. Inline every input placeholder at dispatch time. The sub-agent has full tool access — `Bash` + `Read` + `Edit` + `Write` for code changes, `Agent` for nested test-selection and build delegations. `Skill` is in its toolset for invoking `github-issue-drafter` follow-ups, but never for `review`/`code-review` (which it cannot reach anyway). `AskUserQuestion` is deliberately **not** available inside a sub-agent. When a guard rail fires, the sub-agent returns a `needs_decision` payload and this main loop renders the question.
+3. **Read the JSON return.** Parse the sub-agent's terminal status:
+   - `iteration_complete` with empty `items_addressed` → the verdict had no Addressable / Cheap-fix-override items (everything was Explicitly-deferred or there were no items at all). Combined with `review`'s approved verdict on this iteration, the loop's exit condition holds; proceed to §11.
+   - `iteration_complete` with non-empty `items_addressed` → the sub-agent committed and pushed fixes. The verdict reviewed an older SHA; loop back to step 1 to re-review the new SHA.
+   - `needs_decision` → render `decision_request` through `AskUserQuestion`, record the answer, re-dispatch a fresh sub-agent with the same verdict file plus the answer appended to its `prior_decisions` input. Do **not** re-invoke `review` for a decision-resume — the verdict file is still current.
+   - `aborted` → exit to §11 with the aborted outcome. The sub-agent has already filed any follow-ups it needed to.
+4. **Iteration cap.** Track an iteration counter in the main loop, starting at 1, incremented after every full step-1-through-3 cycle. If it reaches 6 before exit, surface via `AskUserQuestion` (`header: "Iter cap"`, options: **Continue** (free-text count in "Other"), **Accept current** (exit with current state), **Abort**). Iteration capping is no longer a sub-agent guard rail — the sub-agent doesn't own the outer loop any more.
+5. **Deadlock detection.** Maintain `prior_addressed_items` in the main loop as the union of every `items_addressed` summary across the iterations so far. Pass it into the sub-agent's input on each dispatch. The sub-agent compares the new verdict against this list and trips its `deadlock` guard rail if any prior-addressed item appears in the new verdict with no acknowledgement of the prior fix.
+
+The prompt template below covers what the sub-agent does once dispatched. The outer loop is yours to drive.
 
 **Sub-agent prompt template** (substitute placeholders at dispatch time):
 
 ```
-You are running the github-issue-resolver §10 review loop for PR #<N>. The
-resolver has dispatched you because in-conversation loops do not reliably
-exit on "approved with N Addressable items" — they stop at the turn
-boundary instead. Your job is to drive this PR through the loop until the
-exit condition holds, then return a structured summary.
+You are acting on a `review` verdict for PR #<N>, dispatched by the
+github-issue-resolver §10 outer loop. You do NOT invoke `review` yourself
+— it is a built-in command not reachable from inside a sub-agent (the
+Skill tool inside an Agent-dispatched sub-agent can only reach project,
+user, and plugin skills). The main loop has already invoked `review`,
+fetched its PR comment, and written the verdict text to a file for you.
+Your job is to classify the verdict per §10.4, address every Addressable
+and Cheap-fix-override item, run the §10.6 pre-push verification gate,
+commit and push, and return a structured summary. The outer loop decides
+whether to re-invoke `review` after you return.
 
 Inputs:
 - PR number: #<N>
@@ -1326,63 +1345,78 @@ Inputs:
 - Originating issue: #<ISSUE>
 - Parent epic: #<EPIC>  (or "none")
 - Integration target branch: <branch>
+- Iteration number: <int> — the 1-based index in the outer loop's run, for
+  your `iteration` echo in the JSON return.
+- Review verdict path: <absolute path to /tmp/gh-resolver-<ISSUE>/review-verdict.md>.
+  This file holds the body text of the `review` skill's most recent PR
+  comment on PR #<N>. Read it; classify it; act on it.
 - Doc-grounding statement (from §6, use when defending implementation
   choices in review responses): <statement>
 - §4.5 audit overrides carried into the PR body (if any): <text or "none">
 - Project test-config blocks (issue-resolver-fast-checks, issue-resolver-
   test-target): inline contents, or "read from COMMANDS.md / CLAUDE.md in
   the worktree".
-- Resume hint: this loop may be picking up mid-flow (an earlier sub-agent
-  run was interrupted, or a human reviewer commented between invocations).
-  Re-read PR comments + reviews on the first iteration before classifying.
+- Prior addressed items: list of one-line summaries the main loop has
+  collected across prior iterations of the outer loop (or "none" on
+  iteration 1). Compare these against the current verdict — if any
+  prior-addressed item appears flagged again with no acknowledgement of
+  the prior fix, trip the deadlock guard rail.
 - Prior decisions: guard-rail answers the user already gave this run, as a
-  list of {trigger, answer} (or "none" on the first dispatch). When a guard
-  rail fires you return rather than ask; the main loop asks the user and
-  re-dispatches you with the answer here. Honour each one — don't re-raise a
-  gate the user already settled — and echo the full list back in
-  `user_decisions` so §11 can report them.
+  list of {trigger, answer} (or "none" on the first dispatch in this
+  iteration). When a guard rail fires you return rather than ask; the
+  main loop asks the user and re-dispatches you with the answer here.
+  Honour each one — don't re-raise a gate the user already settled — and
+  echo the full list back in `user_decisions`.
+- Resume hint: this loop may be picking up mid-flow (a prior resolver run
+  was interrupted, or a human reviewer commented between invocations). On
+  iteration 1, before classifying, re-read accumulated PR comments and
+  reviews — `gh pr view --comments`, `gh api repos/<owner>/<repo>/pulls/<N>/reviews`,
+  `gh api repos/<owner>/<repo>/pulls/<N>/comments` — and treat any human
+  reviewer comment as additional Addressable input alongside the verdict.
 
 Read SKILL.md for §10.4 (the classification rubric), §10.6 (the pre-push
 verification gate), the "Retry ladder for the verification gate" section,
 and the "Follow-up issue tracking" section. Apply them as written.
 
-Each iteration:
+Steps (one pass — no inner loop):
 
-1. Re-read accumulated PR feedback. Use the gh commands documented in
-   step 5 (`gh pr view --comments`, `gh api .../reviews`,
-   `gh api .../comments`, `gh pr diff`). Include comments from human
-   reviewers that arrived since the previous iteration.
-2. Invoke the `review` skill via the Skill tool on PR #<N>.
-3. Post `review`'s feedback as a PR comment. Write it to a per-run scratch
-   dir keyed on the originating issue so parallel resolver runs don't clobber
-   it: `gh pr comment <N> --body-file /tmp/gh-resolver-<ISSUE>/review-feedback.md`
-   (run `mkdir -p "/tmp/gh-resolver-<ISSUE>"` first). Review feedback
-   goes on the PR, not on the originating issue.
-4. Classify every issue and suggestion per §10.4. The reviewer's own
+1. Read the verdict file at <Review verdict path>. Treat its body as the
+   review output you are classifying. Also, on iteration 1, re-read PR
+   comments and reviews per the Resume-hint input — fold any human
+   reviewer activity into the classification alongside the bot verdict.
+2. Classify every issue and suggestion per §10.4. The reviewer's own
    "approved" verdict line is NOT the exit condition — re-classify each
    listed item using the rubric's Addressable / Explicitly-deferred /
    Cheap-fix-override / Decision-required buckets. The cheap-fix override
    applies to ≤ ~20-line fixes on already-modified files even when the
    reviewer offered to defer.
+3. If a Decision-required item is present, trip the `architectural` guard
+   rail immediately — return without making changes; the main loop asks
+   the user and re-dispatches you with the answer in `prior_decisions`.
+4. Deadlock check. If any item in the current verdict matches a summary
+   in the `prior_addressed_items` input (same file, same surface, same
+   suggested change with no acknowledgement of your prior fix), trip the
+   `deadlock` guard rail. Return without further edits.
 5. Address every Addressable and Cheap-fix-override item. File every
    Explicitly-deferred item via the "Follow-up issue tracking" sub-agent
    protocol (urgency `file-now`, type per the reviewer's framing) and
    capture the returned URLs for the return summary.
-6. Run the pre-push verification gate per §10.6 (static checks →
+6. If steps 5 produced no edits (zero Addressable items, zero
+   Cheap-fix-override items), skip steps 7–9 and return immediately with
+   `status: "iteration_complete"` and empty `items_addressed`. The main
+   loop interprets this combined with `review`'s prior verdict.
+7. Run the pre-push verification gate per §10.6 (static checks →
    test-selection sub-agent → test execution). The retry ladder per the
    "Retry ladder for the verification gate" section caps a single visit
    at 3 runs with a forced research breakpoint between cheap and deep
-   fixes.
-7. Commit. Push. Reply on the PR briefly describing what changed in
+   fixes. On retry-ladder escalation, trip the `verification_failure`
+   guard rail.
+8. Commit. Push. Reply on the PR briefly describing what changed in
    response to which points of feedback. This per-iteration comment is
    how the user follows the loop on GitHub even though the parent
    conversation isn't streaming your tool calls.
-8. Loop back to step 1.
-
-Exit condition — both must hold:
-- The `review` verdict is approved.
-- After your own re-classification per §10.4, zero Addressable or
-  Cheap-fix-override items remain.
+9. Return `status: "iteration_complete"` with the post-push SHA and the
+   `items_addressed` list populated.
 
 Guard rails — when any of these fire, do NOT ask the user yourself
 (`AskUserQuestion` isn't available inside a sub-agent spawned via the
@@ -1390,33 +1424,35 @@ Guard rails — when any of these fire, do NOT ask the user yourself
 `status: "needs_decision"` and a populated `decision_request` (schema
 below) describing the choice. The main loop renders it via
 `AskUserQuestion` and re-dispatches a fresh you with the answer in the
-"Prior decisions" input, so you resume without re-hitting the same gate.
+"Prior decisions" input — and the SAME verdict file path — so you resume
+without re-hitting the same gate and without re-running `review`.
 
-- Same-feedback-twice deadlock. You addressed a flagged item; the next
-  iteration's review flags the same item with no acknowledgement of your
-  fix. Don't iterate a third time on the same disagreement. Return a
-  decision_request — `kind: "deadlock"`, `header: "Review loop"`, options:
-  "Try another angle" (continue with a different fix — the user can name it
-  in the free-text "Other"), "Accept + defer" (exit, file the item as a
-  deferred follow-up), "Abort loop".
-- Decision required. `review` flags an architectural choice, an API break,
-  or a scope-change tradeoff. Don't guess. Return a decision_request —
-  `kind: "architectural"`, `header: "Decision"`, with one option per
-  candidate path the reviewer named, each `description` carrying the
-  reviewer's framing for that path.
-- 5-iteration cap. After the 5th iteration without an exit, return a
-  decision_request — `kind: "iteration_cap"`, `header: "Iter cap"`,
-  options: "Continue" (the user can say how many more in the free-text
-  "Other"), "Accept current" (exit with current state), "Abort". Don't
-  loop silently past the cap.
+- Same-feedback-twice deadlock. The current verdict flags an item that
+  matches an entry in `prior_addressed_items`. Don't address it a second
+  time on the same hypothesis. Return a decision_request —
+  `kind: "deadlock"`, `header: "Review loop"`, options:
+  "Try another angle" (continue with a different fix — the user can name
+  it in the free-text "Other"), "Accept + defer" (exit, file the item as
+  a deferred follow-up), "Abort loop".
+- Decision required. The verdict flags an architectural choice, an API
+  break, or a scope-change tradeoff. Don't guess. Return a
+  decision_request — `kind: "architectural"`, `header: "Decision"`, with
+  one option per candidate path the reviewer named, each `description`
+  carrying the reviewer's framing for that path.
+- Verification failure. §10.6 retry ladder ran 3 times and the gate is
+  still red. Return a decision_request — `kind: "verification_failure"`,
+  `header: "Tests red"`, options: "Push with reds" / "Defer the tests" /
+  "Restructure" per the retry-ladder Escalation section.
+
+Note: the 5-iteration cap is no longer a sub-agent guard rail. The main
+loop tracks iterations and asks the user when the cap fires.
 
 Return ONLY this JSON (no prose around it):
 
 {
-  "status": "approved" | "capped" | "aborted" | "needs_decision",
+  "status": "iteration_complete" | "needs_decision" | "aborted",
   "decision_request":
-    {"kind": "deadlock" | "architectural" | "iteration_cap"
-       | "verification_failure",
+    {"kind": "deadlock" | "architectural" | "verification_failure",
      "question": "the full question text the user will see",
      "header": "<=12-char header per the guard rail / escalation>",
      "options": [
@@ -1424,10 +1460,11 @@ Return ONLY this JSON (no prose around it):
         "description": "<what it does + its consequence>"}
      ]}
     | null,
-  "iterations": <int>,
-  "final_pushed_sha": "<sha>",
-  "final_iteration_test_status": "green at <sha> (selected ...)"
+  "iteration": <int>,
+  "final_pushed_sha": "<sha or null when no push occurred this iteration>",
+  "iteration_test_status": "green at <sha> (selected ...)"
     | "skipped (no tests selected — <rationale>)"
+    | "skipped (no edits this iteration)"
     | "red — <list of failing tests>",
   "items_addressed": [
     {"severity": "Medium" | "Low" | "Nitpick" | "...",
@@ -1443,25 +1480,20 @@ Return ONLY this JSON (no prose around it):
     {"summary": "one-line note for the resolver to capture in §11"}
   ],
   "user_decisions": [
-    {"trigger": "same-feedback-twice" | "decision-required"
-       | "5-iteration-cap" | "verification-failure",
+    {"trigger": "deadlock" | "architectural" | "verification-failure",
      "prompt": "the question text the user saw",
      "answer": "the user's selected option / free-text"}
   ]
 }
 ```
 
-**Consume the return summary.** Parse the JSON the sub-agent returns and use it to drive §11 directly — do not re-derive any of these values from the PR or the worktree:
+**Consume the return summary.** Parse the JSON the sub-agent returns on every iteration. The outer loop control above already names the four branch-on-status arms (`iteration_complete` with/without addressed items, `needs_decision`, `aborted`); the rules below say what to *carry forward* into §11 once the loop has exited.
 
-First, branch on `status`. **`needs_decision` is not terminal** — the sub-agent hit a guard rail (or the §10.6 escalation) and stopped without finishing the loop. Render its `decision_request` through `AskUserQuestion` — the object's `question`, `header`, and `options` are exactly one question's worth of fields — record the chosen answer, then **re-dispatch a fresh sub-agent** with the same inputs plus this answer appended to the "Prior decisions" input. Repeat until the sub-agent returns a terminal status (`approved`, `capped`, or `aborted`). Each answer you collect this way also becomes one *Procedural notes* line in §11 (the terminal return echoes the full set in `user_decisions`). `decision_request` is `null` on terminal returns; the fields below are populated only then:
+- `needs_decision` is not terminal — render `decision_request` through `AskUserQuestion`, append the answer to the running `user_decisions` list, and re-dispatch a fresh sub-agent with the same verdict file path plus the answer in `prior_decisions`. Do **not** re-invoke `review`; the verdict file is still current. Each answer becomes one *Procedural notes* line in §11.
+- On every terminal sub-agent return, accumulate its `items_addressed` into the main loop's running `prior_addressed_items` list (for the next iteration's deadlock check), and its `items_filed_as_followups` + `items_carried_as_procedural_notes` into running lists for §11.
+- When the loop exits (zero-edits iteration with an approved verdict, iteration cap accepted, or user-aborted), the §11 inputs are: the final iteration's `final_pushed_sha` (or the prior iteration's, if the final iteration produced zero edits), the final iteration's `iteration_test_status` (mapped to §11's `Iteration test status` line verbatim — when the final iteration was a zero-edits exit, use the *prior* iteration's status since that's the test signal that gated the most recent push), the accumulated `items_filed_as_followups` (§11's *Follow-ups → Filed* bullets), the accumulated `items_carried_as_procedural_notes` (§11's *Follow-ups → Procedural notes* bullets), and the accumulated `user_decisions` (each adds one *Procedural notes* line naming the trigger and the user's choice). A non-empty `final_pushed_sha` (in any iteration of the loop) means a PR was updated, which fires the pr-evaluator handoff per the rubric in §11.
 
-- `final_iteration_test_status` feeds §11's `Iteration test status` line verbatim.
-- `items_filed_as_followups` feeds §11's *Follow-ups → Filed* bullets (one bullet per entry, with URL).
-- `items_carried_as_procedural_notes` feeds §11's *Follow-ups → Procedural notes* bullets.
-- Each entry in `user_decisions` adds one line to *Procedural notes* naming the trigger and the user's choice, so any guard rail that fired stays visible to the user reading §11.
-- `status` and `final_pushed_sha` drive §11's outcome rubric. A non-empty `final_pushed_sha` means a PR was opened or updated, which fires the pr-evaluator handoff per the rubric in §11.
-
-**Resume contract.** A re-invocation of the resolver while a PR is still open and under review (the existing step 5 reuse path) dispatches a *fresh* sub-agent — sub-agents don't persist state across runs. The prompt's "Resume hint" line tells the sub-agent it may be picking up mid-flow; it re-reads PR comments and reviews on the first iteration before classifying, which surfaces any human reviewer activity that landed between invocations. A run that exited via the guard-rail's "abort" path leaves the loop in a known stop-state; re-invoking re-dispatches the sub-agent, which sees the prior abort in the PR comment history and decides whether the original blocker is now resolvable.
+**Resume contract.** A re-invocation of the resolver while a PR is still open and under review (the existing step 5 reuse path) restarts the outer loop from iteration 1 — `review` is invoked, the verdict file is rewritten, a fresh sub-agent dispatches. Sub-agents don't persist state across runs and neither does the main loop's iteration counter. The sub-agent's "Resume hint" input tells it to re-read accumulated PR comments and reviews on iteration 1, which surfaces any human reviewer activity that landed between invocations. A prior run that exited via the guard-rail's "abort" path leaves the loop in a known stop-state; re-invoking starts the loop fresh, the sub-agent sees the prior abort in the PR comment history, and decides whether the original blocker is now resolvable.
 
 #### §10.4 — Classification rubric
 
@@ -1491,13 +1523,13 @@ The full canonical suite will run once at PR-readiness time inside `github-pr-ev
 
 #### §10.6 — Pre-push verification gate
 
-Run inside the sub-agent's loop on every iteration that produced code changes (per the sub-agent prompt's step 6). Same three-step gate as §8, per "Test selection during iteration" above:
+Run inside the sub-agent on every iteration that produced code changes (per the sub-agent prompt's step 7). Same three-step gate as §8, per "Test selection during iteration" above:
 
 1. **Static checks** — run the `<!-- issue-resolver-fast-checks -->` block inline, fail-fast in declaration order. Outputs are small (lints, codegen, layer-import boundary checks); no need to delegate.
 2. **Test selection** — spawn an `Explore` sub-agent with the prompt template from "Test-selection sub-agent" above. Substitute the worktree path, integration target, and the project's `<!-- issue-resolver-test-target -->` block. The sub-agent reads the diff, lists each declared target's directory, applies the heuristics, and returns two sections: `COMMAND:` (a ready-to-run shell command, or `(none)`) and `RATIONALE:` (one or two sentences). Capture the rationale in the iteration's PR-status comment so the user can audit the selection.
 3. **Test execution** — if `COMMAND:` is `(none)`, skip execution and continue. Otherwise, run the command. If it begins with `xcodebuild` (or invokes a wrapper that runs `xcodebuild`), delegate to `apple-platform-build-tools:builder`; otherwise run inline.
 
-If run 1 is green, proceed to the sub-agent's step 7 (commit and push). If run 1 is red, follow the ladder in "Retry ladder for the verification gate" above — at most 3 runs this visit, with a forced research breakpoint between cheap and deep fixes, escalating if the deep fix also fails — per the retry ladder's "Escalation" section, you return `status: "needs_decision"` with `kind: "verification_failure"` and the main loop asks the user (you cannot call `AskUserQuestion` from inside the sub-agent). (Each entry to §10.6 starts a fresh ladder; the §10 5-iteration outer-loop cap governs how many times this whole gate can repeat.) If `COMMAND:` was `(none)` (e.g., docs-only iteration), there's nothing to be green or red — `github-pr-evaluator`'s full canonical run will exercise the change at PR-readiness time. Don't fall back to "run zero tests" when the sub-agent's heuristics could have widened — re-spawn the sub-agent if the rationale looks wrong.
+If run 1 is green, proceed to the sub-agent's step 8 (commit and push). If run 1 is red, follow the ladder in "Retry ladder for the verification gate" above — at most 3 runs this visit, with a forced research breakpoint between cheap and deep fixes, escalating if the deep fix also fails — per the retry ladder's "Escalation" section, you return `status: "needs_decision"` with `kind: "verification_failure"` and the main loop asks the user (you cannot call `AskUserQuestion` from inside the sub-agent). (Each entry to §10.6 starts a fresh ladder; the main loop's 5-iteration outer-loop cap governs how many times this whole gate can repeat across iterations.) If `COMMAND:` was `(none)` (e.g., docs-only iteration), there's nothing to be green or red — `github-pr-evaluator`'s full canonical run will exercise the change at PR-readiness time. Don't fall back to "run zero tests" when the sub-agent's heuristics could have widened — re-spawn the sub-agent if the rationale looks wrong.
 
 ### 11. Summarise for the user
 
@@ -1517,9 +1549,9 @@ If the run produced *both* a comment and a PR (e.g., posted a "starting work" co
 
 **Before writing the summary, run the end-of-§10 follow-up checkpoint.** Per "Follow-up issue tracking" above, present the registry's `file-at-checkpoint` items (planning-time and implementation-time discoveries that weren't filed in-flight) to the user for batch approval, file via the sub-agent protocol, weave URLs into TODO markers and the PR body's `## Follow-ups` section. This is the resolution's last chance to convert trackable observations into filed issues before §11 closes things out; observations that aren't filed here become PR-body lines that age into noise.
 
-The summary MUST include a clearly-labeled **Iteration test status** line that names the result of the most recent pre-push verification gate (§8 on a clean first-pass approval, §10.6 on the last iteration when the review loop ran): green, skipped (no tests selected — name the rationale), or red (a list of failing tests with their failure mode). When the run went through §10's review loop, **read this from the sub-agent return's `final_iteration_test_status` field** verbatim — do not re-derive it from the worktree or the PR. If anything is red at this point, fix it before pushing — don't bury it in follow-up notes. The skill does not run a final canonical-suite gate at this step; the comprehensive run happens once at PR-readiness time inside `github-pr-evaluator`. State this explicitly in the summary so the user knows what's still ahead: e.g. *"Iteration test status: green at <SHA> (selected ProposalServiceTests, run at §8 pre-push). The full unit + UI suite will run in github-pr-evaluator before merge."*
+The summary MUST include a clearly-labeled **Iteration test status** line that names the result of the most recent pre-push verification gate (§8 on a clean first-pass approval, §10.6 on the last iteration when the review loop ran): green, skipped (no tests selected — name the rationale), or red (a list of failing tests with their failure mode). When the run went through §10's review loop, **read this from the last sub-agent iteration's `iteration_test_status` field** verbatim — do not re-derive it from the worktree or the PR. If the final iteration was a zero-edits exit (no push), use the *prior* iteration's `iteration_test_status` since that's the test signal that gated the most recent push. If anything is red at this point, fix it before pushing — don't bury it in follow-up notes. The skill does not run a final canonical-suite gate at this step; the comprehensive run happens once at PR-readiness time inside `github-pr-evaluator`. State this explicitly in the summary so the user knows what's still ahead: e.g. *"Iteration test status: green at <SHA> (selected ProposalServiceTests, run at §8 pre-push). The full unit + UI suite will run in github-pr-evaluator before merge."*
 
-Then: a short summary of what you did, what you posted (if anything), and a **Follow-ups** section split into two bullets — *Filed* (URLs of issues filed via the protocol, both `file-now` and `file-at-checkpoint`) and *Procedural notes* (informational items captured in the PR body, not filed as issues per the filing-vs-capturing criterion). When the run went through §10's review loop, the sub-agent return populates both bullets directly: `items_filed_as_followups` provides the *Filed* entries (one bullet per URL), `items_carried_as_procedural_notes` provides the *Procedural notes* entries, and each `user_decisions` entry adds one additional *Procedural notes* line naming the guard rail that fired and the user's choice (so any same-feedback-twice, decision-required, or 5-iteration-cap intervention stays visible). If you created or reused a worktree, include its path and the manual cleanup sequence. The `github-pr-evaluator` skill runs both phases automatically after a green merge (its §14); the manual form below is for runs that don't go through the evaluator (declined merge, manual close, abandoned issue):
+Then: a short summary of what you did, what you posted (if anything), and a **Follow-ups** section split into two bullets — *Filed* (URLs of issues filed via the protocol, both `file-now` and `file-at-checkpoint`) and *Procedural notes* (informational items captured in the PR body, not filed as issues per the filing-vs-capturing criterion). When the run went through §10's review loop, the main loop's accumulated lists populate both bullets directly: the union of every iteration's `items_filed_as_followups` provides the *Filed* entries (one bullet per URL), the union of every iteration's `items_carried_as_procedural_notes` provides the *Procedural notes* entries, and each `user_decisions` entry across the run adds one additional *Procedural notes* line naming the guard rail that fired and the user's choice (so any deadlock, architectural-decision, verification-failure, or iteration-cap intervention stays visible). If you created or reused a worktree, include its path and the manual cleanup sequence. The `github-pr-evaluator` skill runs both phases automatically after a green merge (its §14); the manual form below is for runs that don't go through the evaluator (declined merge, manual close, abandoned issue):
 
 1. From inside the worktree, run the project's worktree-teardown commands (see "Worktree setup & teardown commands"). If `COMMANDS.md` declares no `<!-- worktree-teardown -->` block, skip this step.
 2. From the main checkout, run `git worktree remove .worktrees/<branch-name>`.
@@ -1560,8 +1592,9 @@ Substitute `<N>`, `<URL>`, and `<ISSUE>` with the actual PR number, URL, and ori
 - **Don't re-litigate decided questions.** If a maintainer said "let's go with approach B" three comments ago, go with approach B.
 - **Don't open a PR for a question.** Some issues are resolved by an answer, not a code change.
 - **Don't skip the review loop.** For any PR, `review` must approve before the work is considered done. No exceptions, no "this change is too small to review."
-- **Don't exit the loop just because the verdict says "approved".** Reviews routinely approve with `Medium`, `Low`, or `Nitpick` items — issues *and* suggestions — that the reviewer still expects fixed (e.g., "Approved with minor fixes"). Per §10.4, exit only when the verdict is approved **and** zero Addressable or Cheap-fix-override items remain after the sub-agent's own re-classification. Items the reviewer routes elsewhere with a **concrete tracking target** (filed as #N, depends on un-landed sibling, citable PRD/scope exclusion) are deferred and filed as follow-ups. Soft politeness alone ("could be fast-follow", "not blocking", "deferrable", "informational only", "future PR", "consider for a future change") is **not** sufficient — the sub-agent re-classifies per §10.4's rubric before exiting, and the **default for any concretely-named change is Addressable**. The Cheap-fix override addresses ≤ ~20-line fixes on already-modified files even when the reviewer defers them. The §10 sub-agent boundary now structurally enforces this — there is no main-conversation step where the model could "approve and stop"; the sub-agent runs to completion against its own exit condition — but the rubric still governs the sub-agent's classification, so the hazard this bullet exists for hasn't gone away, it just moved one layer in.
-- **Don't drive the review loop in the main conversation.** §10 dispatches a `general-purpose` sub-agent specifically because in-conversation loops have an unavoidable pull toward turn boundaries after long sub-tasks. The transcript at `/tmp/review-loop.md` (PR #416) is the exemplar: `review` correctly classified one Medium item as Addressable per §10.4 and even printed a "Recommended next step: address item 1" line, and the model still stopped at that turn boundary rather than looping back. The fix is structural, not prose — invoking `review` directly from the main conversation and trying to loop yourself reintroduces exactly the failure mode the sub-agent boundary exists to prevent. Always dispatch the sub-agent per the §10 "Spawn the sub-agent" instruction; never inline the loop's steps in the resolver's main flow.
+- **Don't exit the loop just because the verdict says "approved".** Reviews routinely approve with `Medium`, `Low`, or `Nitpick` items — issues *and* suggestions — that the reviewer still expects fixed (e.g., "Approved with minor fixes"). Per §10.4, exit only when `review`'s verdict is approved **and** the sub-agent's re-classification finds zero Addressable or Cheap-fix-override items in that verdict. Items the reviewer routes elsewhere with a **concrete tracking target** (filed as #N, depends on un-landed sibling, citable PRD/scope exclusion) are deferred and filed as follow-ups. Soft politeness alone ("could be fast-follow", "not blocking", "deferrable", "informational only", "future PR", "consider for a future change") is **not** sufficient — the sub-agent re-classifies per §10.4's rubric, and the **default for any concretely-named change is Addressable**. The Cheap-fix override addresses ≤ ~20-line fixes on already-modified files even when the reviewer defers them. The sub-agent boundary enforces this structurally for the *body* of an iteration (classify + act), and the main loop's tight "read JSON → re-invoke `review` or proceed to §11" sequencing protects the outer loop's exit decision — but the rubric still governs whether the loop should exit at all, so the hazard this bullet exists for hasn't gone away.
+- **Don't drive `review` from inside the §10 sub-agent.** The `review` command (and the bundled `code-review` skill) is not reachable from inside an `Agent`-dispatched sub-agent — the `Skill` tool inside a sub-agent only reaches *project, user, and plugin* skills (per the [sub-agents reference](https://code.claude.com/docs/en/sub-agents)). Putting `Skill(skill="review")` inside the §10 sub-agent prompt was the original design and it consistently failed: the sub-agent had no path to the actual review and was forced to improvise a manual one, returning prose instead of the JSON envelope (PR #607, chat log at `/tmp/review-skill.md`). The fix is structural — `review` runs in the main conversation per §10's outer-loop control; the sub-agent classifies + addresses the verdict the main loop hands it. Don't reintroduce the `review` invocation into the sub-agent prompt thinking "this time stronger emphasis will work" — the constraint is the harness, not the model.
+- **Don't stop after the sub-agent returns.** §10 moved the outer loop back into the main conversation specifically because bundled-skill invocation has to happen there. That re-imports a narrow turn-boundary risk between reading the sub-agent's JSON and deciding what's next: re-invoke `review` for another iteration, ask the user a `needs_decision`, or proceed to §11. Treat reading the JSON as a step inside an iteration, not the end of one. The next tool call — `Skill(skill="review")`, `AskUserQuestion(...)`, or §11's summary path — is the natural beat; a summarize-and-stop beat between them is the recurrence of the PR #416 failure one layer up.
 - **Don't post review feedback on the issue.** Review feedback on a PR goes on the PR, not on the originating issue.
 - **Don't mis-route comments between issue and PR.** Use the rubric in "Where comments go" — problem questions go on the issue, solution questions go on the PR. Cross-posting or wrong-routing fragments the discussion and leaves future contributors hunting.
 - **Don't assume the issue is still relevant.** If the thread has gone quiet for a long time, flag this and ask whether to proceed.
