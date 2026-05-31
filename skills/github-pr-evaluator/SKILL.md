@@ -553,7 +553,13 @@ Proposed squash body:
 - `mergeStateStatus == BLOCKED` → "Merge blocked by branch protection — check status checks."
 - `reviewDecision == REVIEW_REQUIRED` and owed to another reviewer → "Awaiting review from @reviewer — your approval will still post, but merge may be gated."
 
-Then proceed directly to step 11 — no confirmation needed.
+Close with one short line setting expectations for what happens after the review posts, derived from the §12 branch table:
+- Standard or story PR, APPROVE, `mergeStateStatus` not in {DIRTY, BLOCKED} → "I'll auto-merge with `<strategy>` after the review posts."
+- Epic integration PR, APPROVE → "I'll ask you to confirm the merge mode after the review posts."
+- APPROVE but `mergeStateStatus` ∈ {DIRTY, BLOCKED} → "Merge skipped — `<DIRTY | BLOCKED>`. I'll print the command for you to run after resolving it."
+- COMMENT (soft-reject) → "No merge — fix the gaps above and re-evaluate."
+
+Don't restate the recommended strategy or the squash subject already shown above; one line is enough. Then proceed directly to step 11.
 
 ### 11. Post the review
 
@@ -563,24 +569,49 @@ Hand the review body to `github-ops`, with the `review_action` set by the verdic
 
 `review_action=approve` for an approval; `comment` for a soft-rejection **or** when the §2 self-approval pre-check flagged that you authored the PR (GitHub rejects self-`--approve` with 422 — the body stays identical, only the action changes). `github-ops` returns the review URL; share it with the user.
 
-### 12. Offer to run the merge
+### 12. Run the merge
 
-After the review posts, ask for explicit confirmation before running the merge via a single `AskUserQuestion` (`header: "Merge mode"`; question text: "Merge PR #\<N\>? I recommend the mode below for this PR.") with these options. Present the option matching the skill's recommended mode for this PR **first** — squash for story PRs, merge-commit for epic-integration PRs — so the recommended path is the lead choice; the other two are escape hatches:
+After the review posts, branch on PR type, verdict, and merge-readiness. The verdict at this point is already known from §7; only APPROVE verdicts proceed to a merge attempt (COMMENT soft-rejections stop here — see 12c). Never use `--auto`.
 
-- **Squash** — description carries the composed subject, e.g. `fix: resolve null token in onboarding (#143)`. Collapses the branch to a single commit on the base.
-- **Merge commit** — preserves all story squash commits as distinct entries in the base branch's history (epic integration).
-- **Don't merge yet** — post nothing further; leave the PR mergeable for the user to land later.
+The matrix:
 
-The chosen option determines which command runs. Never use `--auto`.
+| PR type | Verdict | `mergeStateStatus` | Behaviour |
+|---|---|---|---|
+| Standard / Story | APPROVE | not in {DIRTY, BLOCKED} | **12a. Auto-merge** — run the recommended `gh pr merge` directly. No prompt. |
+| Epic integration | APPROVE | not in {DIRTY, BLOCKED} | **12b. Confirm** — keep the explicit `AskUserQuestion` gate. |
+| Standard / Story / Epic integration | APPROVE | DIRTY or BLOCKED | **12c. Skip with command** — print the recommended command and stop. |
+| Any | COMMENT (soft-reject) | any | **No merge** — already enforced by §7 producing a `comment` review action; nothing runs in §12. Jump to §14's "merge did not run" summary. |
 
-If the user chooses **Squash**:
+Self-authored APPROVE PRs (review posted as `--comment` per §7) still take the APPROVE branches above — the verdict is approval-equivalent; only the review action differed.
+
+#### 12a. Auto-merge (standard / story, APPROVE, mergeable)
+
+Print one line so the user sees the command in the transcript before invocation, e.g.:
+
+> Running merge: `gh pr merge 143 --repo owner/repo --squash --subject "fix: …" --body-file /tmp/gh-pr-eval-143/squash-body.md --delete-branch`
+
+Then run the recommended command directly. Story PRs and standard PRs both squash today (§8's strategy table); the command is the same `--subject` / `--body-file` form as before:
 
 ```bash
 gh pr merge <N> --repo <owner/repo> --squash \
-  --subject "fix: resolve null token in onboarding (#143)" \
+  --subject "<composed squash subject>" \
   --body-file /tmp/gh-pr-eval-<N>/squash-body.md \
   --delete-branch   # append only if delete_branch_on_merge is false
 ```
+
+On non-zero exit: surface the `gh` output to the user and stop. Do **not** proceed to §13 (story-issue close / epic checkbox) or §14 (worktree cleanup) — the PR is still mergeable and the user may want to re-invoke after addressing whatever failed. The worktree stays in place exactly as it would if the user had declined the merge.
+
+#### 12b. Confirm (epic integration, APPROVE, mergeable)
+
+Epic integration PRs land the accumulated diff of every child story onto `main` in one merge — a qualitatively different risk surface than a single-issue PR. Keep the explicit gate so the user can take one last look at the merged history before it ships.
+
+Ask via a single `AskUserQuestion` (`header: "Merge mode"`; question text: "Merge PR #\<N\>? I recommend the mode below for this PR.") with these options, recommended-mode-first:
+
+- **Merge commit** — preserves all story squash commits as distinct entries in `main`'s history (default for epic integration with `commits.totalCount > 1`).
+- **Squash** — description carries the composed subject. Use when the epic collapsed to a single commit (rare but possible — §8 detects this).
+- **Don't merge yet** — post nothing further; leave the PR mergeable for the user to land later.
+
+The chosen option determines which command runs.
 
 If the user chooses **Merge commit**:
 
@@ -589,7 +620,22 @@ gh pr merge <N> --repo <owner/repo> --merge \
   --delete-branch   # if delete_branch_on_merge is false
 ```
 
-Temp files from steps 11–12 are cleaned up after use.
+If the user chooses **Squash**:
+
+```bash
+gh pr merge <N> --repo <owner/repo> --squash \
+  --subject "<composed squash subject>" \
+  --body-file /tmp/gh-pr-eval-<N>/squash-body.md \
+  --delete-branch   # if delete_branch_on_merge is false
+```
+
+If the user chooses **Don't merge yet**: skip ahead to §14's "If the merge did not run" branch.
+
+#### 12c. Skip with command (APPROVE but DIRTY or BLOCKED)
+
+The branch can't merge in its current state, so auto-invoking `gh pr merge` would just emit a noisy failure. Print the recommended command for the user to run after resolving the blocker, name the blocker (`DIRTY` → conflicts to resolve; `BLOCKED` → branch protection check to satisfy), then stop. Do **not** proceed to §13 or §14's cleanup — like 12a's failure path, the worktree stays in place so the user can resolve the blocker and retry.
+
+Temp files from steps 11–12 are cleaned up after use (or left in place for the 12a-fail / 12c paths so a retry can reuse them).
 
 ### 13. Close the story issue and tick the epic checkbox (story PRs only)
 
@@ -632,6 +678,8 @@ gh issue edit <epic-N> --repo <owner/repo> --body-file /tmp/gh-pr-eval-<N>/epic-
 Clean up temp files after. If the checkbox is already `[x]` (another tool beat us to it), note it and skip the edit.
 
 ### 14. Clean up and summarise
+
+"Merge ran" here covers both the §12a auto-merge path and the §12b confirmed-merge path — the cleanup logic is shared. The §12a-failure path, the §12c skip path, and the §12b "Don't merge yet" choice all fall into the "merge did not run" branch below.
 
 **If the merge ran**, execute cleanup immediately — no further confirmation needed:
 
@@ -688,7 +736,7 @@ Detection: `headRefName` matches `epic/<N>-<slug>` AND `baseRefName == main`.
 4. Verify every story PR is listed in the body.
 5. Walk every item in `## Definition of done` and judge it against the accumulated diff. Unfulfilled items → rejection.
 6. Strategy: merge commit (if `commits.totalCount > 1`), squash (if single commit).
-7. This PR carries more risk than a story PR — it lands the entire epic on main at once. Hold approval if DoD is incomplete or if the diff contains unexpected changes. Ask before proceeding if uncertain.
+7. This PR carries more risk than a story PR — it lands the entire epic on main at once. Hold approval if DoD is incomplete or if the diff contains unexpected changes. Ask before proceeding if uncertain. The merge gate in §12 also stays explicit for epic integration PRs even on a clean APPROVE — see §12b. This is the only PR type where the evaluator still asks before merging.
 
 ---
 
@@ -703,7 +751,7 @@ Detection: `headRefName` matches `epic/<N>-<slug>` AND `baseRefName == main`.
 - Don't re-verify a `github-ops` write. `PERSIST_COMMENT` (the §5.6 cache comment, the §11 review) returns the canonical URL on success — that *is* the confirmation. Re-fetching the comment thread (`gh api …/comments`, `gh pr view … --json comments`) or spawning a second `github-ops` call to "check it posted" burns context and tokens for nothing. A tool result that seems slow is buffered, not lost — wait, don't probe.
 - Don't approve a PR whose latest `/review` run left unresolved flagged issues — cite them in the rejection body.
 - Don't recommend rebase for this project — it's allowed but unused. Squash is the grain; go with it.
-- Don't run `gh pr merge` automatically — the user must confirm the merge in step 12. Once confirmed, run all cleanup (worktree removal, story issue close, epic checkbox) without asking again.
+- For standard and story PRs with an APPROVE verdict, the merge runs automatically after the review posts (§12a) — the verdict itself is the approval, and §10 has already shown the recommended strategy and the composed squash subject. The explicit `AskUserQuestion` gate is reserved for epic integration PRs (§12b — where the diff is the accumulated work of every child story landing on `main` at once) and for any PR with `mergeStateStatus ∈ {DIRTY, BLOCKED}` (§12c — where auto-merging would just produce a noisy gh failure). Once a merge runs, cleanup (worktree removal, story-issue close, epic checkbox) follows automatically without asking again.
 - Don't compose a squash subject with a double `(#NN)` suffix. Strip any trailing ` (#\d+)` from the PR title before appending `(#<pr-number>)`.
 - Don't post `--approve` for a self-authored PR — GitHub will 422. Use `--comment` with the same body.
 - Don't block approval over `mergeStateStatus == BEHIND` or `DIRTY` — approve on code merit and surface the merge-readiness blocker separately.
