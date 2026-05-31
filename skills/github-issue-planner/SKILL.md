@@ -154,9 +154,13 @@ A constitution violation is **not** a deviation to negotiate here — reshape th
 
 Use this schema verbatim — the resolver and pr-evaluator parse these section headings. Omit sections marked optional when they'd be empty; never pad.
 
+**The `<!-- implementation-plan:v1 -->` marker is always the first line of the comment body.** The resolver (step 4.6), the drafter (revise mode), and this skill's own revise-mode lookup all locate the plan by matching that marker with `startswith` — so any character placed before it makes the plan undiscoverable, and a consumer that can't find the plan behaves exactly as if none exists (the resolver stops and asks the user to "run the planner first" even though it already ran). For a story under an epic the `**Epic:**` backlink goes on the line *immediately after* the marker, never above it — see the epic/story note below the schema.
+
+`<plan-ref>@<short-sha>` records the integration target the plan was built against, giving the resolver's step-4.6 currency check both the branch and the commit: `origin/main` for a regular issue, or the **full, un-truncated** `epic/<N>-<slug>` branch for an epic or a story under an epic. Don't elide the branch to `epic/<N>-…` — it is also the resolver's PR base.
+
 ```
 <!-- implementation-plan:v1 -->
-**Implementation plan** — #<N> <title> — planned <ISO-8601 UTC> at `<repo-short-sha>`
+**Implementation plan** — #<N> <title> — planned <ISO-8601 UTC> at `<plan-ref>@<short-sha>`
 
 ## Approach
 <1–3 paragraphs: the strategy and why it's the right shape for this codebase>
@@ -194,13 +198,26 @@ constrain this, with §refs — the citations, not a restatement of the approach
 
 ## Open questions / risks
 - <anything the resolver should watch for; empty-state, edge cases, perf budgets>
+- <false-positive traps: a target that still resolves through a temporary shim or
+  dual-emit, so a green run is not proof the change is complete — name the shim, the
+  file/line, and the condition that retires it (e.g. "`chatSurface.history` still
+  emits via a shim until #563; a test using it passes today but the migration is
+  incomplete — assert against the new identifier")>
 
 _Authored by `github-issue-planner` and verified in <N> review pass(es). The resolver treats
 the decisions above as binding; a plan-invalidating discovery routes back here in revise mode.
 Re-run this skill to revise — do not hand-edit._
 ```
 
-For an **epic**, add two sections after `## Approach`: `## Story breakdown` (an ordered list of `- <story title> — <one-line scope>` entries reconciled against the epic body's `## Stories` list) and `## Integration strategy` (how the stories converge on the `epic/<N>-<slug>` branch and reach `main`). Per-story plans use the same schema on the story issue, with a leading `**Epic:** #<epic-#> — <epic title>` line above the marker comment's content.
+For an **epic**, add two sections after `## Approach`: `## Story breakdown` (an ordered list of `- <story title> — <one-line scope>` entries reconciled against the epic body's `## Stories` list) and `## Integration strategy` (how the stories converge on the `epic/<N>-<slug>` branch and reach `main`).
+
+Per-story plans use the same schema on the story issue, with the `**Epic:** #<epic-#> — <epic title>` backlink as the **first line after** the `<!-- implementation-plan:v1 -->` marker — never above it, so the marker stays at the start of the comment body and every consumer's `startswith` lookup resolves it (see the marker-first invariant in Step 7). A story plan therefore opens:
+
+```
+<!-- implementation-plan:v1 -->
+**Epic:** #<epic-#> — <epic title>
+**Implementation plan** — #<N> <title> — planned <ISO-8601 UTC> at `epic/<epic-#>-<slug>@<short-sha>`
+```
 
 ### Lock decisions, not lines
 

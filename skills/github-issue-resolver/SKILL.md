@@ -887,9 +887,10 @@ If the merge produces conflicts, follow the **Conflict handling** procedure belo
 
 **Conflict handling.** Whichever path is running, on conflict the procedure is the same:
 
-1. **Capture the conflict set.**
+1. **Capture the conflict set.** (Scratch-file convention: route every scratch file this run writes through a per-run directory keyed on the issue/epic number this run targets — `/tmp/gh-resolver-<N>/` — so concurrent resolver runs never clobber each other's files. Here `<N>` is the epic number. Never write a scratch file to a fixed `/tmp` path or a bare relative path.)
    ```bash
-   git diff --name-only --diff-filter=U > /tmp/conflict-files.txt
+   mkdir -p "/tmp/gh-resolver-<N>"
+   git diff --name-only --diff-filter=U > /tmp/gh-resolver-<N>/conflict-files.txt
    ```
    Show the user the list. If the user prefers to handle conflicts manually, `git rebase --abort` or `git merge --abort` and stop here.
 
@@ -962,13 +963,13 @@ If a fresh worktree was created (not reused), run the project's worktree-setup c
 
 1. Confirm the integration branch exists. Verify that every story's PR has merged into it by checking each story PR's `baseRefName` via `gh pr list --search "closes #<N> OR fixes #<N>"` and inspecting `--json baseRefName`. Flag any story whose PR targeted `main` directly.
 2. Set up a worktree on the epic branch (follow the worktree rules in the section above), merge `origin/main` into it if drift exists, run the full canonical suite, and report results.
-3. If the suite is green, draft an integration PR body (`epic/<N>-<slug>` → `main`) listing every story PR that landed in it, citing the epic's `## Goal` and DoD checklist, and including `Fixes #<epic-number>` so GitHub auto-closes the epic on merge. Then open the PR:
+3. If the suite is green, draft an integration PR body (`epic/<N>-<slug>` → `main`) listing every story PR that landed in it, citing the epic's `## Goal` and DoD checklist, and including `Fixes #<epic-number>` so GitHub auto-closes the epic on merge. Write it to `/tmp/gh-resolver-<N>/integration-pr.md` (run `mkdir -p "/tmp/gh-resolver-<N>"` first), then open the PR:
    ```bash
-   gh pr create --repo <owner/repo> --base main --head epic/<N>-<slug> --title "Epic #<N>: <title>" --body-file integration-pr.md
+   gh pr create --repo <owner/repo> --base main --head epic/<N>-<slug> --title "Epic #<N>: <title>" --body-file /tmp/gh-resolver-<N>/integration-pr.md
    ```
-4. Run the review loop (step 10) on the integration PR. After it merges, draft the body-tick diff (flip every `- [ ]` → `- [x]` in Stories and DoD, including stretch items marked as "deferred"), and a closing summary comment. Then run:
+4. Run the review loop (step 10) on the integration PR. After it merges, draft the body-tick diff (flip every `- [ ]` → `- [x]` in Stories and DoD, including stretch items marked as "deferred") to `/tmp/gh-resolver-<N>/updated-body.md`, and a closing summary comment. Then run:
    ```bash
-   gh issue edit <N> --repo <owner/repo> --body-file updated-body.md
+   gh issue edit <N> --repo <owner/repo> --body-file /tmp/gh-resolver-<N>/updated-body.md
    ```
    GitHub auto-closes the epic via the `Fixes` linkage on integration-PR merge; if it didn't, fall back to `gh issue close <N> --reason completed`.
 
@@ -1259,8 +1260,10 @@ For code changes (all `git push` and `gh pr create` commands run from inside the
 - **If you're continuing an existing PR** (per step 5): just push the new commits to that branch. The PR updates automatically. Don't open a new one.
 - **If this is a fresh PR**: push the branch and open a PR:
 
+  Write the PR body to `/tmp/gh-resolver-<issue-number>/pr-body.md` (a per-run scratch dir keyed on the issue number, so concurrent resolver runs don't clobber it, and the body never lands in the worktree where it could be committed), then:
+
   ```bash
-  gh pr create --repo <owner/repo> --title "Fix: <summary> (#<issue-number>)" --body-file pr-body.md --base <default-branch>
+  gh pr create --repo <owner/repo> --title "Fix: <summary> (#<issue-number>)" --body-file /tmp/gh-resolver-<issue-number>/pr-body.md --base <default-branch>
   ```
 
   PR body must include `Fixes #<number>` (or `Closes #<number>`) so GitHub auto-links and auto-closes on merge. It must also include a `## Doc grounding` section near the top listing the PRD/Architecture/CLAUDE.md sections that informed the approach (per step 6). Omit this section only if no project docs were present.
@@ -1325,8 +1328,10 @@ Each iteration:
    `gh api .../comments`, `gh pr diff`). Include comments from human
    reviewers that arrived since the previous iteration.
 2. Invoke the `review` skill via the Skill tool on PR #<N>.
-3. Post `review`'s feedback as a PR comment:
-   `gh pr comment <N> --body-file review-feedback.md`. Review feedback
+3. Post `review`'s feedback as a PR comment. Write it to a per-run scratch
+   dir keyed on the originating issue so parallel resolver runs don't clobber
+   it: `gh pr comment <N> --body-file /tmp/gh-resolver-<ISSUE>/review-feedback.md`
+   (run `mkdir -p "/tmp/gh-resolver-<ISSUE>"` first). Review feedback
    goes on the PR, not on the originating issue.
 4. Classify every issue and suggestion per §10.4. The reviewer's own
    "approved" verdict line is NOT the exit condition — re-classify each

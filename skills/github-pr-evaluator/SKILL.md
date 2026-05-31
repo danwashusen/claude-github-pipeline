@@ -61,6 +61,13 @@ relevant gate (the §10 draft-confirm for the review; the §2 self-approval chec
 decides its `review_action` of `approve` vs `comment`). `github-ops` posts the
 body you pass and executes the `review_action` you specify; the verdict is yours.
 
+**Trust the returned URL.** `github-ops` returns the canonical comment/review URL
+on a successful post — that URL is your confirmation the write landed. Do **not**
+re-query the PR's comment thread (`gh api …/comments`, `gh pr view … --json
+comments`), and do **not** spawn a second `github-ops` call, to confirm a post you
+already dispatched. A tool result that seems slow is buffered, not lost — wait for
+it rather than re-verifying.
+
 ## Prerequisites
 
 - `gh` CLI installed and authenticated (`gh auth status` to check)
@@ -95,9 +102,9 @@ If `$PR_AUTHOR == $CURRENT_USER`, note this now: the final review post must use 
 
 Fetch everything needed for evaluation in one pass via `github-ops`:
 
-> `GATHER_PR(pr=<N>, repo=<owner/repo>, include_diff=true, include_line_comments=true)`
+> `GATHER_PR(pr=<N>, repo=<owner/repo>, include_diff=true, include_line_comments=true, marker_prefix="<!-- pr-evaluator-health-cache:v1 -->")`
 
-It returns the full PR context (including `headRefOid`, the `statusCheckRollup`, and `closingIssuesReferences`), the **diff** verbatim, and the line-level `/review` comments (which aren't in the `--comments` payload). Then for every issue number in `closingIssuesReferences`, fetch the issue **with its plan comment** so step 6 already has it:
+It returns the full PR context (including `headRefOid`, the `statusCheckRollup`, and `closingIssuesReferences`), the **diff** verbatim, and the line-level `/review` comments (which aren't in the `--comments` payload). Because `marker_prefix` is set, it **also** returns the health-cache marker comment (its `id`/`body` if one exists, or a note that none does) — §5.2 reuses that, so the health check needs no second fetch. Then for every issue number in `closingIssuesReferences`, fetch the issue **with its plan comment** so step 6 already has it:
 
 > `GATHER_ISSUE(issue=<issue-#>, repo=<owner/repo>, marker_prefix="<!-- implementation-plan:v1 -->")`
 
@@ -136,11 +143,9 @@ SHORT_SHA=${HEAD_SHA:0:7}
 
 #### 5.2 Look for a prior cache comment
 
-Get the health-cache marker comment from `github-ops` (it returns the `id` and `body` if one exists, or notes none):
+The §3 `GATHER_PR` already fetched the health-cache marker (its `id` and `body` if one exists, or a note that none does) — reuse it; don't spawn a second `GATHER_PR`.
 
-> `GATHER_PR(pr=<N>, repo=<owner/repo>, marker_prefix="<!-- pr-evaluator-health-cache:v1 -->")`
-
-If a cache comment is found, parse the `SHA:` line from its body and compare to `HEAD_SHA`:
+If a cache comment was found, parse the `SHA:` line from its body and compare to `HEAD_SHA`:
 
 - **SHA matches `HEAD_SHA`** → the branch hasn't changed since the last check. Parse `HEALTH_OK` from the body (true if the first line contains "all green ✅", false if "failed ❌"). Parse the `TIER:` line if present (`targeted` or `full`); a comment without a `TIER:` line is from a pre-targeting cache and is interpreted as `full`. Set `HEALTH_BODY` to "Health check: re-using cached result at `<short-sha>` (tier: `<tier>`)." Skip directly to step 6. (Note: if the cached tier is `targeted` and the user has explicitly asked for the full canonical suite this run — e.g., "re-evaluate PR #X with full" — treat the cache as a miss instead. This is rare and only triggered by explicit user direction; ordinary re-evaluations honour the cache as-is.)
 - **SHA differs (stale)** → record `OLD_CACHE_ID` from the comment. You'll delete the stale comment in step 5.6 before posting the new one. Continue to 5.3.
@@ -218,11 +223,24 @@ Discovery: scan `COMMANDS.md` and `CLAUDE.md` at the repo root, plus any file `@
 
 ##### 5.5.1 Static checks
 
+**Scratch-file convention.** Every scratch file this run writes lives under a
+per-run directory keyed on the PR number: `/tmp/gh-pr-eval-<N>/` (`<N>` is the PR
+number from step 1). Concurrent evaluator runs are normal, and a fixed `/tmp` name
+is a real failure mode — two runs sharing `/tmp/squash-body.md` or
+`/tmp/epic-body-current.md` overwrite each other mid-flight, and acting on a
+clobbered epic body can edit the *wrong* epic. Never write a scratch file to a
+fixed `/tmp` path; route every one through `/tmp/gh-pr-eval-<N>/`. Create the
+directory once before the first write:
+
+```bash
+mkdir -p "/tmp/gh-pr-eval-<N>"
+```
+
 For each command in `<!-- pr-evaluator-static-checks -->` in declared order:
 
 ```bash
 START=$(date +%s)
-(cd ".worktrees/<branch>" && eval "<command>") > "/tmp/health-<i>.log" 2>&1
+(cd ".worktrees/<branch>" && eval "<command>") > "/tmp/gh-pr-eval-<N>/health-<i>.log" 2>&1
 EXIT=$?
 END=$(date +%s)
 DURATION=$((END - START))
@@ -367,7 +385,7 @@ Otherwise, run the command from inside the worktree:
 
 ```bash
 START=$(date +%s)
-(cd ".worktrees/<branch>" && eval "<COMMAND>") > "/tmp/health-test.log" 2>&1
+(cd ".worktrees/<branch>" && eval "<COMMAND>") > "/tmp/gh-pr-eval-<N>/health-test.log" 2>&1
 EXIT=$?
 END=$(date +%s)
 DURATION=$((END - START))
@@ -421,7 +439,7 @@ Post the cache comment via `github-ops`, deleting the stale one in the same step
 
 > `PERSIST_COMMENT(target=pr, id=<N>, repo=<owner/repo>, body=<the cache-comment body>, delete_marker_id=<OLD_CACHE_ID if stale>)`
 
-Capture the resulting comment URL for use in `HEALTH_BODY`.
+Capture the resulting comment URL for use in `HEALTH_BODY`. That URL confirms the post landed — don't re-fetch the comment thread or spawn a second `github-ops` call to check it.
 
 Set `HEALTH_BODY`:
 - All green: `"Health check: ✅ all green at \`<short-sha>\` (<source>)"`
@@ -560,7 +578,7 @@ If the user chooses **Squash**:
 ```bash
 gh pr merge <N> --repo <owner/repo> --squash \
   --subject "fix: resolve null token in onboarding (#143)" \
-  --body-file /tmp/squash-body.md \
+  --body-file /tmp/gh-pr-eval-<N>/squash-body.md \
   --delete-branch   # append only if delete_branch_on_merge is false
 ```
 
@@ -601,13 +619,14 @@ If already `CLOSED`, note it and skip — don't re-close.
 Fetch the current epic body (always re-fetch; don't use the copy from step 3 — another story may have merged since then):
 
 ```bash
-gh issue view <epic-N> --repo <owner/repo> --json body --jq .body > /tmp/epic-body-current.md
+mkdir -p "/tmp/gh-pr-eval-<N>"
+gh issue view <epic-N> --repo <owner/repo> --json body --jq .body > /tmp/gh-pr-eval-<N>/epic-body-current.md
 ```
 
 Find the `- [ ] #<story-number>` line in `## Stories` and replace it with `- [x] #<story-number>`. Show the user the diff, then run immediately:
 
 ```bash
-gh issue edit <epic-N> --repo <owner/repo> --body-file /tmp/epic-body-updated.md
+gh issue edit <epic-N> --repo <owner/repo> --body-file /tmp/gh-pr-eval-<N>/epic-body-updated.md
 ```
 
 Clean up temp files after. If the checkbox is already `[x]` (another tool beat us to it), note it and skip the edit.
@@ -627,7 +646,7 @@ Clean up temp files after. If the checkbox is already `[x]` (another tool beat u
    git worktree remove .worktrees/<branch>
    ```
 
-3. **Delete temp files** created during this run: `/tmp/squash-body.md`, `/tmp/epic-body-current.md`, `/tmp/epic-body-updated.md`, `/tmp/health-*.log`. (The review-body and health-cache temp files are written and removed inside `github-ops`, not here.)
+3. **Delete the per-run scratch directory**: `rm -rf "/tmp/gh-pr-eval-<N>"` (it holds the squash body, the epic-body working copies, and the health logs). (The review-body and health-cache temp files are written and removed inside `github-ops`, not here.)
 
 Then print the final summary:
 - Review posted: URL
@@ -681,6 +700,7 @@ Detection: `headRefName` matches `epic/<N>-<slug>` AND `baseRefName == main`.
 - Don't trust a targeted run alone for cross-cutting changes. When the sub-agent invokes a `broad-change-fallback` or returns "all unit tests" with UI deferred, that's a signal: check whether CI on the integration target is green at this SHA. If CI hasn't run or is red, surface that to the user and prefer the full canonical suite. The `RATIONALE:` line is your audit log — read it.
 - Don't let `apple-platform-build-tools:builder` expand scope. When delegating in §5.5.3, the prompt MUST explicitly bound the subagent to "run the command and report result." A build subagent that silently edits source files to fix a failure it diagnosed turns `HEALTH_OK=true` into a lie (the cache comment will say green, but the green came from changes the user never saw), uncaps the wall-clock cost of one delegation, and produces edits that don't appear in any commit on the PR. Failures bubble back; the calling skill decides what to do.
 - Don't attempt destructive recovery when tests fail. §5.5.3 prescribes the only correct response to a non-zero test exit: set `HEALTH_OK=false`, capture the last 50 lines as `FAIL_TAIL`, and write the cache comment. Do not try to "fix" a failing run by erasing the simulator (`xcrun simctl erase`), wiping the booted device, deleting the app's data container with `rm -rf`, uninstalling apps from shared simulators, killing CoreSimulator processes, or otherwise mutating shared infrastructure the test wrapper depends on. Recovery actions of that shape almost always target the *wrong* resource — the global default simulator picked up by the wrapper's fallback when the per-worktree state file is missing, not the per-worktree one the gate is supposed to be running against — and surface to the user as data loss on a sim they were using for something else. If the gate fails because of stale environmental state, the right outcome is to record the failure faithfully; the user (or the next `github-issue-resolver` run) decides what to clean up.
+- Don't re-verify a `github-ops` write. `PERSIST_COMMENT` (the §5.6 cache comment, the §11 review) returns the canonical URL on success — that *is* the confirmation. Re-fetching the comment thread (`gh api …/comments`, `gh pr view … --json comments`) or spawning a second `github-ops` call to "check it posted" burns context and tokens for nothing. A tool result that seems slow is buffered, not lost — wait, don't probe.
 - Don't approve a PR whose latest `/review` run left unresolved flagged issues — cite them in the rejection body.
 - Don't recommend rebase for this project — it's allowed but unused. Squash is the grain; go with it.
 - Don't run `gh pr merge` automatically — the user must confirm the merge in step 12. Once confirmed, run all cleanup (worktree removal, story issue close, epic checkbox) without asking again.

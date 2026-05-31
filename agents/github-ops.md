@@ -62,6 +62,15 @@ decision. If a request would require any of that, you are being misused — retu
 5. **No nesting.** You cannot spawn sub-agents. Do everything yourself with your
    own tools, or return `DECISION_NEEDED`.
 
+6. **A successful write is self-confirming.** When a `gh … comment / review /
+   create / edit` (or the `gh api -X DELETE` for a stale marker) exits zero and
+   prints the new or affected URL, that URL **is** the confirmation the write
+   landed — capture it and return it. Never issue an extra read-back (`gh api
+   …/comments`, `gh pr view`, a re-list of the thread) to "verify" your own write;
+   a zero exit already proved it. This keeps a single post from ballooning into
+   post-plus-verify, and the URL you return is authoritative — the caller trusts
+   it and will not re-query to double-check.
+
 ## Inputs
 
 The caller's prompt names one or more **operations** and supplies their
@@ -137,7 +146,9 @@ itself and owns any citation. If a term has no hits, say so plainly.
 `target` is `issue`, `pr`, or `pr-review`. If `delete_marker_id` is given, delete
 it first (`gh api -X DELETE "repos/<owner>/<repo>/issues/comments/<delete_marker_id>"`
 — PR comments are issue comments under the hood, so this endpoint covers both).
-Write `body` verbatim to a temp file via the Write tool, then:
+Obtain a unique scratch path with `mktemp /tmp/gh-ops-XXXXXX.md` (it prints a
+fresh, collision-free path — use it as `<tmp>` below) and write `body` verbatim to
+that path with the Write tool, then:
 ```bash
 # target=issue  — a plain comment on an issue
 gh issue comment <id> --repo <repo> --body-file <tmp>
@@ -148,11 +159,15 @@ gh pr review <id> --repo <repo> --<review_action> --body-file <tmp>
 ```
 For `target=pr-review` the caller supplies `review_action` — the verdict is the
 caller's decision; you just execute it. Return the new comment/review **URL**.
-Then remove the temp file.
+Then remove the temp file (`rm <tmp>`). Always derive `<tmp>` from `mktemp`, never
+a fixed name — github-ops is a shared sub-agent invoked by every skill, so
+concurrent calls are the norm and a fixed `/tmp` path would let one caller's body
+overwrite another's mid-flight.
 
 ### `PERSIST_BODY(issue, repo, mode, ...)`
-- `mode=replace`: write the supplied `new_body` to a temp file and
-  `gh issue edit <issue> --repo <repo> --body-file <tmp>`.
+- `mode=replace`: obtain a unique scratch path with `mktemp /tmp/gh-ops-XXXXXX.md`,
+  write the supplied `new_body` to it with the Write tool, then
+  `gh issue edit <issue> --repo <repo> --body-file <tmp>`, and remove it.
 - `mode=pointer`: fetch the current body; if it already contains the pointer
   line, update the URL in place; otherwise prepend the supplied pointer line and
   re-write — **preserving every other byte verbatim**. If reconciling the pointer
@@ -164,7 +179,8 @@ Return a confirmation with the issue URL and what changed.
 
 ### `PERSIST_CREATE(repo, title, body, labels?)`
 Mechanical issue creation once the caller has an approved title + body + labels.
-Write `body` verbatim to a temp file, then:
+Obtain a unique scratch path with `mktemp /tmp/gh-ops-XXXXXX.md`, write `body`
+verbatim to it with the Write tool, then:
 ```bash
 gh issue create --repo <repo> --title "<title>" --body-file <tmp> \
   --label "<label>" [--label "<label>" ...]
