@@ -55,8 +55,10 @@ Two guardrails carry over from the reviewer: `github-ops` cannot call
 `AskUserQuestion`, so on any ambiguity (issue not found, >1 plan comment, a body
 edit it can't safely reconcile) it returns `DECISION_NEEDED: <…>` and writes
 nothing — surface that here and re-dispatch. And every `PERSIST_*` runs only
-**after** the user clears the step-6 file/confirm gate; `github-ops` posts the
-approved title/body verbatim and never authors content.
+**after** the orchestrator's filing gate has cleared — the user's step-6 confirmation
+for single issues and revisions, or a clean pass through the adversarial split loop +
+body review for the Epic one-shot batch (see "One-shot filing flow"); either way
+`github-ops` posts the approved title/body verbatim and never authors content.
 
 ## The core loop
 
@@ -68,7 +70,7 @@ approved title/body verbatim and never authors content.
 6. **Show the draft** (with any unresolved review findings) to the user and wait for confirmation.
 7. **File** via `gh issue create` only after the user approves.
 
-Never skip step 6. Filed issues are annoying to clean up, and a 10-second confirmation prevents that.
+Never skip step 6. Filed issues are annoying to clean up, and a 10-second confirmation prevents that. (The one exception is the Epic one-shot batch — see "One-shot filing flow" — where the adversarial split loop plus the per-story body review stand in for the gate and a clean pass through both files the set autonomously.)
 
 For revising an **existing** filed issue (when the user references one by number with revision intent), use the parallel flow in "Revise mode" below — same review loop, but starting from a `gh issue view` instead of a fresh draft and ending in `gh issue edit` instead of `gh issue create`.
 
@@ -145,7 +147,7 @@ Pass only the deltas — omit `title` if unchanged, omit `labels_*` if there are
 
 ### Special case — revising an Epic
 
-After revising the Epic body, also re-audit child stories. Get the reconciliation from `github-ops` — `GATHER_EPIC(epic=<epic-#>, repo=<owner/repo>)` returns each `## Stories` entry as `{number, title, checked, state}`, pairing the body checkbox with the story's live state. Reconcile the checkboxes against that state (closed → checked; open → unchecked) and run the **dependency-graph story-ordering check** (dimension 5 of the review loop) against the current set of stories. If ordering findings come back, surface them with evidence and a proposed re-ordering — the user confirms before the body is edited. Don't silently swap bullets.
+After revising the Epic body, also re-audit child stories. Get the reconciliation from `github-ops` — `GATHER_EPIC(epic=<epic-#>, repo=<owner/repo>)` returns each `## Stories` entry as `{number, title, checked, state}`, pairing the body checkbox with the story's live state. Reconcile the checkboxes against that state (closed → checked; open → unchecked) and run the **dependency-graph story-ordering check** (dimension 5) and the **story-sizing / over-split check** (dimension 7) against the current set of stories. If ordering or sizing findings come back, surface them with evidence and a proposed re-ordering or merge — the user confirms before the body is edited. Don't silently swap or merge bullets. (A sizing finding on an already-filed Epic can't un-file a story; surface it as a recommendation — "stories #N and #M could have been one" — for the user to act on, e.g. by closing one as part of the other's work.)
 
 ### Special case — revising a Story
 
@@ -266,34 +268,31 @@ If there are no references, omit the section entirely. Don't fabricate relations
 
 An Epic is for work where each child is **independently shippable** — a separate PR, separate review, separate merge. Don't use Epic just because a feature has several acceptance criteria; use it when those criteria represent distinct deliverables a developer could pick up one at a time. If in doubt, ask the user.
 
-### Two-stage filing flow
+### Sizing stories: coalesce thin slices
 
-**Stage 1 — File the Epic.** Draft using the Epic template (below). The `## Stories` section lists placeholder bullets — short titles only, no `#NN` yet:
+"Independently shippable" is a ceiling, not a target. It tells you when work *can* be split; it says nothing about when it *shouldn't* be. Splitting has a cost the issue body never shows: every story a developer picks up pays a fixed tax — a fresh worktree and simulator, a static-check baseline, a cold build, a targeted test run, and a full review-loop round-trip — before any of its actual work counts. A 40-line story and a 400-line story pay almost the same tax. Slice too thin and that tax dominates: ten trivial stories can cost more wall-clock in setup, testing, and review than three substantial ones that deliver the same thing.
 
-```markdown
-## Stories
-- [ ] <Story 1 title>
-- [ ] <Story 2 title>
-```
+So aim for the **coarsest** slicing that still keeps each story independently shippable. After you have a candidate story list, make a coalescing pass over adjacent slices and **merge** a pair (or cluster) when any of these fire:
 
-Run the sub-agent review loop on the Epic body before filing. Story-ordering (dimension 5) is **skipped** at this stage — there are no story bodies yet for the sub-agent to reason across. Pass dimensions 1, 2, 3, 6 only. File the Epic, capture the `#NN`.
+1. **Shared verification surface** — the slices would re-run the *same* expensive verification: the same build, the same UI-test target, the same snapshot-golden set. Splitting them means paying that verification twice for one logical change. (E.g. two new views mounted by the same container that share one snapshot suite — review them together, with both visible in context.)
+2. **Sequential with no standalone value** — one slice exists only to feed the next and delivers nothing a reviewer could sign off on its own. A 20-line wiring change that's meaningless until the view it wires lands is part of that view's story, not its own. Likewise, deleting a legacy component once its sole consumer has been rewired is the second half of that rewire — fold it into the integration story, not a standalone "remove the old thing" story.
+3. **Same files or layer, individually thin** — several small edits to the same files or layer that a reviewer would naturally read as one change. Bundling them saves N−1 review cycles on the same surface.
 
-**Stage 2 — Offer child-story filing.** After the Epic is filed, ask once via `AskUserQuestion` (header "Child issues"): **File each as child** — draft and file every story as its own child issue now; **Leave as bullets** — leave the `## Stories` placeholders as-is for now.
+**Guardrail — don't over-coalesce.** Keep slices separate when each has independent value, a clean contract, *and* a cheaper isolated test surface. The clearest case is a layer of pure functions or models whose tests are fast unit tests with no build/UI/snapshot cost: splitting them doesn't duplicate any expensive verification (signal 1 never fires), the contracts stay crisp, and they can land in parallel. Thin is not the same as mergeable — a small slice that introduces a real contract worth reviewing on its own (a schema field, a new public type with its own test suite) earns its own story. The point is to stop paying the *fixed tax* twice for one logical block, not to bulk up every story.
 
-- **Leave as bullets** → done. The user can promote bullets to real issues later by hand.
-- **File each as child** → for each story: draft using the Story template with `**Epic:** #<epic-#> — <Epic title>` already filled in, run the sub-agent review loop (story-ordering check is deferred to Stage 3 stitching since dependencies span siblings), confirm with the user (step 6, one story at a time — don't batch), file with the `story` label, collect the resulting `#NN`.
+### One-shot filing flow
 
-**Stage 3 — Stitch the Epic body.** Once all stories are filed, patch the Epic to replace placeholder bullets with real links:
+Epics file in a single pass: draft the Epic and full bodies for **all** its stories, review the whole set, then create everything together. There's no "file the Epic now, promote bullets later" mode — a half-filed Epic with placeholder bullets is exactly what this flow exists to avoid. The granularity is settled *before* anything is created, so a bad split costs a draft edit, not a round of `gh issue close`.
 
-```markdown
-## Stories
-- [ ] #42 — Story 1 title
-- [ ] #43 — Story 2 title
-```
+**Step E1 — Settle the split (adversarial sub-agent loop).** Produce the candidate story list — each a short title plus a one-line scope that names the files, layer, and test surface it will touch (the reviewer needs that to judge sizing). Apply the coalescing pass yourself first. Then hand the split to the review sub-agent in **split mode**: its job is adversarial — find the strongest case the split is *wrong*, in either direction. Too granular (slices that should merge per the three signals) or over-coalesced (independently-valuable, clean-contract slices collapsed past the guardrail), plus ordering errors (dimension 5). Because it reasons from scopes, not full bodies, it **greps the codebase to ground every surface-overlap claim** rather than asserting it. Apply its merges/reorders and re-run. Loop until it returns clean, under the standard loop control (3-pass cap + circular guard — see "Loop control"). This loop runs dimensions 5 and 7 only; the per-story content dimensions come next, once bodies exist.
 
-Before applying the patched body, run the **full** review loop on the stitched Epic — including story-ordering (dimension 5). The sub-agent now has filed story numbers and bodies to reason across, so dependency-graph ordering can actually fire. If ordering findings come back, surface them with evidence and a proposed re-ordering, then let the user confirm before the bullet order is changed. Don't silently swap bullets. Then apply via `github-ops`:
+**Step E2 — Draft bodies and confirm the review.** For the settled split, draft the Epic body and every Story body (each with its `**Epic:** #<epic-#>` backlink — see "Story body shape"). Run the review loop over the set: dimensions 1, 2, 3, 6 on each Story body and the Epic body, and **re-confirm 5 + 7 on the real bodies** — a body sometimes reveals a slice is materially bigger or smaller than its one-line scope claimed, and that's the moment to catch it.
 
-> `PERSIST_BODY(issue=<epic-#>, repo=<owner/repo>, mode=replace, new_body=<patched body>)`
+**Step E3 — File the batch (hands-off on a clean run).** This is the one place the Epic flow departs from the skill's "never file without an explicit go-ahead" rule, deliberately: when E1 and E2 both come back clean, file the whole set autonomously — no confirmation gate. The adversarial split loop and the per-story body review *are* the safety net here, standing in for the human confirmation; a clean pass through both is the go-ahead. File the Epic, then each Story (collecting `#NN`), then patch the Epic's `## Stories` bullets to real links (see "Filing an Epic with child stories" in Step 7).
+
+Pull the user in **only** when a loop didn't come back clean: the split loop hit its cap or circular exit (Step E1), or a body review surfaced a BLOCKER you couldn't resolve (Step E2). Then show the set + the unresolved findings and wait — the same cap/circular handling used everywhere else in the skill. And on a mid-batch `gh` failure (story 5 of 11 fails to create), **stop and report exactly what filed and what didn't** — don't blind-retry; let the user resume or clean up.
+
+Single bug/feature drafting and revise mode are unchanged — they keep their Step 6 human gate. Only the Epic batch goes hands-off.
 
 ### Story body shape
 
@@ -494,10 +493,10 @@ Agent({
 The sub-agent receives:
 
 - **Draft** — title, body, labels, priority, type (`bug` | `incomplete` | `feature` | `epic` | `story`).
-- **Mode** — `draft` (no number yet) or `revise <N>` (existing filed issue — sub-agent fetches the live state via `gh issue view` and walks the comment thread itself).
+- **Mode** — `draft` (no number yet), `revise <N>` (existing filed issue — sub-agent fetches the live state via `gh issue view` and walks the comment thread itself), or `split` (Epic split loop — no story bodies yet; sub-agent runs dimensions 5 and 7 adversarially over the scope-level split and greps to ground every claim).
 - **Repo root** — absolute path so the sub-agent can read `docs/`, `CLAUDE.md`, and grep the source tree.
 - **Dimensions** — the explicit list of checks to run (see below). Pass only the dimensions that apply for the current type/mode.
-- **Related drafts** — for an Epic with child stories already drafted, pass each sibling story's title + body so the sub-agent can reason across them for dependency-graph ordering.
+- **Related drafts** — for an Epic, pass the sibling stories so the sub-agent can reason across them for dimensions 5 and 7. In `split` mode pass each story's title + one-line scope (files / layer / test surface); for the Step E2 body re-confirm pass each story's title + full body.
 
 The sub-agent does **not** receive: the conversation history, the user's original informal feedback, your draft notes, the user's tone or prior turns. The isolation property is what makes the review meaningful — leaking conversation context defeats the purpose.
 
@@ -511,10 +510,11 @@ Six dimensions. Each yields zero or more findings, each finding carries severity
 | 2 | **Codebase coherence** | grep/find every API, file, type, component, behavior named in the body. Confirm presence in current code. | `Body references 'OldService.foo()'; no such symbol in current codebase (closest match: NewService.foo at Services/NewService.swift:42). Likely renamed during refactor — update reference or describe the renamed surface.` |
 | 3 | **Internal coherence** | Title matches body claim; acceptance criteria support the stated goal; "what's missing" is actually missing per the code; Story Epic backlink is correctly formatted; Out-of-scope doesn't contradict in-scope. | `Acceptance criterion #3 ('exports as PDF') doesn't appear in the user story or background — looks orphaned. Either justify in body or drop.` |
 | 4 | **Latest-decisions** *(revise mode only)* | Walk the comment thread; identify the most recent substantive direction-setting comment; compare body to that direction. | `Comment by @maintainer on 2026-04-12 settles on 'approach B' but body still describes approach A. Revise body toward B; cite the comment.` |
-| 5 | **Story ordering** *(Epic mode only, after stories exist)* | Build a dependency graph: for each story, infer dependencies from the files/APIs/types it references and what it claims to deliver. Compare topological order to the Epic's `## Stories` listed order. | `Story 3 'Add export-to-CSV button' depends on the export service introduced by Story 5 'Build export service'. Listed order has 3 before 5; topological order is 5 → 3. Recommend swapping.` |
+| 5 | **Story ordering** *(Epic mode — split scopes or filed bodies)* | Build a dependency graph: for each story, infer dependencies from the files/APIs/types it references and what it claims to deliver. Compare topological order to the Epic's `## Stories` listed order. | `Story 3 'Add export-to-CSV button' depends on the export service introduced by Story 5 'Build export service'. Listed order has 3 before 5; topological order is 5 → 3. Recommend swapping.` |
 | 6 | **Completeness** *(primarily draft mode)* | Required template sections present? User story for features? Definition of done for stories? Reproduction for bugs? | `Bug template requires 'Steps to reproduce'; section is empty. Either fill in (ask the user) or include a [to be filled in] placeholder so the gap is visible at triage.` |
+| 7 | **Story sizing / over-split** *(Epic mode — adversarial)* | Apply the three coalescing signals across the proposed split: shared verification surface, sequential-with-no-standalone-value, same-files/layer+thin. Flag slices that should **merge** — and, via the guardrail, slices wrongly **merged** that should split. Ground every surface-overlap claim by grepping the codebase. | `Story 2 'Add pill view' and Story 3 'Add history view' have no inter-dependency, are both mounted only by Story 4, and share one snapshot suite (FoodJournalTests/Snapshots/ChatFloating*) — same verification surface, signal 1. Recommend merging into one 'Add the two floating views' story.` |
 
-Pass the relevant dimensions per type/mode. Bugs run 1, 2, 3, 6 (and 4 if revising). Features run 1, 2, 3, 6 (and 4 if revising). Epics at Stage 1 (filing) run 1, 2, 3, 6 — story ordering can't fire yet. Epics at Stage 3 (after stitching) run all six. Stories run 1, 2, 3, 6 (and 4 if revising); story-ordering applies to the parent Epic, not the individual story.
+Pass the relevant dimensions per type/mode. Bugs run 1, 2, 3, 6 (and 4 if revising). Features run 1, 2, 3, 6 (and 4 if revising). For an Epic, the split loop (Step E1) runs **5 and 7 only** on the scope-level split *before* bodies exist; the per-Story body review (Step E2) then runs 1, 2, 3, 6 on each body and **re-confirms 5 and 7** across the set. Stories run 1, 2, 3, 6 (and 4 if revising); sizing and ordering (5, 7) apply to the parent Epic's split, not the individual Story. In revise mode, an Epic re-audit can also re-run 5 and 7 against the current story set.
 
 ### Severity and evidence
 
@@ -601,13 +601,16 @@ It returns the new issue URL and `#NN` — share the URL with the user. If `gh` 
 
 ### Filing an Epic with child stories
 
-When the user opts into child-story filing after the Epic is created, each write goes through `github-ops`:
+The Epic flow files the whole set in one batch once Steps E1 and E2 come back clean (see "One-shot filing flow") — there's no per-story confirmation gate; a clean pass through the split loop and the body review is the go-ahead. Each write still goes through `github-ops`:
 
-1. For each story in turn (after its own per-story step-6 confirmation), file it with the Epic backlink already in the body:
+1. Create the Epic (placeholder bullets in `## Stories` for now):
+   > `PERSIST_CREATE(repo=<owner/repo>, title=<epic title>, body=<epic body>, labels=["epic"])`
+2. For each Story in dependency order, file it with the Epic backlink already in the body, collecting each `#NN`:
    > `PERSIST_CREATE(repo=<owner/repo>, title=<story title>, body=<"**Epic:** #<epic-#> — <Epic title>" + story body>, labels=["story"])`
-2. Collect each `#NN` as it's returned.
-3. After all stories are filed, patch the Epic body — replace placeholder bullets with `- [ ] #NN — <Story title>` entries — and apply it:
+3. Patch the Epic body — swap the placeholder bullets for `- [ ] #NN — <Story title>` links — and apply it:
    > `PERSIST_BODY(issue=<epic-#>, repo=<owner/repo>, mode=replace, new_body=<patched body>)`
+
+If any `PERSIST_CREATE` fails mid-batch, stop and report exactly which issues were created and which weren't — don't retry blindly. The user resumes from the gap or cleans up.
 
 ## Handling edge cases
 

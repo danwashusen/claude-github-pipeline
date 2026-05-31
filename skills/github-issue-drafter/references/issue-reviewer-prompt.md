@@ -25,10 +25,13 @@ If you cannot make sense of the issue using only the body + project docs + codeb
   ----
   ```
 
-- **Mode**: `<<mode>>` — either `draft` (no issue number yet; review the body verbatim) or `revise <N>` (issue #N is already filed; fetch the live state with `gh issue view <N> --comments --json ...` and walk the thread).
+- **Mode**: `<<mode>>` — one of:
+  - `draft` — no issue number yet; review the body verbatim.
+  - `revise <N>` — issue #N is already filed; fetch the live state with `gh issue view <N> --comments --json ...` and walk the thread.
+  - `split` — Epic *split loop*: no story bodies exist yet. The proposed split (each story's title + a one-line scope naming the files, layer, and test surface it will touch) is in `<<related_drafts>>`, and the Epic body is in **Draft**. Run **dimensions 5 and 7 only**, adversarially, and ground every claim by grepping the codebase — you're reasoning from scopes, not bodies, so a claim you can't grep is a dropped finding.
 - **Repo root**: `<<repo_root>>` — absolute path. Read `docs/prd.md`, `docs/architecture.md`, `docs/constitution.md`, `CLAUDE.md` if they exist; grep the source tree from this root.
-- **Dimensions to check**: `<<dimensions>>` — a subset of {1, 2, 3, 4, 5, 6}. Only run the listed dimensions. Don't fabricate findings outside the list.
-- **Related drafts**: `<<related_drafts>>` — for an Epic with sibling stories drafted or filed, this contains each story's title + body so you can reason across them for dimension 5. Empty unless type is `epic` and stories exist.
+- **Dimensions to check**: `<<dimensions>>` — a subset of {1, 2, 3, 4, 5, 6, 7}. Only run the listed dimensions. Don't fabricate findings outside the list.
+- **Related drafts**: `<<related_drafts>>` — for an Epic, this contains the sibling stories so you can reason across them for dimensions 5 and 7. In `split` mode it carries each story's **title + one-line scope** (files / layer / test surface). In `draft`/`revise` body re-confirm it carries each story's **title + full body**. Empty unless type is `epic`.
 
 ## Dimensions
 
@@ -45,9 +48,19 @@ Run only the dimensions named in the inputs.
 
 4. **Latest-decisions** *(revise mode only)*. Fetch the comment thread. Identify the most recent substantive direction-setting comment — earlier proposals are superseded if a maintainer or the original author has agreed to a different approach. Compare the issue body to that direction. If the body still describes a superseded approach, flag it.
 
-5. **Story ordering** *(only when type is `epic` and `<<related_drafts>>` contains sibling story content)*. Build a dependency graph: for each story, infer dependencies from the files/APIs/types it claims to consume vs. what other stories claim to deliver. Compare a topological order of that graph to the Epic's `## Stories` listed order. If the listed order makes a story unimplementable until a later story ships, flag the violation with both orders and a proposed swap.
+5. **Story ordering** *(only when type is `epic` and `<<related_drafts>>` contains sibling stories — split scopes in `split` mode, full bodies otherwise)*. Build a dependency graph: for each story, infer dependencies from the files/APIs/types it claims to consume vs. what other stories claim to deliver. Compare a topological order of that graph to the Epic's `## Stories` listed order. If the listed order makes a story unimplementable until a later story ships, flag the violation with both orders and a proposed swap.
 
 6. **Completeness.** For drafts especially: are the required template sections present? User story for features. Definition of done for stories. Steps to reproduce + expected vs. actual for bugs. Goal + Background + Stories for Epics. If a section is missing, flag it; if a section exists but is empty or a placeholder, flag that too.
+
+7. **Story sizing / over-split** *(only when type is `epic` and `<<related_drafts>>` contains sibling stories; adversarial)*. Your job is to attack the proposed split — find the strongest case it is *wrong*, in **either** direction. Splitting an Epic has a fixed cost the bodies never show: each story pays for its own worktree, simulator, baseline, cold build, targeted test run, and review-loop round-trip, so a slice that's too thin spends more on overhead than on work.
+
+   - **Too granular → recommend MERGE** when any of these fire for a pair (or cluster) of stories:
+     1. *Shared verification surface* — they would re-run the **same** build, the **same** UI-test target, or the **same** snapshot-golden set. Splitting pays that expensive verification twice for one logical change.
+     2. *Sequential with no standalone value* — one story exists only to feed the next and delivers nothing a reviewer could sign off on its own.
+     3. *Same files or layer, individually thin* — several small edits to the same files/layer a reviewer would naturally read as one change.
+   - **Over-coalesced → recommend SPLIT** (the guardrail): a story bundles slices that each have independent value, a clean contract, *and* a cheaper isolated test surface — the clearest case being distinct pure-function or model layers covered by fast unit tests with no build/UI/snapshot cost. Thin alone is not mergeable; a small slice introducing a real contract worth reviewing on its own (a schema field, a new public type with its own suite) earns its own story.
+
+   You are reasoning from scope descriptors (files / layer / test surface), not full bodies, so **ground every overlap claim by grepping the codebase**: confirm two stories really touch the same files or the same test target before recommending a merge. A merge/split recommendation without a grepped overlap is a dropped finding (see "Evidence is mandatory"). Name the signal (1/2/3 or guardrail) in each finding.
 
 ## Severity
 
@@ -73,7 +86,7 @@ Emit a single Markdown block with this exact shape, so the orchestrator can pars
 
 ```
 ## Review summary
-Mode: <draft | revise N>
+Mode: <draft | revise N | split>
 Type: <bug | incomplete | feature | epic | story>
 Dimensions checked: <comma-separated list of dimension numbers>
 Findings: <BLOCKER count> blocker, <SUGGESTION count> suggestion, <NIT count> nit
@@ -95,7 +108,7 @@ If there are no findings (after evidence-filtering), output exactly:
 
 ```
 ## Review summary
-Mode: <draft | revise N>
+Mode: <draft | revise N | split>
 Type: <...>
 Dimensions checked: <...>
 Findings: 0
