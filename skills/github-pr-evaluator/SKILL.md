@@ -102,11 +102,15 @@ If `$PR_AUTHOR == $CURRENT_USER`, note this now: the final review post must use 
 
 Fetch everything needed for evaluation in one pass via `github-ops`:
 
-> `GATHER_PR(pr=<N>, repo=<owner/repo>, include_diff=true, include_line_comments=true, marker_prefix="<!-- pr-evaluator-health-cache:v1 -->")`
+> `GATHER_PR(pr=<N>, repo=<owner/repo>, include_diff=true, include_line_comments=true, marker_prefix="<!-- pr-evaluator-health-cache:v1 -->", scratch_dir=/tmp/gh-pr-eval-<N>/)`
 
-It returns the full PR context (including `headRefOid`, the `statusCheckRollup`, and `closingIssuesReferences`), the **diff** verbatim, and the line-level `/review` comments (which aren't in the `--comments` payload). Because `marker_prefix` is set, it **also** returns the health-cache marker comment (its `id`/`body` if one exists, or a note that none does) — §5.2 reuses that, so the health check needs no second fetch. Then for every issue number in `closingIssuesReferences`, fetch the issue **with its plan comment** so step 6 already has it:
+`scratch_dir` matters: it's the same per-run dir documented at §5.5.1 ("Scratch-file convention"), and routing every verbatim artifact through it is what keeps the GATHER step from burning 7+ minutes of wall-clock on big-diff PRs (see github-ops.md rule 7). The call returns a `## RESULT` envelope of scalars + path references — `body_path`, `thread_path`, `reviews_path`, `diff_path`, `line_comments_path`, `marker_comment_path` when present — plus all PR metadata (`headRefOid`, `statusCheckRollup`, `closingIssuesReferences`, `mergeStateStatus`, `mergeable`, `reviewDecision`, `additions`/`deletions`/`changedFiles`/`commit_count`, `url`). **Read the PR body, the diff, and any reviews from those paths yourself** — github-ops doesn't echo them inline. Because `marker_prefix` is set, the envelope **also** carries the health-cache marker comment scalars (`marker_comment_id` / `_url` / `_path` / `_bytes`, or `marker_comment_present: false`) — §5.2 reuses that, so the health check needs no second fetch.
 
-> `GATHER_ISSUE(issue=<issue-#>, repo=<owner/repo>, marker_prefix="<!-- implementation-plan:v1 -->")`
+Then for every issue number in `closingIssuesReferences`, fetch the issue **with its plan comment** so step 6 already has it (same `scratch_dir` so per-run cleanup stays trivial):
+
+> `GATHER_ISSUE(issue=<issue-#>, repo=<owner/repo>, marker_prefix="<!-- implementation-plan:v1 -->", scratch_dir=/tmp/gh-pr-eval-<N>/)`
+
+The issue's body, thread, and plan-marker body land at the returned `issue_body_path` / `thread_path` / `marker_comment_path` — `Read` them when you need their content.
 
 **Draft PR guard.** If the PR `state` is `DRAFT`, stop here. Tell the user to mark it ready for review before evaluating.
 
@@ -143,7 +147,7 @@ SHORT_SHA=${HEAD_SHA:0:7}
 
 #### 5.2 Look for a prior cache comment
 
-The §3 `GATHER_PR` already fetched the health-cache marker (its `id` and `body` if one exists, or a note that none does) — reuse it; don't spawn a second `GATHER_PR`.
+The §3 `GATHER_PR` already fetched the health-cache marker (its `marker_comment_id` / `_url` / `_path` if one exists, or `marker_comment_present: false` if not) — reuse it; don't spawn a second `GATHER_PR`. When a marker is present, `Read` its body from `marker_comment_path` to parse the `SHA:` line.
 
 If a cache comment was found, parse the `SHA:` line from its body and compare to `HEAD_SHA`:
 
@@ -457,9 +461,9 @@ For each issue in `closingIssuesReferences`, evaluate five dimensions. Write you
 
 **Doc grounding.** Per the project's issue resolver workflow, PR bodies must include a `## Doc grounding` section citing the PRD, Architecture doc, or CLAUDE.md sections that constrained the approach. A missing or vague doc-grounding section is a flag for any non-trivial feature or refactor. (Skip for: one-line bug fixes, pure doc/typo changes, and repos with no docs at all.)
 
-**Plan adherence.** The issue may carry a verified implementation plan authored by `github-issue-planner` and stored as a marker comment — the §3 `GATHER_ISSUE` call already passed `marker_prefix="<!-- implementation-plan:v1 -->"`, so its `url` + `body` are in hand. (If you skipped that or need a fresh copy, re-run `GATHER_ISSUE(issue=<issue-#>, repo=<owner/repo>, marker_prefix="<!-- implementation-plan:v1 -->")`.)
+**Plan adherence.** The issue may carry a verified implementation plan authored by `github-issue-planner` and stored as a marker comment — the §3 `GATHER_ISSUE` call already passed `marker_prefix="<!-- implementation-plan:v1 -->"`, so its `marker_comment_url` + `marker_comment_path` are in hand. `Read` the plan body from `marker_comment_path`. (If you skipped that or need a fresh copy, re-run `GATHER_ISSUE(issue=<issue-#>, repo=<owner/repo>, marker_prefix="<!-- implementation-plan:v1 -->", scratch_dir=/tmp/gh-pr-eval-<N>/)`.)
 
-- **Plan present** → check the diff against the plan's *locked decisions* (`## Architecture decisions`, `## Changes`, `## Data model / schema impact`, `## Test plan`). The plan locks decisions, not lines, so don't flag in-spirit implementation detail that differs harmlessly. But a **reversal of a locked decision** — a different architecture, a moved layer assignment, a data-model shape the plan didn't specify, a missing planned test — that is **not** disclosed (neither flagged + agreed in the plan's `## Deviations`, nor recorded as a `## Plan override` in the PR body) is a **gap → soft-reject (`--comment`)**, quoting the specific decision and the diverging diff. If the resolver was supposed to route a plan-invalidating discovery back to the planner (resolver step 8) and instead worked around it silently, this is exactly the dimension that catches it.
+- **Plan present** → check the diff against the plan's *locked decisions* (`## Architecture decisions`, `## Changes`, `## Data model / schema impact`, `## Test plan`). **Don't load the full diff into context** — `diff_path` from §3 points at a file that's often 100+ KB. Read it in targeted slices: first scan the `diff --git a/... b/...` headers (e.g. `Read diff_path` with a small `limit` + `grep` for `^diff --git`, or call `Bash` with `grep '^diff --git ' <diff_path>` to enumerate changed files), pick the files the plan's `## Changes` block names, then `Read` each file's hunk range against the plan one at a time. This keeps the evaluator's context small and lets you compare each diff segment to its plan section in isolation. The plan locks decisions, not lines, so don't flag in-spirit implementation detail that differs harmlessly. But a **reversal of a locked decision** — a different architecture, a moved layer assignment, a data-model shape the plan didn't specify, a missing planned test — that is **not** disclosed (neither flagged + agreed in the plan's `## Deviations`, nor recorded as a `## Plan override` in the PR body) is a **gap → soft-reject (`--comment`)**, quoting the specific decision and the diverging diff. If the resolver was supposed to route a plan-invalidating discovery back to the planner (resolver step 8) and instead worked around it silently, this is exactly the dimension that catches it.
 - **Plan absent** → many issues predate the planner, or were trivial enough to skip it. Note "no implementation plan found — adherence not evaluated" in the verdict body and **do not hard-block** on its absence. Only issues that *have* a plan are held to adherence.
 
 **Story / epic context.** If this is a story PR, the base must be `epic/<N>-<slug>` (not `main`), and the PR body must contain the caveat "This story targets the `epic/<N>-<slug>` integration branch and will reach `main` via the integration PR for epic #N." If this is an epic integration PR, the base must be `main`, the head must be `epic/<N>-<slug>`, and the body must include `Fixes #<epic-number>` so GitHub auto-closes the epic on merge.

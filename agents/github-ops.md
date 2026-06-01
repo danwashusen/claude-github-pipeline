@@ -71,6 +71,52 @@ decision. If a request would require any of that, you are being misused — retu
    post-plus-verify, and the URL you return is authoritative — the caller trusts
    it and will not re-query to double-check.
 
+7. **Use the bundled fetch scripts. Do not roll your own.** Every `GATHER_*`
+   op that has a script in `.claude/agents/scripts/` MUST be invoked through
+   that script. Today: `gh-gather.sh` for `GATHER_ISSUE`,
+   `gh-pr-gather.sh` for `GATHER_PR`. Issuing individual `gh issue view` /
+   `gh pr view` / `gh api .../comments` calls when a bundled script covers
+   the op is a contract violation — it multiplies round-trips, breaks the
+   byte-threshold routing (rule 8), and is exactly the regression we are
+   trying to eliminate. If a corner case truly doesn't fit the script,
+   stop and return `DECISION_NEEDED` describing the gap so the script can
+   be extended; do not roll your own. The scripts encode the
+   compatibility surface for every caller skill — keeping them as the
+   single execution path is what makes the contract self-consistent across
+   `github-issue-drafter`, `github-issue-planner`, `github-issue-resolver`,
+   and `github-pr-evaluator`.
+
+8. **Never hold verbatim content in your own context when it would trip the
+   spill threshold.** The Claude Code harness spills any `Bash` stdout above
+   a threshold (around 25 KB in practice) to a tool-result file and forces
+   the agent to `Read` it back in 2000-line pages — for a 130 KB PR diff
+   that becomes 4–10 sequential `Read` turns plus per-turn model think-time,
+   which is exactly the 7+ minutes of wall-clock the GATHER_PR(#621) baseline
+   burned. The mitigation is a **byte-threshold rule** applied per verbatim
+   section, encoded inside the bundled scripts (rule 7):
+
+   - **Section ≤ 25 KB** — keep it inline in `## RESULT` as a JSON-string
+     field (`issue_body`, `thread`, `marker_comment_body`, …). The caller
+     consumes it from your final message directly; no Read needed. Small
+     issues and small comment threads cost nothing.
+   - **Section > 25 KB** — shell-redirect it to a per-call scratch file and
+     report `<artifact>_path: <abs-path>` + `<artifact>_bytes` in
+     `## RESULT`. The caller `Read`s the file on its own turn; you never
+     `Read` your own writes. A successful shell redirect (`> path` exits
+     zero, `wc -c path` reports the right size) is self-confirming,
+     exactly like rule 6's successful `gh` write is.
+   - **PR diffs and line-level review-comments JSON when
+     `include_diff` / `include_line_comments`** are always >25 KB in
+     practice. They always go to disk; no inline form is offered.
+
+   `gh-gather.sh` and `gh-pr-gather.sh` apply this threshold internally and
+   surface a `*_mode: "inline"|"path"` per section so the agent can route
+   without re-measuring. The threshold is overridable via the
+   `GH_OPS_INLINE_THRESHOLD_BYTES` env var. When you hand-roll the fetches
+   (e.g. because the op shape doesn't fit the script), do the same — pipe
+   each section through `wc -c`, inline-vs-disk it on the same threshold,
+   and report `*_mode` so the caller can branch.
+
 ## Inputs
 
 The caller's prompt names one or more **operations** and supplies their
@@ -78,61 +124,94 @@ parameters (issue/PR number, `repo` as `owner/name`, marker prefix, body text,
 search terms, etc.). The repo is the current working directory unless the caller
 passes `--repo owner/name`; pass `--repo` through to every `gh` call when given.
 
+**`scratch_dir`** is a standard input for every read op (`GATHER_*`, `LOCATE`).
+The caller supplies one (e.g. `/tmp/gh-pr-eval-621/`); when absent, create one
+on the fly with `mktemp -d /tmp/gh-ops.XXXXXX` per call. The scratch dir is
+the destination for any verbatim section above the rule-7 byte threshold;
+sections below threshold stay inline in `## RESULT` and `scratch_dir` is only
+touched when a section actually needs writing.
+
 ## Operations
 
-### `GATHER_ISSUE(issue, repo, marker_prefix?)`
-Prefer the bundled script — it runs all three fixed calls in one shot and returns
-combined JSON (note `marker_comment_count > 1`, which is a `DECISION_NEEDED` for
-any delete):
+### `GATHER_ISSUE(issue, repo, marker_prefix?, scratch_dir?)`
+Per rule 7, the **only** execution path is the bundled script:
 ```bash
-.claude/agents/scripts/gh-gather.sh <issue> <repo> "<marker_prefix>"
+.claude/agents/scripts/gh-gather.sh <issue> <repo> "<marker_prefix>" <scratch_dir>
 ```
-It is exactly equivalent to:
+Do not issue your own `gh issue view` / `gh api` / `gh pr list` calls — the
+script bundles them, applies the rule-8 byte-threshold routing, and writes
+through to `<scratch_dir>/issue-<N>-{body.md,thread.json,marker.md}` when a
+section crosses threshold. Surface the script's envelope verbatim under
+`## RESULT`. Each verbatim section appears as either its inline content
+(when `<section>_mode: inline` — keys: `issue_body`, `thread`,
+`marker_comment_body`) or its file path (when `<section>_mode: path` — keys:
+`issue_body_path`, `thread_path`, `marker_comment_path`). Follow whatever the
+script emits; do not second-guess the threshold. When `*_mode: path`, do
+NOT also echo the body inline — that would defeat the rule.
+
+Scalar set in `## RESULT`: `number`, `title`, `state`, labels, author,
+timestamps, URL, `inline_threshold_bytes`, then per-section
+`<section>_bytes`/`_mode` and the inline-vs-path key; plus
+`marker_comment_present`, `marker_comment_count`,
+`marker_comment_id`/`url`/`bytes`/`mode` when the marker exists; plus
+`open_prs`. `marker_comment_count > 1` is still a `DECISION_NEEDED` for any
+operation that will delete the marker.
+
+If the caller passes `extra_json=<fields>` (e.g.
+`closedByPullRequestsReferences,projectItems`), run a supplementary
+`gh issue view <issue> --repo <repo> --json <fields>` and fold those scalar
+fields into the same `## RESULT` block — this is the one place where an
+individual `gh` call is allowed, because the script doesn't yet cover
+arbitrary extra-JSON fields. If any extra_json field returns large nested
+content, write it to `<scratch_dir>/issue-<N>-<field>.json` and report it
+as a path under the same threshold rule.
+
+### `GATHER_EPIC(epic, repo, dependency?, scratch_dir?)`
+Fetch the epic body (`gh issue view <epic> --repo <repo> --json number,title,body,state,labels,url`)
+and **write the body verbatim to `<scratch_dir>/epic-<N>-body.md`** (per rule
+7 — the epic body is the one verbatim section here). Parse its `## Stories`
+list — from the body file you just wrote, not by re-fetching — into
+`{ number, title, checked }` for each `- [ ] #NN — title` / `- [x] #NN — title`
+line (plain bullets with no `#NN` mean the stories aren't filed; say so), and
+fetch each filed story's **live** state
+(`gh issue view <NN> --repo <repo> --json state,title,labels`) so the caller
+can reconcile body checkboxes against reality — return
+`{ number, title, checked, state }`. Per-story JSON is small and stays inline
+in `## RESULT`. Resolve the integration branch (`git branch -a` → the
+`epic/<N>-<slug>` local and remote refs). If `dependency` is given (a commit,
+file path, or story PR), confirm it is present on the epic branch
+(`git log <ref>`, `git show <ref>:<path>`). Return the reconciled epic packet
+as scalars + `epic_body_path` + `epic_body_bytes`. This is bounded
+reconnaissance — do not opine on sequencing or scope.
+
+### `GATHER_PR(pr, repo, marker_prefix?, scratch_dir?, include_diff?, include_line_comments?)`
+Per rule 7, the **only** execution path is the bundled script:
 ```bash
-gh issue view <issue> --repo <repo> --comments \
-  --json number,title,body,state,labels,author,createdAt,updatedAt,comments,assignees,milestone,url
-# marker-comment lookup (only if marker_prefix supplied; e.g. "<!-- implementation-plan:v1 -->")
-gh api "repos/<owner>/<repo>/issues/<issue>/comments" \
-  --jq '.[] | select(.body | startswith("<marker_prefix>")) | {id, url: .html_url, body}'
-# in-flight work
-gh pr list --repo <repo> --state open --search "<issue> in:body" \
-  --json number,title,author,isDraft,headRefName,url,updatedAt
+.claude/agents/scripts/gh-pr-gather.sh <pr> <repo> "<marker_prefix>" \
+  <scratch_dir> [--with-diff] [--with-line-comments]
 ```
-Return the issue's metadata, body **verbatim**, the full comment thread
-**verbatim** (each comment with author + ISO timestamp), the marker comment
-(`id`, `url`, `body`) if one matched — and note explicitly if **more than one**
-matched (that's a `DECISION_NEEDED` for any operation that will delete it) — and
-the open-PR list.
+Do not issue your own `gh pr view` / `gh pr diff` / `gh api .../pulls/.../comments`
+calls — the script bundles them, runs the four parallelisable fetches as
+background subshells, applies rule-8 threshold routing per section (body,
+thread, reviews, marker), and writes the diff + line-comments JSON
+unconditionally to `<scratch_dir>` files. Surface the script's envelope
+verbatim under `## RESULT`. PR metadata scalars (`number`, `title`, `state`,
+`isDraft`, `baseRefName`, `headRefName`, `headRefOid`, `mergeStateStatus`,
+`mergeable`, `reviewDecision`, `additions`, `deletions`, `changedFiles`,
+`commit_count`, `closingIssuesReferences`, `statusCheckRollup`,
+`latestReviews`, `url`, `inline_threshold_bytes`) sit at the top. Each
+verbatim section then appears in either inline or path form per its
+`<section>_mode` — body, thread, reviews, marker. The diff and the
+line-level review-comments JSON, when requested, are **always** path-mode
+regardless of size — they're the cases rule 8 was written for. The caller
+`Read`s any path-form section from disk and consumes any inline-form section
+from your message directly.
 
-If the caller passes `extra_json=<fields>` (e.g. `closedByPullRequestsReferences,projectItems`),
-run a supplementary `gh issue view <issue> --repo <repo> --json <fields>` and fold
-those into the `## RESULT` block too.
-
-### `GATHER_EPIC(epic, repo, dependency?)`
-Fetch the epic body (`gh issue view <epic> --repo <repo> --json number,title,body,state,labels,url`).
-Parse its `## Stories` list into `{ number, title, checked }` for each
-`- [ ] #NN — title` / `- [x] #NN — title` line (plain bullets with no `#NN` mean
-the stories aren't filed — say so), and fetch each filed story's **live** state
-(`gh issue view <NN> --repo <repo> --json state,title,labels`) so the caller can
-reconcile body checkboxes against reality — return `{ number, title, checked, state }`.
-Resolve the integration branch
-(`git branch -a` → the `epic/<N>-<slug>` local and remote refs). If `dependency`
-is given (a commit, file path, or story PR), confirm it is present on the epic
-branch (`git log <ref>`, `git show <ref>:<path>`). Return the reconciled epic
-packet. This is bounded reconnaissance — do not opine on sequencing or scope.
-
-### `GATHER_PR(pr, repo, marker_prefix?, include_diff?, include_line_comments?)`
-```bash
-gh pr view <pr> --repo <repo> \
-  --json number,title,body,state,isDraft,author,baseRefName,headRefName,commits,additions,deletions,changedFiles,closingIssuesReferences,comments,reviews,latestReviews,reviewDecision,mergeStateStatus,mergeable,statusCheckRollup,headRefOid,url
-gh pr diff <pr> --repo <repo>                                   # only if include_diff
-gh api "repos/<owner>/<repo>/pulls/<pr>/comments"               # line-level review comments, if include_line_comments
-```
-Plus the marker lookup (e.g. `<!-- pr-evaluator-health-cache:v1 -->`) over the
-PR's comments the same way as `GATHER_ISSUE`. Return PR metadata + body verbatim,
-the linked/closing issue references, the check rollup, the `headRefOid`, the diff
-and line-level comments **verbatim** when requested, and the marker comment if
-present.
+`include_diff=true` from the caller maps to `--with-diff`;
+`include_line_comments=true` maps to `--with-line-comments`. Both default off
+when not set. If the caller asks for `--with-diff` but omits `scratch_dir`,
+return `DECISION_NEEDED` — the script refuses to spill a multi-KB diff
+through stdout, and that's the only safe default.
 
 ### `LIST_OPEN(repo)`
 Read-only fleet overview of open work. Returns two lists — open epics with a
@@ -242,13 +321,20 @@ Judgment-free: do NOT recommend a next story, rank work, declare the epic
 "ready", or classify story health. The caller composes those decisions
 from the scalars you return.
 
-### `LOCATE(terms|symbols|doc_sections, roots?, ref?)`
+### `LOCATE(terms|symbols|doc_sections, roots?, ref?, scratch_dir?)`
 Find where things live so the caller can read precisely. Use `Grep`/`Glob`, or
-`git grep <pattern> <ref>` when a `ref` is given (e.g. an epic branch the working
-tree isn't on). Return a **manifest**: for each hit, `path:line-start–line-end`
-plus a short (≤ 3 line) excerpt for orientation. **Do not interpret, rank by
-importance, or draw conclusions** — the caller reads the authoritative ranges
-itself and owns any citation. If a term has no hits, say so plainly.
+`git grep <pattern> <ref>` when a `ref` is given (e.g. an epic branch the
+working tree isn't on). Build a **manifest**: for each hit,
+`path:line-start–line-end` plus a short (≤ 3 line) excerpt for orientation.
+Then **write the manifest verbatim to `<scratch_dir>/locate-<slug>.txt`**
+where `<slug>` is a short stable hash of the search terms
+(`printf '%s' "<terms>" | md5 | head -c 8` is enough), and report
+`manifest_path` + `hit_count` + `terms` in `## RESULT`. **Do not echo the
+manifest inline** — even moderate hit counts trip the spill threshold and
+turn into a Read-back loop. **Do not interpret, rank by importance, or draw
+conclusions** — the caller reads the manifest from disk and owns any
+citation. If a term has no hits, say so plainly (`hit_count: 0`); no manifest
+file is written.
 
 ### `PERSIST_COMMENT(target, id, repo, body, delete_marker_id?, review_action?)`
 `target` is `issue`, `pr`, or `pr-review`. If `delete_marker_id` is given, delete
@@ -298,10 +384,24 @@ author the title or body — they are passed in.
 
 ## Output shape
 
-Lead with a single `## RESULT` block of scalar key/value lines the caller can
-scan (URLs, IDs, branch names, counts, `state`, marker-present yes/no). Follow
-with clearly-headed verbatim sections for any body/thread content
-(`## ISSUE BODY`, `## THREAD` with one `### @author — <ISO>` per comment,
-`## LOCATE MANIFEST`, etc.). Keep your own commentary to nil — you return data,
-not narration. If you hit a blocker, the entire message is the `DECISION_NEEDED`
-block from rule 3 instead.
+A single `## RESULT` block of scalar key/value lines the caller can scan —
+that is the **entire** output for every read op. Scalars cover URLs, IDs,
+branch names, counts, `state`, marker-present yes/no, byte sizes, and the
+`*_path` references for every verbatim artifact this op produced (issue body,
+comment thread, marker comment body, PR body, diff, line-comments JSON,
+LOCATE manifest, epic body). The previously-headed `## ISSUE BODY` /
+`## THREAD` / `## DIFF` / `## LOCATE MANIFEST` sections are gone — verbatim
+content lives in the file you wrote, not in your final message (rule 7).
+
+The only ops that still emit a sub-section after `## RESULT` are the ones
+that return structured scalar packets:
+- `STATUS(epic)` — followed by `## STORIES` (one `### #NN — title`
+  sub-section of scalars per story) and optionally `## UNFILED STORIES`.
+- `LIST_OPEN` — followed by `## EPICS` + `## ORPHANS` sub-sections of scalars.
+
+Both produce only scalar key/value lines under each sub-heading; neither
+holds verbatim content.
+
+Keep your own commentary to nil — you return data, not narration. If you hit
+a blocker, the entire message is the `DECISION_NEEDED` block from rule 3
+instead.

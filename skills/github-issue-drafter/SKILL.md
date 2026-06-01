@@ -88,9 +88,9 @@ Parse the issue number or URL from the user's message. If the user said somethin
 
 Delegate the fetch to `github-ops` so you read everything in one pass before forming an opinion:
 
-> `GATHER_ISSUE(issue=<N>, repo=<owner/repo>, marker_prefix="<!-- implementation-plan:v1 -->", extra_json="closedByPullRequestsReferences,projectItems")`
+> `GATHER_ISSUE(issue=<N>, repo=<owner/repo>, marker_prefix="<!-- implementation-plan:v1 -->", extra_json="closedByPullRequestsReferences,projectItems", scratch_dir=/tmp/gh-drafter-<N>/)`
 
-It returns the issue metadata + body and full comment thread **verbatim**, the closed-by-PR / project references, the open-PR list, and the plan comment if one is attached.
+The `## RESULT` envelope returns scalars + path references — `issue_body_path`, `thread_path`, and (when a plan exists) `marker_comment_id` / `marker_comment_url` / `marker_comment_path` — plus the closed-by-PR / project references and the open-PR list. `Read` the body and thread from their paths. When a plan marker exists, `Read` it from `marker_comment_path` to ground the revise against the same approach the resolver is bound to.
 
 If a PR exists, surface it before editing — the user may want to coordinate, or to wait until the PR merges before reshaping the issue body.
 
@@ -147,7 +147,7 @@ Pass only the deltas — omit `title` if unchanged, omit `labels_*` if there are
 
 ### Special case — revising an Epic
 
-After revising the Epic body, also re-audit child stories. Get the reconciliation from `github-ops` — `GATHER_EPIC(epic=<epic-#>, repo=<owner/repo>)` returns each `## Stories` entry as `{number, title, checked, state}`, pairing the body checkbox with the story's live state. Reconcile the checkboxes against that state (closed → checked; open → unchecked) and run the **dependency-graph story-ordering check** (dimension 5) and the **story-sizing / over-split check** (dimension 7) against the current set of stories. If ordering or sizing findings come back, surface them with evidence and a proposed re-ordering or merge — the user confirms before the body is edited. Don't silently swap or merge bullets. (A sizing finding on an already-filed Epic can't un-file a story; surface it as a recommendation — "stories #N and #M could have been one" — for the user to act on, e.g. by closing one as part of the other's work.)
+After revising the Epic body, also re-audit child stories. Get the reconciliation from `github-ops` — `GATHER_EPIC(epic=<epic-#>, repo=<owner/repo>, scratch_dir=/tmp/gh-drafter-<epic-#>/)` returns `epic_body_path` and each `## Stories` entry as `{number, title, checked, state}` inline scalars, pairing the body checkbox with the story's live state. `Read` the epic body from `epic_body_path` to ground the re-audit, then reconcile the checkboxes against the live state (closed → checked; open → unchecked) and run the **dependency-graph story-ordering check** (dimension 5) and the **story-sizing / over-split check** (dimension 7) against the current set of stories. If ordering or sizing findings come back, surface them with evidence and a proposed re-ordering or merge — the user confirms before the body is edited. Don't silently swap or merge bullets. (A sizing finding on an already-filed Epic can't un-file a story; surface it as a recommendation — "stories #N and #M could have been one" — for the user to act on, e.g. by closing one as part of the other's work.)
 
 ### Special case — revising a Story
 

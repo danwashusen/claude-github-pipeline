@@ -47,9 +47,13 @@ check, the known-issue triage search, locating precedent in the codebase, and
 posting result comments. Delegate that to the **`github-ops`** sub-agent
 (`subagent_type: "github-ops"`, Sonnet + medium effort — spawn with **no `model`
 override**): `GATHER_ISSUE`, `LOCATE`, `PERSIST_COMMENT` (see
-`.claude/agents/github-ops.md`). It returns issue bodies and threads **verbatim**
-so the latest-decision read and the audit stay yours, and `LOCATE` returns only
-`path:line` pointers — you still `Read` the cited ranges yourself.
+`.claude/agents/github-ops.md`). It writes issue bodies, threads, plan-marker
+bodies, and LOCATE manifests **verbatim to per-run scratch files** and returns
+`## RESULT` scalars with `*_path` references — `Read` from those paths to get
+content. Pass `scratch_dir=/tmp/gh-resolver-<N>/` to every dispatch so this
+run's artifacts share a per-issue dir, and reuse the same dir across the
+GATHER and LOCATE calls so the resolver can find earlier-fetched content
+without re-fetching.
 
 **What does *not* delegate to `github-ops`:** the `git worktree` lifecycle and all
 local `git` work (add/commit/push, diffs, branch resolution) — that is cwd-stateful
@@ -592,9 +596,11 @@ If ambiguous (e.g., they said "issue 42" but you're in a monorepo or there's no 
 
 Delegate the fetch to `github-ops` so you pull the issue, all comments, the linked/closing PR references, and any open PR in one pass:
 
-> `GATHER_ISSUE(issue=<number>, repo=<owner/repo>, extra_json="closedByPullRequestsReferences,projectItems")`
+> `GATHER_ISSUE(issue=<number>, repo=<owner/repo>, marker_prefix="<!-- implementation-plan:v1 -->", extra_json="closedByPullRequestsReferences,projectItems", scratch_dir=/tmp/gh-resolver-<number>/)`
 
-It returns the issue + full thread **verbatim**, the closing-PR / project references, and the open-PR list. The explicit open-PR search matters because `closedByPullRequestsReferences` only covers PRs that *would close* the issue (and only when the linkage syntax was used) — open/in-progress PRs by other contributors often won't appear there, so `github-ops` runs the `gh pr list … "<number> in:body"` search alongside it.
+`scratch_dir` is the per-run dir convention from commit 567e829 — routing the body / thread / plan-marker through it is what keeps large issues (epics, long-marker stories) from burning minutes in spill-and-reread on the github-ops side. The `## RESULT` envelope carries scalars + path references — `issue_body_path`, `thread_path`, `marker_comment_path` (when a plan marker exists) — plus `closingIssuesReferences`, the open-PR list, and any `extra_json` fields. **Read the body and the thread from the returned paths** when you need their content; github-ops doesn't echo them inline.
+
+The marker_prefix lookup matters here too: the plan comment is the canonical source for the implementation approach. Read it (via `marker_comment_path`) before forming any opinion on what "resolving" the issue means. The explicit open-PR search matters because `closedByPullRequestsReferences` only covers PRs that *would close* the issue (and only when the linkage syntax was used) — open/in-progress PRs by other contributors often won't appear there, so `github-ops` runs the `gh pr list … "<number> in:body"` search alongside it.
 
 Read everything before forming an opinion. Long threads matter — the original post is often outdated by the time someone asks you to work on it.
 

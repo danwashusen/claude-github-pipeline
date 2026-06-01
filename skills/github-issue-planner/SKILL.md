@@ -91,9 +91,9 @@ Never skip step 6 or 6.5 (user-owned calls), step 7.5 (the cheap in-loop self-ch
 
 Parse the issue number/URL the same way the resolver does. Then fetch everything in one pass before forming any opinion — the original body is often outdated by the time someone asks for a plan. Delegate the fetch to `github-ops`:
 
-> `GATHER_ISSUE(issue=<N>, repo=<owner/repo>, marker_prefix="<!-- implementation-plan:v1 -->")`
+> `GATHER_ISSUE(issue=<N>, repo=<owner/repo>, marker_prefix="<!-- implementation-plan:v1 -->", scratch_dir=/tmp/gh-planner-<N>/)`
 
-It returns the issue metadata + body and the full comment thread **verbatim**, the existing plan comment (`id`, `url`, `body`) if one matched, and the open-PR list. The marker lookup doubles as the **revise-mode trigger**: if a plan comment came back, go to **Revise mode** below (its `id` is what step 10 deletes; if `github-ops` reports more than one plan comment, it returns `DECISION_NEEDED` — disambiguate with the user). If an open PR exists, surface it before planning — the user may want to wait for it to land, or coordinate the plan with in-flight work.
+The `## RESULT` envelope returns the issue metadata as scalars, the path references `issue_body_path` / `thread_path`, and — when a prior plan exists — `marker_comment_id` / `marker_comment_url` / `marker_comment_path` (`marker_comment_present: false` if not). `Read` the body and the thread from their paths. The marker lookup doubles as the **revise-mode trigger**: if `marker_comment_present` is true, `Read` the existing plan from `marker_comment_path`, then go to **Revise mode** below (its `id` is what step 10 deletes; if `github-ops` reports more than one plan comment via `marker_comment_count > 1`, it returns `DECISION_NEEDED` — disambiguate with the user). If an open PR exists in `open_prs`, surface it before planning — the user may want to wait for it to land, or coordinate the plan with in-flight work. Reuse the same `scratch_dir` for every subsequent `github-ops` dispatch this run.
 
 ## Step 3: Classify and scale to the work
 
@@ -132,9 +132,9 @@ Read each that exists; follow `@`-references (`CLAUDE.md` pulls in `docs/constit
 
 Then **find the codebase precedent.** The strongest plans extend patterns that already exist. Delegate the *locating* to `github-ops` — it greps fast and cheap and hands back pointers, not conclusions:
 
-> `LOCATE(terms=<symbols/patterns/doc sections>, roots=<dirs>, ref=<epic branch if the working tree isn't on it>)`
+> `LOCATE(terms=<symbols/patterns/doc sections>, roots=<dirs>, ref=<epic branch if the working tree isn't on it>, scratch_dir=/tmp/gh-planner-<N>/)`
 
-It returns a manifest of `path:line-start–line-end` hits with short excerpts. **You then `Read` the cited ranges yourself** — the interpretation, the layer call, and every `[precedent: …]` citation are yours, grounded in source you actually read (not in the excerpt). With the candidate sites in hand:
+The `## RESULT` envelope returns `manifest_path` + `hit_count` + the terms. `Read` the manifest file to walk the hits — for each entry, `path:line-start–line-end` plus a short excerpt. **You then `Read` the cited source ranges yourself** — the interpretation, the layer call, and every `[precedent: …]` citation are yours, grounded in source you actually read (not in the excerpt). With the candidate sites in hand:
 - Find the types, stores, services, and views the change touches; confirm the layer each belongs to (constitution §2).
 - Find a sibling feature that solved an analogous problem and mirror its structure.
 - Identify the concrete symbols, file paths, and signatures the implementation will add or modify — these become the `## Changes` section.
@@ -387,7 +387,7 @@ Then **ensure the issue body carries a plan pointer** so a human (and the drafte
 When the target is an **epic**:
 
 1. Plan the epic itself first (epic-level `## Approach`, `## Story breakdown`, `## Integration strategy`, `## Definition of done` grounding). Verify it with dimensions 1, 2, 3, 6 (sequencing can't fire yet if stories aren't planned). Post it.
-2. **Check whether the child stories are filed as issues.** Get the reconnaissance from `github-ops` rather than running the `gh`/`git` yourself — `GATHER_EPIC(epic=<N>, repo=<owner/repo>, dependency=<commit/file/PR a story depends on, if relevant>)` returns the epic body, the parsed `## Stories` list (each `{number, title, checked}`, or a flag that they're plain bullets with no `#NN`), the resolved `epic/<N>-<slug>` branch (local + remote — this is the `plan_ref` for each story), and whether the named dependency has landed on that branch. From that list:
+2. **Check whether the child stories are filed as issues.** Get the reconnaissance from `github-ops` rather than running the `gh`/`git` yourself — `GATHER_EPIC(epic=<N>, repo=<owner/repo>, dependency=<commit/file/PR a story depends on, if relevant>, scratch_dir=/tmp/gh-planner-<N>/)` returns `epic_body_path` (write `Read` it from disk — the epic body is the one verbatim payload here), the parsed `## Stories` list (each `{number, title, checked, state}`, or a flag that they're plain bullets with no `#NN`), the resolved `epic/<N>-<slug>` branch (local + remote — this is the `plan_ref` for each story), and whether the named dependency has landed on that branch. Per-story scalars stay inline in `## RESULT`. From that list:
    - **Stories are filed** (`- [ ] #NN — title` lines) → plan each one (story schema with the `**Epic:** #N` backlink), each going through its own verify loop. Auto-post each story on its clean verify exit per step 9; a story whose verify loop ends in cap/circular falls through that path's gate at step 8 — handle that story's decision before moving on. Then run the verify loop's **dimension 5 (sequencing)** across the full set of sibling plans; fold any re-ordering into the epic plan's `## Sequencing` section and re-verify in revise mode (auto-posts on clean exit).
    - **Stories are not filed** (plain bullets, no `#NN`) → **stop after the epic-level plan.** Tell the user: "The child stories aren't filed yet. Run `github-issue-drafter` to file them (it owns issue creation), then re-run me on the epic and I'll plan each story and sequence them." Filing issues is the drafter's job, not the planner's — don't create them here.
 
