@@ -1533,19 +1533,22 @@ If run 1 is green, proceed to the sub-agent's step 8 (commit and push). If run 1
 
 ### 11. Summarise for the user
 
-**Outcome rubric — does this resolution end with a pr-evaluator handoff?**
+**Outcome rubric — what shape does the Step 12 handoff take?**
 
-Classify the run's outcome before writing the summary; it determines whether the closing **Next step** line in this section fires.
+Classify the run's outcome before writing the summary; it determines which Step 12 rendering fires. The handoff fires on every clean exit (forward, terminal, or re-route) — only the shape differs.
 
-| Outcome | Closing pr-evaluator handoff |
+| Outcome | Step 12 rendering |
 |---|---|
-| Story / bug-fix / refactor PR opened or updated (§8 or §10 paths reached push) | **Emit.** This is the default code-change outcome and the case the handoff exists for. |
-| Epic-integration PR opened or updated (epic-target run finishing an epic) | **Emit, explicitly.** The integration PR carries more merge risk than any single story PR — pr-evaluator runs the full canonical suite, evaluates the change against the epic's `## Definition of done`, and recommends a merge strategy. The handoff matters more here, not less. |
-| Comment-only answer (question, clarification, decision capture; no diff, no PR) | **Skip.** There is no PR for pr-evaluator to evaluate; mentioning it would confuse the user. |
-| Triage / classification only (relabel, retitle, link to a duplicate; no PR) | **Skip.** Same reason. |
-| Abandoned / declined / stale-issue close (user opted out of opening a PR) | **Skip.** Same reason. |
+| Story / bug-fix / refactor PR opened or updated (§8 or §10 paths reached push) | **Forward → `github-pr-evaluator`.** The default code-change outcome. |
+| Epic-integration PR opened or updated (epic-target run finishing an epic) | **Forward → `github-pr-evaluator`.** The integration PR carries more merge risk than any single story PR; the handoff calls this out so the user knows pr-evaluator will run the full canonical suite, evaluate against the epic's `## Definition of done`, and ask for the merge mode. |
+| Comment-only answer (question, clarification, decision capture; no diff, no PR) | **Terminal.** No PR for pr-evaluator to evaluate; the handoff names the issue's current state and closes the pipeline for this run. |
+| Triage / classification only (relabel, retitle, link to a duplicate; no PR) | **Terminal.** Same shape as comment-only. |
+| Abandoned / declined / stale-issue close (user opted out of opening a PR) | **Terminal.** Same shape — name the close reason in the `Why:` line. |
+| §4.5 fitness audit blocked the run (issue body fails fitness-to-implement) | **Re-route → `github-issue-drafter` (revise).** The handoff names the failing audit dimension and the specific evidence so the drafter's revise loop can act without re-investigating. |
+| §4.6 plan-currency drift or §8 plan-invalidation surfaced mid-work | **Re-route → `github-issue-planner` (revise).** The handoff quotes the locked decision verbatim and cites the `file:line` where the contradiction surfaced. |
+| §6 doc-conflict that can't be reconciled in-skill | **Re-route → `github-issue-drafter` (revise).** The handoff names the doc citation and the body claim that contradicts it. |
 
-If the run produced *both* a comment and a PR (e.g., posted a "starting work" comment then opened the PR), treat it as a PR outcome — the PR is what pr-evaluator acts on.
+If the run produced *both* a comment and a PR (e.g., posted a "starting work" comment then opened the PR), treat it as a PR outcome — the PR is what pr-evaluator acts on. If a re-route fired *after* a draft PR was opened (the resolver started work, hit a plan-invalidation, and stopped), the draft PR stays open and the handoff's PR line carries `state: draft`; the user re-runs the resolver in continue mode after the prior skill's revise lands.
 
 **Before writing the summary, run the end-of-§10 follow-up checkpoint.** Per "Follow-up issue tracking" above, present the registry's `file-at-checkpoint` items (planning-time and implementation-time discoveries that weren't filed in-flight) to the user for batch approval, file via the sub-agent protocol, weave URLs into TODO markers and the PR body's `## Follow-ups` section. This is the resolution's last chance to convert trackable observations into filed issues before §11 closes things out; observations that aren't filed here become PR-body lines that age into noise.
 
@@ -1562,11 +1565,107 @@ If the resolved issue was a **story** under an open epic, include two additional
 - The parent epic's `## Stories` checkbox for this story is still `- [ ]` — it won't auto-tick on PR merge. A future epic-targeted run (or the user manually) needs to sync it.
 - The change has landed on the epic integration branch, not `main`. It will reach `main` via the integration PR for epic #N once all stories under that epic are complete.
 
-**Next step (PR outcomes only — per the rubric above).** Append the line below as the final entry in the §11 summary, after all other content. Skip it entirely for comment-only, triage-only, and abandoned-issue outcomes — those have no PR for pr-evaluator to evaluate.
+**Close with the Step 12 Handoff.** After everything else in §11 has been emitted (Iteration test status, summary, Follow-ups split, worktree cleanup notes, story / epic reminders), end the run with the Step 12 handoff block defined in the next section. Don't author a separate "Next step" line — the handoff *is* the next-step signal, and the rubric above already classifies which rendering fires.
 
-> **Next step.** Run the `github-pr-evaluator` skill against PR #<N> (<URL>) to evaluate issue-fit against the originating issue (#<ISSUE>) and recommend the right merge strategy. The resolver leaves the PR reviewed-by-`/review` for code quality and verified by targeted tests at §8/§10.6, but the canonical-suite run, issue-fit evaluation, and merge-strategy selection happen inside `github-pr-evaluator` — that's the gate between "reviewed" and "merged cleanly".
+### 12. Handoff
 
-Substitute `<N>`, `<URL>`, and `<ISSUE>` with the actual PR number, URL, and originating issue number from this run. For an epic-integration PR, `<ISSUE>` is the epic issue number; pr-evaluator handles both story and integration PRs. If the PR closes multiple issues (e.g., `Fixes #A, Closes #B`), substitute the issue number the resolver was invoked with — that's the issue whose intent the resolver tracked through implementation.
+Every clean run of the resolver ends with a single `## Handoff` block — the schema, omission rules, and state-marker vocabulary live in [`../_shared/handoff-format.md`](../_shared/handoff-format.md). The handoff is the only bridge between this session and the next: the user copies the fenced command into a fresh Claude Code session.
+
+**Re-route rule.** When the outcome is a re-route (§4.5 fitness audit, §4.6 plan-currency, §6 doc-conflict, §8 plan-invalidation), the handoff is the **only** form of next-step communication. **Do not** invoke the prior skill via the `Skill` tool — that would cross a session boundary silently and defeat the session-per-skill design. The handoff names the revise command; the user runs it in a fresh session.
+
+Pull the snapshot from data already in hand: the issue/plan state from §2's `GATHER_ISSUE` (plus any re-fetch from §4.6's currency check), the PR number/URL/state from §9's `gh pr create` / §10's continuation, the review-loop state from §10's last iteration (`iteration_test_status` already feeds §11's summary), and the originating epic data when the resolver ran in story or epic mode. The `Why:` line is judgment — for forward routes, describe what the next session will do; for re-routes, quote the specific finding (locked decision, doc citation, audit dimension + evidence) so the prior skill's revise loop can ground in it without re-investigating.
+
+#### Renderings
+
+**Forward — standard or story PR opened / updated.** The default code-change outcome. For a story PR under an open epic, the `Issue:` line is replaced with `Story:` and an `Epic:` line is added per `_shared/handoff-format.md`'s Epic variant rules.
+
+```
+## Handoff
+
+**Issue:** #142 — Add CSV export · open · feature · plan: ✓
+**PR:** #287 — Add CSV export (#142) · open · base main · review: not run · health: not run · merge: not run
+
+**Next:** evaluate the PR in a fresh session.
+
+    /github-pr-evaluator #287
+
+**Why:** the evaluator runs the branch-health gate, checks the diff against the issue's acceptance criteria + the plan's locked decisions, posts a formal review, and on a clean APPROVE auto-merges (standard / story PRs) or asks for the merge mode (Epic integration).
+```
+
+**Forward — Epic integration PR.** Same forward direction (→ pr-evaluator), but the `Why:` line calls out the higher merge risk and the canonical-suite escalation so the user knows what pr-evaluator will do differently.
+
+```
+## Handoff
+
+**Epic:** #150 — Chat & session UX polish · open · epic · plan: ✓
+**Stories:** 5 of 5 closed
+**PR:** #300 — Chat & session UX polish (epic #150) · open · base main · review: not run · health: not run · merge: not run
+
+**Next:** evaluate the Epic integration PR in a fresh session.
+
+    /github-pr-evaluator #300
+
+**Why:** integration PRs land the accumulated diff of every child story onto `main` at once. pr-evaluator's escalation rules fire on `pr_type: epic-integration` — the full canonical test suite runs before merge, the verdict is checked against the epic's `## Definition of done`, and the merge mode is gated (§12b) even on a clean APPROVE.
+```
+
+**Re-route → planner.** Triggered by §4.6 plan-currency drift or §8 plan-invalidation. The `Why:` line quotes the locked decision verbatim and cites the `file:line` where the contradiction surfaced. If a draft PR was opened before the invalidation surfaced, the PR line carries `state: draft` and stays open so the resolver can continue from the same branch after the plan is refreshed.
+
+```
+## Handoff
+
+**Issue:** #142 — Add CSV export · open · feature · plan: stale
+**PR:** #287 — Add CSV export (#142) · draft · base main · review: not run · health: ❌ at abc1234 · merge: not run
+
+**Next:** revise the plan in a fresh session — implementation revealed a locked decision is unbuildable.
+
+    /github-issue-planner revise #142
+
+**Why:** the plan's `## Architecture decisions` line "<quoted decision>" assumed <X>, but `<path:line>` reveals <Y>. The §4.6 plan-currency check failed (alternatively: §8's plan-invalidation gate fired mid-implementation). Refresh the plan against today's surface before resuming. The draft PR stays open; re-run the resolver in continue mode after the plan revise lands.
+```
+
+If no PR was opened yet (§4.6 fired before §8 started), omit the PR line entirely and the resolver continues with `/github-issue-resolver #142` instead of `continue #287`.
+
+**Re-route → drafter (fitness audit).** Triggered by §4.5 finding a blocker (typically a body claim that references a symbol no longer in the codebase, an acceptance criterion that can't be evaluated, or a contradiction between body sections). The `Why:` line names the dimension and quotes the specific evidence.
+
+```
+## Handoff
+
+**Issue:** #142 — Add CSV export · open · feature · plan: ✗
+
+**Next:** revise the issue body in a fresh session — the §4.5 fitness-to-implement audit found a blocker.
+
+    /github-issue-drafter revise #142
+
+**Why:** the body's acceptance criterion "<quoted criterion>" references `<symbol>`, which doesn't exist in the current codebase (closest match: `<symbol>` at `<path:line>`). The criterion needs to be reshaped against today's surface — or the codebase needs a precursor change — before planning can ground in real precedent.
+```
+
+**Re-route → drafter (doc conflict).** Triggered by §6 finding that the issue body directly contradicts a project doc the resolver can't reconcile in-skill. Same shape as the fitness re-route; the `Why:` cites the doc section verbatim.
+
+```
+## Handoff
+
+**Issue:** #142 — Allow editing submitted forms · open · feature · plan: ✗
+
+**Next:** reshape the issue body in a fresh session — the body contradicts `docs/prd.md`.
+
+    /github-issue-drafter revise #142
+
+**Why:** `docs/prd.md` §4 says "entries are immutable after submit"; the issue body proposes an edit-after-submit feature. The user chose `Reshape issue` at the §6 doc-conflict gate. The drafter's revise mode either reshapes the body to fit the PRD or routes the conflict back to the user to decide whether the PRD itself should change.
+```
+
+**Terminal — non-PR resolution.** Comment-only answer, triage-only re-labelling, or abandoned/declined work. No PR was opened; the handoff names the issue's current state and closes the pipeline for this run.
+
+```
+## Handoff
+
+**Issue:** #142 — Should we add CSV export? · open · feature · plan: ✗
+
+**Next:** (terminal — no follow-up skill)
+
+**Why:** the resolver posted a clarifying comment in response to the question; no code change was warranted and no PR was opened. The issue stays open in its current state for the user (or a future resolver run) to take forward.
+```
+
+For abandoned / declined / stale-issue-close outcomes, name the close reason in the `Why:` line (e.g. "the user declined to open a PR after the §5 existing-work check surfaced a duplicate in #138").
 
 ## Common pitfalls
 

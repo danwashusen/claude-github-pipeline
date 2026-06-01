@@ -696,20 +696,125 @@ Clean up temp files after. If the checkbox is already `[x]` (another tool beat u
 
 3. **Delete the per-run scratch directory**: `rm -rf "/tmp/gh-pr-eval-<N>"` (it holds the squash body, the epic-body working copies, and the health logs). (The review-body and health-cache temp files are written and removed inside `github-ops`, not here.)
 
-Then print the final summary:
-- Review posted: URL
-- Merge: run (with resulting commit hash if available)
-- Story issue: closed (link) or "already closed" *(story PRs only)*
-- Epic checkbox: ticked (link to updated epic) *(story PRs only)*
-- Worktree teardown: ran (N command(s)) | none declared | failed at step *i*: `<command>` (continued)
-- Worktree: removed at `<path>` or "none found"
+Then end the run with the Step 15 Handoff block (next section) — the handoff is the closing structured summary, replacing the bullet-list summary previously emitted here. The handoff's `Cleanup:` line carries the substantive subset (worktree teardown outcome, removal, scratch-dir status); the URLs of the review, the merge commit, the closed story issue, and the ticked epic checkbox flow into earlier output as they're produced (§11, §12, §13) and don't repeat in the handoff.
 
-**If the merge did not run** (user declined in step 12):
-- Review posted: URL
-- Merge: not run — command shown above, run when ready
-- Story issue / epic checkbox: left unchanged *(story PRs only)*
-- Worktree teardown: not run (worktree left in place)
-- Worktree: left in place
+**If the merge did not run** (user declined in step 12, or §12c skipped on DIRTY/BLOCKED, or §7 produced a COMMENT verdict), still end the run with the Step 15 Handoff. The handoff's `Cleanup:` line is **omitted** (the worktree stayed in place); the `Next:` action shifts per the §15 rubric — for §12c skips and user-declined merges the handoff carries the manual `gh pr merge` command for the user to run after the blocker resolves; for soft-rejections the handoff re-routes to `github-issue-resolver continue #<N>`.
+
+### 15. Handoff
+
+Every clean run of the evaluator ends with a single `## Handoff` block — the schema, omission rules, and state-marker vocabulary live in [`../_shared/handoff-format.md`](../_shared/handoff-format.md). The handoff is the only bridge between this session and the next; it replaces §14's previously-inlined bullet-list summary. Don't emit both.
+
+Pull the snapshot from data already in hand: the §3 `GATHER_PR` payload (issue/PR numbers, titles, base ref), the §5.5 / §5.6 cache-comment results (`HEALTH_OK`, `<short-sha>`, `TIER`), §7's verdict (`APPROVE` or `COMMENT`), §12's merge command and outcome (target ref + resulting commit SHA when the merge ran, the failure reason when it didn't), and §14's worktree teardown / removal results. The `Why:` line is judgment — describe what the next session does, or for terminal endings, why the pipeline ends here.
+
+#### Rendering rubric
+
+| Outcome | Step 15 rendering |
+|---|---|
+| Standard PR clean APPROVE → §12a auto-merged | **Terminal.** Issue line, PR line with `merge: squash → main@<sha>`, Cleanup line. |
+| Story PR clean APPROVE → §12a auto-merged, more sibling stories pending | **Forward → `github-issue-resolver`** on the next story in dependency order. Story / Epic / PR / Cleanup lines; Epic progress is e.g. `open (2 of 5 stories closed)`. |
+| Story PR clean APPROVE → §12a auto-merged, *last* sibling story | **Forward → `github-issue-resolver`** on the Epic, in Epic-integration mode. Story / Epic / PR / Cleanup lines; Epic progress is `open (5 of 5 stories closed)`. |
+| Epic integration PR clean APPROVE → §12b merged (merge-commit or squash) | **Terminal.** Epic line, PR line with `merge: merge → main@<sha>` (or `squash → main@<sha>` if §12b chose Squash), Cleanup line. |
+| Any PR, COMMENT verdict (soft-reject) — §7's `comment` action | **Re-route → `github-issue-resolver continue #<N>`.** Issue / PR lines; PR line carries `review: COMMENT (soft-reject)` and `merge: skipped (verdict)`. No Cleanup line. |
+| APPROVE but `mergeStateStatus ∈ {DIRTY, BLOCKED}` → §12c skipped | **Terminal with manual command.** Issue / PR lines (PR line: `merge: skipped (DIRTY)` or `skipped (BLOCKED)`); no Cleanup. The `Next:` action quotes the recommended `gh pr merge` command verbatim and names the blocker; the `Why:` line names what the user needs to do to clear the blocker. |
+| §12b epic-integration "Don't merge yet" choice | **Same shape as the DIRTY/BLOCKED case** — terminal with the recommended `gh pr merge` command. The `Why:` notes the user opted to merge manually. |
+
+Self-authored PRs (the §2 self-approval pre-check that downgraded `--approve` to `--comment`) still follow the table above — the verdict is approval-equivalent; only the review action differed.
+
+#### Renderings
+
+**Standard PR clean merged — terminal.**
+
+```
+## Handoff
+
+**Issue:** #142 — Add CSV export · closed · feature · plan: ✓
+**PR:** #287 — Add CSV export (#142) · merged · base main · review: APPROVE · health: ✅ at abc1234 · merge: squash → main@def5678
+**Cleanup:** worktree removed; teardown ran; scratch dir purged
+
+**Next:** (terminal — no follow-up skill)
+
+**Why:** the PR satisfied every dimension cleanly and merged into main. The issue is closed by GitHub's auto-close; no follow-up skill is required for this issue.
+```
+
+**Story PR merged — more stories pending.** The Epic stays open; the resolver picks up the next story in dependency order. Read the Epic body's `## Stories` list (re-fetched in §13) to pick the next-in-sequence; if the Epic's `## Sequencing` section pins an order, follow it.
+
+```
+## Handoff
+
+**Story:** #151 — Add export service · closed · story · plan: ✓
+**Epic:** #150 — Chat & session UX polish · open (1 of 5 stories closed)
+**PR:** #287 — Add export service (#151) · merged · base epic/150-chat-ux · review: APPROVE · health: ✅ at abc1234 · merge: squash → epic/150-chat-ux@def5678
+**Cleanup:** worktree removed; epic checkbox ticked; story issue closed
+
+**Next:** start the next story in dependency order in a fresh session.
+
+    /github-issue-resolver #152
+
+**Why:** story #151 merged into the epic branch; the Epic checkbox is ticked. Story #152 (next in sequence) has its plan posted and is ready for implementation.
+```
+
+**Story PR merged — last sibling, Epic integration ready.** Every child story is now closed. The next step is the resolver in Epic-integration mode (it opens the integration PR against `main`).
+
+```
+## Handoff
+
+**Story:** #155 — Final polish · closed · story · plan: ✓
+**Epic:** #150 — Chat & session UX polish · open (5 of 5 stories closed)
+**PR:** #295 — Final polish (#155) · merged · base epic/150-chat-ux · review: APPROVE · health: ✅ at fed4321 · merge: squash → epic/150-chat-ux@9876abc
+**Cleanup:** worktree removed; epic checkbox ticked; story issue closed
+
+**Next:** open the Epic integration PR in a fresh session.
+
+    /github-issue-resolver #150
+
+**Why:** every child story is closed and on `epic/150-chat-ux`. The resolver in Epic mode opens the integration PR against `main`; pr-evaluator will then escalate to the full canonical test suite (per the `pr_type: epic-integration` rule) before recommending the merge mode.
+```
+
+**Epic integration PR clean merged — terminal.**
+
+```
+## Handoff
+
+**Epic:** #150 — Chat & session UX polish · closed · epic · plan: ✓
+**PR:** #300 — Chat & session UX polish (epic #150) · merged · base main · review: APPROVE · health: ✅ at 1357bdf · merge: merge → main@2468ace
+**Cleanup:** worktree removed; teardown ran; scratch dir purged
+
+**Next:** (terminal — no follow-up skill)
+
+**Why:** the integration PR landed every child story's work on `main` in one merge commit (§12b chose Merge commit, preserving the story squash commits in `main`'s history). The Epic is closed by `Fixes #150`; the pipeline ends here.
+```
+
+**Soft-reject — re-route to resolver.** §7 produced a `comment` action; the review names the dimension gaps; the resolver continues on the existing branch.
+
+```
+## Handoff
+
+**Issue:** #142 — Add CSV export · open · feature · plan: ✓
+**PR:** #287 — Add CSV export (#142) · open · base main · review: COMMENT (soft-reject) · health: ✅ at abc1234 · merge: skipped (verdict)
+
+**Next:** address the review's gaps in a fresh session — the resolver continues on the existing branch.
+
+    /github-issue-resolver continue #287
+
+**Why:** the review cites <N> dimension gaps (acceptance-criterion #3 unaddressed; one plan-locked test missing — see the review comment for the full evidence). The resolver's §10 review loop will address each finding, re-push, and re-trigger evaluation when it's done.
+```
+
+**APPROVE but merge skipped — terminal with manual command.** The PR earned approval but isn't mergeable yet (DIRTY or BLOCKED), or the user opted to merge later from §12b. Print the recommended `gh pr merge` command verbatim in the fenced block; the user runs it themselves when the blocker clears.
+
+```
+## Handoff
+
+**Issue:** #142 — Add CSV export · open · feature · plan: ✓
+**PR:** #287 — Add CSV export (#142) · open · base main · review: APPROVE · health: ✅ at abc1234 · merge: skipped (DIRTY)
+
+**Next:** resolve the conflict, then run the merge yourself:
+
+    gh pr merge 287 --repo owner/repo --squash --subject "feat: add CSV export (#287)" --body-file /tmp/squash-body-287.md --delete-branch
+
+**Why:** the PR is approved on its merits but `mergeStateStatus == DIRTY` — there's a conflict with the base branch. Resolve the conflict (rebase or merge `main` into the PR branch), confirm the conflict is gone (`gh pr view 287 --json mergeStateStatus`), then run the command above. No follow-up skill — once the merge lands, GitHub auto-closes the issue.
+```
+
+For the §12b "Don't merge yet" path, the same shape applies with `merge: skipped (user-declined)` and a Why line noting the user's choice to merge manually.
 
 ---
 
