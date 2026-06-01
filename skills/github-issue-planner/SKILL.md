@@ -81,7 +81,7 @@ posts the approved body verbatim, it never authors anything.
 7. **Draft** the plan against the schema below.
 7.5. **Pre-flight** — sweep the draft for hedge phrasings and resolve each one before invoking the reviewer.
 8. **Verify** the plan with the isolated review sub-agent loop (up to 3 passes).
-9. **Confirm** with the user (a diff-style update in revise mode).
+9. **Show** the plan (diff-style in revise mode); auto-post on a clean verify exit.
 10. **Persist** the plan as a marker comment + ensure the issue body's plan pointer.
 11. **Epic fan-out** — plan each filed child story and run a sequencing pass.
 
@@ -343,11 +343,13 @@ Unlike the resolver's audit (which routes issue-body findings to the drafter), t
   - **If any unresolved finding is a dimension-4 (implementation readiness) BLOCKER**, "Post as-is" is **not** an option — a dimension-4 BLOCKER is by definition an open design decision, and posting it would reintroduce the planner→resolver→planner round-trip this skill exists to prevent. Ask the decision through `AskUserQuestion` (header `"Review notes"`) with these options: **Surface as decision gate** (route through step 6.5 to pin the choice with `AskUserQuestion`, fold the answer into `## Architecture decisions`, then re-verify), **Fix manually** (hold off posting while you resolve the findings by hand), **Push back on reviewer** (challenge the findings as wrong — used when the reviewer mis-read a precedent or fabricated a contradiction).
   - **If the unresolved findings are only dimensions 1, 2, 3, 5, or 6** (e.g. a doc gap the user is willing to accept, an under-grounded SUGGESTION the user judges acceptable), ask through `AskUserQuestion` (header `"Review notes"`) with: **Post as-is** (post the plan; non-dimension-4 findings may carry as watchpoints in `## Risks & watchpoints` *only if* they meet that section's "not a design decision" bar — otherwise they go in `## Deviations from project docs` with the user's agreement), **Fix manually**, **Push back on reviewer**.
 
-## Step 9: Confirm with the user
+## Step 9: Show the plan (auto-post on clean exit)
 
-For a fresh plan, show the full plan (title + body), then ask the decision through `AskUserQuestion` (header `"Post plan"`, substituting the real issue number for N) with two options: **Post to #N** (persist the plan as the marker comment per step 10) and **Adjust first** (hold off and revise the plan before posting). Wait for the answer before persisting.
+On a **clean verify exit**, show the user the plan and proceed directly to step 10 — no confirmation gate on the common path. The verification loop is the quality gate; layering a confirmation on top is redundant and adds latency. If the posted plan turns out to need changes, the user re-runs this skill in revise mode (cheap — only changed sections refresh).
 
-For a **revise**, show a diff-style update — only what changed — so the user doesn't re-read the whole thing:
+For a **fresh plan**, show the full plan body inline (title + body), note `(verified in N pass(es))`, and proceed to step 10.
+
+For a **revise**, show a diff-style update — only what changed — so the user doesn't re-read the whole thing, then proceed to step 10:
 
 ```
 ## <section> (changed)
@@ -358,9 +360,13 @@ For a **revise**, show a diff-style update — only what changed — so the user
 (other sections unchanged)
 ```
 
+On a **cap / circular exit**, the gate at the end of step 8 already handles the user's decision — **Surface as decision gate**, **Fix manually**, **Push back on reviewer**, or (only when no unresolved finding is a dimension-4 BLOCKER) **Post as-is**. Honour that decision; don't ask again here.
+
+A user who wants to review before posting can say so in the prompt ("draft the plan, but don't post yet"); honour that intent and pause here for confirmation instead of auto-posting.
+
 ## Step 10: Persist the plan
 
-Only reach this step after the step-9 gate. Hand the **approved** plan body to `github-ops` to post — it writes the body verbatim, it does not author it:
+Reach this step on a clean verify exit (after step 9's inline show) or after the cap/circular decision at the end of step 8. Hand the plan body to `github-ops` to post — it writes the body verbatim, it does not author it:
 
 > `PERSIST_COMMENT(target=issue, id=<N>, repo=<owner/repo>, body=<the approved plan, starting with the <!-- implementation-plan:v1 --> marker>, delete_marker_id=<OLD_PLAN_COMMENT_ID if revising>)`
 
@@ -382,7 +388,7 @@ When the target is an **epic**:
 
 1. Plan the epic itself first (epic-level `## Approach`, `## Story breakdown`, `## Integration strategy`, `## Definition of done` grounding). Verify it with dimensions 1, 2, 3, 6 (sequencing can't fire yet if stories aren't planned). Post it.
 2. **Check whether the child stories are filed as issues.** Get the reconnaissance from `github-ops` rather than running the `gh`/`git` yourself — `GATHER_EPIC(epic=<N>, repo=<owner/repo>, dependency=<commit/file/PR a story depends on, if relevant>)` returns the epic body, the parsed `## Stories` list (each `{number, title, checked}`, or a flag that they're plain bullets with no `#NN`), the resolved `epic/<N>-<slug>` branch (local + remote — this is the `plan_ref` for each story), and whether the named dependency has landed on that branch. From that list:
-   - **Stories are filed** (`- [ ] #NN — title` lines) → plan each one (story schema with the `**Epic:** #N` backlink), then confirm with the user one story at a time through `AskUserQuestion` (header `"Post story"`) with these options: **Post it** (persist this story's plan per step 10), **Adjust first** (revise this story's plan before posting), **Skip this story** (leave this story unplanned for now and move to the next). Post each story per its answer. Then run the verify loop's **dimension 5 (sequencing)** across the full set of sibling plans and surface any re-ordering with evidence for the user to approve.
+   - **Stories are filed** (`- [ ] #NN — title` lines) → plan each one (story schema with the `**Epic:** #N` backlink), each going through its own verify loop. Auto-post each story on its clean verify exit per step 9; a story whose verify loop ends in cap/circular falls through that path's gate at step 8 — handle that story's decision before moving on. Then run the verify loop's **dimension 5 (sequencing)** across the full set of sibling plans; fold any re-ordering into the epic plan's `## Sequencing` section and re-verify in revise mode (auto-posts on clean exit).
    - **Stories are not filed** (plain bullets, no `#NN`) → **stop after the epic-level plan.** Tell the user: "The child stories aren't filed yet. Run `github-issue-drafter` to file them (it owns issue creation), then re-run me on the epic and I'll plan each story and sequence them." Filing issues is the drafter's job, not the planner's — don't create them here.
 
 ## Revise mode
