@@ -254,7 +254,7 @@ itself and owns any citation. If a term has no hits, say so plainly.
 `target` is `issue`, `pr`, or `pr-review`. If `delete_marker_id` is given, delete
 it first (`gh api -X DELETE "repos/<owner>/<repo>/issues/comments/<delete_marker_id>"`
 — PR comments are issue comments under the hood, so this endpoint covers both).
-Obtain a unique scratch path with `mktemp /tmp/gh-ops-XXXXXX.md` (it prints a
+Obtain a unique scratch path with `mktemp /tmp/gh-ops.XXXXXX` (it prints a
 fresh, collision-free path — use it as `<tmp>` below) and write `body` verbatim to
 that path with the Write tool, then:
 ```bash
@@ -273,7 +273,7 @@ concurrent calls are the norm and a fixed `/tmp` path would let one caller's bod
 overwrite another's mid-flight.
 
 ### `PERSIST_BODY(issue, repo, mode, ...)`
-- `mode=replace`: obtain a unique scratch path with `mktemp /tmp/gh-ops-XXXXXX.md`,
+- `mode=replace`: obtain a unique scratch path with `mktemp /tmp/gh-ops.XXXXXX`,
   write the supplied `new_body` to it with the Write tool, then
   `gh issue edit <issue> --repo <repo> --body-file <tmp>`, and remove it.
 - `mode=pointer`: fetch the current body; if it already contains the pointer
@@ -287,7 +287,7 @@ Return a confirmation with the issue URL and what changed.
 
 ### `PERSIST_CREATE(repo, title, body, labels?)`
 Mechanical issue creation once the caller has an approved title + body + labels.
-Obtain a unique scratch path with `mktemp /tmp/gh-ops-XXXXXX.md`, write `body`
+Obtain a unique scratch path with `mktemp /tmp/gh-ops.XXXXXX`, write `body`
 verbatim to it with the Write tool, then:
 ```bash
 gh issue create --repo <repo> --title "<title>" --body-file <tmp> \
