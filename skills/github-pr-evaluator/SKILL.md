@@ -439,9 +439,9 @@ Source: COMMANDS.md / CLAUDE.md
 _Cached by `github-pr-evaluator`. Do not edit; will be regenerated when HEAD changes._
 ```
 
-Post the cache comment via `github-ops`, deleting the stale one in the same step if 5.2 found one:
+Post the cache comment via `github-ops`, deleting the stale one in the same step if 5.2 found one. Stage the cache-comment body to `/tmp/gh-pr-eval-<N>/health-cache.md` first; `github-ops` reads those bytes through `gh-persist.sh` and posts them directly, so the body never has to travel verbatim through the sub-agent prompt (where compaction or an in-agent Write/Bash race could lose it — the surface that filed empty bodies on the drafter's #626/#627 incident).
 
-> `PERSIST_COMMENT(target=pr, id=<N>, repo=<owner/repo>, body=<the cache-comment body>, delete_marker_id=<OLD_CACHE_ID if stale>)`
+> `PERSIST_COMMENT(target=pr, id=<N>, repo=<owner/repo>, body_path=/tmp/gh-pr-eval-<N>/health-cache.md, delete_marker_id=<OLD_CACHE_ID if stale>)`
 
 Capture the resulting comment URL for use in `HEALTH_BODY`. That URL confirms the post landed — don't re-fetch the comment thread or spawn a second `github-ops` call to check it.
 
@@ -567,11 +567,11 @@ Don't restate the recommended strategy or the squash subject already shown above
 
 ### 11. Post the review
 
-Hand the review body to `github-ops`, with the `review_action` set by the verdict (§7) and the §2 self-approval check:
+Stage the review body to `/tmp/gh-pr-eval-<N>/review.md`, then hand the path to `github-ops` with the `review_action` set by the verdict (§7) and the §2 self-approval check. Same path-based contract as §5.6: the body posts byte-for-byte from disk via `gh-persist.sh`, never through the sub-agent prompt.
 
-> `PERSIST_COMMENT(target=pr-review, id=<N>, repo=<owner/repo>, body=<review body>, review_action=<approve | comment | request-changes>)`
+> `PERSIST_COMMENT(target=pr-review, id=<N>, repo=<owner/repo>, body_path=/tmp/gh-pr-eval-<N>/review.md, review_action=<approve | comment | request-changes>)`
 
-`review_action=approve` for an approval; `comment` for a soft-rejection **or** when the §2 self-approval pre-check flagged that you authored the PR (GitHub rejects self-`--approve` with 422 — the body stays identical, only the action changes). `github-ops` returns the review URL; share it with the user.
+`review_action=approve` for an approval; `comment` for a soft-rejection **or** when the §2 self-approval pre-check flagged that you authored the PR (GitHub rejects self-`--approve` with 422 — the body stays identical, only the action changes). `github-ops` returns the review URL plus `body_bytes` / `body_sha256`; share the URL with the user.
 
 ### 12. Run the merge
 

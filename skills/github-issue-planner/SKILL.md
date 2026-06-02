@@ -366,11 +366,11 @@ A user who wants to review before posting can say so in the prompt ("draft the p
 
 ## Step 10: Persist the plan
 
-Reach this step on a clean verify exit (after step 9's inline show) or after the cap/circular decision at the end of step 8. Hand the plan body to `github-ops` to post — it writes the body verbatim, it does not author it:
+Reach this step on a clean verify exit (after step 9's inline show) or after the cap/circular decision at the end of step 8. **Stage the approved plan body to disk before dispatching** — write the full plan (starting with the `<!-- implementation-plan:v1 -->` marker line and ending with whatever your final paragraph is) to `/tmp/gh-planner-<N>/plan.md`, then pass that path. `github-ops` reads the bytes through `gh-persist.sh` and posts them directly; the body never gets re-serialized into the sub-agent prompt, so prompt compaction can't abbreviate it and an in-agent Write/Bash race can't lose it (the same surface that filed empty bodies on the drafter's #626/#627 incident).
 
-> `PERSIST_COMMENT(target=issue, id=<N>, repo=<owner/repo>, body=<the approved plan, starting with the <!-- implementation-plan:v1 --> marker>, delete_marker_id=<OLD_PLAN_COMMENT_ID if revising>)`
+> `PERSIST_COMMENT(target=issue, id=<N>, repo=<owner/repo>, body_path=/tmp/gh-planner-<N>/plan.md, delete_marker_id=<OLD_PLAN_COMMENT_ID if revising>)`
 
-In revise mode, pass the stale plan comment's `id` (captured in step 2) as `delete_marker_id` so it's deleted before the repost. `github-ops` returns the new comment **URL** — capture it.
+In revise mode, pass the stale plan comment's `id` (captured in step 2) as `delete_marker_id` so it's deleted before the repost. `github-ops` returns the new comment **URL** plus `body_bytes` / `body_sha256` for the bytes that posted — capture the URL. If you want a byte-for-byte close, compare `body_sha256` against `shasum -a 256 /tmp/gh-planner-<N>/plan.md`. If the empty-body guard fires (`EMPTY_BODY_FILE: <path>`), the staged file is missing or empty — re-write `plan.md` and re-dispatch the same path.
 
 Then **ensure the issue body carries a plan pointer** so a human (and the drafter's revise mode) can see a plan exists. This pointer line:
 

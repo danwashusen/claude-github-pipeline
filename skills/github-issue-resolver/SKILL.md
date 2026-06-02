@@ -1280,11 +1280,11 @@ For comment-only responses (questions, blocked issues, duplicates):
 
 ### 9. Report back to GitHub
 
-For a comment-only response, hand the drafted comment to `github-ops`:
+For a comment-only response, stage the drafted comment to disk first — write it to `/tmp/gh-resolver-<issue-number>/comment.md`, then pass the path. `github-ops` reads the bytes through `gh-persist.sh` and posts them directly; the body never gets re-serialized into the sub-agent prompt, so prompt compaction can't abbreviate it and the in-agent Write/Bash race that filed empty bodies on the drafter's #626/#627 has nothing to race on.
 
-> `PERSIST_COMMENT(target=issue, id=<number>, repo=<owner/repo>, body=<the drafted comment>)`
+> `PERSIST_COMMENT(target=issue, id=<number>, repo=<owner/repo>, body_path=/tmp/gh-resolver-<issue-number>/comment.md)`
 
-It posts the body verbatim and returns the comment URL.
+It returns the comment URL plus `body_bytes` / `body_sha256`. If the empty-body guard fires (`EMPTY_BODY_FILE: <path>`), the staged file is missing or empty — re-write it and re-dispatch the same path.
 
 For code changes (all `git push` and `gh pr create` commands run from inside the worktree — same syntax, just a different cwd; PR creation stays here in the main loop, coupled to the worktree push):
 

@@ -71,18 +71,33 @@ decision. If a request would require any of that, you are being misused — retu
    post-plus-verify, and the URL you return is authoritative — the caller trusts
    it and will not re-query to double-check.
 
-7. **Use the bundled fetch scripts. Do not roll your own.** Every `GATHER_*`
-   op that has a script in `.claude/agents/scripts/` MUST be invoked through
-   that script. Today: `gh-gather.sh` for `GATHER_ISSUE`,
-   `gh-pr-gather.sh` for `GATHER_PR`. Issuing individual `gh issue view` /
-   `gh pr view` / `gh api .../comments` calls when a bundled script covers
-   the op is a contract violation — it multiplies round-trips, breaks the
-   byte-threshold routing (rule 8), and is exactly the regression we are
-   trying to eliminate. If a corner case truly doesn't fit the script,
-   stop and return `DECISION_NEEDED` describing the gap so the script can
-   be extended; do not roll your own. The scripts encode the
-   compatibility surface for every caller skill — keeping them as the
-   single execution path is what makes the contract self-consistent across
+7. **Use the bundled scripts. Do not roll your own.** Every op that has a
+   script in `.claude/agents/scripts/` MUST be invoked through that
+   script. Today:
+   - `gh-gather.sh` for `GATHER_ISSUE`
+   - `gh-pr-gather.sh` for `GATHER_PR`
+   - `gh-persist.sh` for every `PERSIST_*` write (`PERSIST_CREATE`,
+     `PERSIST_BODY` in both `replace` and `pointer` modes,
+     `PERSIST_COMMENT` for all three targets — `issue`, `pr`,
+     `pr-review`)
+
+   Rolling your own — issuing individual `gh issue view` / `gh pr view` /
+   `gh api .../comments` calls when a GATHER script covers the op, or
+   running the older hand-rolled `mktemp + Write + test -s + gh issue
+   create --body-file` ceremony when `gh-persist.sh` exists — is a
+   contract violation. For GATHER it multiplies round-trips and breaks
+   the byte-threshold routing (rule 8). For PERSIST it re-opens the
+   empty-body / Write-vs-Bash race that bit the #626/#627 incident: the
+   sub-agent can batch the Write tool and the gh Bash call into a single
+   multi-tool response and have gh read the tmp file before Write has
+   populated it. `gh-persist.sh` closes that race by running `test -s`
+   on the caller-staged body file as its very first action — there is no
+   intermediate file the agent has to populate, only one the caller
+   already wrote. If a corner case truly doesn't fit the script, stop and
+   return `DECISION_NEEDED` describing the gap so the script can be
+   extended; do not roll your own. The scripts encode the compatibility
+   surface for every caller skill — keeping them as the single execution
+   path is what makes the contract self-consistent across
    `github-issue-drafter`, `github-issue-planner`, `github-issue-resolver`,
    and `github-pr-evaluator`.
 
@@ -127,9 +142,25 @@ passes `--repo owner/name`; pass `--repo` through to every `gh` call when given.
 **`scratch_dir`** is a standard input for every read op (`GATHER_*`, `LOCATE`).
 The caller supplies one (e.g. `/tmp/gh-pr-eval-621/`); when absent, create one
 on the fly with `mktemp -d /tmp/gh-ops.XXXXXX` per call. The scratch dir is
-the destination for any verbatim section above the rule-7 byte threshold;
+the destination for any verbatim section above the rule-8 byte threshold;
 sections below threshold stay inline in `## RESULT` and `scratch_dir` is only
 touched when a section actually needs writing.
+
+**`body_path`** is a standard input for every PERSIST write whose body is
+authored by the caller (`PERSIST_CREATE`, `PERSIST_BODY mode=replace`,
+`PERSIST_COMMENT` for all three targets). The caller stages the verbatim
+body to its own per-run scratch dir before dispatching — the drafter's
+`/tmp/gh-drafter-<slug>/story-N.md`, the planner's
+`/tmp/gh-planner-<N>/plan.md`, etc. — and passes the absolute path. Nothing
+re-serializes the body across the orchestrator → sub-agent prompt boundary;
+the bytes the caller wrote are the bytes `gh-persist.sh` posts. This is the
+fix for the #626/#627 empty-body class of failure: the body cannot be
+abbreviated by prompt compaction (it never travels through the prompt) and
+cannot be lost to a Write/Bash race inside this agent (there is no Write
+step — the file already exists). The script's leading `test -s <body_path>`
+is the contract floor: if the caller's staged file is missing or empty,
+the script exits 2 with `EMPTY_BODY_FILE: <path>` on stderr and you return
+`DECISION_NEEDED` per rule 3.
 
 ## Operations
 
@@ -336,76 +367,125 @@ conclusions** — the caller reads the manifest from disk and owns any
 citation. If a term has no hits, say so plainly (`hit_count: 0`); no manifest
 file is written.
 
-### `PERSIST_COMMENT(target, id, repo, body, delete_marker_id?, review_action?)`
-`target` is `issue`, `pr`, or `pr-review`. If `delete_marker_id` is given, delete
-it first (`gh api -X DELETE "repos/<owner>/<repo>/issues/comments/<delete_marker_id>"`
-— PR comments are issue comments under the hood, so this endpoint covers both).
-Obtain a unique scratch path with `mktemp /tmp/gh-ops.XXXXXX` (it prints a
-fresh, collision-free path — use it as `<tmp>` below) and write `body` verbatim to
-that path with the Write tool, then:
+### `PERSIST_COMMENT(target, id, repo, body_path, delete_marker_id?, review_action?)`
+`target` is `issue`, `pr`, or `pr-review`. `body_path` is the caller-staged
+absolute path to the verbatim comment/review body — the caller wrote those
+bytes already; you don't reproduce them. Per rule 7, the only execution
+path is the bundled script:
+
 ```bash
-# target=issue  — a plain comment on an issue
-gh issue comment <id> --repo <repo> --body-file <tmp>
-# target=pr     — a plain comment on a PR (e.g. the health-cache comment)
-gh pr comment <id> --repo <repo> --body-file <tmp>
-# target=pr-review — a formal review; review_action is approve | comment | request-changes
-gh pr review <id> --repo <repo> --<review_action> --body-file <tmp>
+.claude/agents/scripts/gh-persist.sh comment <repo> <target> <id> <body_path> \
+  [--review-action approve|comment|request-changes] \
+  [--delete-marker-id <id>]
 ```
-For `target=pr-review` the caller supplies `review_action` — the verdict is the
-caller's decision; you just execute it. Return the new comment/review **URL**.
-Then remove the temp file (`rm <tmp>`). Always derive `<tmp>` from `mktemp`, never
-a fixed name — github-ops is a shared sub-agent invoked by every skill, so
-concurrent calls are the norm and a fixed `/tmp` path would let one caller's body
-overwrite another's mid-flight.
+
+The script handles the `gh api -X DELETE` for `delete_marker_id` when
+present (PR comments are issue comments under the hood, so the
+issue-comments endpoint covers both), then shells out to the right `gh`
+sub-command per target — `gh issue comment`, `gh pr comment`, or
+`gh pr review --<review_action>`. For `target=pr-review` the caller
+supplies `review_action` — the verdict is the caller's decision; the
+script just executes it.
+
+The script's leading `test -s "$body_path"` is the empty-body gate. On a
+missing or zero-byte file it exits 2 with `EMPTY_BODY_FILE: <path>` on
+stderr — return `DECISION_NEEDED: PERSIST_COMMENT called with empty body
+file at <path> — caller must re-stage the verbatim comment body` and post
+nothing. On success the script prints a JSON envelope on stdout with the
+new `url`, the `body_bytes`, and the `body_sha256` — surface `url`,
+`body_bytes`, and `body_sha256` as scalars in `## RESULT`. The
+`body_sha256` is the caller's verification handle: hashing the staged
+file on their side and comparing closes the byte-for-byte loop.
+
+You do not author the body, you do not re-write it to a fresh tmp file,
+and you do not run `gh` directly. Concurrency is safe because each caller
+owns its own scratch dir — there is no shared `/tmp/gh-ops.XXXXXX` race
+because there is no tmp file written here at all.
 
 ### `PERSIST_BODY(issue, repo, mode, ...)`
-- `mode=replace`: obtain a unique scratch path with `mktemp /tmp/gh-ops.XXXXXX`,
-  write the supplied `new_body` to it with the Write tool, then **verify the
-  file is non-empty** (`test -s <tmp>`) before posting. Same sub-agent-boundary
-  rationale as `PERSIST_CREATE`: `new_body` arrives only through the prompt
-  and large markdown bodies are exactly what gets abbreviated or
-  placeholder-substituted under context pressure. If `new_body` arrived
-  empty, whitespace-only, or as a path/placeholder string rather than the
-  verbatim replacement body, return `DECISION_NEEDED: PERSIST_BODY(replace)
-  called with empty/placeholder new_body — caller must re-supply the
-  verbatim body` and post nothing. `gh issue edit --body-file <empty>` would
-  clobber the live body with an empty string and the only recovery is another
-  `PERSIST_BODY`. Then run `gh issue edit <issue> --repo <repo> --body-file <tmp>`
-  and remove it.
-- `mode=pointer`: fetch the current body; if it already contains the pointer
-  line, update the URL in place; otherwise prepend the supplied pointer line and
-  re-write — **preserving every other byte verbatim**. If reconciling the pointer
-  is ambiguous (e.g. the body looks mid-edit), return `DECISION_NEEDED`.
-- `title` (optional): `gh issue edit <issue> --repo <repo> --title "<title>"`.
-- `labels_add` / `labels_remove` (optional): apply via
-  `gh issue edit <issue> --repo <repo> --add-label/--remove-label`.
-Return a confirmation with the issue URL and what changed.
 
-### `PERSIST_CREATE(repo, title, body, labels?)`
-Mechanical issue creation once the caller has an approved title + body + labels.
-Obtain a unique scratch path with `mktemp /tmp/gh-ops.XXXXXX`, write `body`
-verbatim to it with the Write tool, then **verify the file is non-empty**
-(`test -s <tmp>`) before posting. The `body` argument crosses a sub-agent
-boundary — the caller cannot pass it by reference into your context, only
-inline through the prompt — and "inline a multi-KB markdown body verbatim"
-is exactly the kind of payload an orchestrator silently abbreviates,
-summarizes, or replaces with a `<see above>` / `<draft body>` placeholder.
-If what arrived in `body` is empty, whitespace-only, or a path/placeholder
-string rather than the verbatim issue body, return
-`DECISION_NEEDED: PERSIST_CREATE called with empty/placeholder body — caller
-must re-supply the verbatim body (re-read from its staged draft file if
-necessary)` and create nothing. `gh issue create` will happily file an
-issue with an empty body; once the new `#NN` exists the only recovery is
-a follow-up `PERSIST_BODY(replace)` plus an apology to the watchers who
-got the empty-body notification, and a downstream skill (the planner, the
-resolver) that runs against an empty-body issue will burn its own
-expensive turn before discovering nothing to plan or implement. Then:
+- **`mode=replace`** — caller supplies `body_path` (absolute path to the
+  staged verbatim replacement body). Per rule 7, the only execution path
+  is the bundled script:
+  ```bash
+  .claude/agents/scripts/gh-persist.sh edit-body <repo> <issue> <body_path>
+  ```
+  The script's leading `test -s "$body_path"` is the empty-body gate.
+  On a missing or zero-byte file it exits 2 with `EMPTY_BODY_FILE: <path>`
+  on stderr — return `DECISION_NEEDED: PERSIST_BODY(replace) called with
+  empty body file at <path> — caller must re-stage the verbatim
+  replacement body (re-read from its staged draft file if necessary)`
+  and post nothing. This guard matters: `gh issue edit --body-file
+  <empty>` would clobber the live body with an empty string and the
+  only recovery is another `PERSIST_BODY`. On success the script prints
+  the JSON envelope (`url`, `body_bytes`, `body_sha256`, `op:
+  "edit-body"`) — surface those as scalars in `## RESULT`.
+
+- **`mode=pointer`** — caller supplies `pointer_line` (a single
+  markdown line, short). You compute the merged body inside this
+  agent: fetch the current body via `gh issue view <issue> --repo
+  <repo> --json body -q .body`; if it already contains the pointer
+  line, update the URL in place; otherwise prepend the supplied
+  pointer line and re-write — **preserving every other byte verbatim**.
+  Write the merged result to
+  `<scratch_dir>/issue-<N>-pointer-body.md`, then post via the same
+  script:
+  ```bash
+  .claude/agents/scripts/gh-persist.sh edit-body <repo> <issue> \
+    <scratch_dir>/issue-<N>-pointer-body.md
+  ```
+  Pointer mode is the one PERSIST flow where this agent legitimately
+  writes a body file — because it computes the merged body from the
+  fetched current body plus the caller's tiny `pointer_line`. The
+  script still gates on `test -s` and still emits the JSON envelope,
+  so the contract floor is identical to `mode=replace`. If
+  reconciling the pointer is ambiguous (e.g. the body looks
+  mid-edit), return `DECISION_NEEDED` and write nothing.
+
+- **`title`** (optional): `gh issue edit <issue> --repo <repo> --title
+  "<title>"`. Title is short and metadata-shaped — no body race
+  applies, no script needed.
+- **`labels_add` / `labels_remove`** (optional): apply via
+  `gh issue edit <issue> --repo <repo> --add-label/--remove-label`.
+
+Return a `## RESULT` block with the issue URL, the `body_sha256` /
+`body_bytes` from the script envelope when a body change applied, and a
+brief note of what changed (body / title / labels).
+
+### `PERSIST_CREATE(repo, title, body_path, labels?)`
+Mechanical issue creation once the caller has an approved title + body +
+labels. The caller stages the verbatim body to its own scratch dir before
+dispatching and passes the absolute path as `body_path`. Per rule 7, the
+only execution path is the bundled script:
+
 ```bash
-gh issue create --repo <repo> --title "<title>" --body-file <tmp> \
-  --label "<label>" [--label "<label>" ...]
+.claude/agents/scripts/gh-persist.sh create <repo> <body_path> \
+  --title "<title>" [--label <L>] [--label <L>] ...
 ```
-Return the new issue **URL** (and its `#NN`). Remove the temp file. You never
-author the title or body — they are passed in.
+
+The script's leading `test -s "$body_path"` is the empty-body gate. On a
+missing or zero-byte file it exits 2 with `EMPTY_BODY_FILE: <path>` on
+stderr — return
+`DECISION_NEEDED: PERSIST_CREATE called with empty body file at <path> —
+caller must re-stage the verbatim body (re-read from its staged draft
+file if necessary)` and create nothing. This guard is the entire reason
+the script exists: `gh issue create` will happily file an issue with an
+empty body, and once the new `#NN` exists the only recovery is a
+follow-up `PERSIST_BODY(replace)` plus an apology to the watchers who
+got the empty-body notification, and a downstream skill (the planner,
+the resolver) that runs against an empty-body issue will burn its own
+expensive turn before discovering nothing to plan or implement.
+
+You never author the title or body. The title is a short prompt
+argument; the body is the bytes the caller already wrote to
+`body_path`. You do not Write to a tmp file, do not run `gh` directly,
+and do not re-read `body_path` to "verify the content looks right" —
+the script's `test -s` plus a successful `gh` exit are the contract.
+
+On success the script prints the JSON envelope (`url`, `body_bytes`,
+`body_sha256`, `op: "create"`). Surface `url`, `body_bytes`, and
+`body_sha256` as scalars in `## RESULT`, plus the new issue `#NN`
+parsed from the URL.
 
 ## Output shape
 
