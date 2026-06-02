@@ -382,6 +382,20 @@ Then **ensure the issue body carries a plan pointer** so a human (and the drafte
 
 `mode=pointer` is idempotent: it adds the line only if absent and updates the URL in place if the plan comment was reposted — never a second pointer. If the body looks mid-edit (a drafter revise in flight), `github-ops` returns `DECISION_NEEDED` rather than racing; the pointer is low-stakes, so skip it and tell the user.
 
+Finally, **apply the `planned` label to the issue** so the repo's issue list shows at a glance which issues have a verified, durable plan and are ready for the resolver, versus which are still waiting on planning. After `PERSIST_COMMENT` succeeds, run:
+
+```bash
+gh issue edit <N> --repo <owner/repo> --add-label planned
+```
+
+This call is idempotent — re-running on an already-labelled issue is a no-op, so it's safe in revise mode and across the epic fan-out (where every story passes back through this step). If the label doesn't yet exist in the repo, the first call fails with `could not add label: 'planned' not found`; create it once with:
+
+```bash
+gh label create planned --repo <owner/repo> --color FBCA04 --description "Implementation plan posted by github-issue-planner"
+```
+
+then re-run the `gh issue edit` call. The trivial-skip branch at step 3 never reaches step 10, so it correctly never applies the label — the planner deliberately declined to author one, so the issue is not planned. The label is a low-stakes signal: if the call fails (network blip, permissions), log it and move on rather than blocking the handoff. The plan comment is already posted; the label is a convenience for issue-list scanning, not part of the audit trail.
+
 ## Step 11: Epic fan-out
 
 When the target is an **epic**:
