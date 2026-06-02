@@ -360,8 +360,18 @@ overwrite another's mid-flight.
 
 ### `PERSIST_BODY(issue, repo, mode, ...)`
 - `mode=replace`: obtain a unique scratch path with `mktemp /tmp/gh-ops.XXXXXX`,
-  write the supplied `new_body` to it with the Write tool, then
-  `gh issue edit <issue> --repo <repo> --body-file <tmp>`, and remove it.
+  write the supplied `new_body` to it with the Write tool, then **verify the
+  file is non-empty** (`test -s <tmp>`) before posting. Same sub-agent-boundary
+  rationale as `PERSIST_CREATE`: `new_body` arrives only through the prompt
+  and large markdown bodies are exactly what gets abbreviated or
+  placeholder-substituted under context pressure. If `new_body` arrived
+  empty, whitespace-only, or as a path/placeholder string rather than the
+  verbatim replacement body, return `DECISION_NEEDED: PERSIST_BODY(replace)
+  called with empty/placeholder new_body — caller must re-supply the
+  verbatim body` and post nothing. `gh issue edit --body-file <empty>` would
+  clobber the live body with an empty string and the only recovery is another
+  `PERSIST_BODY`. Then run `gh issue edit <issue> --repo <repo> --body-file <tmp>`
+  and remove it.
 - `mode=pointer`: fetch the current body; if it already contains the pointer
   line, update the URL in place; otherwise prepend the supplied pointer line and
   re-write — **preserving every other byte verbatim**. If reconciling the pointer
@@ -374,7 +384,22 @@ Return a confirmation with the issue URL and what changed.
 ### `PERSIST_CREATE(repo, title, body, labels?)`
 Mechanical issue creation once the caller has an approved title + body + labels.
 Obtain a unique scratch path with `mktemp /tmp/gh-ops.XXXXXX`, write `body`
-verbatim to it with the Write tool, then:
+verbatim to it with the Write tool, then **verify the file is non-empty**
+(`test -s <tmp>`) before posting. The `body` argument crosses a sub-agent
+boundary — the caller cannot pass it by reference into your context, only
+inline through the prompt — and "inline a multi-KB markdown body verbatim"
+is exactly the kind of payload an orchestrator silently abbreviates,
+summarizes, or replaces with a `<see above>` / `<draft body>` placeholder.
+If what arrived in `body` is empty, whitespace-only, or a path/placeholder
+string rather than the verbatim issue body, return
+`DECISION_NEEDED: PERSIST_CREATE called with empty/placeholder body — caller
+must re-supply the verbatim body (re-read from its staged draft file if
+necessary)` and create nothing. `gh issue create` will happily file an
+issue with an empty body; once the new `#NN` exists the only recovery is
+a follow-up `PERSIST_BODY(replace)` plus an apology to the watchers who
+got the empty-body notification, and a downstream skill (the planner, the
+resolver) that runs against an empty-body issue will burn its own
+expensive turn before discovering nothing to plan or implement. Then:
 ```bash
 gh issue create --repo <repo> --title "<title>" --body-file <tmp> \
   --label "<label>" [--label "<label>" ...]

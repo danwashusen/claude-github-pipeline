@@ -139,11 +139,13 @@ Wait for explicit confirmation. Then:
 
 **Flag a possibly-stale plan.** If a plan comment exists and this revision materially changes scope, acceptance criteria, or the contracts the plan was built against, the plan may now be stale. Tell the user once after applying the edit: "This revision changed <scope/AC/contracts>; the implementation plan on #N may now be stale — re-run `github-issue-planner` in revise mode to refresh it." The drafter does not edit the plan; refreshing it is the planner's job.
 
+**Stage the revised body to disk before dispatching.** Write the full revised body (with the `📋` plan pointer preserved verbatim if present) to `/tmp/gh-drafter-<N>/revised.md`, then re-read that file immediately before composing the `PERSIST_BODY` call. Same reason as Step 7's staging: `github-ops` is a sub-agent that sees only the prompt you hand it, and `new_body` must arrive as the full verbatim replacement body inlined into that prompt — not a path, not a "(see above)", not a diff. `mode=replace` with an empty or placeholder `new_body` would clobber the live body to whatever bytes arrive (potentially the empty string).
+
 Hand the approved revision to `github-ops` (it preserves the plan-pointer line if you carry it into `new_body`):
 
-> `PERSIST_BODY(issue=<N>, repo=<owner/repo>, mode=replace, new_body=<new body, with the 📋 plan pointer kept verbatim if present>, title=<new title if changed>, labels_add=<…>, labels_remove=<…>)`
+> `PERSIST_BODY(issue=<N>, repo=<owner/repo>, mode=replace, new_body=<verbatim contents of revised.md>, title=<new title if changed>, labels_add=<…>, labels_remove=<…>)`
 
-Pass only the deltas — omit `title` if unchanged, omit `labels_*` if there are none. `github-ops` returns the issue URL; share it with the user.
+Pass only the deltas — omit `title` if unchanged, omit `labels_*` if there are none. If `github-ops` returns `DECISION_NEEDED: PERSIST_BODY(replace) called with empty/placeholder new_body`, re-read `revised.md` and re-dispatch with its full contents — that guard is the only thing standing between a compacted dispatch and a live-body wipe. `github-ops` returns the issue URL; share it with the user.
 
 ### Special case — revising an Epic
 
@@ -591,26 +593,28 @@ Should I file this, or want to tweak anything first?
 
 Then ask via `AskUserQuestion` (header "File issue?"): **File it** — create the issue now via `gh issue create`; **Keep iterating** — hold off and refine the draft further. Treat anything other than an explicit "File it" — silence, a follow-up question, a tweak request, or a custom "Other" answer — as keep-iterating; never file without that explicit go-ahead.
 
+**Before you ask the question, stage the approved body to disk.** Write the exact body you just rendered between the `---` fences to `/tmp/gh-drafter-<slug>/draft-final.md` (`<slug>` = a short identifier of your choosing — Epic number, issue title slug, anything stable for this run). Keep the path in mind as `draft_path`. The staged file is the canonical body across the orchestrator→`github-ops` sub-agent boundary in Step 7: `github-ops` gets only the prompt you hand it, not your conversation history, so a multi-KB markdown body has to be re-serialized verbatim into that prompt — exactly the kind of payload an orchestrator silently summarizes, abbreviates, or replaces with a "(see above)" placeholder under context pressure. Staging removes the temptation by giving Step 7 a path to read from instead of a memory to reconstitute. Do the same for every Story body in an Epic batch, one file per story.
+
 ## Step 7: File the issue
 
-Once the user has approved at step 6, hand the create to `github-ops`:
+Once the user has approved at step 6, hand the create to `github-ops`. **Re-read the approved body from `draft_path` immediately before composing the dispatch and paste its full contents into the `body=` argument verbatim** — every byte, every newline, no editorial trimming. `github-ops` is a sub-agent: it cannot see your earlier messages, so anything you don't put in its prompt does not exist for it. Never pass `draft_path` itself, never write `body=<the body we drafted>` or `body=<see above>`, never summarize "for brevity" — `github-ops` writes whatever bytes arrive in `body` straight to the temp file it hands to `gh issue create --body-file`, and `gh` will happily file an empty issue. (Rule 8 in `github-ops.md` covers verbatim content moving *outbound* from GATHER ops, where on-disk is cheaper than re-emitting through your context; inbound PERSIST arguments travel inline because `github-ops` has no other channel to receive them.)
 
-> `PERSIST_CREATE(repo=<owner/repo>, title=<approved title>, body=<approved body>, labels=[<label>, …])`
+> `PERSIST_CREATE(repo=<owner/repo>, title=<approved title>, body=<verbatim contents of draft_path>, labels=[<label>, …])`
 
-It returns the new issue URL and `#NN` — share the URL with the user. If `gh` errors out (auth, label doesn't exist, etc.), `github-ops` reports the exact error rather than retrying with different flags; relay it and adjust.
+It returns the new issue URL and `#NN` — share the URL with the user. If `github-ops` returns `DECISION_NEEDED: PERSIST_CREATE called with empty/placeholder body` (the non-empty-body guard fired), the body that reached it was empty or a placeholder — re-read `draft_path` and re-dispatch with the file's full contents inline. If `gh` errors out (auth, label doesn't exist, etc.), `github-ops` reports the exact error rather than retrying with different flags; relay it and adjust.
 
 ### Filing an Epic with child stories
 
-The Epic flow files the whole set in one batch once Steps E1 and E2 come back clean (see "One-shot filing flow") — there's no per-story confirmation gate; a clean pass through the split loop and the body review is the go-ahead. Each write still goes through `github-ops`:
+The Epic flow files the whole set in one batch once Steps E1 and E2 come back clean (see "One-shot filing flow") — there's no per-story confirmation gate; a clean pass through the split loop and the body review is the go-ahead. Each write still goes through `github-ops`, and the same staged-file discipline from Step 7 applies to every body: at the end of Step E2, stage the Epic body to `/tmp/gh-drafter-<epic-slug>/epic.md` and each Story body to `/tmp/gh-drafter-<epic-slug>/story-<NN-or-index>.md` before any `PERSIST_CREATE` fires. Re-read each file immediately before its dispatch and inline the full contents into `body=`. An Epic batch crosses the sub-agent boundary once per story plus once for the Epic itself — every one of those dispatches is an independent re-serialization opportunity for the body to get dropped, abbreviated, or replaced with a path reference, so staging matters more here than in a single-issue draft, not less.
 
 1. Create the Epic (placeholder bullets in `## Stories` for now):
-   > `PERSIST_CREATE(repo=<owner/repo>, title=<epic title>, body=<epic body>, labels=["epic"])`
+   > `PERSIST_CREATE(repo=<owner/repo>, title=<epic title>, body=<verbatim contents of epic.md>, labels=["epic"])`
 2. For each Story in dependency order, file it with the Epic backlink already in the body, collecting each `#NN`:
-   > `PERSIST_CREATE(repo=<owner/repo>, title=<story title>, body=<"**Epic:** #<epic-#> — <Epic title>" + story body>, labels=["story"])`
-3. Patch the Epic body — swap the placeholder bullets for `- [ ] #NN — <Story title>` links — and apply it:
-   > `PERSIST_BODY(issue=<epic-#>, repo=<owner/repo>, mode=replace, new_body=<patched body>)`
+   > `PERSIST_CREATE(repo=<owner/repo>, title=<story title>, body=<"**Epic:** #<epic-#> — <Epic title>\n\n" + verbatim contents of story-<i>.md>, labels=["story"])`
+3. Patch the Epic body — swap the placeholder bullets for `- [ ] #NN — <Story title>` links — write the patched body to `/tmp/gh-drafter-<epic-slug>/epic-patched.md`, then:
+   > `PERSIST_BODY(issue=<epic-#>, repo=<owner/repo>, mode=replace, new_body=<verbatim contents of epic-patched.md>)`
 
-If any `PERSIST_CREATE` fails mid-batch, stop and report exactly which issues were created and which weren't — don't retry blindly. The user resumes from the gap or cleans up.
+If any `PERSIST_CREATE` fails mid-batch, stop and report exactly which issues were created and which weren't — don't retry blindly. The user resumes from the gap or cleans up. If `github-ops` returns the empty-body `DECISION_NEEDED` on any dispatch in the batch, treat it the same way as a single-issue empty-body failure: re-read the staged file and re-dispatch with the verbatim contents inline; don't skip the story.
 
 ## Step 8: Handoff
 
