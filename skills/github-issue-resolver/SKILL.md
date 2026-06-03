@@ -789,6 +789,23 @@ If the plan is materially stale (the code it depends on has drifted, or the issu
 
 Don't apply this gate to comment-only flows or trivial fixes — there's nothing to plan, and a forced gate there is pure friction.
 
+### 4.7 Detect a multi-phase issue from the plan
+
+Some non-trivial issues split into a sequence of phases that share one issue and one branch — the canonical case is a measurement spike (substrate → harness → operator measurement → decision write-up), but any issue whose DoD takes several distinct deliverables shaped like "first land X, then run Y, then post Z" lives here. Multi-phase work is **not** an Epic (Epics fan out into child story issues; the integration branch is long-lived; one PR per story); it is a single issue whose work accumulates on **one PR**, in **draft**, until the planned phases are exhausted. The pattern emerges from the plan, not from the issue body's shape or labels — so this gate runs only after step 4.6 has consumed the plan.
+
+**When this gate fires.** Same plan-presence shape as §4.6: it runs only when a plan was consumed (skipped on `Plan override`, trivial flows, comment-only responses, continuations of an existing PR — the plan was already classified when that PR's first phase opened).
+
+**Detection.** Read the plan's `## Phases` section (the structured-bullet shape defined by `github-issue-planner` Step 7's schema):
+
+- **`## Phases` is absent** → single-phase issue. Continue with the standard flow; nothing in §5/§8/§9/§11/§12 changes for this run.
+- **`## Phases` is present and contains a single phase** → also single-phase. The planner emitted the section but the work doesn't actually fan out. Continue with the standard flow.
+- **`## Phases` is present with two or more phases, of which at least two are `kind: code-shipping`** → **multi-phase issue.** Parse the section into the in-memory phase list described below and proceed; the multi-phase branches in §5/§8/§9/§11/§12 fire from here on.
+- **`## Phases` is present but malformed** (missing required keys, free-form prose under the header instead of structured bullets, `closes-dod` references that don't resolve to issue-body DoD bullets) → stop and route back to `github-issue-planner` in revise mode, the same way §4.6 routes plan-currency drift. The resolver depends on the structured shape to route phases; hand-waving past a malformed `## Phases` re-introduces exactly the silent-misrouting failure mode this gate exists to prevent.
+
+**Phase list captured.** When the gate identifies a multi-phase issue, capture the parsed list once and carry it through the rest of the run. Each entry holds: `number` (1-based), `title`, `kind` (closed enum: `code-shipping` | `operator` | `decision-only`), `ships`, `closes-dod` (list of DoD-bullet indexes), `deliverable`, `depends-on`. Record the multi-phase mode in the state summary: `Multi-phase: <N> phases (<code-count> code-shipping, <op-count> operator/decision)` and name which phase this run will execute (the lowest-numbered phase whose `depends-on` is satisfied and whose deliverable hasn't shipped — read the existing PR's `## Phase tracker` if a draft PR exists from a prior phase).
+
+**The current-phase decision is yours, not the planner's.** The plan declares the phase **menu**; the resolver picks the next item off it based on what's actually shipped. A re-invocation of the resolver on a multi-phase issue with an existing draft PR re-reads `## Phase tracker` to decide where to resume — see §5's branch-reuse rule below.
+
 ## If the issue is an Epic
 
 Epics use a consistent body template: `## Goal`, `## Background`, `## Stories` (a markdown task list of `- [ ] #NN — description` lines), `## Definition of done` (a second task list), and occasionally `## PRD impact`. There are no native GitHub sub-issues — child relationships exist only as `#N` references inside these task lists.
@@ -1084,6 +1101,8 @@ Before creating any branch, decide what to do based on what's already in flight:
 | **Closed/merged PR that did *not* resolve the issue** (partial fix, reverted, abandoned) | Note this in the state summary, read the PR's full context (see below) to learn what was tried and why it didn't land, then proceed as the no-prior-PR case (a fresh worktree off default, per step 8). |
 | **No prior PR** | Proceed normally to step 8. |
 
+**Multi-phase issues reuse the same draft PR across phases.** When §4.7 identified a multi-phase issue and an open *draft* PR by you already exists, the "Open PR you authored" row above applies as-is — set up a worktree on the existing branch, read PR context, continue. The draft state with prior phase commits is the **expected** mid-run state for a multi-phase issue, not a sign of abandoned work: every phase the resolver has already executed lives as a ticked entry in the PR body's `## Phase tracker`, and your job is to ship the next unshipped phase from §4.7's captured phase list onto the same branch. Do not open a second PR for "this phase"; the single accumulating PR is the whole point. (If the existing PR is marked ready rather than draft, treat that as drift — surface it to the user, because the multi-phase rule in §9 is that the resolver never marks a multi-phase PR ready.)
+
 **Setting up the worktree.** When step 5 directs you to check out an existing PR's branch — your own open PR, or a takeover of a stale one — set it up as a worktree rather than `gh pr checkout` in the main tree:
 
 1. Get the branch name: `gh pr view <pr-number> --repo <owner/repo> --json headRefName -q .headRefName`.
@@ -1288,7 +1307,7 @@ It returns the comment URL plus `body_bytes` / `body_sha256`. If the empty-body 
 
 For code changes (all `git push` and `gh pr create` commands run from inside the worktree — same syntax, just a different cwd; PR creation stays here in the main loop, coupled to the worktree push):
 
-- **If you're continuing an existing PR** (per step 5): just push the new commits to that branch. The PR updates automatically. Don't open a new one.
+- **If you're continuing an existing PR** (per step 5): just push the new commits to that branch. The PR updates automatically. Don't open a new one. **If this is a multi-phase issue and the push just shipped a phase** (per §4.7), also tick that phase off the PR body's `## Phase tracker` via `gh pr edit <PR#> --body-file <updated-body>` — write the updated body to `/tmp/gh-resolver-<issue-number>/pr-body.md`, flipping only the just-shipped phase's `- [ ]` to `- [x] (commit <sha>)` and leaving the rest as-is. The tracker is the evaluator's input on its final DoD check and a human-readable map of progress; an unticked tracker on a pushed phase will read as in-flight work to the next reader.
 - **If this is a fresh PR**: push the branch and open a PR:
 
   Write the PR body to `/tmp/gh-resolver-<issue-number>/pr-body.md` (a per-run scratch dir keyed on the issue number, so concurrent resolver runs don't clobber it, and the body never lands in the worktree where it could be committed), then:
@@ -1303,11 +1322,29 @@ For code changes (all `git push` and `gh pr create` commands run from inside the
 
   **Carry forward step 4.5's audit overrides and step 4.6's plan override.** If step 4.5 ended in an `Audit override: <reason>` (or `Audit skipped by user override`), include a `## Audit override` section quoting it verbatim. If step 4.6 ended in a `Plan override: <reason>` (the user chose to proceed without a plan), include a `## Plan override` section quoting it verbatim. Reviewers see overrides the same way they see scope decisions — visible and challengeable in PR review. Omit either section when the corresponding gate ran clean or didn't apply.
 
+  **Multi-phase issues open as draft and carry a `## Phase tracker` block.** When §4.7 identified this as a multi-phase issue, two things change about the fresh-PR open:
+
+  - Pass `--draft` to `gh pr create`. The PR stays in draft for the entire multi-phase run; the resolver never marks it ready. The evaluator decides readiness as part of its DoD check on the final handoff (see §11's outcome rubric). `Closes #<number>` in the body is unchanged — `Closes` only fires on merge, and a draft PR cannot merge, so the draft state is itself the auto-close guard.
+
+  - Add a `## Phase tracker` block to the body mirroring the plan's `## Phases`, with this phase already ticked (every later phase still `- [ ]`):
+
+    ```
+    ## Phase tracker
+    - [x] Phase 1 — substrate (commit abc1234)
+    - [ ] Phase 2 — harness
+    - [ ] Phase 2-measurement (operator)
+    - [ ] Phase 3 — decision write-up
+    ```
+
+  The tracker exists for the evaluator's eventual DoD check (it lets the evaluator see at a glance which phases shipped) and for human reviewers — the resolver itself only reads the plan's `## Phases` to decide routing in §11. On subsequent phases the existing-PR continuation path above updates this block via `gh pr edit`.
+
 In both cases, capture the PR number/URL — you'll need it for the review loop.
 
 ### 10. Run the review loop (PRs only)
 
 **This step is mandatory for any issue resolved with code changes. Do not skip it, do not merge, and do not consider the work done until review approves the PR.**
+
+**Multi-phase issues run §10 on every phase's push, unchanged.** `review` is a per-push code-quality gate; it has no awareness of phases and shouldn't. The loop's exit condition stays the same — verdict approved + zero classified items per §10.4 — and what changes is only what happens *after* the loop exits: §11's outcome rubric decides whether the next step is "back to the resolver for the next phase" (more phases remain in `## Phases`) or "forward to the evaluator" (last phase shipped). Treat §10 as scoped to "is this push reviewable code?" and §11 as scoped to "is the plan exhausted?" — the two decisions are independent.
 
 After the PR is opened, the resolver runs an **outer loop in the main conversation** that, on each iteration, invokes the `review` skill once and then dispatches a single sub-agent to act on the verdict. The sub-agent applies the §10.4 classification rubric, addresses feedback, runs the §10.6 pre-push verification gate, commits, pushes, and returns a structured JSON summary — entirely within its own execution scope. The main loop reads the JSON, decides whether to loop again, and re-invokes `review` on the new SHA. If the skill is re-invoked later (a human reviewer commented, the previous run was interrupted), step 5's reuse rule lands you back in the existing worktree and the outer loop runs again from the top — the sub-agent's prompt is told it may be picking up mid-flow.
 
@@ -1545,14 +1582,27 @@ Classify the run's outcome before writing the summary; it determines which Step 
 
 | Outcome | Step 12 rendering |
 |---|---|
-| Story / bug-fix / refactor PR opened or updated (§8 or §10 paths reached push) | **Forward → `github-pr-evaluator`.** The default code-change outcome. |
+| Story / bug-fix / refactor PR opened or updated (§8 or §10 paths reached push), single-phase | **Forward → `github-pr-evaluator`.** The default code-change outcome. |
+| Multi-phase issue: **non-final** code phase pushed; later phases remain in the plan's `## Phases` | **Re-route → `github-issue-resolver` (continue).** Handoff names the next phase by title (read verbatim from the plan's `## Phases`) and points the user at `/github-issue-resolver #N` in a fresh session. PR stays in draft. |
+| Multi-phase issue: **next phase is operator / decision-only** (current phase's depends-on is now satisfied but the next phase ships no code) | **Terminal-with-action.** Handoff names the operator action verbatim from the plan's `deliverable` field (e.g. *"run `./scripts/spike-640.sh`, post the per-cell table to #640"*). A `Then:` line points back to `/github-issue-resolver #N` for the phase that follows the operator action. |
+| Multi-phase issue: **last planned phase shipped** (every phase in `## Phases` now ticked in `## Phase tracker`) | **Forward → `github-pr-evaluator`.** Identical to today's standard forward handoff. PR stays in draft — the evaluator decides whether to mark ready as part of its DoD check. |
 | Epic-integration PR opened or updated (epic-target run finishing an epic) | **Forward → `github-pr-evaluator`.** The integration PR carries more merge risk than any single story PR; the handoff calls this out so the user knows pr-evaluator will run the full canonical suite, evaluate against the epic's `## Definition of done`, and ask for the merge mode. |
 | Comment-only answer (question, clarification, decision capture; no diff, no PR) | **Terminal.** No PR for pr-evaluator to evaluate; the handoff names the issue's current state and closes the pipeline for this run. |
 | Triage / classification only (relabel, retitle, link to a duplicate; no PR) | **Terminal.** Same shape as comment-only. |
 | Abandoned / declined / stale-issue close (user opted out of opening a PR) | **Terminal.** Same shape — name the close reason in the `Why:` line. |
 | §4.5 fitness audit blocked the run (issue body fails fitness-to-implement) | **Re-route → `github-issue-drafter` (revise).** The handoff names the failing audit dimension and the specific evidence so the drafter's revise loop can act without re-investigating. |
 | §4.6 plan-currency drift or §8 plan-invalidation surfaced mid-work | **Re-route → `github-issue-planner` (revise).** The handoff quotes the locked decision verbatim and cites the `file:line` where the contradiction surfaced. |
+| §4.7 malformed `## Phases` blocked the run (planner emitted unparseable phase shape) | **Re-route → `github-issue-planner` (revise).** The handoff quotes the specific malformation (missing key, unresolved `closes-dod` reference, etc.). |
 | §6 doc-conflict that can't be reconciled in-skill | **Re-route → `github-issue-drafter` (revise).** The handoff names the doc citation and the body claim that contradicts it. |
+
+**Phase-exhaustion check (multi-phase issues only).** Before deciding which multi-phase row above fires, check whether the plan's phases are exhausted:
+
+1. Re-read the plan comment's `## Phases` section (captured at §4.7).
+2. Cross-reference the PR's `## Phase tracker` checkboxes plus the just-pushed phase to determine which phases have shipped.
+3. If unshipped phases remain, classify the run per the *non-final code phase* or *operator / decision-only* row depending on the next phase's `kind`.
+4. If every phase in `## Phases` is now ticked in `## Phase tracker`, fire the *last planned phase shipped* row.
+
+This is intentionally narrower than a DoD check. The resolver decides *"have all the planned phases been executed?"*; the evaluator decides *"do the issue's DoD bullets actually look satisfied, and is this PR mergeable?"* That separation keeps the resolver out of judgment work the evaluator already owns (it cross-references issue body DoD ↔ plan `closes-dod` ↔ tracker as part of its acceptance-criteria check on every PR), and means a misjudged DoD-coverage in the plan surfaces at the evaluator's review rather than being silently rubber-stamped by the resolver.
 
 If the run produced *both* a comment and a PR (e.g., posted a "starting work" comment then opened the PR), treat it as a PR outcome — the PR is what pr-evaluator acts on. If a re-route fired *after* a draft PR was opened (the resolver started work, hit a plan-invalidation, and stopped), the draft PR stays open and the handoff's PR line carries `state: draft`; the user re-runs the resolver in continue mode after the prior skill's revise lands.
 
@@ -1596,6 +1646,58 @@ Pull the snapshot from data already in hand: the issue/plan state from §2's `GA
     /github-pr-evaluator #287
 
 **Why:** the evaluator runs the branch-health gate, checks the diff against the issue's acceptance criteria + the plan's locked decisions, posts a formal review, and on a clean APPROVE auto-merges (standard / story PRs) or asks for the merge mode (Epic integration).
+```
+
+**Re-route — multi-phase, non-final code phase pushed.** A code-shipping phase landed on the draft PR; the plan's `## Phases` still lists unshipped phases. The next session continues the same multi-phase resolution.
+
+```
+## Handoff
+
+**Issue:** #640 — Spike: Mitigate Gemini thinking-token truncation · open · feature · plan: ✓ (multi-phase: 2 of 4 phases shipped)
+**PR:** #649 — feat(llm): #640 spike harness · draft · base main · review: ✓ at 40f1d36 · health: ✓ at 40f1d36 · merge: not run
+
+**Next:** continue with the next phase in a fresh session.
+
+    /github-issue-resolver #640
+
+**Why:** the plan's `## Phases` declares 4 phases; this run shipped Phase 2 (`harness PR`) onto the draft. The next planned phase is **Phase 2-measurement** (operator run — see the operator-action handoff if it fires next), followed by **Phase 3 — decision write-up**. The PR stays in draft until every phase has shipped and the evaluator runs its DoD check.
+```
+
+**Terminal-with-action — multi-phase, next phase is operator / decision-only.** The next phase ships a comment or runs an operator action, not commits. The resolver can't perform the action; surface it verbatim from the plan's `deliverable` so the user (or whoever runs the action) does not have to look it up.
+
+```
+## Handoff
+
+**Issue:** #640 — Spike: Mitigate Gemini thinking-token truncation · open · feature · plan: ✓ (multi-phase: 2 of 4 phases shipped)
+**PR:** #649 — feat(llm): #640 spike harness · draft · base main · review: ✓ at 40f1d36 · health: ✓ at 40f1d36 · merge: not run
+
+**Next:** run the operator phase, then return to the resolver.
+
+    ./scripts/spike-640.sh
+    # then post the per-cell table from build/spike-640-*.log as a comment on #640
+
+**Then:** once the measurement comment is posted, continue with the following phase in a fresh session.
+
+    /github-issue-resolver #640
+
+**Why:** the plan's Phase 2-measurement is `kind: operator` — it ships a per-cell measurement comment on the issue, not PR commits. The resolver can't run the harness for you; once you post the measurement comment, Phase 3 (decision write-up) becomes runnable from the resolver.
+```
+
+**Forward — multi-phase, last planned phase shipped.** Every phase in `## Phases` is ticked in `## Phase tracker`. The PR stays in draft; the evaluator decides whether to mark it ready as part of its DoD check.
+
+```
+## Handoff
+
+**Issue:** #640 — Spike: Mitigate Gemini thinking-token truncation · open · feature · plan: ✓ (multi-phase: 4 of 4 phases shipped)
+**PR:** #649 — feat(llm): #640 spike harness · draft · base main · review: ✓ at 9f0a112 · health: ✓ at 9f0a112 · merge: not run
+
+**Phases:** all 4 planned phases shipped at 9f0a112 (PR remains draft; evaluator gates merge readiness).
+
+**Next:** evaluate the PR in a fresh session.
+
+    /github-pr-evaluator #649
+
+**Why:** every phase in the plan's `## Phases` has been ticked on the PR's `## Phase tracker`. The evaluator cross-references the issue body's DoD bullets against each phase's `closes-dod` mapping, runs its branch-health gate and review against the plan's locked decisions, and — on a clean APPROVE — marks the draft PR ready and merges. The resolver never marks a multi-phase PR ready; that decision belongs to the evaluator's DoD check.
 ```
 
 **Forward — Epic integration PR.** Same forward direction (→ pr-evaluator), but the `Why:` line calls out the higher merge risk and the canonical-suite escalation so the user knows what pr-evaluator will do differently.
@@ -1724,6 +1826,8 @@ For abandoned / declined / stale-issue-close outcomes, name the close reason in 
 - **Don't hand-craft follow-up issue bodies.** Every follow-up that warrants an issue goes through the sub-agent protocol in "Follow-up issue tracking". Hand-crafting (writing the body inline, running `gh issue create` directly) bypasses the drafter's PRD-grounded review loop and produces issues with inconsistent format, missing parent references, and unvalidated framing against the project's architecture / constitution. The drafter exists exactly for this — its classification, body templates, and sub-agent review are what make filed issues consistent across the repo. Use it.
 - **Don't conflate filing with capturing.** Procedural reminders (drift, epic-checkbox sync, "watch out for X in the next iteration") belong in the PR body or §11 notes, not as filed issues. Issues are for trackable work that needs a separate place to discuss, plan, or assign; PR-body notes are for informational caveats a future contributor can act on with the PR context alone. Filing both as issues clutters the backlog; capturing both as PR-body notes loses the trackable ones. Use the filing-vs-capturing criterion in "Follow-up issue tracking".
 - **Don't omit the pr-evaluator handoff on PR outcomes.** §11's closing **Next step** line is the resolver's explicit handoff to the merge-readiness gate. Without it, users finish a resolution thinking the work is done — but the resolver has only run `/review` for code quality and targeted tests for verification; issue-fit against the originating issue, full canonical-suite execution, and merge-strategy selection happen inside `github-pr-evaluator`. Dropping the line leaves the user to remember on their own that pr-evaluator exists, which is exactly the dropoff this handoff is designed to prevent. Emit it on every PR outcome, including epic-integration PRs (where the merge risk is higher and the handoff matters more, not less).
+- **Don't hand off to `github-pr-evaluator` until the plan's last phase has shipped.** On a multi-phase issue (per §4.7), the PR must not be evaluator-bound while phases in the plan's `## Phases` are still unshipped. Emitting the evaluator handoff after a non-final phase invites the evaluator to merge a partial implementation — which is exactly how Phase 1 of #640 landed on `main` as #648 before any DoD item was satisfied. Re-route to the resolver (for the next code phase) or surface the operator action verbatim (for the next non-code phase) instead, per the §11 outcome rubric. Only the *last planned phase shipped* row fires the evaluator handoff.
+- **Don't mark a multi-phase PR ready, and don't add `Closes #N` in reaction to shipping the last phase.** A multi-phase PR opens as draft at §9 and stays draft through every phase the resolver pushes — including the last one. Marking it ready or fiddling with the `Closes` directive in the title or body is judgment that belongs to the evaluator: it owns the DoD check that decides whether the shipped phases actually satisfy the issue. The resolver's only signal that "the planned phases are done" is the forward handoff to the evaluator; the evaluator does everything downstream of that — including, on a clean DoD pass, marking the PR ready and merging.
 
 ## When to ask the user
 

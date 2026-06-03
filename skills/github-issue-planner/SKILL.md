@@ -101,11 +101,18 @@ Classify the issue the same way the drafter does — bug, incomplete feature, fe
 
 > "Body proposes X; @maintainer on 2026-05-10 settled on approach W — I'll plan toward W. Correct?"
 
+**Also classify whether the work is multi-phase.** Beyond the drafter's bug/feature/etc. axis, decide whether the implementation will fan out across **two or more phases that share one issue and one PR**. The canonical case is a measurement spike (substrate → harness → operator measurement → decision write-up), but any feature whose DoD reads as "first land X, then run Y, then post Z, then maybe ship code Q" is multi-phase. The rule of thumb that distinguishes it from an Epic:
+
+- **Multi-phase issue** — one issue, one branch, one accumulating PR; phases live as ticked entries in the PR body's `## Phase tracker`. The plan describes the phases via the `## Phases` section in Step 7's schema. The resolver opens the PR in draft and re-enters once per phase.
+- **Epic** — one parent issue, multiple child story issues, a long-lived integration branch, one PR per story. The planner's Step 11 fan-out covers Epics; multi-phase work does **not** fan out into child issues.
+
+When in doubt: if the phases produce distinct trackable user-facing deliverables that a maintainer would want to triage / assign separately, it's an Epic with child stories; if the phases are sequential beats of one indivisible piece of work that all land together, it's multi-phase. Spike-style issues (substrate → measurement → decision) are almost always multi-phase. The classification influences which sections of the plan schema below you fill (`## Phases` for multi-phase, `## Story breakdown` + `## Integration strategy` for epic) and which verify-loop dimensions fire (Dimension 7 below for multi-phase and epic, neither for single-phase).
+
 **Scale to the work.** Planning has a cost, and over-planning a trivial change is its own failure mode. Judge honestly:
 
 - **One-line bug fix / typo / pure doc edit** → no plan needed. Say so and route the user straight to the resolver. Don't manufacture a plan just to have one.
 - **Small, well-understood bug** → a short plan (Approach + Changes + Test plan) is enough; skip the sections that would be empty.
-- **Feature, incomplete feature, story, epic** → the full machinery below. These are where a captured, verified plan earns its keep.
+- **Feature, incomplete feature, story, epic, multi-phase issue** → the full machinery below. These are where a captured, verified plan earns its keep.
 
 ## Step 4: Ingest external documentation sources
 
@@ -206,8 +213,16 @@ constrain this, with §refs — the citations, not a restatement of the approach
 - Unit: <suites to add/extend, per constitution §5 coverage targets>
 - UI: <XCUITest flows, accessibility identifiers, USE_MOCK_LLM expectations>
 
-## Sequencing                     (epics / multi-step only)
-1. <ordered steps; for epics, the story order with dependency reasoning>
+## Phases                         (multi-phase issues only — omit for single-phase; epics use the dedicated ## Story breakdown / ## Integration strategy sections)
+1. **Phase 1 — <short title>**
+   - kind: code-shipping | operator | decision-only
+   - ships: PR commits to the issue branch | comment on the issue | external follow-up issue
+   - closes-dod: <1-indexed DoD-bullet refs against the issue body — `(none)` when this phase only enables later phases (substrate, harness infrastructure)>
+   - deliverable: <one-line concrete artifact this phase produces — quoted verbatim by the resolver's handoff for operator/decision-only phases>
+   - depends-on: <earlier phase numbers, or `(none)` for the head phase>
+2. **Phase 2 — <short title>**
+   - kind: ...
+   - ...
 
 ## External sources consulted     (omit if none)
 - <url or path> — <what decision it informed>
@@ -244,7 +259,17 @@ the decisions above as binding; a plan-invalidating discovery routes back here i
 Re-run this skill to revise — do not hand-edit._
 ```
 
-For an **epic**, add two sections after `## Approach`: `## Story breakdown` (an ordered list of `- <story title> — <one-line scope>` entries reconciled against the epic body's `## Stories` list) and `## Integration strategy` (how the stories converge on the `epic/<N>-<slug>` branch and reach `main`).
+For a **multi-phase issue** (Step 3's classification), the `## Phases` section above is **load-bearing for the resolver and the evaluator** — its structured bullets are how both consumers route work without re-parsing prose. Required keys per phase:
+
+- `kind` — closed enum: `code-shipping` | `operator` | `decision-only`. Drives the resolver's §11 outcome rubric. `code-shipping` produces a diff; `operator` produces a comment containing the result of an operator action (e.g. measurement output); `decision-only` produces a comment containing a written decision (e.g. a chosen path with rationale). A phase that produces both code and a comment is `code-shipping` — the code is the load-bearing artifact; the comment is collateral.
+- `ships` — what artifact lands at the end of this phase. One of: `PR commits to the issue branch`, `comment on the issue`, `external follow-up issue` (used when the phase explicitly fans out into a new issue — rare; usually reserved for "if Path X ships code, file a separate implementation issue and PR" style decisions).
+- `closes-dod` — explicit DoD-bullet references (1-indexed against the issue body's DoD checklist), or `(none)` when the phase only enables later phases (substrate, harness infrastructure). The evaluator uses this to map shipped phases to satisfied DoD bullets on its final acceptance-criteria check. Naming the wrong phase here causes the evaluator to score a DoD bullet as satisfied before the deliverable that actually satisfies it has shipped — see the "wrong-phase `closes-dod`" pitfall below.
+- `deliverable` — one-line concrete artifact. For `operator` and `decision-only` phases the resolver quotes this verbatim in the user-facing handoff (the user runs the operator action or writes the decision based on this line), so write it as actionable prose: *"run `./scripts/spike-640.sh`, post the per-cell table from `build/spike-640-*.log` to #640"* rather than *"the measurement run"*.
+- `depends-on` — phase numbers, or `(none)` for the head phase. Drives the resolver's "can this phase start now?" gate when it re-enters mid-multi-phase. No forward references, no cycles — both are dimension-7 BLOCKERs (see Step 8).
+
+The keys carry weight in two different places. The **resolver** reads `kind`, `deliverable`, and `depends-on` for routing. The **evaluator** reads `closes-dod` for its DoD mapping. Missing keys are a dimension-7 BLOCKER regardless of which consumer notices first.
+
+For an **epic**, add two sections after `## Approach`: `## Story breakdown` (an ordered list of `- <story title> — <one-line scope>` entries reconciled against the epic body's `## Stories` list) and `## Integration strategy` (how the stories converge on the `epic/<N>-<slug>` branch and reach `main`). Epics use `## Story breakdown` rather than `## Phases` because each child story is independently filed, planned, and shipped through its own PR — the `## Phases` shape is for **single-issue, single-PR** work where the phases share one branch.
 
 Per-story plans use the same schema on the story issue, with the `**Epic:** #<epic-#> — <epic title>` backlink as the **first line after** the `<!-- implementation-plan:v1 -->` marker — never above it, so the marker stays at the start of the comment body and every consumer's `startswith` lookup resolves it (see the marker-first invariant in Step 7). A story plan therefore opens:
 
@@ -309,14 +334,25 @@ Before showing the plan to the user, hand it to an isolated review sub-agent —
 
 **Invocation.** Spawn an `Explore` sub-agent with the prompt template at `references/plan-reviewer-prompt.md`, filling the `<<placeholders>>`: the plan body, `mode` (`draft` or `revise <N>`), `issue_number`, `repo_owner`/`repo_name`, `repo_root`, `plan_ref` (the git ref the plan was built against — `origin/main`, or the epic branch for a story under an open epic), `dimensions`, `external_sources`, and `sibling_plans` (for an epic, each sibling story's plan). The sub-agent runs **without** the conversation history — that isolation is what makes the review meaningful.
 
-**Dimensions.** Six, defined in the prompt. Pass the subset that applies:
+**Dimensions.** Seven, defined in the prompt. Pass the subset that applies:
 
 | Type | Dimensions passed |
 |---|---|
-| Bug / feature / incomplete / story | 1, 2, 3, 4, 6 |
-| Epic (with sibling story plans) | 1, 2, 3, 4, 5, 6 |
+| Bug / feature / incomplete / story (single-phase) | 1, 2, 3, 4, 6 |
+| Multi-phase issue (Step 3 classification) | 1, 2, 3, 4, 6, 7 |
+| Epic (with sibling story plans) | 1, 2, 3, 4, 5, 6, 7 |
 
-Dimension 5 (sequencing/dependency order) only fires for epics with sibling plans. Dimensions: 1 doc/constitution coherence, 2 codebase coherence, 3 goal coherence (the changes + tests actually satisfy the issue's acceptance criteria / DoD), 4 implementation readiness, 5 sequencing, 6 precedent grounding.
+Dimensions: 1 doc/constitution coherence, 2 codebase coherence, 3 goal coherence (the changes + tests actually satisfy the issue's acceptance criteria / DoD), 4 implementation readiness, 5 sequencing across sibling story plans (epic-only — fires only when `<<sibling_plans>>` is non-empty), 6 precedent grounding, 7 **phase coherence** (multi-phase and epic — see below).
+
+**Dimension 7 — phase coherence.** Fires when the plan has a `## Phases` section (multi-phase issues) or the epic-mode equivalent. The reviewer checks:
+
+- Every phase has all required keys (`kind`, `ships`, `closes-dod`, `deliverable`, `depends-on`). A missing key is a BLOCKER — the resolver depends on each key for routing, and an absent key forces the resolver to either hand-wave a default or stop and route back here.
+- The union of all phases' `closes-dod` references covers every DoD bullet in the issue body **exactly once** (no gaps, no duplicates). A DoD bullet not closed by any phase is a BLOCKER: the planner would have filed a plan that leaves work unaccounted for, and the evaluator's DoD check on the final PR would surface that gap only after implementation is done. A DoD bullet claimed by two phases is a SUGGESTION (clarify which phase actually delivers it) unless both phases are `code-shipping` and ship overlapping diffs — then it's a BLOCKER.
+- Every `depends-on` reference resolves to an earlier-numbered phase (no cycles, no forward references). Cycle and forward-reference are BLOCKERs.
+- At least one phase is `kind: code-shipping`. A plan with only `operator` / `decision-only` phases doesn't need this skill — it's a discussion, not an implementation; flag as BLOCKER and route back to the user to reclassify.
+- Each `operator` / `decision-only` phase's `deliverable` reads as actionable prose a human can execute without re-deriving context (the resolver quotes it verbatim into the user-facing handoff). A `deliverable: "the measurement run"` is too vague — BLOCKER; `deliverable: "run ./scripts/spike-640.sh, post the per-cell table from build/spike-640-*.log to #640"` is correct.
+
+Pass the dimensions list to the reviewer prompt as the `<<dimensions>>` placeholder. When you add Dimension 7 to the call, also update `references/plan-reviewer-prompt.md` so its `## Dimensions` section defines what 7 checks (the bullets above are the spec) and its `Dimensions to check` line accepts the value — the prompt currently enumerates `{1, 2, 3, 4, 5, 6}` and would treat `7` as out-of-set otherwise.
 
 **Loop control** — same shape as the drafter/resolver loops:
 
@@ -402,7 +438,7 @@ When the target is an **epic**:
 
 1. Plan the epic itself first (epic-level `## Approach`, `## Story breakdown`, `## Integration strategy`, `## Definition of done` grounding). Verify it with dimensions 1, 2, 3, 6 (sequencing can't fire yet if stories aren't planned). Post it.
 2. **Check whether the child stories are filed as issues.** Get the reconnaissance from `github-ops` rather than running the `gh`/`git` yourself — `GATHER_EPIC(epic=<N>, repo=<owner/repo>, dependency=<commit/file/PR a story depends on, if relevant>, scratch_dir=/tmp/gh-planner-<N>/)` returns `epic_body_path` (write `Read` it from disk — the epic body is the one verbatim payload here), the parsed `## Stories` list (each `{number, title, checked, state}`, or a flag that they're plain bullets with no `#NN`), the resolved `epic/<N>-<slug>` branch (local + remote — this is the `plan_ref` for each story), and whether the named dependency has landed on that branch. Per-story scalars stay inline in `## RESULT`. From that list:
-   - **Stories are filed** (`- [ ] #NN — title` lines) → plan each one (story schema with the `**Epic:** #N` backlink), each going through its own verify loop. Auto-post each story on its clean verify exit per step 9; a story whose verify loop ends in cap/circular falls through that path's gate at step 8 — handle that story's decision before moving on. Then run the verify loop's **dimension 5 (sequencing)** across the full set of sibling plans; fold any re-ordering into the epic plan's `## Sequencing` section and re-verify in revise mode (auto-posts on clean exit).
+   - **Stories are filed** (`- [ ] #NN — title` lines) → plan each one (story schema with the `**Epic:** #N` backlink), each going through its own verify loop. Auto-post each story on its clean verify exit per step 9; a story whose verify loop ends in cap/circular falls through that path's gate at step 8 — handle that story's decision before moving on. Then run the verify loop's **dimension 5 (sequencing)** across the full set of sibling plans; fold any re-ordering into the epic plan's `## Story breakdown` order (the ordered list is the source of truth for sibling sequencing now that `## Sequencing` is retired in favour of `## Phases` for multi-phase single-issue work) and re-verify in revise mode (auto-posts on clean exit).
    - **Stories are not filed** (plain bullets, no `#NN`) → **stop after the epic-level plan.** Tell the user: "The child stories aren't filed yet. Run `github-issue-drafter` to file them (it owns issue creation), then re-run me on the epic and I'll plan each story and sequence them." Filing issues is the drafter's job, not the planner's — don't create them here.
 
 ## Step 12: Handoff
@@ -429,7 +465,7 @@ The snapshot lines are mechanical — the issue/Epic number and title are alread
 **Why:** the plan locks architecture, file-level changes, layer assignments, and test strategy. The resolver executes against it and opens the PR; if implementation reveals a locked decision is wrong, it will re-route back here in revise mode.
 ```
 
-**Epic plan + all child story plans posted.** Forward to the resolver on the first story in dependency order. The Epic's `## Sequencing` section names the order; pick the head of it.
+**Epic plan + all child story plans posted.** Forward to the resolver on the first story in dependency order. The Epic's `## Story breakdown` section names the order (top-to-bottom); pick the head of it.
 
 ```
 ## Handoff
@@ -513,6 +549,8 @@ Triggered when a plan comment already exists (step 2) or the user asks to update
 - **Don't file child stories from the planner.** When an epic's stories aren't filed, route to the drafter. Creating issues here blurs the boundary and skips the drafter's review loop.
 - **Don't fabricate citations or symbols.** Every `[precedent: …]` must point at a real file/section. If you can't cite it, it's a deviation or under-researched — handle it as one, don't invent a reference.
 - **Don't re-plan from scratch in revise mode.** Refresh what changed; leave untouched sections alone. Show the user a diff, not a wall.
+- **Don't author free-form sequencing for multi-phase work.** Multi-phase issues use the structured `## Phases` section (Step 7's schema) with the fixed `kind` / `ships` / `closes-dod` / `deliverable` / `depends-on` keys per phase. Prose like *"Phase 1 ships X, then Phase 2 measures, then Phase 3 writes up the decision"* reads correctly to a human but the resolver parses `## Phases` deterministically to route each phase — it cannot grep loose prose for a `closes-dod` mapping or a `kind` enum, and silently falls back to hand-waving (which is exactly the regression mode this whole change was made to prevent — #640's Phase 1 PR shipped to `main` partway through the DoD because the prior `## Sequencing` section gave the resolver no way to recognise that more phases were due). If a phase doesn't fit the structured keys, that's a signal the phasing itself is unclear and needs re-thinking — not a signal to relax the format.
+- **Don't write a `closes-dod` bullet for the wrong phase.** The evaluator uses `closes-dod` to map shipped phases to satisfied DoD bullets on its final acceptance-criteria check. A substrate phase that claims it closes a measurement DoD bullet (on the grounds that "my code is *needed* for the measurement to run") will cause the evaluator to score the PR as satisfying that bullet before the measurement has actually been performed. `closes-dod` names the phase whose **deliverable satisfies the DoD bullet**, not the phase whose code enables it. Substrate and infrastructure phases that only enable later phases use `closes-dod: (none)`; the bullet they enable is claimed by the phase whose `deliverable` is the actual artifact the DoD asks for.
 
 ## When to ask the user
 
