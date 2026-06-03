@@ -1018,6 +1018,8 @@ In both cases, capture the PR number/URL — you'll need it for the review loop.
 
 Both push paths above (existing-PR continuation, fresh-PR open) project the just-shipped phase's `closes-dod` onto the issue body. The rule below specifies what to project and how to compose the annotation. Reconciliation on re-entry (§4.7) follows the same rule with the same inputs.
 
+**Annotation shapes and parser:** see [`_shared/dod-annotations.md`](../_shared/dod-annotations.md) for the closed set of annotation forms (code-phase / operator / single-phase / evaluator-rejected / predecessor), the 1-based top-level-bullet indexing rule, the recognition regex, and the invariants every reader must respect. This skill writes the three `closed by ...` ticked forms — the rest are written by `github-pr-evaluator` (sticky-veto un-ticks) and `github-issue-planner` (revise-mode predecessor un-ticks); they are read here to respect existing annotations during projection.
+
 **Reconciliation source.** The projection's expected DoD-bullet set is computed from two inputs only:
 
 - The PR's `## Phase tracker` (ticked entries only) — the authoritative record of which phases have shipped on this branch.
