@@ -50,12 +50,11 @@ running it on the expensive model is most of what makes this skill feel slow.
 Delegate that I/O to the **`github-ops`** sub-agent (`subagent_type: "github-ops"`,
 pinned to Sonnet + medium effort — spawn it with **no `model` override** so the
 pinned tier applies). It runs the named operation and returns faithful structured
-results: `GATHER_ISSUE`, `GATHER_EPIC`, `LOCATE`, `PERSIST_COMMENT`,
-`PERSIST_BODY` (see `.claude/agents/github-ops.md` for the contract). It returns
-issue bodies and threads **verbatim** — never summarized — so every judgment
-below stays yours; `LOCATE` returns only `path:line` pointers, and you still
-`Read` the cited ranges yourself so the plan's citations are grounded in context
-you actually read.
+results: `GATHER_ISSUE`, `GATHER_EPIC`, `PERSIST_COMMENT`, `PERSIST_BODY`
+(see `.claude/agents/github-ops.md` for the contract). It returns issue
+bodies and threads **verbatim** — never summarized — so every judgment below
+stays yours. Codebase-precedent searches do **not** go through `github-ops`
+— it's for GitHub I/O only; see Step 5 for how those are run.
 
 Like the reviewer, `github-ops` cannot call `AskUserQuestion`. If it hits an
 ambiguity or a write conflict it returns `DECISION_NEEDED: <…>` and performs no
@@ -137,11 +136,9 @@ Read each that exists; follow `@`-references (`CLAUDE.md` pulls in `docs/constit
 - **`docs/ui-design.md`** — the authority for any UI surface. Ground UI decisions in named components, sizes, and patterns it defines (e.g. `SectionCard`, the chat-size model) rather than inventing new ones.
 - **`docs/constitution.md`** — non-negotiable rules. A plan that proposes a constitution violation is a blocker, not a deviation to negotiate.
 
-Then **find the codebase precedent.** The strongest plans extend patterns that already exist. Delegate the *locating* to `github-ops` — it greps fast and cheap and hands back pointers, not conclusions:
+Then **find the codebase precedent.** The strongest plans extend patterns that already exist. `github-ops` does **not** do codebase searches — it's the GitHub-I/O executor — so run the search yourself. For broad sweeps that span more than a couple of files or symbols, spawn an `Explore` sub-agent (`subagent_type: "Explore"`) with a focused prompt that names the symbols/patterns/doc sections of interest and asks for `path:line-start–line-end` pointers (plus the git `ref` to search under when the working tree isn't on the right branch — e.g. the epic branch for a story under an open epic, so `git grep <pattern> <ref>` is what reaches it). For narrow single-symbol lookups (one identifier, one obvious file), use `Grep`/`Glob` directly — spinning up `Explore` for a one-shot pattern is wasted overhead.
 
-> `LOCATE(terms=<symbols/patterns/doc sections>, roots=<dirs>, ref=<epic branch if the working tree isn't on it>, scratch_dir=/tmp/gh-planner-<N>/)`
-
-The `## RESULT` envelope returns `manifest_path` + `hit_count` + the terms. `Read` the manifest file to walk the hits — for each entry, `path:line-start–line-end` plus a short excerpt. **You then `Read` the cited source ranges yourself** — the interpretation, the layer call, and every `[precedent: …]` citation are yours, grounded in source you actually read (not in the excerpt). With the candidate sites in hand:
+Whichever route you take, the result is the same shape: a manifest of `path:line-start–line-end` pointers, optionally with short excerpts for orientation. **You then `Read` the cited source ranges yourself** — the interpretation, the layer call, and every `[precedent: …]` citation are yours, grounded in source you actually read (not in the excerpt). With the candidate sites in hand:
 - Find the types, stores, services, and views the change touches; confirm the layer each belongs to (constitution §2).
 - Find a sibling feature that solved an analogous problem and mirror its structure.
 - Identify the concrete symbols, file paths, and signatures the implementation will add or modify — these become the `## Changes` section.

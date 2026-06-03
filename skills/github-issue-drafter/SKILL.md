@@ -47,9 +47,11 @@ checking templates/labels, and the `gh issue create` / `gh issue edit` writes.
 Delegate that to the **`github-ops`** sub-agent (`subagent_type: "github-ops"`,
 Sonnet + medium effort — spawn with **no `model` override**). It runs a named
 operation and returns faithful structured results: `GATHER_ISSUE`,
-`PERSIST_BODY`, `PERSIST_CREATE` (and `LOCATE` for codebase coherence) — see
-`.claude/agents/github-ops.md`. It returns bodies and threads **verbatim** so the
-classification and latest-direction judgment stay yours.
+`PERSIST_BODY`, `PERSIST_CREATE` — see `.claude/agents/github-ops.md`. It
+returns bodies and threads **verbatim** so the classification and
+latest-direction judgment stay yours. Codebase searches for coherence checks
+do **not** go through `github-ops` (it's the GitHub-I/O executor) — use
+`Grep`/`Glob` directly, or spawn an `Explore` sub-agent for broader sweeps.
 
 Two guardrails carry over from the reviewer: `github-ops` cannot call
 `AskUserQuestion`, so on any ambiguity (issue not found, >1 plan comment, a body

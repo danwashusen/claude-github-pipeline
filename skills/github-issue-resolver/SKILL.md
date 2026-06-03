@@ -43,17 +43,22 @@ user and re-dispatches with the answer. Never tell a sub-agent to call
 The expensive model is worth it for the implementation: reading the thread for
 the latest decision, the issue audit, writing code, applying review feedback.
 The judgment-free GitHub I/O is not — fetching the issue + thread, the open-PR
-check, the known-issue triage search, locating precedent in the codebase, and
-posting result comments. Delegate that to the **`github-ops`** sub-agent
-(`subagent_type: "github-ops"`, Sonnet + medium effort — spawn with **no `model`
-override**): `GATHER_ISSUE`, `LOCATE`, `PERSIST_COMMENT` (see
-`.claude/agents/github-ops.md`). It writes issue bodies, threads, plan-marker
-bodies, and LOCATE manifests **verbatim to per-run scratch files** and returns
-`## RESULT` scalars with `*_path` references — `Read` from those paths to get
-content. Pass `scratch_dir=/tmp/gh-resolver-<N>/` to every dispatch so this
-run's artifacts share a per-issue dir, and reuse the same dir across the
-GATHER and LOCATE calls so the resolver can find earlier-fetched content
+check, the known-issue triage search, and posting result comments. Delegate
+that to the **`github-ops`** sub-agent (`subagent_type: "github-ops"`,
+Sonnet + medium effort — spawn with **no `model` override**): `GATHER_ISSUE`,
+`PERSIST_COMMENT` (see `.claude/agents/github-ops.md`). It writes issue
+bodies, threads, and plan-marker bodies **verbatim to per-run scratch files**
+and returns `## RESULT` scalars with `*_path` references — `Read` from those
+paths to get content. Pass `scratch_dir=/tmp/gh-resolver-<N>/` to every
+dispatch so this run's artifacts share a per-issue dir, and reuse the same
+dir across the GATHER calls so the resolver can find earlier-fetched content
 without re-fetching.
+
+Codebase-precedent searches do **not** go through `github-ops` — it's the
+GitHub-I/O executor. For broad searches over the working tree (or an epic
+branch via `git grep <pattern> <ref>`), spawn an `Explore` sub-agent with a
+focused prompt asking for `path:line-start–line-end` pointers; for narrow
+single-symbol lookups, use `Grep`/`Glob` directly.
 
 **What does *not* delegate to `github-ops`:** the `git worktree` lifecycle and all
 local `git` work (add/commit/push, diffs, branch resolution) — that is cwd-stateful
@@ -61,7 +66,7 @@ and belongs to this skill's main loop. And the existing judgment sub-agents — 
 issue **audit**, the **test-selection** `Explore` agent, the
 `apple-platform-build-tools:builder` delegation, and the drafter-proxy for
 follow-ups — stay exactly as they are; `github-ops` is only for the mechanical
-GitHub-API + locate work above.
+GitHub-API work above.
 
 Like the other sub-agents, `github-ops` cannot call `AskUserQuestion`; on any
 ambiguity it returns `DECISION_NEEDED: <…>` and writes nothing — surface it here.
