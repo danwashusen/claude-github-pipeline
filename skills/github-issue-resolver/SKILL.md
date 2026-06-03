@@ -194,150 +194,7 @@ The §7 baseline gate is now narrower in scope: "is the project's static toolcha
 
 §8 and §10.6 each spawn a read-only `Explore` agent for selection. Reasoning happens entirely inside the sub-agent so the main conversation never sees the diff hunks, the test directory listings, or the grep output — only the sub-agent's two-section verdict. The sub-agent uses Bash/Read/Glob/Grep against the worktree to read the diff, list each declared target's directory, and grep for changed symbols.
 
-**Prompt template** (substitute the placeholders at call time):
-
-```
-You are selecting which test suites to run for a Claude Code dev iteration of the
-`github-issue-resolver` skill. Your output drives the next test command; the rest of
-the workflow does not see your reasoning, so be explicit in your rationale.
-
-Inputs:
-- Worktree path: <absolute path to .worktrees/<branch>>
-- Integration target: <main, or epic/<N>-<slug> for stories under an open epic>
-- Test-target config (verbatim from the project's COMMANDS.md / CLAUDE.md):
-  <contents of the <!-- issue-resolver-test-target --> block>
-
-Steps:
-
-1. Compute the diff: `git diff <integration-target>...HEAD` from the worktree.
-   Read both the file paths and the hunk contents — don't decide based on paths alone.
-   If the diff is empty, return COMMAND: (none) and a one-line rationale.
-2. List each declared target's directory: `ls <target>/` for each target in the config.
-3. Apply these heuristics in order, building a union of suite identifiers across all
-   declared targets:
-   a. Direct filename mapping per the target's `naming` rule (when a 1:1 mapping is
-      declared and the corresponding test file exists).
-   b. Test files modified directly → include their suite.
-   c. Symbol references — identify symbols introduced, modified, removed, or renamed
-      in the diff (types, functions, accessibility identifiers, error cases,
-      string-catalog keys). For renames, search both the old and new names.
-      `grep -l` across each target's directory; include any test file that mentions
-      any matching symbol. Translate file paths to suite identifiers using the
-      target's `naming` rule.
-   d. `@testable import` tracking — a test file that imports a sub-module touched
-      by the diff is a candidate even if no explicit symbol matches (extension
-      methods, Codable conformances, etc.).
-4. Apply per-target widening rules from the config:
-   - Helpers-fallback triggers when a test-side helper changes (a file in the
-     target's directory not matching the suite-naming pattern).
-   - Broad-change-fallback triggers when the diff changes a widely-referenced type
-     (more than ~5 test files mention it), a persistence-model schema, generated
-     config, or any change you cannot narrow with confidence.
-   - If a target declares a fallback as `none`, do not widen for that target —
-     return zero suites for it instead and let `github-pr-evaluator`'s canonical
-     run cover the gap.
-5. UI blast-radius exploration. Name/symbol proximity is fine for unit tests
-   but a poor proxy for UI tests, because UI tests are integration tests that
-   transit shared view-tree state. A small diff in a high-fanout view (the
-   running app's root, a top-level navigation container, a view that gates
-   the rest of the UI behind a sheet) can break unrelated UI tests, and
-   step 3's symbol-grep won't catch it. Before finalising the UI test set,
-   do a focused exploration pass:
-
-   a. For each modified Swift file under the project's source tree, decide
-      whether it is a View. A View is anything declaring `: View` or whose
-      name matches the project's view-naming convention (e.g. `*View.swift`).
-
-   b. For each modified View, trace its consumers: `grep -rln "<TypeName>("`
-      across the source tree (excluding tests). Build a small list of "Views
-      that use this View." If any consumer has UI tests (by symbol grep or
-      name proximity), those UI tests are candidates regardless of whether
-      they reference the diff directly.
-
-   c. Treat any of these as broad UI impact and widen the UI selection to
-      the per-target broad-change-fallback (or, if that is `none`, to the
-      union of every UI test file that transits the affected view-tree
-      surface):
-
-      - The diff modifies the app entry point (`@main`) or the top-level
-        body composition reachable from it.
-      - The diff modifies a View instantiated in another View's `body`, and
-        that other View is reached by existing UI tests.
-      - The diff adds, removes, or modifies a presentation modifier on a
-        root-reachable View — `.sheet`, `.fullScreenCover`, `.alert`,
-        `.confirmationDialog`, `.popover`, `.overlay`. These insert global
-        UI surface that intercepts unrelated tests.
-      - The diff changes `@Environment` or `.environment(...)` injection
-        at or near the app root, or modifies launch-environment reading or
-        initial-state gating logic.
-
-   d. When uncertain about a UI file's blast radius, widen rather than
-      narrow. The targeted-selection win on UI is bounded (UI tests are
-      already expensive per case); the cost of merging a root-view
-      regression masquerading as a leaf change is the entire next baseline,
-      plus the diagnostic cost. The asymmetry strongly favours widening.
-
-   You decide how deep to read. Stop when you can name the affected surface
-   confidently or when further reads aren't changing the test set; widen
-   rather than continue exploring.
-6. Pure-docs / comment-only diffs (only `*.md`, `docs/`, code-comment changes) →
-   COMMAND: (none).
-
-Output exactly two sections, in this order, with these literal headers:
-
-COMMAND:
-<single shell command using the wrapper from the config plus -only-testing flags
-for each selected suite, OR one of the fallback commands declared in the config,
-OR the literal string `(none)` if zero suites selected>
-
-RATIONALE:
-<one or two sentences naming the selected suites and the heuristic that produced
-them. Be specific about what you searched and what matched. If you returned
-`(none)` or invoked a fallback, name the trigger explicitly so the user can audit.>
-
-Examples of well-formed output:
-
-COMMAND:
-./scripts/xcb.sh -only-testing FoodJournalTests/ProposalServiceTests -only-testing FoodJournalTests/IngredientMatcherTests
-
-RATIONALE:
-Selected ProposalServiceTests (direct mapping: ProposalService.swift) and
-IngredientMatcherTests (symbol-grep hit: NutritionCalculator referenced from
-matcher tests). UI tests deferred to pr-evaluator — no UI test references the
-changed views.
-
-—
-
-COMMAND:
-./scripts/xcb.sh -only-testing FoodJournalTests
-
-RATIONALE:
-Logger renamed from .nutrition to .meals; symbol-grep matches 12 test files across
-unit suites. Triggered FoodJournalTests broad-change-fallback. UI selection deferred
-(no UI tests reference the renamed category and FoodJournalUITests broad-change is
-declared "none").
-
-—
-
-COMMAND:
-./scripts/xcb.sh -only-testing FoodJournalTests/OnboardingStepTests -only-testing FoodJournalUITests
-
-RATIONALE:
-Diff adds a `.sheet(...)` to `DailyJournalView` (root-reachable view) and introduces
-`OnboardingView`. Step-5 UI blast-radius rule (5c) fires on the new presentation
-modifier on a root view — widened UI selection to the full FoodJournalUITests target
-rather than just an onboarding-named suite, because every UI test transits
-DailyJournalView. Unit selection stays tight: only OnboardingStepTests references
-the new types.
-
-—
-
-COMMAND:
-(none)
-
-RATIONALE:
-Diff touches only docs/architecture.md. Pure-docs path — no tests selected.
-```
+**See [`references/test-selection-sub-agent.md`](references/test-selection-sub-agent.md) for the full prompt template** (inputs schema, heuristic steps 1–6, the UI blast-radius rules at step 5, and worked-example output shapes). Substitute the worktree path, integration target, and the `<!-- issue-resolver-test-target -->` block contents at dispatch time. The sub-agent returns two sections with literal headers `COMMAND:` and `RATIONALE:`.
 
 The skill parses these two sections and proceeds:
 - `COMMAND: (none)` → skip test execution entirely; print the rationale to the user; mark the iteration's test status as "skipped (no tests selected)" and continue.
@@ -373,219 +230,15 @@ The reason is wall-clock: a plain `<wrapper> test` recompiles the whole app targ
 
 ## Retry ladder for the verification gate
 
-The pre-push verification gate (§8 before the first push, §10.6 after each round of review feedback) treats "tests must be green before push" as a goal, not a license to retry indefinitely. Without a cap, a complex UI-test failure can spiral into a sequence of small fixes — tweak, re-run a 10–20 minute UI suite, tweak, re-run, repeat — that burns hours of wall-clock time and produces nothing the review loop couldn't have surfaced in the first place. The cost compounds because each iteration re-pays the cold-build and simulator-boot overhead, and small fixes on a shallow read of a failure usually don't help anyway.
+The pre-push verification gate (§8 before the first push, §10.6 after each round of review feedback) caps a single visit at **3 test runs total** with a forced research breakpoint between cheap fixes and any deep fix. Run 1 includes the unrelated-failure triage (cheap `gh issue list` lookup before spending the fix budget); run 2 enforces the adaptive cheap-fix rule (sticky failures force the breakpoint immediately); run 3 is the research-informed deep fix. When run 3 is also red, escalate via `AskUserQuestion` (`header: "Tests red"`) with three options: **Push with reds** / **Defer the tests** / **Restructure**. Each entry to §8 or §10.6 starts a fresh ladder.
 
-The ladder below caps a single visit to the gate at **3 test runs total** before escalation, and forces a research breakpoint between cheap fixes and any deep fix. It applies identically at §8 and §10.6.
-
-### The ladder
-
-| Run | Trigger | Allowed action after |
-|---|---|---|
-| 1 (initial) | First invocation of the gate this visit | If green → §9 (or §10.7 from §10.6). If red → **run the unrelated-failure triage first** ("Triage unrelated failures" below); then 1 cheap fix on any *remaining* diff-transiting failure. |
-| 2 | After cheap fix #1 | If green → §9. If red AND the failing-test set strictly changed (some original failures resolved) → 1 more cheap fix allowed. If red AND the failing-test set is sticky (same set or grew) → **research breakpoint, mandatory**, even though only 2 runs have happened. |
-| 3 (deep) | After research-informed fix | If green → §9. If red → **escalate to user** per "Escalation" below. No further runs this visit. |
-
-A "cheap fix" is a small, narrowly-targeted edit (typo, missing accessibilityIdentifier, off-by-one, obvious binding mistake) on the immediate failure mode. A "deep fix" is a structural change informed by the research breakpoint — restructuring a gesture, lifting state, changing a focus model, etc.
-
-### Triage unrelated failures: check for a known issue before spending the fix budget
-
-A red gate run does not always mean *your change* broke something. Targeted selection deliberately widens beyond the diff — the UI blast-radius rules and the broad-change-fallback pull in tests that don't transit your edit at all — and those tests can be red for reasons that predate this branch: a flaky UI interaction, an environmental timing bug, a genuinely separate defect someone has already filed. The expensive way to find that out is to revert your diff and re-run; it works, but it re-pays the cold-build and simulator-boot cost to answer a question GitHub may already answer for free. So triage cheaply first, before the ladder spends a single fix attempt.
-
-**When the triage fires.** On the *first* red run only. Partition the failing tests using the selection sub-agent's own rationale from this gate:
-
-- **Diff-transiting failures** — selected by a direct filename/symbol match (heuristics 3a–3d): the test exercises code your diff touched. A known issue does *not* excuse these — your change could break the same path the issue describes in a new way. Hand them straight to the ladder.
-- **Seemingly-unrelated failures** — pulled in only by widening (UI blast-radius rule 5, broad-change-fallback) and referencing no symbol or file in your diff. These, and only these, are the triage candidates.
-
-**The check.** For each seemingly-unrelated failing test, search the repo's open issues for the test and its symptom — one `gh` call, no revert:
-
-```bash
-gh issue list --repo <owner/repo> --state open \
-  --search "<failing test method> OR <failing suite name> OR <distinctive assertion keyword>" \
-  --json number,title,url
-```
-
-Read the candidate titles (and the body of any plausible hit) and decide whether one genuinely describes *this* failure — same test, same symptom — not a keyword collision.
-
-**On a confirmed match.** Treat the failure as a known pre-existing red: exclude it from this gate's pass/fail, record `Known pre-existing failure: <Suite>/<test> — tracked by #<NNN>` in the state summary, and add it to the PR body's `## Known failures` section with the issue link. Do **not** file a duplicate follow-up (the matched issue is the tracker), do **not** spend a cheap fix on it, and do **not** revert to confirm — the open issue plus the absent diff-relationship is sufficient evidence. If every red test this run matched a known issue, the gate passes for your diff → proceed to §9 (or §10.7). If diff-transiting failures remain, run the ladder for those only.
-
-**On no match.** The seemingly-unrelated failure has no tracker, so the shortcut doesn't apply — fall back to the ladder's normal path. The research breakpoint may revert the diff / re-run without your changes to settle whether the failure is pre-existing (still valid — just no longer the *first* thing tried). If the revert confirms it is pre-existing and untracked, that's a defer-by-retry follow-up: file it per "Follow-up issue tracking" (urgency `file-now`, type `bug` or `deferred-test`) so the next run's triage finds it.
-
-### The adaptive cheap-fix rule
-
-Whether the second cheap fix is allowed depends on whether the first cheap fix made *any* of the originally-failing tests pass. Compare the failing-test sets across runs:
-
-- **Strictly changed** (e.g., run 1 fails {A, B}; run 2 fails {B, C}): at least one originally-failing test newly passed. The first fix worked on something; the new failure is plausibly a separately-trivial issue. One more cheap fix is allowed.
-- **Sticky** (run 2 fails {A, B} again, or {A, B, C}): no originally-failing test resolved. The model's read of the failure is wrong. Force the research breakpoint immediately.
-
-This rule exists because the small-fix spiral's signature is exactly *sticky failures with shrinking patches*: each iteration tweaks the same code path on the same wrong hypothesis. Detecting non-progress at run 2 cuts off the spiral before it doubles.
-
-### Test selection on retry
-
-Run 1 and run 3 use the test-selection sub-agent's full verdict on the cumulative diff. Run 2 does **not** — it skips the sub-agent and re-runs only the tests that failed in run 1.
-
-| Run | Selection mechanism |
-|---|---|
-| 1 | Full sub-agent verdict on cumulative diff (per "Test selection during iteration" above). |
-| 2 | **Skip the sub-agent.** Build the command directly: `<wrapper> test -only-testing <Suite>/<TestMethod>` for each test that failed in run 1, joined into a single invocation. Use the failing tests' fully-qualified identifiers as reported by the previous run. |
-| 3 | Full sub-agent verdict on cumulative diff. The deep fix may have changed the blast radius (lifted state, restructured a view tree, modified a root-reachable view), so the sub-agent's heuristics — especially the UI blast-radius rules at step 5 of the prompt template — need a fresh look. |
-
-The narrowing at run 2 is a deliberate departure from "trust the sub-agent on every gate visit." The justification: the sub-agent's job is selecting tests *given a diff*; on a cheap-fix retry the only new information is which specific tests failed, and the parent already has that. Re-running the sub-agent would either re-derive the same broad selection (no win) or narrow incorrectly without seeing the failure list (worse). Bypassing it on run 2 is faster and more correct for the cheap-fix case.
-
-A previously-passing test that the cheap fix breaks will not be caught at run 2 — it will surface at run 3 (where the sub-agent's full verdict runs again on the now-larger diff) or, failing that, in `github-pr-evaluator`'s full canonical run at PR-readiness time. That gap is acceptable: the cheap fix is by definition small, and the safety net at pr-evaluator is exactly the reason this skill runs targeted tests rather than the canonical suite. The alternative — re-running the broad selection on every retry — is what produced the small-fix spiral this ladder exists to prevent.
-
-### Research breakpoint requirements
-
-When the ladder forces a research breakpoint (run 2 was sticky, or run 2 was a second cheap fix that also failed), the next step is **not** a code change. It's a forced, structured information-gathering pass. The point is to replace the model's shallow read of the failure — which has now demonstrably failed twice — with a real understanding before any deep fix is attempted.
-
-During the breakpoint:
-
-1. **Read each failing test's full output** — the assertion message, the stack frame, and the relevant simulator log lines. Not just the one-line summary the test runner prints.
-2. **For UI tests, capture `app.debugDescription`** from inside the failing test and read the dump. CLAUDE.md mandates this on element-lookup timeouts; restate the mandate here. The accessibility tree usually points at the cause directly (collapsed parent, hidden element, identifier dropped, glass surface absorbing children).
-3. **Spawn one `Explore` sub-agent** with: the failing test files, the source they exercise, the recent diff (`git diff <integration-target>...HEAD`). Have it return three things, in order:
-   - What is *actually* failing (not what the test name suggests, not what the assertion line says — what's happening in the code paths the test transits)
-   - What code paths the failing tests transit, including any indirection (gesture → focus → state → view re-render)
-   - What structural change is implied by (a) and (b) — explicitly *not* a tweak
-
-No code edits during the breakpoint. The deep fix happens only after the sub-agent returns and the model has internalised its findings.
-
-### Escalation
-
-When run 3 (the research-informed deep fix) is also red, stop. Do not run §8/§10.6 a fourth time. Surface the failure analysis, then ask the user to choose among three equally-weighted paths forward — no default — via `AskUserQuestion` (`header: "Tests red"`, options **Push with reds** / **Defer the tests** / **Restructure**, each described by the matching path below):
-
-1. **Push with documented reds.** Open the PR (or push to the existing branch) with a `## Known failures` section in the PR body listing each red test, the reproduction signal, and what was tried. Let `review` decide whether any of the reds are blocking. Best when the failures look like CI/timing flakiness or genuinely separate edge cases that don't block the headline change.
-2. **Defer the failing tests with linked issues.** File one follow-up issue per failure (or one umbrella issue if the failures share a root cause) via the sub-agent protocol in "Follow-up issue tracking" above — urgency `file-now`, type `deferred-test`. The filed URLs become `// TODO(#NNN)` markers and `XCTSkip("Deferred to #NNN — <reason>")` reasons before push. Push the rest green. Best when the failure is a real structural problem that needs more design than fits this PR.
-3. **Restructure.** Abandon the current approach. Return to a planning conversation, with the research-breakpoint findings as input, and propose a different shape. Best when the deep fix revealed that the original approach itself was wrong (e.g., a gesture that fundamentally fights the parent's gesture system).
-
-The summary at §11 records which path was taken and why. The user picks; the skill does not pick a default. When you reach this gate from §8 you are the main loop — ask via `AskUserQuestion` directly. When you reach it from §10.6 you are inside the review sub-agent, where `AskUserQuestion` is unavailable — return `status: "needs_decision"` with `kind: "verification_failure"` and these three options instead, and the main loop asks.
-
-### What the ladder is and isn't
-
-It **is** a cap on retries within a single visit to the gate. Each entry to §8 starts a fresh ladder (run 1 again). Each entry to §10.6 (one per review-loop iteration) starts a fresh ladder. The §10 sub-agent's 5-iteration outer-loop cap governs how many times `review` can flag changes; this ladder governs how many times the model may re-run tests within one of those iterations.
-
-It **isn't** a license to give up after one failure. Run 1 failing is normal — that's why the gate exists. The ladder activates when the model is about to enter a small-fix spiral, not on every red run.
+**See [`references/retry-ladder.md`](references/retry-ladder.md) for the full ladder, triage rules, adaptive-fix rule, research breakpoint, and escalation rubric.**
 
 ## Follow-up issue tracking
 
-Follow-up items — adjacent bugs noticed during planning, incomplete features the diff exposed, deferred tests the retry-ladder or review loop punted, baseline detours that need their own PR — surface at four moments in this workflow: §7 baseline (pre-existing failures need a detour), the retry-ladder's escalation option 2 (defer failing tests), §10.4 (reviewer routes items to follow-up), and §11 summary (post-merge cleanup). Historically each moment improvised its own filing: some items got captured in PR-body lines that aged out of memory, others got hand-crafted `gh issue create` bodies that bypassed the project's `github-issue-drafter` skill and ended up with inconsistent format and missing parent references. The point of this section is to make filing follow-ups a single, predictable protocol that reuses the drafter's structure (PRD-grounded, sub-agent-reviewed, type-specific sections) rather than re-inventing it in each touch point.
+Follow-up items surface at four moments — §7 baseline detours, the retry-ladder's escalation option 2, §10.4 reviewer-routed deferrals, and §11 summary cleanup. The registry has five fields (`type`, `title hint`, `description`, `parent reference`, `urgency`). Filing decision rule: trackable work → file as an issue via the drafter-proxy sub-agent protocol; procedural / informational notes → capture in the PR body or §11 summary instead. Urgency `file-now` items must land before the iteration's push (so `// TODO(#NNN)` markers and `XCTSkip("Deferred to #NNN — …")` reasons reference real issue numbers); urgency `file-at-checkpoint` items batch at end-of-§10 before §11 fires. Every filed issue routes through `github-issue-drafter` (PRD-grounded, sub-agent-reviewed) — no hand-crafted `gh issue create` bodies. After filing, weave the URL into the code's TODO/XCTSkip markers, the PR body's `## Follow-ups` section, and §11's summary.
 
-### The follow-up registry
-
-Maintain a working list — kept in your own conversation context, no file persistence needed — of follow-up items as they surface. Each entry has five fields:
-
-- **Type** — `bug` | `incomplete-feature` | `deferred-test` | `revise-existing`. The drafter has a section template for each; classification matters because it determines the body structure.
-- **Title hint** — one-line summary, drafter-style (e.g. *"Conflict prompt UI tests deferred under predictive-bar occlusion on .expanded × .session"*).
-- **Description** — 2–5 sentences naming what's wrong / what's needed / why deferred. The drafter takes this as the informal feedback and shapes the body around it.
-- **Parent reference** — the current PR URL or issue #, plus the parent epic # if applicable. Without this, the filed issue is orphaned.
-- **Urgency** — `file-now` or `file-at-checkpoint` (see "Hybrid timing" below).
-
-### Filing vs. capturing — the decision rule
-
-Not every observation deserves a filed issue. Distinguish:
-
-- **File as issue** when the follow-up represents distinct trackable work: a bug to fix, an incomplete feature to finish, a deferred test to re-enable, or a revision to an existing issue body.
-- **Capture in PR body / §11 summary** when the follow-up is procedural / informational only: drift notes ("epic-203 is behind main by 16 commits"), epic checkbox-sync reminders, "watch out for X in the next iteration."
-
-Criterion: would a future contributor, reading the PR body alone, have all they need to act? If yes, PR-body note suffices. If they'd need a separate place to discuss, plan, or assign — file an issue. Conflating the two is how trackable work gets lost: a one-line PR-body bullet is invisible the moment the PR merges.
-
-### Hybrid timing
-
-When each touch point files matters because some items need a real issue number in the same iteration's commits (TODO markers, XCTSkip reasons, PR-body cross-links).
-
-| Source of follow-up | Urgency | When to file |
-|---|---|---|
-| Defer-by-retry (retry-ladder escalation option 2) | `file-now` | Before pushing the iteration's commits — the `// TODO(#NNN)` markers and `XCTSkip("Deferred to #NNN — …")` reasons need real issue numbers in the same push. Filing after-the-fact and amending the markers in a follow-up commit clutters history and risks the markers being missed. |
-| Defer-by-review (§10.4 deferred items) | `file-now` | Same reason — review-deferred items often include test changes that need real issue numbers before the iteration's commit. |
-| §7 baseline-failure detour (option a) | `file-now` | Before resuming the original work — the detour PR resolves the filed issue, and the original PR's body will cite the detour. |
-| Planning-time discoveries (§6 doc grounding turned up adjacent work) | `file-at-checkpoint` | End of §10, after review approval, before §11 — batched. These don't gate any commit, so deferring to one moment is cleaner than interrupting the planning phase. |
-| Implementation-time discoveries (mid-§8, the model notices a related bug) | `file-at-checkpoint` | Same checkpoint. Note them in the registry as they surface; file at end-of-§10. |
-
-### The end-of-§10 checkpoint
-
-After §10's review loop reports approval and before §11's summary, present the `file-at-checkpoint` items in the registry to the user:
-
-> *"These follow-ups surfaced during this resolution but weren't filed in-flight. File them?"*
->
-> *[list each item: title hint, type, one-sentence description]*
-
-The user batch-approves, edits the list, or drops items. Only after batch approval do you spawn the sub-agents (one per item). Then weave URLs back into §11's summary.
-
-### Filing protocol — sub-agent proxy-confirms via the drafter
-
-For each item that the user has approved for filing, spawn a `general-purpose` sub-agent with this prompt (substitute the placeholders at call time):
-
-```
-You are filing one GitHub follow-up issue on behalf of the
-github-issue-resolver skill. Invoke the `github-issue-drafter` skill,
-proxy-confirm the draft, and return the filed issue URL.
-
-Item to file:
-- Type: <bug | incomplete-feature | deferred-test | revise-existing>
-- Title hint: <one-line summary>
-- Description: <2–5 sentences explaining the follow-up>
-- Parent reference: PR <URL>, issue #<N>, epic #<E> (if applicable)
-- Repository: <owner/repo>
-
-Steps:
-
-1. Invoke the github-issue-drafter skill, passing the description above as
-   the informal feedback. State the type hint, title hint, and parent
-   reference clearly so the drafter has them at classification time.
-
-2. The drafter will run its own sub-agent review loop (it validates against
-   the project's PRD, architecture, constitution, and current code state).
-   Let it complete its review-loop passes — don't try to shortcut them.
-
-3. The drafter will reach its step-6 user-confirmation gate ("Show the
-   draft and wait for confirmation"). You act as the user at this gate.
-   Run three checks:
-
-   a. Type — does the drafter's chosen type match the hint? If the drafter
-      decided differently (e.g., classified as `incomplete-feature` when
-      you hinted `bug`), accept the drafter's call IF its rationale is
-      sound. The drafter sees the description directly and may classify
-      better than the hint; only override if the drafter has clearly
-      misread the description.
-
-   b. Parent reference — is the parent PR/issue/epic preserved in the
-      body's Related-issues section? The drafter's bug, story, feature,
-      and incomplete-feature formats all have this section. Without it
-      the filed issue is orphaned. If missing, reply to the drafter:
-      "Please add the parent reference (PR <URL>, parent issue #<N>) to
-      the Related-issues section."
-
-   c. Substance — does the body's What's-wrong / What's-missing /
-      Definition-of-done content match the description? If the drafter
-      hallucinated detail the description doesn't support, reply with a
-      one-sentence correction.
-
-4. Approve if all three checks pass. If any check fails, reply with the
-   correction and let the drafter iterate. Cap at 2 correction rounds —
-   if the third draft still fails any check, stop and return an error to
-   the parent with the latest draft inline so the parent can decide.
-
-5. After approval, the drafter runs `gh issue create` (or `gh issue edit`
-   in revise mode) and returns the URL. Capture that URL.
-
-Return only:
-- The filed URL (or "error: <reason>" if you stopped at step 4's cap)
-- The drafter's final type (in case it overrode the hint)
-- A one-line note if you raised any correction before approving
-
-Do NOT file an issue yourself with `gh issue create`. The drafter does
-this inside its own flow. Your role is to invoke, proxy-confirm, return.
-```
-
-The sub-agent isolates the drafter's verbose work (PRD reading, classification questioning, nested sub-agent review loop) from the resolver's main context. The resolver sees one round-trip per item: input brief → output URL.
-
-### URL weaving — close the loop
-
-Once an item is filed, the resolver does three things with the URL:
-
-1. **Replace temporary `// TODO(?)` markers** in code with `// TODO(#NNN)` referencing the filed issue. Same for `XCTSkip("Deferred to ?…")` — rewrite to `XCTSkip("Deferred to #NNN — <reason>")`. Don't push the iteration without this rewrite; markers without real numbers age into noise.
-2. **Update the PR body's `## Follow-ups` section** with a list item per filed issue (use `gh pr edit --body-file` or a one-shot append). Add the section if it doesn't exist. Putting follow-up links in the body (not a comment) makes them durable: comments scroll, the body persists.
-3. **Thread the URLs into §11's summary** under a "Follow-ups filed" bullet, separate from the "Procedural notes" bullet that holds the capture-in-PR-body items.
-
-A filed follow-up isn't complete until all three weaves are done.
+**See [`references/follow-up-tracking.md`](references/follow-up-tracking.md) for the full registry schema, filing-vs-capturing rule, hybrid timing table, end-of-§10 checkpoint, and the drafter-proxy sub-agent prompt.**
 
 ## Workflow
 
@@ -1347,9 +1000,11 @@ In both cases, capture the PR number/URL — you'll need it for the review loop.
 
 ### 10. Run the review loop (PRs only)
 
+**Step 10 → Step 10.7 → Step 11 → Step 12 chain.** When the review loop exits cleanly (verdict approved + zero classified items), your next emissions in the same run are: (a) §10.7's operational state-refresh (`gh pr view <N> --json …` — mandatory, not advisory), (b) §11's summary block, (c) §12's `## Handoff`. All three are unconditional. The PR #416 / no-handoff #653 failure mode is: `Skill(review)` returns approved prose, the model treats that prose as a deliverable, and the turn ends. The primary structural anti-stop is §10.7's operational anchor below — every sibling skill (pr-evaluator, drafter, planner) survives the same turn-boundary risk because they have operational tool calls between verdict and handoff. The two turn-boundary beats in §10 that require this protection: **after `Skill(review)` returns** (before step 2's sub-agent dispatch) and **after the §10 sub-agent returns** (before step 1 of the next iteration *or* before §10.7 / §11).
+
 **This step is mandatory for any issue resolved with code changes. Do not skip it, do not merge, and do not consider the work done until review approves the PR.**
 
-**Multi-phase issues run §10 on every phase's push, unchanged.** `review` is a per-push code-quality gate; it has no awareness of phases and shouldn't. The loop's exit condition stays the same — verdict approved + zero classified items per §10.4 — and what changes is only what happens *after* the loop exits: §11's outcome rubric decides whether the next step is "back to the resolver for the next phase" (more phases remain in `## Phases`) or "forward to the evaluator" (last phase shipped). Treat §10 as scoped to "is this push reviewable code?" and §11 as scoped to "is the plan exhausted?" — the two decisions are independent.
+**Multi-phase issues run §10 on every phase's push, unchanged.** `review` is a per-push code-quality gate; it has no awareness of phases and shouldn't. The loop's exit condition stays the same — verdict approved + zero classified items per §10.4 — and what changes is only what happens *after* the loop exits: §11's outcome rubric decides whether the next step is "back to the resolver for the next phase" (more phases remain in `## Phases`) or "forward to the evaluator" (last phase shipped). Treat §10 as scoped to "is this push reviewable code?" and §11 as scoped to "is the plan exhausted?" — the two decisions are independent. Before emitting §11, re-confirm the §4.7 captured phase list is in your working context. The multi-phase renderings in `references/handoff-renderings.md` require the next phase's title verbatim from the plan's `## Phases` — if you can't quote it, you've dropped §4.7's state and need to re-read the plan-marker comment from `/tmp/gh-resolver-<ISSUE>/issue-<N>-plan.md` (the `github-ops` GATHER scratch file).
 
 After the PR is opened, the resolver runs an **outer loop in the main conversation** that, on each iteration, invokes the `review` skill once and then dispatches a single sub-agent to act on the verdict. The sub-agent applies the §10.4 classification rubric, addresses feedback, runs the §10.6 pre-push verification gate, commits, pushes, and returns a structured JSON summary — entirely within its own execution scope. The main loop reads the JSON, decides whether to loop again, and re-invokes `review` on the new SHA. If the skill is re-invoked later (a human reviewer commented, the previous run was interrupted), step 5's reuse rule lands you back in the existing worktree and the outer loop runs again from the top — the sub-agent's prompt is told it may be picking up mid-flow.
 
@@ -1359,10 +1014,10 @@ After the PR is opened, the resolver runs an **outer loop in the main conversati
 
 **Outer-loop control (main conversation).** One iteration of the loop is:
 
-1. **Invoke `review`** via the `Skill` tool: `Skill(skill="review", args="<PR#>")`. The skill runs in the main conversation; its findings land in your context as the skill completes. Capture that output — write the verdict text verbatim to `/tmp/gh-resolver-<ISSUE>/review-verdict.md` (`mkdir -p` first). If `/review` did not itself post a PR comment (check the last few comments on PR #<N> via `gh pr view <N> --comments`), post the verdict file as one yourself: `gh pr comment <N> --body-file /tmp/gh-resolver-<ISSUE>/review-verdict.md`. The PR comment is how the user follows the loop on GitHub; the verdict file is what the sub-agent classifies.
-2. **Dispatch the sub-agent** immediately. Use the `Agent` tool with `subagent_type: "general-purpose"`, `description: "Act on review verdict for PR #<N>"`, and the prompt template below. Inline every input placeholder at dispatch time. The sub-agent has full tool access — `Bash` + `Read` + `Edit` + `Write` for code changes, `Agent` for nested test-selection and build delegations. `Skill` is in its toolset for invoking `github-issue-drafter` follow-ups, but never for `review`/`code-review` (which it cannot reach anyway). `AskUserQuestion` is deliberately **not** available inside a sub-agent. When a guard rail fires, the sub-agent returns a `needs_decision` payload and this main loop renders the question.
+1. **Invoke `review`** via the `Skill` tool: `Skill(skill="review", args="<PR#>")`. The skill runs in the main conversation; its findings land in your context as the skill completes. **After `/review`'s verdict text is in the conversation, your next emissions in the same turn are operational only** — `Write` the verdict file at `/tmp/gh-resolver-<ISSUE>/review-verdict.md` (`mkdir -p` first), `gh pr comment <N> --body-file …` (only if `/review` did not already post a PR comment itself — check via `gh pr view <N> --comments`), then `Agent` dispatch per step 2. **No additional prose between the verdict text and the `Write` call.** The verdict text is `/review`'s legitimate output; what's forbidden is *further* prose that paraphrases, summarises, or interprets the verdict before the operational steps fire. The PR comment is how the user follows the loop on GitHub; the verdict file is what the sub-agent classifies.
+2. **Dispatch the sub-agent** immediately. Use the `Agent` tool with `subagent_type: "general-purpose"`, `description: "Act on review verdict for PR #<N>"`, and the prompt template referenced below. Inline every input placeholder at dispatch time. The sub-agent has full tool access — `Bash` + `Read` + `Edit` + `Write` for code changes, `Agent` for nested test-selection and build delegations. `Skill` is in its toolset for invoking `github-issue-drafter` follow-ups, but never for `review`/`code-review` (which it cannot reach anyway). `AskUserQuestion` is deliberately **not** available inside a sub-agent. When a guard rail fires, the sub-agent returns a `needs_decision` payload and this main loop renders the question. **Even when `/review` returned "approved, zero open suggestions", step 2 is still mandatory.** The sub-agent's step 6 (see `references/review-loop-sub-agent.md`) handles the zero-items path with an early return; the dispatch itself is the structural beat that protects against turn-boundary stops. Skipping it because the verdict "looks clean" is the documented `/tmp/no-handoff.md` failure mode.
 3. **Read the JSON return.** Parse the sub-agent's terminal status:
-   - `iteration_complete` with empty `items_addressed` → the verdict had no Addressable / Cheap-fix-override items (everything was Explicitly-deferred or there were no items at all). Combined with `review`'s approved verdict on this iteration, the loop's exit condition holds; proceed to §11.
+   - `iteration_complete` with empty `items_addressed` → **Exit branch — §10.7 then §11 then §12 fire immediately.** The verdict had no Addressable / Cheap-fix-override items (everything was Explicitly-deferred or there were no items at all). Combined with `review`'s approved verdict on this iteration, the loop's exit condition holds. Your next emissions in the same run are: (a) §10.7's mandatory `gh pr view <N> --json …` state refresh, (b) §11's summary block, (c) §12's `## Handoff`. No-stop rule applies — read the JSON, fire §10.7, compose §11, emit §12 in one continuous turn.
    - `iteration_complete` with non-empty `items_addressed` → the sub-agent committed and pushed fixes. The verdict reviewed an older SHA; loop back to step 1 to re-review the new SHA.
    - `needs_decision` → render `decision_request` through `AskUserQuestion`, record the answer, re-dispatch a fresh sub-agent with the same verdict file plus the answer appended to its `prior_decisions` input. Do **not** re-invoke `review` for a decision-resume — the verdict file is still current.
    - `aborted` → exit to §11 with the aborted outcome. The sub-agent has already filed any follow-ups it needed to.
@@ -1371,169 +1026,7 @@ After the PR is opened, the resolver runs an **outer loop in the main conversati
 
 The prompt template below covers what the sub-agent does once dispatched. The outer loop is yours to drive.
 
-**Sub-agent prompt template** (substitute placeholders at dispatch time):
-
-```
-You are acting on a `review` verdict for PR #<N>, dispatched by the
-github-issue-resolver §10 outer loop. You do NOT invoke `review` yourself
-— it is a built-in command not reachable from inside a sub-agent (the
-Skill tool inside an Agent-dispatched sub-agent can only reach project,
-user, and plugin skills). The main loop has already invoked `review`,
-fetched its PR comment, and written the verdict text to a file for you.
-Your job is to classify the verdict per §10.4, address every Addressable
-and Cheap-fix-override item, run the §10.6 pre-push verification gate,
-commit and push, and return a structured summary. The outer loop decides
-whether to re-invoke `review` after you return.
-
-Inputs:
-- PR number: #<N>
-- PR URL: <url>
-- Repo: <owner/repo>
-- Worktree path: <absolute path> — cwd for every tool call you make
-- Originating issue: #<ISSUE>
-- Parent epic: #<EPIC>  (or "none")
-- Integration target branch: <branch>
-- Iteration number: <int> — the 1-based index in the outer loop's run, for
-  your `iteration` echo in the JSON return.
-- Review verdict path: <absolute path to /tmp/gh-resolver-<ISSUE>/review-verdict.md>.
-  This file holds the body text of the `review` skill's most recent PR
-  comment on PR #<N>. Read it; classify it; act on it.
-- Doc-grounding statement (from §6, use when defending implementation
-  choices in review responses): <statement>
-- §4.5 audit overrides carried into the PR body (if any): <text or "none">
-- Project test-config blocks (issue-resolver-fast-checks, issue-resolver-
-  test-target): inline contents, or "read from COMMANDS.md / CLAUDE.md in
-  the worktree".
-- Prior addressed items: list of one-line summaries the main loop has
-  collected across prior iterations of the outer loop (or "none" on
-  iteration 1). Compare these against the current verdict — if any
-  prior-addressed item appears flagged again with no acknowledgement of
-  the prior fix, trip the deadlock guard rail.
-- Prior decisions: guard-rail answers the user already gave this run, as a
-  list of {trigger, answer} (or "none" on the first dispatch in this
-  iteration). When a guard rail fires you return rather than ask; the
-  main loop asks the user and re-dispatches you with the answer here.
-  Honour each one — don't re-raise a gate the user already settled — and
-  echo the full list back in `user_decisions`.
-- Resume hint: this loop may be picking up mid-flow (a prior resolver run
-  was interrupted, or a human reviewer commented between invocations). On
-  iteration 1, before classifying, re-read accumulated PR comments and
-  reviews — `gh pr view --comments`, `gh api repos/<owner>/<repo>/pulls/<N>/reviews`,
-  `gh api repos/<owner>/<repo>/pulls/<N>/comments` — and treat any human
-  reviewer comment as additional Addressable input alongside the verdict.
-
-Read SKILL.md for §10.4 (the classification rubric), §10.6 (the pre-push
-verification gate), the "Retry ladder for the verification gate" section,
-and the "Follow-up issue tracking" section. Apply them as written.
-
-Steps (one pass — no inner loop):
-
-1. Read the verdict file at <Review verdict path>. Treat its body as the
-   review output you are classifying. Also, on iteration 1, re-read PR
-   comments and reviews per the Resume-hint input — fold any human
-   reviewer activity into the classification alongside the bot verdict.
-2. Classify every issue and suggestion per §10.4. The reviewer's own
-   "approved" verdict line is NOT the exit condition — re-classify each
-   listed item using the rubric's Addressable / Explicitly-deferred /
-   Cheap-fix-override / Decision-required buckets. The cheap-fix override
-   applies to ≤ ~20-line fixes on already-modified files even when the
-   reviewer offered to defer.
-3. If a Decision-required item is present, trip the `architectural` guard
-   rail immediately — return without making changes; the main loop asks
-   the user and re-dispatches you with the answer in `prior_decisions`.
-4. Deadlock check. If any item in the current verdict matches a summary
-   in the `prior_addressed_items` input (same file, same surface, same
-   suggested change with no acknowledgement of your prior fix), trip the
-   `deadlock` guard rail. Return without further edits.
-5. Address every Addressable and Cheap-fix-override item. File every
-   Explicitly-deferred item via the "Follow-up issue tracking" sub-agent
-   protocol (urgency `file-now`, type per the reviewer's framing) and
-   capture the returned URLs for the return summary.
-6. If steps 5 produced no edits (zero Addressable items, zero
-   Cheap-fix-override items), skip steps 7–9 and return immediately with
-   `status: "iteration_complete"` and empty `items_addressed`. The main
-   loop interprets this combined with `review`'s prior verdict.
-7. Run the pre-push verification gate per §10.6 (static checks →
-   test-selection sub-agent → test execution). The retry ladder per the
-   "Retry ladder for the verification gate" section caps a single visit
-   at 3 runs with a forced research breakpoint between cheap and deep
-   fixes. On retry-ladder escalation, trip the `verification_failure`
-   guard rail.
-8. Commit. Push. Reply on the PR briefly describing what changed in
-   response to which points of feedback. This per-iteration comment is
-   how the user follows the loop on GitHub even though the parent
-   conversation isn't streaming your tool calls.
-9. Return `status: "iteration_complete"` with the post-push SHA and the
-   `items_addressed` list populated.
-
-Guard rails — when any of these fire, do NOT ask the user yourself
-(`AskUserQuestion` isn't available inside a sub-agent spawned via the
-`Agent` tool). Instead, stop and return immediately with
-`status: "needs_decision"` and a populated `decision_request` (schema
-below) describing the choice. The main loop renders it via
-`AskUserQuestion` and re-dispatches a fresh you with the answer in the
-"Prior decisions" input — and the SAME verdict file path — so you resume
-without re-hitting the same gate and without re-running `review`.
-
-- Same-feedback-twice deadlock. The current verdict flags an item that
-  matches an entry in `prior_addressed_items`. Don't address it a second
-  time on the same hypothesis. Return a decision_request —
-  `kind: "deadlock"`, `header: "Review loop"`, options:
-  "Try another angle" (continue with a different fix — the user can name
-  it in the free-text "Other"), "Accept + defer" (exit, file the item as
-  a deferred follow-up), "Abort loop".
-- Decision required. The verdict flags an architectural choice, an API
-  break, or a scope-change tradeoff. Don't guess. Return a
-  decision_request — `kind: "architectural"`, `header: "Decision"`, with
-  one option per candidate path the reviewer named, each `description`
-  carrying the reviewer's framing for that path.
-- Verification failure. §10.6 retry ladder ran 3 times and the gate is
-  still red. Return a decision_request — `kind: "verification_failure"`,
-  `header: "Tests red"`, options: "Push with reds" / "Defer the tests" /
-  "Restructure" per the retry-ladder Escalation section.
-
-Note: the 5-iteration cap is no longer a sub-agent guard rail. The main
-loop tracks iterations and asks the user when the cap fires.
-
-Return ONLY this JSON (no prose around it):
-
-{
-  "status": "iteration_complete" | "needs_decision" | "aborted",
-  "decision_request":
-    {"kind": "deadlock" | "architectural" | "verification_failure",
-     "question": "the full question text the user will see",
-     "header": "<=12-char header per the guard rail / escalation>",
-     "options": [
-       {"label": "<imperative action>",
-        "description": "<what it does + its consequence>"}
-     ]}
-    | null,
-  "iteration": <int>,
-  "final_pushed_sha": "<sha or null when no push occurred this iteration>",
-  "iteration_test_status": "green at <sha> (selected ...)"
-    | "skipped (no tests selected — <rationale>)"
-    | "skipped (no edits this iteration)"
-    | "red — <list of failing tests>",
-  "items_addressed": [
-    {"severity": "Medium" | "Low" | "Nitpick" | "...",
-     "summary": "one-line description of what was changed"}
-  ],
-  "items_filed_as_followups": [
-    {"url": "<filed issue URL>",
-     "type": "bug" | "incomplete-feature" | "deferred-test"
-       | "revise-existing",
-     "summary": "one-line description"}
-  ],
-  "items_carried_as_procedural_notes": [
-    {"summary": "one-line note for the resolver to capture in §11"}
-  ],
-  "user_decisions": [
-    {"trigger": "deadlock" | "architectural" | "verification-failure",
-     "prompt": "the question text the user saw",
-     "answer": "the user's selected option / free-text"}
-  ]
-}
-```
+**See [`references/review-loop-sub-agent.md`](references/review-loop-sub-agent.md) for the full sub-agent prompt template, JSON return schema, and the three guard-rail definitions** (`deadlock`, `architectural`, `verification_failure`). Substitute every placeholder (PR number/URL, repo, worktree path, originating issue, parent epic, integration target, iteration index, verdict file path, doc-grounding statement, audit-override block, test-config blocks, prior addressed items, prior decisions, resume hint) at dispatch time. Key invariants the outer loop relies on: the sub-agent does **not** invoke `review` itself (it's the built-in not reachable from `Agent`-dispatched sub-agents); the sub-agent's **step 6** is an early return with `status: "iteration_complete"` and empty `items_addressed` when classification finds zero Addressable / Cheap-fix-override items — this is the documented zero-items path, dispatched even on "approved with zero suggestions" verdicts; guard-rail firings return `needs_decision` and never call `AskUserQuestion`.
 
 **Consume the return summary.** Parse the JSON the sub-agent returns on every iteration. The outer loop control above already names the four branch-on-status arms (`iteration_complete` with/without addressed items, `needs_decision`, `aborted`); the rules below say what to *carry forward* into §11 once the loop has exited.
 
@@ -1579,7 +1072,23 @@ Run inside the sub-agent on every iteration that produced code changes (per the 
 
 If run 1 is green, proceed to the sub-agent's step 8 (commit and push). If run 1 is red, follow the ladder in "Retry ladder for the verification gate" above — at most 3 runs this visit, with a forced research breakpoint between cheap and deep fixes, escalating if the deep fix also fails — per the retry ladder's "Escalation" section, you return `status: "needs_decision"` with `kind: "verification_failure"` and the main loop asks the user (you cannot call `AskUserQuestion` from inside the sub-agent). (Each entry to §10.6 starts a fresh ladder; the main loop's 5-iteration outer-loop cap governs how many times this whole gate can repeat across iterations.) If `COMMAND:` was `(none)` (e.g., docs-only iteration), there's nothing to be green or red — `github-pr-evaluator`'s full canonical run will exercise the change at PR-readiness time. Don't fall back to "run zero tests" when the sub-agent's heuristics could have widened — re-spawn the sub-agent if the rationale looks wrong.
 
+#### §10.7 — Pre-summary state refresh (mandatory)
+
+Between the §10 outer-loop exit and the §11 summary, run:
+
+```bash
+gh pr view <N> --repo <owner/repo> \
+  --json state,reviewDecision,headRefOid,isDraft,baseRefName,headRefName,title \
+  > /tmp/gh-resolver-<ISSUE>/pr-state.json
+```
+
+This is a **mandatory** tool call, not advisory. It serves three purposes simultaneously: (a) refreshes the PR state markers (`review: APPROVE at <sha>`, `state: draft`, `base: <branch>`, etc.) that §12's renderings consume — `_shared/handoff-format.md` enumerates the closed-set marker vocabulary; (b) breaks the prose-emission momentum from `/review`'s verdict (the same operational-anchor pattern that makes `github-pr-evaluator` immune to the turn-boundary failure on its own verdict-to-handoff path — pr-evaluator's §7→§15 chain runs through acceptance-criteria check, branch-health gate, merge action, each a forced `gh` call); (c) gives §11/§12 a single canonical input file rather than relying on in-conversation state that may have rolled out of focus. **Read the file's content** into the summary's PR-line markers; do not re-derive from earlier conversation memory.
+
 ### 11. Summarise for the user
+
+§11 fires on every clean exit from §10. Do not skip it on an approved + zero-items iteration. Do not summarize-and-stop after the loop. The Step 12 `## Handoff` at the end of §11 is the only bridge to the next session — its absence is indistinguishable from "work is done", which on a multi-phase issue is wrong.
+
+**Before composing the summary, `Read /Users/danwas/Development/Projects/food-journal/.claude/skills/github-issue-resolver/references/handoff-renderings.md`** — this is the file that holds the seven rendering shapes you'll match the outcome against. Forced into the chain here so that the renderings are in your working context regardless of where SKILL.md was truncated on initial load (SKILL.md exceeds the default Read cap; the forced Read is load-bearing for §12's emission). Also read §10.7's `/tmp/gh-resolver-<ISSUE>/pr-state.json` — that file is the canonical source for §12's PR-line state markers (`review: APPROVE at <sha>`, `state: draft`, etc.).
 
 **Outcome rubric — what shape does the Step 12 handoff take?**
 
@@ -1638,147 +1147,7 @@ Pull the snapshot from data already in hand: the issue/plan state from §2's `GA
 
 #### Renderings
 
-**Forward — standard or story PR opened / updated.** The default code-change outcome. For a story PR under an open epic, the `Issue:` line is replaced with `Story:` and an `Epic:` line is added per `_shared/handoff-format.md`'s Epic variant rules.
-
-```
-## Handoff
-
-**Issue:** #142 — Add CSV export · open · feature · plan: ✓
-**PR:** #287 — Add CSV export (#142) · open · base main · review: not run · health: not run · merge: not run
-
-**Next:** evaluate the PR in a fresh session.
-
-    /github-pr-evaluator #287
-
-**Why:** the evaluator runs the branch-health gate, checks the diff against the issue's acceptance criteria + the plan's locked decisions, posts a formal review, and on a clean APPROVE auto-merges (standard / story PRs) or asks for the merge mode (Epic integration).
-```
-
-**Re-route — multi-phase, non-final code phase pushed.** A code-shipping phase landed on the draft PR; the plan's `## Phases` still lists unshipped phases. The next session continues the same multi-phase resolution.
-
-```
-## Handoff
-
-**Issue:** #640 — Spike: Mitigate Gemini thinking-token truncation · open · feature · plan: ✓ (multi-phase: 2 of 4 phases shipped)
-**PR:** #649 — feat(llm): #640 spike harness · draft · base main · review: ✓ at 40f1d36 · health: ✓ at 40f1d36 · merge: not run
-
-**Next:** continue with the next phase in a fresh session.
-
-    /github-issue-resolver #640
-
-**Why:** the plan's `## Phases` declares 4 phases; this run shipped Phase 2 (`harness PR`) onto the draft. The next planned phase is **Phase 2-measurement** (operator run — see the operator-action handoff if it fires next), followed by **Phase 3 — decision write-up**. The PR stays in draft until every phase has shipped and the evaluator runs its DoD check.
-```
-
-**Terminal-with-action — multi-phase, next phase is operator / decision-only.** The next phase ships a comment or runs an operator action, not commits. The resolver can't perform the action; surface it verbatim from the plan's `deliverable` so the user (or whoever runs the action) does not have to look it up.
-
-```
-## Handoff
-
-**Issue:** #640 — Spike: Mitigate Gemini thinking-token truncation · open · feature · plan: ✓ (multi-phase: 2 of 4 phases shipped)
-**PR:** #649 — feat(llm): #640 spike harness · draft · base main · review: ✓ at 40f1d36 · health: ✓ at 40f1d36 · merge: not run
-
-**Next:** run the operator phase, then return to the resolver.
-
-    ./scripts/spike-640.sh
-    # then post the per-cell table from build/spike-640-*.log as a comment on #640
-
-**Then:** once the measurement comment is posted, continue with the following phase in a fresh session.
-
-    /github-issue-resolver #640
-
-**Why:** the plan's Phase 2-measurement is `kind: operator` — it ships a per-cell measurement comment on the issue, not PR commits. The resolver can't run the harness for you; once you post the measurement comment, Phase 3 (decision write-up) becomes runnable from the resolver.
-```
-
-**Forward — multi-phase, last planned phase shipped.** Every phase in `## Phases` is ticked in `## Phase tracker`. The PR stays in draft; the evaluator decides whether to mark it ready as part of its DoD check.
-
-```
-## Handoff
-
-**Issue:** #640 — Spike: Mitigate Gemini thinking-token truncation · open · feature · plan: ✓ (multi-phase: 4 of 4 phases shipped)
-**PR:** #649 — feat(llm): #640 spike harness · draft · base main · review: ✓ at 9f0a112 · health: ✓ at 9f0a112 · merge: not run
-
-**Phases:** all 4 planned phases shipped at 9f0a112 (PR remains draft; evaluator gates merge readiness).
-
-**Next:** evaluate the PR in a fresh session.
-
-    /github-pr-evaluator #649
-
-**Why:** every phase in the plan's `## Phases` has been ticked on the PR's `## Phase tracker`. The evaluator cross-references the issue body's DoD bullets against each phase's `closes-dod` mapping, runs its branch-health gate and review against the plan's locked decisions, and — on a clean APPROVE — marks the draft PR ready and merges. The resolver never marks a multi-phase PR ready; that decision belongs to the evaluator's DoD check.
-```
-
-**Forward — Epic integration PR.** Same forward direction (→ pr-evaluator), but the `Why:` line calls out the higher merge risk and the canonical-suite escalation so the user knows what pr-evaluator will do differently.
-
-```
-## Handoff
-
-**Epic:** #150 — Chat & session UX polish · open · epic · plan: ✓
-**Stories:** 5 of 5 closed
-**PR:** #300 — Chat & session UX polish (epic #150) · open · base main · review: not run · health: not run · merge: not run
-
-**Next:** evaluate the Epic integration PR in a fresh session.
-
-    /github-pr-evaluator #300
-
-**Why:** integration PRs land the accumulated diff of every child story onto `main` at once. pr-evaluator's escalation rules fire on `pr_type: epic-integration` — the full canonical test suite runs before merge, the verdict is checked against the epic's `## Definition of done`, and the merge mode is gated (§12b) even on a clean APPROVE.
-```
-
-**Re-route → planner.** Triggered by §4.6 plan-currency drift or §8 plan-invalidation. The `Why:` line quotes the locked decision verbatim and cites the `file:line` where the contradiction surfaced. If a draft PR was opened before the invalidation surfaced, the PR line carries `state: draft` and stays open so the resolver can continue from the same branch after the plan is refreshed.
-
-```
-## Handoff
-
-**Issue:** #142 — Add CSV export · open · feature · plan: stale
-**PR:** #287 — Add CSV export (#142) · draft · base main · review: not run · health: ❌ at abc1234 · merge: not run
-
-**Next:** revise the plan in a fresh session — implementation revealed a locked decision is unbuildable.
-
-    /github-issue-planner revise #142
-
-**Why:** the plan's `## Architecture decisions` line "<quoted decision>" assumed <X>, but `<path:line>` reveals <Y>. The §4.6 plan-currency check failed (alternatively: §8's plan-invalidation gate fired mid-implementation). Refresh the plan against today's surface before resuming. The draft PR stays open; re-run the resolver in continue mode after the plan revise lands.
-```
-
-If no PR was opened yet (§4.6 fired before §8 started), omit the PR line entirely and the resolver continues with `/github-issue-resolver #142` instead of `continue #287`.
-
-**Re-route → drafter (fitness audit).** Triggered by §4.5 finding a blocker (typically a body claim that references a symbol no longer in the codebase, an acceptance criterion that can't be evaluated, or a contradiction between body sections). The `Why:` line names the dimension and quotes the specific evidence.
-
-```
-## Handoff
-
-**Issue:** #142 — Add CSV export · open · feature · plan: ✗
-
-**Next:** revise the issue body in a fresh session — the §4.5 fitness-to-implement audit found a blocker.
-
-    /github-issue-drafter revise #142
-
-**Why:** the body's acceptance criterion "<quoted criterion>" references `<symbol>`, which doesn't exist in the current codebase (closest match: `<symbol>` at `<path:line>`). The criterion needs to be reshaped against today's surface — or the codebase needs a precursor change — before planning can ground in real precedent.
-```
-
-**Re-route → drafter (doc conflict).** Triggered by §6 finding that the issue body directly contradicts a project doc the resolver can't reconcile in-skill. Same shape as the fitness re-route; the `Why:` cites the doc section verbatim.
-
-```
-## Handoff
-
-**Issue:** #142 — Allow editing submitted forms · open · feature · plan: ✗
-
-**Next:** reshape the issue body in a fresh session — the body contradicts `docs/prd.md`.
-
-    /github-issue-drafter revise #142
-
-**Why:** `docs/prd.md` §4 says "entries are immutable after submit"; the issue body proposes an edit-after-submit feature. The user chose `Reshape issue` at the §6 doc-conflict gate. The drafter's revise mode either reshapes the body to fit the PRD or routes the conflict back to the user to decide whether the PRD itself should change.
-```
-
-**Terminal — non-PR resolution.** Comment-only answer, triage-only re-labelling, or abandoned/declined work. No PR was opened; the handoff names the issue's current state and closes the pipeline for this run.
-
-```
-## Handoff
-
-**Issue:** #142 — Should we add CSV export? · open · feature · plan: ✗
-
-**Next:** (terminal — no follow-up skill)
-
-**Why:** the resolver posted a clarifying comment in response to the question; no code change was warranted and no PR was opened. The issue stays open in its current state for the user (or a future resolver run) to take forward.
-```
-
-For abandoned / declined / stale-issue-close outcomes, name the close reason in the `Why:` line (e.g. "the user declined to open a PR after the §5 existing-work check surfaced a duplicate in #138").
+**See [`references/handoff-renderings.md`](references/handoff-renderings.md) for the seven rendering shapes** the resolver emits — forward (standard / story), re-route (multi-phase non-final, multi-phase operator-action, multi-phase last shipped, planner-revise, drafter-revise-fitness, drafter-revise-doc-conflict), forward (epic-integration), and terminal (non-PR). The §11 forced `Read` of that file ensures every shape is in your working context before composing the summary. Each rendering carries the closed-set state-marker vocabulary from `_shared/handoff-format.md` (`plan: ✓ | ✗ | stale`, `review: APPROVE | COMMENT | not run`, `health: ✓ at <sha> | ❌ at <sha> | not run`, `merge: not run`); §10.7's `pr-state.json` refresh feeds those markers their current values.
 
 ## Common pitfalls
 
@@ -1806,7 +1175,7 @@ For abandoned / declined / stale-issue-close outcomes, name the close reason in 
 - **Don't skip the review loop.** For any PR, `review` must approve before the work is considered done. No exceptions, no "this change is too small to review."
 - **Don't exit the loop just because the verdict says "approved".** Reviews routinely approve with `Medium`, `Low`, or `Nitpick` items — issues *and* suggestions — that the reviewer still expects fixed (e.g., "Approved with minor fixes"). Per §10.4, exit only when `review`'s verdict is approved **and** the sub-agent's re-classification finds zero Addressable or Cheap-fix-override items in that verdict. Items the reviewer routes elsewhere with a **concrete tracking target** (filed as #N, depends on un-landed sibling, citable PRD/scope exclusion) are deferred and filed as follow-ups. Soft politeness alone ("could be fast-follow", "not blocking", "deferrable", "informational only", "future PR", "consider for a future change") is **not** sufficient — the sub-agent re-classifies per §10.4's rubric, and the **default for any concretely-named change is Addressable**. The Cheap-fix override addresses ≤ ~20-line fixes on already-modified files even when the reviewer defers them. The sub-agent boundary enforces this structurally for the *body* of an iteration (classify + act), and the main loop's tight "read JSON → re-invoke `review` or proceed to §11" sequencing protects the outer loop's exit decision — but the rubric still governs whether the loop should exit at all, so the hazard this bullet exists for hasn't gone away.
 - **Don't drive `review` from inside the §10 sub-agent.** The `review` command (and the bundled `code-review` skill) is not reachable from inside an `Agent`-dispatched sub-agent — the `Skill` tool inside a sub-agent only reaches *project, user, and plugin* skills (per the [sub-agents reference](https://code.claude.com/docs/en/sub-agents)). Putting `Skill(skill="review")` inside the §10 sub-agent prompt was the original design and it consistently failed: the sub-agent had no path to the actual review and was forced to improvise a manual one, returning prose instead of the JSON envelope (PR #607, chat log at `/tmp/review-skill.md`). The fix is structural — `review` runs in the main conversation per §10's outer-loop control; the sub-agent classifies + addresses the verdict the main loop hands it. Don't reintroduce the `review` invocation into the sub-agent prompt thinking "this time stronger emphasis will work" — the constraint is the harness, not the model.
-- **Don't stop after the sub-agent returns.** §10 moved the outer loop back into the main conversation specifically because bundled-skill invocation has to happen there. That re-imports a narrow turn-boundary risk between reading the sub-agent's JSON and deciding what's next: re-invoke `review` for another iteration, ask the user a `needs_decision`, or proceed to §11. Treat reading the JSON as a step inside an iteration, not the end of one. The next tool call — `Skill(skill="review")`, `AskUserQuestion(...)`, or §11's summary path — is the natural beat; a summarize-and-stop beat between them is the recurrence of the PR #416 failure one layer up.
+- **Don't stop at either turn-boundary beat in §10.** §10 has two beats where the model can summarize-and-stop before the run finishes; both are the *PR #416 failure mode (`/tmp/review-loop.md`)* and the *#653 missing-handoff failure mode (`/tmp/no-handoff.md`)* re-imported one layer up. The primary anti-stop in §10 is the operational anchor at §10.7 (refresh PR state via `gh pr view <N> --json …`); this pitfall is the backup. (a) **After `Skill(review)` returns** — the verdict text reads like a finished deliverable, but `/review`'s job is only to emit the verdict, not to close the loop. Your next tool calls in the same turn are `Write` the verdict file, `gh pr comment` (if `/review` did not already post one), and `Agent` dispatch — even when the verdict says "approved, zero open suggestions" (the sub-agent's step 6 handles that path with an early return). (b) **After the §10 sub-agent returns** — the next beat is either re-invoking `Skill(skill="review")` for another iteration, rendering a `needs_decision` via `AskUserQuestion`, or proceeding to §10.7 / §11 / §12 if the exit condition holds. Treat reading the JSON as a step inside an iteration, not the end of one.
 - **Don't post review feedback on the issue.** Review feedback on a PR goes on the PR, not on the originating issue.
 - **Don't mis-route comments between issue and PR.** Use the rubric in "Where comments go" — problem questions go on the issue, solution questions go on the PR. Cross-posting or wrong-routing fragments the discussion and leaves future contributors hunting.
 - **Don't assume the issue is still relevant.** If the thread has gone quiet for a long time, flag this and ask whether to proceed.
