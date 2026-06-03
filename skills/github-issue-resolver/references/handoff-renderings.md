@@ -35,7 +35,7 @@ A code-shipping phase landed on the draft PR; the plan's `## Phases` still lists
 
     /github-issue-resolver #640
 
-**Why:** the plan's `## Phases` declares 4 phases; this run shipped Phase 2 (`harness PR`) onto the draft. The next planned phase is **Phase 2-measurement** (operator run — see the operator-action handoff if it fires next), followed by **Phase 3 — decision write-up**. The PR stays in draft until every phase has shipped and the evaluator runs its DoD check.
+**Why:** the plan's `## Phases` declares 4 phases; this run shipped Phase 2 (`harness PR`) onto the draft. Phase 2's `closes-dod` bullets have been projected onto the issue body's `## Definition of done`. The next planned phase is **Phase 2-measurement** (operator run — see the operator-action handoff if it fires next), followed by **Phase 3 — decision write-up**. The PR stays in draft until every phase has shipped and the evaluator runs its DoD check.
 ```
 
 ## Terminal-with-action — multi-phase, next phase is operator / decision-only
@@ -52,12 +52,15 @@ The next phase ships a comment or runs an operator action, not commits. The reso
 
     ./scripts/spike-640.sh
     # then post the per-cell table from build/spike-640-*.log as a comment on #640
+    # include this marker on its own line so the next resolver run picks up the
+    # operator phase deterministically (otherwise it will fall back to asking you):
+    #     <!-- operator-phase-complete: 2-measurement -->
 
 **Then:** once the measurement comment is posted, continue with the following phase in a fresh session.
 
     /github-issue-resolver #640
 
-**Why:** the plan's Phase 2-measurement is `kind: operator` — it ships a per-cell measurement comment on the issue, not PR commits. The resolver can't run the harness for you; once you post the measurement comment, Phase 3 (decision write-up) becomes runnable from the resolver.
+**Why:** the plan's Phase 2-measurement is `kind: operator` — it ships a per-cell measurement comment on the issue, not PR commits. The resolver can't run the harness for you; once you post the measurement comment, Phase 3 (decision write-up) becomes runnable from the resolver. The `<!-- operator-phase-complete: <N> -->` marker is the next resolver's deterministic signal that the operator phase landed — it ticks the PR's `## Phase tracker` and projects the phase's `closes-dod` onto the issue body's `## Definition of done`. Omitting the marker is fine; the next resolver run will ask via `AskUserQuestion` instead of auto-applying.
 ```
 
 ## Forward — multi-phase, last planned phase shipped
@@ -76,7 +79,7 @@ Every phase in `## Phases` is ticked in `## Phase tracker`. The PR stays in draf
 
     /github-pr-evaluator #649
 
-**Why:** every phase in the plan's `## Phases` has been ticked on the PR's `## Phase tracker`. The evaluator cross-references the issue body's DoD bullets against each phase's `closes-dod` mapping, runs its branch-health gate and review against the plan's locked decisions, and — on a clean APPROVE — marks the draft PR ready and merges. The resolver never marks a multi-phase PR ready; that decision belongs to the evaluator's DoD check.
+**Why:** every phase in the plan's `## Phases` has been ticked on the PR's `## Phase tracker`, and each ticked phase's `closes-dod` bullets have been projected onto the issue body's `## Definition of done` as the phases shipped. The evaluator verifies each projected DoD tick against its attributed phase's diff (per-phase commit ranges from the Phase tracker), runs its branch-health gate and review against the plan's locked decisions, un-ticks any bullet whose attributed diff doesn't actually satisfy it (sticky soft-reject), and — on a clean APPROVE — marks the draft PR ready and merges. The resolver never marks a multi-phase PR ready; that decision belongs to the evaluator's per-phase DoD verification.
 ```
 
 ## Forward — Epic integration PR

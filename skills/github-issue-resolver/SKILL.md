@@ -464,6 +464,16 @@ Some non-trivial issues split into a sequence of phases that share one issue and
 
 **The current-phase decision is yours, not the planner's.** The plan declares the phase **menu**; the resolver picks the next item off it based on what's actually shipped. A re-invocation of the resolver on a multi-phase issue with an existing draft PR re-reads `## Phase tracker` to decide where to resume — see §5's branch-reuse rule below.
 
+**Re-entry DoD-projection reconciliation.** On every re-entry where a prior phase has shipped (multi-phase) — or a single-phase PR was previously opened (re-invocation) — reconcile the issue body's `## Definition of done` ticks against the authoritative state before continuing. This catches `gh issue edit` failures from prior runs and applies missing ticks idempotently.
+
+1. Enumerate ticked phases from the PR's `## Phase tracker` (already cached from step 2's open-PR check). For each `- [x]` row, record its phase number and either its commit SHA (code-shipping) or its operator-action date (operator/decision-only).
+2. Compute the expected DoD-bullet set: union of `closes-dod` indexes across every ticked code-shipping or operator phase. When the plan has no `## Phases` (single-phase) or a single entry that already shipped, the expected set is **every** top-level DoD bullet (single-phase fallback).
+3. Read the issue body's `## Definition of done` from `GATHER_ISSUE`'s `issue_body_path`. Parse top-level checkbox bullets (1-based; sub-bullets are detail, not DoD items). For each expected bullet currently `- [ ]` **and** not carrying an evaluator-rejection annotation `(resolver claimed phase <N>, ...; evaluator rejected: ...)`, this is reconcilable drift — the prior phase's projection failed to land.
+4. If any drift exists, write the projected body to `/tmp/gh-resolver-<N>/issue-body-projected.md` and apply via `gh issue edit <N> --repo <owner/repo> --body-file /tmp/gh-resolver-<N>/issue-body-projected.md`. Record in the state summary: `DoD reconciliation: applied <K> missing tick(s) from prior phase(s)`.
+5. If no drift, record `DoD reconciliation: in sync`. **Never un-tick.** Bullets that are `- [x]` but not in the expected set are left alone (likely a human edit or plan-revision residue) and flagged as `DoD reconciliation: unexpected tick on bullet <N> (<text excerpt>) — left as-is`.
+
+Reconciliation is read-only on routing — it never influences which phase ships next. The Phase tracker remains the single source of truth for "where to resume." See "DoD projection rule" in §9 for the projection mechanism that fires on each new push, and the boundary statement near §11 for the resolver/evaluator split.
+
 ## If the issue is an Epic
 
 Epics use a consistent body template: `## Goal`, `## Background`, `## Stories` (a markdown task list of `- [ ] #NN — description` lines), `## Definition of done` (a second task list), and occasionally `## PRD impact`. There are no native GitHub sub-issues — child relationships exist only as `#N` references inside these task lists.
@@ -678,6 +688,8 @@ If a fresh worktree was created (not reused), run the project's worktree-setup c
    gh issue edit <N> --repo <owner/repo> --body-file /tmp/gh-resolver-<N>/updated-body.md
    ```
    GitHub auto-closes the epic via the `Fixes` linkage on integration-PR merge; if it didn't, fall back to `gh issue close <N> --reason completed`.
+
+   This batch flip is the **epic-level final reconciliation** and is distinct from the per-phase DoD projection in §9. By the time the integration PR merges, most of the epic body's `## Definition of done` bullets are already ticked by each child story's resolver run (each story's own per-phase projection lands on the **story** issue body, not the epic). The epic body's DoD typically tracks epic-level outcomes (a deliverable shipped, a metric moved, a stretch item taken or deferred) rather than per-phase artifacts, so the batch flip is the canonical close-out at integration time. The batch flip does **not** carry per-phase / commit attribution — at integration time the granularity is per-story, not per-phase. Stretch items marked as "deferred" still flip per the existing rule.
 
 **All stories closed but DoD items not fully verifiable → "DoD verification needed"**
 
@@ -966,6 +978,8 @@ It returns the comment URL plus `body_bytes` / `body_sha256`. If the empty-body 
 For code changes (all `git push` and `gh pr create` commands run from inside the worktree — same syntax, just a different cwd; PR creation stays here in the main loop, coupled to the worktree push):
 
 - **If you're continuing an existing PR** (per step 5): just push the new commits to that branch. The PR updates automatically. Don't open a new one. **If this is a multi-phase issue and the push just shipped a phase** (per §4.7), also tick that phase off the PR body's `## Phase tracker` via `gh pr edit <PR#> --body-file <updated-body>` — write the updated body to `/tmp/gh-resolver-<issue-number>/pr-body.md`, flipping only the just-shipped phase's `- [ ]` to `- [x] (commit <sha>)` and leaving the rest as-is. The tracker is the evaluator's input on its final DoD check and a human-readable map of progress; an unticked tracker on a pushed phase will read as in-flight work to the next reader.
+
+  **Then project the phase's `closes-dod` onto the issue body's `## Definition of done`.** Read the current issue body (re-`Read` `/tmp/gh-resolver-<issue-number>/issue-<N>-body.md` from §2's `GATHER_ISSUE`, or refresh via `gh issue view <N> --json body -q .body > /tmp/gh-resolver-<issue-number>/issue-<N>-body.md` if it's stale). Apply the "DoD projection rule" below to compute the projection diff (which bullets should flip `- [ ]` → `- [x]` with what annotation), stage the projected body to `/tmp/gh-resolver-<issue-number>/issue-body-projected.md`, and apply via `gh issue edit <N> --repo <owner/repo> --body-file /tmp/gh-resolver-<issue-number>/issue-body-projected.md`. **Do not abort the resolver run on projection failure** — commits and Phase tracker ticks are preserved; the next re-entrant run's §4.7 reconciliation re-derives the missing ticks from `Phase tracker × closes-dod` and re-applies them. Surface the failure in the §11 summary so the user can see what didn't land.
 - **If this is a fresh PR**: push the branch and open a PR:
 
   Write the PR body to `/tmp/gh-resolver-<issue-number>/pr-body.md` (a per-run scratch dir keyed on the issue number, so concurrent resolver runs don't clobber it, and the body never lands in the worktree where it could be committed), then:
@@ -996,7 +1010,57 @@ For code changes (all `git push` and `gh pr create` commands run from inside the
 
   The tracker exists for the evaluator's eventual DoD check (it lets the evaluator see at a glance which phases shipped) and for human reviewers — the resolver itself only reads the plan's `## Phases` to decide routing in §11. On subsequent phases the existing-PR continuation path above updates this block via `gh pr edit`.
 
+  **Then project DoD onto the issue body, same as the existing-PR path above.** Phase 1's `closes-dod` projects onto the issue's `## Definition of done` alongside the fresh PR's `## Phase tracker` initialisation. For a single-phase fresh PR, the single-phase fallback (see "DoD projection rule" below) ticks every top-level DoD bullet at this point. Same `gh issue edit --body-file` mechanism; same don't-abort-on-failure rule.
+
 In both cases, capture the PR number/URL — you'll need it for the review loop.
+
+#### DoD projection rule
+
+Both push paths above (existing-PR continuation, fresh-PR open) project the just-shipped phase's `closes-dod` onto the issue body. The rule below specifies what to project and how to compose the annotation. Reconciliation on re-entry (§4.7) follows the same rule with the same inputs.
+
+**Reconciliation source.** The projection's expected DoD-bullet set is computed from two inputs only:
+
+- The PR's `## Phase tracker` (ticked entries only) — the authoritative record of which phases have shipped on this branch.
+- The captured phase list from §4.7 — each ticked phase's `closes-dod` indexes.
+
+The union of `closes-dod` across all ticked code-shipping and operator phases is the expected ticked set on the issue body's `## Definition of done`. The resolver never reads the issue body's DoD ticks to decide routing — only to compute the diff between expected and current state.
+
+**Single-phase fallback.** When the plan has no `## Phases` section (single-phase issue per §4.7), or `## Phases` contains a single entry with no `closes-dod`, fall back to "tick every top-level DoD bullet" on the **first push of the run** only. Subsequent §10.6 re-pushes within the same run do not re-tick (the projection has already landed). Re-entry reconciliation (§4.7) re-applies if the first push's `gh issue edit` failed.
+
+**Operator-phase hybrid detection.** Operator and decision-only phases (`kind: operator` | `decision-only`) ship no commits — the resolver doesn't run them. On a re-entry where the next phase is unticked but its `depends-on` is satisfied:
+
+1. **Marker scrape (deterministic).** Look in the issue's comment thread for a comment posted after the prior handoff's timestamp containing `<!-- operator-phase-complete: <N> -->` (where `<N>` is the phase number) on its own line. If exactly one unambiguous match is found, treat the phase as complete — tick the PR's `## Phase tracker` entry as `- [x] (operator phase <N>, applied <ISO-date from the marker comment>)` and project its `closes-dod` onto the issue body using the operator-phase annotation form below.
+2. **`AskUserQuestion` fallback.** If no marker is found, or the match is ambiguous (multiple markers for the same phase, marker for a phase that isn't the next expected), present the prior handoff's operator action verbatim and ask: header **"Op phase <N> done?"**, options: **Yes — apply** (tick + project), **No — re-show handoff** (re-emit the operator handoff verbatim and stop the run), **Other** (user explains). Do not silently scrape prose; the marker-or-ask gate is the only deterministic path.
+
+**Annotation format.** Each projection edit replaces the bullet's `- [ ] <text>` with one of:
+
+- Code-shipping phase: `- [x] <text> (closed by phase <N>, commit <short-sha>)`
+- Operator / decision-only phase: `- [x] <text> (closed by phase <N>, operator action <ISO-date>)`
+- Single-phase fallback (no `## Phases`): `- [x] <text> (closed by commit <short-sha>)`
+
+Use 7-char short SHAs (matching `## Phase tracker` and `_shared/handoff-format.md`). The bullet text itself is preserved verbatim; the annotation is appended after the existing text. When a bullet already carries a prior annotation (rare — typically only on plan-revision mid-flight, see "Edge cases" below), replace the prior annotation in full rather than appending a second.
+
+**Respect the evaluator's sticky veto.** A bullet annotated `- [ ] <text> (resolver claimed phase <N>, commit <sha>; evaluator rejected: <reason>)` is the evaluator's rejection of a prior projection — the diff in the attributed commit(s) didn't satisfy the bullet. Treat such bullets as **not projected**, even when `Phase tracker × closes-dod` would tick them. The disagreement is resolved by re-planning (the planner reassigns the bullet to a different phase), by a new code phase whose diff actually satisfies the bullet, or by user intervention — never by silent re-ticking on the next push.
+
+**Idempotent diff-only application.** Projection is computed as `expected_set − (currently_ticked_set ∪ rejected_set)`. Only the diff is applied to the body. Never blindly re-tick bullets that are already `- [x]` (clobbering attribution annotations is a regression).
+
+**Worked examples.**
+
+*Example A — multi-phase code phase with `closes-dod: [1, 3]`:*
+Plan's Phase 2 carries `closes-dod: 1, 3`. Phase 2's commits land at SHA `abc1234`. After the push, `## Phase tracker` is updated to `- [x] Phase 2 — harness (commit abc1234)`. Then the issue body's `- [ ] First bullet text` becomes `- [x] First bullet text (closed by phase 2, commit abc1234)` and the third bullet flips the same way. Bullet 2 (claimed by Phase 1 if Phase 1 already ticked it, or still `- [ ]` if Phase 4 will close it later) is untouched.
+
+*Example B — single-phase fallback:*
+Plan has no `## Phases`. The fresh-PR open pushes the single phase's commits at SHA `def5678`. Single-phase fallback fires: every top-level `- [ ]` under `## Definition of done` flips to `- [x] <text> (closed by commit def5678)`. Subsequent §10.6 re-pushes during review-loop iterations do not re-tick.
+
+*Example C — operator phase with `closes-dod: (none)`:*
+Phase 2-measurement is `kind: operator` with `closes-dod: (none)`. On the next re-entry, the marker scrape finds `<!-- operator-phase-complete: 2 -->` posted at `2026-06-04`. The Phase tracker entry becomes `- [x] Phase 2-measurement (operator phase 2, applied 2026-06-04)`. No `gh issue edit` against the issue body — `(none)` means zero bullets to project. The next code phase ships and projects its own `closes-dod`.
+
+**Edge cases.**
+
+- *Plan revision mid-flight* (resolver shipped Phase 1, ticked bullet 3; plan revised so bullet 3 is now claimed by Phase 4): reconciliation never auto-un-ticks. The bullet stays `- [x] <text> (closed by phase 1, commit abc1234)` until Phase 4 ships, at which point projection replaces the annotation with `(closed by phase 4, commit <newer-sha>)`. State summary records `DoD plan-revision drift: bullet 3 was ticked by phase 1 under the prior plan; current plan reassigns to phase 4.`
+- *Bullet count drift* (issue body has more or fewer top-level DoD bullets than the plan's max-referenced index): block projection this run, surface in state summary, route back to the planner via the existing `Re-route → planner` handoff (the bullet shift breaks the planner's Dimension-7 invariant).
+- *`closes-dod: (none)` phase*: PR Phase tracker still ticks normally; zero `gh issue edit` calls. Log `DoD projection: phase <N> closes (none) — no DoD edits.`
+- *Issue with no `## Definition of done` section*: skip projection silently with state-summary line `DoD projection: issue has no \`## Definition of done\` section — projection skipped.` (Multi-phase issues without a DoD section are impossible past planner Dimension-7 review; if detected, treat as bullet-count drift and re-route to planner.)
 
 ### 10. Run the review loop (PRs only)
 
@@ -1116,7 +1180,7 @@ Classify the run's outcome before writing the summary; it determines which Step 
 3. If unshipped phases remain, classify the run per the *non-final code phase* or *operator / decision-only* row depending on the next phase's `kind`.
 4. If every phase in `## Phases` is now ticked in `## Phase tracker`, fire the *last planned phase shipped* row.
 
-This is intentionally narrower than a DoD check. The resolver decides *"have all the planned phases been executed?"*; the evaluator decides *"do the issue's DoD bullets actually look satisfied, and is this PR mergeable?"* That separation keeps the resolver out of judgment work the evaluator already owns (it cross-references issue body DoD ↔ plan `closes-dod` ↔ tracker as part of its acceptance-criteria check on every PR), and means a misjudged DoD-coverage in the plan surfaces at the evaluator's review rather than being silently rubber-stamped by the resolver.
+This is intentionally narrower than a DoD check. The resolver records a **mechanical projection** of the planner's `closes-dod` declaration onto the issue body — ticking exactly the bullets the plan claims, attributing each to the phase + commit that shipped (see §9's "DoD projection rule"). The evaluator owns the **semantic judgment** — verifying each projected claim against the per-phase diff at PR-readiness time, and un-ticking with a rejection annotation when the diff doesn't actually satisfy the bullet (`github-pr-evaluator` §6). The PR's `## Phase tracker` remains the **primary routing signal**; issue-body DoD ticks are a downstream projection, never read for routing. The resolver reads the Phase tracker on every run (routing) and on every re-entry (DoD reconciliation per §4.7); it reads the issue-body DoD ticks only to compute the projection diff for the next `gh issue edit`. A misjudged `closes-dod` mapping in the plan surfaces at the evaluator's per-phase verification rather than being silently rubber-stamped by the resolver.
 
 If the run produced *both* a comment and a PR (e.g., posted a "starting work" comment then opened the PR), treat it as a PR outcome — the PR is what pr-evaluator acts on. If a re-route fired *after* a draft PR was opened (the resolver started work, hit a plan-invalidation, and stopped), the draft PR stays open and the handoff's PR line carries `state: draft`; the user re-runs the resolver in continue mode after the prior skill's revise lands.
 
@@ -1202,6 +1266,8 @@ Pull the snapshot from data already in hand: the issue/plan state from §2's `GA
 - **Don't omit the pr-evaluator handoff on PR outcomes.** §11's closing **Next step** line is the resolver's explicit handoff to the merge-readiness gate. Without it, users finish a resolution thinking the work is done — but the resolver has only run `/review` for code quality and targeted tests for verification; issue-fit against the originating issue, full canonical-suite execution, and merge-strategy selection happen inside `github-pr-evaluator`. Dropping the line leaves the user to remember on their own that pr-evaluator exists, which is exactly the dropoff this handoff is designed to prevent. Emit it on every PR outcome, including epic-integration PRs (where the merge risk is higher and the handoff matters more, not less).
 - **Don't hand off to `github-pr-evaluator` until the plan's last phase has shipped.** On a multi-phase issue (per §4.7), the PR must not be evaluator-bound while phases in the plan's `## Phases` are still unshipped. Emitting the evaluator handoff after a non-final phase invites the evaluator to merge a partial implementation — which is exactly how Phase 1 of #640 landed on `main` as #648 before any DoD item was satisfied. Re-route to the resolver (for the next code phase) or surface the operator action verbatim (for the next non-code phase) instead, per the §11 outcome rubric. Only the *last planned phase shipped* row fires the evaluator handoff.
 - **Don't mark a multi-phase PR ready, and don't add `Closes #N` in reaction to shipping the last phase.** A multi-phase PR opens as draft at §9 and stays draft through every phase the resolver pushes — including the last one. Marking it ready or fiddling with the `Closes` directive in the title or body is judgment that belongs to the evaluator: it owns the DoD check that decides whether the shipped phases actually satisfy the issue. The resolver's only signal that "the planned phases are done" is the forward handoff to the evaluator; the evaluator does everything downstream of that — including, on a clean DoD pass, marking the PR ready and merging.
+- **Don't tick DoD bullets the phase's `closes-dod` doesn't claim.** The resolver projects the planner's declaration onto the issue body; it doesn't infer. If a phase's `closes-dod` lists bullets `[1, 3]`, those are the only bullets that flip on this push — even if the diff happens to also satisfy bullet 2. Bullet 2 is claimed by a different phase (per the planner's Dimension-7 exact-coverage invariant), and ticking it here would mis-attribute the closure on the issue body. If you believe the plan is wrong, route back to the planner in revise mode; never silently tick beyond the declaration.
+- **Don't re-tick DoD bullets the evaluator has rejected.** A bullet annotated `- [ ] <text> (resolver claimed phase <N>, ...; evaluator rejected: ...)` is the evaluator's sticky veto — the diff in the attributed commit(s) didn't actually satisfy the bullet. Projection logic treats annotated-as-rejected bullets as not-projected even when `Phase tracker × closes-dod` would tick them. The disagreement is resolved by re-planning, by a new code phase whose diff actually satisfies the bullet, or by user intervention — not by silent re-ticking on the next push. Re-ticking would clobber the evaluator's evidence and re-introduce the silent rubber-stamping failure mode the per-phase verification exists to prevent.
 
 ## When to ask the user
 
