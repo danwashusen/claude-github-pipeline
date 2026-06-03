@@ -526,12 +526,86 @@ If no PR exists yet (the resolver hasn't started), drop the `continue #287` and 
 
 Triggered when a plan comment already exists (step 2) or the user asks to update/refresh a plan. Plans go stale: the codebase moves, the issue body gets revised, external docs change, the comment thread settles on a new direction. This mode refreshes the plan against today's reality.
 
-1. Fetch the existing plan comment (step 2) and the issue + thread. Note the plan's recorded SHA.
-2. Identify what changed since the plan was written — re-walk the thread for newer decisions, re-grep the codebase for symbols the plan names that may have drifted, re-read any external sources.
-3. Re-run steps 5–8 focused on what changed (don't re-derive untouched sections from scratch).
-4. Show a diff-style update (step 9), confirm, then delete-and-repost the comment (step 10) and refresh the body pointer's URL.
+When the issue already has work in flight (a draft PR with shipped phases on its `## Phase tracker`), revising the plan can also disturb already-projected DoD ticks on the issue body (see `github-issue-resolver` §9's "DoD projection rule" and [`_shared/dod-annotations.md`](../_shared/dod-annotations.md) for the projection contract). The planner is the deliberate owner of the reconciliation between the old plan, the new plan, and the body's ticks — see "Re-plan reconciliation" below.
+
+1. **Fetch the existing plan + downstream state.** Fetch the existing plan comment (step 2) and the issue + thread (note the plan's recorded SHA). Also check whether a draft PR exists for this issue (`gh pr list --search "linked:#<N>" --json number,state,isDraft,body,headRefName`) — if so, fetch its body and parse the `## Phase tracker`. Fetch the issue body to capture the current state of its `## Definition of done` annotations. Hold all four (old plan, issue body, PR body+tracker, captured annotations) in working context for the diff.
+2. **Identify what changed since the plan was written** — re-walk the thread for newer decisions, re-grep the codebase for symbols the plan names that may have drifted, re-read any external sources.
+3. **Re-run steps 5–8** focused on what changed (don't re-derive untouched sections from scratch).
+4. **Compute reconciliation.** Diff the old plan against the new plan, classify the revise as SOFT or HARD per "Re-plan reconciliation" below, and compute the body-edit diff (which body annotations to re-attribute, un-tick with predecessor annotation, or preserve). When no draft PR exists yet (resolver hasn't started), step 4 is a no-op — the body has no projected ticks to reconcile.
+5. **Show + confirm (step 9 variant) + persist.** Show the diff-style plan update (step 9) **and** the proposed body-edit diff together. For SOFT, the confirm is **Apply** / **Cancel**. For HARD, the confirm is **Start fresh (recommended)** / **Apply in place anyway** / **Cancel**. On Apply (any path): delete-and-repost the plan comment (step 10) and refresh the body pointer's URL. SOFT-Apply also `gh issue edit`s the body with the reconciled DoD. HARD-Start-fresh additionally closes the existing PR with a re-plan note, un-ticks the body's DoD with predecessor annotations, and records a `## Predecessor` section on the new plan (see below).
 
 **Revising an epic plan** also re-audits child story plans: reconcile the `## Story breakdown` against each story's current state and re-run the sequencing check. Surface re-ordering with evidence; don't silently swap.
+
+## Re-plan reconciliation
+
+When step 4 above runs against an issue with a draft PR that has shipped phases, the body's `## Definition of done` may already carry projected ticks attributed to phases of the **old** plan (e.g. `- [x] <text> (closed by phase 2, commit abc1234)`). Annotation shapes and parser are in [`_shared/dod-annotations.md`](../_shared/dod-annotations.md). The planner is responsible for reconciling those projections against the new plan; the user is engaged at step 9's confirm gate to see what's about to change.
+
+### SOFT vs HARD classification
+
+LLM judgment, bounded by structural rules:
+
+**Always HARD:**
+
+- A code-shipping phase in the old plan whose entry is ticked in the PR's `## Phase tracker` (i.e. shipped) has its `ships`, `deliverable`, or `kind` field changed in the new plan.
+- The old plan's `## Architecture decisions` block has a decision reversed in the new plan **and** that decision is reflected in a shipped phase's code (extract the shipped phase's diff per the recipe in `github-pr-evaluator` §6's "Per-phase verification mechanics" and reason about whether the diff embodies the decision).
+- A code-shipping phase that's ticked in the PR's `## Phase tracker` is removed entirely from the new plan.
+- The issue body's `## Definition of done` had a top-level bullet's text edited (between old plan run and new plan run) **and** that bullet was ticked under the old plan. Detect by comparing the old plan's recorded DoD-bullet count + indexes against the current body's count + text.
+
+**Always SOFT:**
+
+- Only `closes-dod` indexes changed in the new plan (no other structural changes).
+- Only un-shipped phases changed (forward-looking only).
+- Only doc-grounding text was tweaked.
+- New phases added beyond what's shipped.
+
+**Judgment call (LLM reasoning + surface uncertainty):**
+
+- `## Changes` block text edits — does the existing diff still match the new wording? Read the shipped phase's diff and reason about it. When uncertain, lean HARD.
+- DoD bullet wording adjustments without structural change — is the new wording a refinement of the old, or a meaningful shift? Lean HARD.
+
+When the classification is ambiguous, lean HARD and let the user override at step 9's three-way confirm — surprising visible progress regression on a SOFT misclassification is worse than offering "Start fresh" on a borderline-SOFT case the user can decline.
+
+### SOFT-path body reconciliation
+
+Walk the captured body annotations and the new plan's `closes-dod` mappings together:
+
+- **Unchanged attribution** (annotation says phase X, new plan's phase X still claims this bullet index) → no edit needed.
+- **Reassignment, new phase hasn't shipped** (annotation says phase X, new plan's phase Y claims this bullet; Y not in the PR's ticked Phase tracker) → un-tick to `- [ ] <text> (resolver claimed phase X, commit <sha>; evaluator rejected: re-plan reassigned to phase Y, awaiting its ship)`. Reusing the evaluator-rejection annotation shape (per `_shared/dod-annotations.md`) is intentional: the resolver's projection logic already respects this as a sticky veto, so the bullet won't be re-ticked on the next resolver run until phase Y actually ships.
+- **Reassignment, new phase has shipped** (annotation says phase X, new plan's phase Y claims this bullet; Y is ticked in the PR's Phase tracker) → re-attribute, leave ticked: `- [x] <text> (closed by phase Y, commit <Y-sha>)`. Both phases' diffs exist; the new plan says Y owns this bullet; no visible regression.
+- **Phase removed/renumbered** (annotation says phase X, no phase in the new plan has that number) → un-tick to `- [ ] <text> (resolver claimed phase X, commit <sha>; evaluator rejected: re-plan removed phase X — needs re-verification)`. Same sticky-veto reuse as above.
+- **Orphaned bullet** (no phase in the new plan's `closes-dod` claims this bullet index) → un-tick with the same orphan annotation; surface as a Dimension-7 violation in the new plan's verify loop (the new plan should have caught this — it's a re-plan bug).
+- **Evaluator-rejected bullet** (annotation form `- [ ] ... evaluator rejected: ...`) → preserve verbatim. Surface to the user at the step 9 confirm so they see the rejection alongside the diff and can confirm the new plan addresses it. **Do not auto-clear the rejection annotation** even when the new plan reassigns the bullet to a different phase — the rejection is evidence the prior code didn't satisfy the bullet, and the user needs to make the call on whether the new plan's approach will.
+
+The reconciled body is staged to `/tmp/gh-planner-<N>/issue-body-reconciled.md` and applied via `gh issue edit <N> --repo <owner/repo> --body-file /tmp/gh-planner-<N>/issue-body-reconciled.md` after the user confirms at step 9. Use the same `github-ops` `PERSIST_BODY` route the pointer-line step (step 10) uses if available — fall back to a direct `gh issue edit` otherwise.
+
+### HARD-path: Start fresh
+
+When the user picks **Start fresh (recommended)** at step 9's three-way confirm:
+
+1. **Close the existing PR with a re-plan note.**
+   ```bash
+   gh pr close <PR#> --repo <owner/repo> --comment "Re-plan superseded this PR. See updated plan at <new-plan-comment-url>. A new branch and PR will open at the next \`/github-issue-resolver #<N>\` run."
+   ```
+2. **Un-tick the issue body's DoD bullets** that were ticked under the old plan. Each gets the predecessor annotation (per `_shared/dod-annotations.md`):
+   ```
+   - [ ] <text> (previously claimed by phase X, commit <sha> on closed PR #<M>)
+   ```
+   Bullets that were already `- [ ]` are unchanged. Bullets carrying an evaluator-rejection annotation get their annotation rewritten to the predecessor form — the closed PR makes the rejection no longer load-bearing. Stage the reconciled body to `/tmp/gh-planner-<N>/issue-body-reconciled.md` and apply.
+3. **Add a `## Predecessor` section to the new plan comment.** Insert immediately after `## Approach`:
+   ```
+   ## Predecessor
+
+   This plan supersedes a prior plan that drove PR #<closed-PR> (closed <YYYY-MM-DD>) after a HARD re-plan. The closed PR's branch (`<branch-name>`) is preserved for audit and should be deleted by the user after the new PR lands. The brief reason for starting fresh: <one-line rationale from the user or the planner's classification>.
+   ```
+4. **Leave the closed PR's branch in place.** Do not delete it. The reminder in the `## Predecessor` section is the user's cue to clean up after the new PR lands.
+
+The resolver's existing fresh-PR path (§9) handles the next step: on the next `/github-issue-resolver #<N>` invocation, the resolver sees no open PR, detects the closed predecessor PR + branch via `gh pr list --state closed --search "<issue-number>" --json number,headRefName`, computes the next `-vN` branch suffix (`<issue>-<slug>-v2`, `-v3`, …), opens a fresh PR on that branch, and mirrors the `## Predecessor` section into the PR body. See the resolver's §9 "Fresh-PR branch detection on re-entry" for the branch-suffix logic.
+
+### Worked examples
+
+*SOFT — closes-dod reshuffle:* old plan's Phase 1 has `closes-dod: 1, 3`; new plan's Phase 1 has `closes-dod: 1` and a new Phase 4 has `closes-dod: 3`. Phase 1 already shipped at commit `abc1234`. The body's bullet 3 currently reads `- [x] Document the export format (closed by phase 1, commit abc1234)`. Phase 4 hasn't shipped. SOFT-path reconciliation un-ticks bullet 3 to `- [ ] Document the export format (resolver claimed phase 1, commit abc1234; evaluator rejected: re-plan reassigned to phase 4, awaiting its ship)`. When Phase 4 ships, the resolver's projection re-attributes to phase 4.
+
+*HARD — shipped phase's `ships` changed:* old plan's Phase 1 says `ships: PR commits implementing a service-layer abstraction`; user re-plans because the architecture decided otherwise. New plan's Phase 1 says `ships: PR commits implementing protocol-based dependency injection`. Phase 1 already shipped at commit `abc1234`. The shipped diff doesn't match the new `ships` field. Planner classifies HARD, recommends Start fresh. On Start fresh: PR #287 closes with re-plan note, body's three ticked DoD bullets become `- [ ] <text> (previously claimed by phase 1, commit abc1234 on closed PR #287)`, new plan's `## Predecessor` section names PR #287 + branch `142-add-csv-export` + reminder to delete. Next resolver run opens PR on branch `142-add-csv-export-v2`.
 
 ## Common pitfalls
 
@@ -548,6 +622,8 @@ Triggered when a plan comment already exists (step 2) or the user asks to update
 - **Don't re-plan from scratch in revise mode.** Refresh what changed; leave untouched sections alone. Show the user a diff, not a wall.
 - **Don't author free-form sequencing for multi-phase work.** Multi-phase issues use the structured `## Phases` section (Step 7's schema) with the fixed `kind` / `ships` / `closes-dod` / `deliverable` / `depends-on` keys per phase. Prose like *"Phase 1 ships X, then Phase 2 measures, then Phase 3 writes up the decision"* reads correctly to a human but the resolver parses `## Phases` deterministically to route each phase — it cannot grep loose prose for a `closes-dod` mapping or a `kind` enum, and silently falls back to hand-waving (which is exactly the regression mode this whole change was made to prevent — #640's Phase 1 PR shipped to `main` partway through the DoD because the prior `## Sequencing` section gave the resolver no way to recognise that more phases were due). If a phase doesn't fit the structured keys, that's a signal the phasing itself is unclear and needs re-thinking — not a signal to relax the format.
 - **Don't write a `closes-dod` bullet for the wrong phase.** The evaluator uses `closes-dod` to map shipped phases to satisfied DoD bullets on its final acceptance-criteria check. A substrate phase that claims it closes a measurement DoD bullet (on the grounds that "my code is *needed* for the measurement to run") will cause the evaluator to score the PR as satisfying that bullet before the measurement has actually been performed. `closes-dod` names the phase whose **deliverable satisfies the DoD bullet**, not the phase whose code enables it. Substrate and infrastructure phases that only enable later phases use `closes-dod: (none)`; the bullet they enable is claimed by the phase whose `deliverable` is the actual artifact the DoD asks for.
+- **Don't apply SOFT reconciliation when classification reads HARD.** The body-edit diff for HARD often deletes ticks the user expects to see (un-ticks bullets attributed to phases whose `ships` field changed); the right response is starting fresh, not papering over the divergence with un-ticks on a PR whose existing commits no longer match the new plan. The evaluator's per-phase verification would catch the same divergence at PR-readiness time and un-tick anyway — making the resolver run on an in-place reconciled PR mostly wasted work. When the classification is genuinely ambiguous, surface the three-way confirm and let the user decide.
+- **Don't auto-clear evaluator-rejection annotations during revise.** A bullet annotated `(resolver claimed phase X, ...; evaluator rejected: ...)` is the evaluator's hard signal that the prior code didn't satisfy the bullet. The temptation during a SOFT-path reassignment is to swap the annotation for the new phase attribution and let the projection rebuild from scratch — but doing so silently removes the evaluator's evidence and re-introduces the silent rubber-stamping failure mode the per-phase verification exists to prevent. Always surface evaluator-rejected bullets to the user at step 9 and confirm the new plan's approach addresses each rejection. If the user confirms, the rejection annotation transitions to either the new attribution (SOFT reassignment they explicitly accepted) or the predecessor annotation (HARD "Start fresh"). Without that confirmation, preserve verbatim.
 
 ## When to ask the user
 

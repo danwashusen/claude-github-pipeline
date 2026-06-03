@@ -472,6 +472,13 @@ Some non-trivial issues split into a sequence of phases that share one issue and
 4. If any drift exists, write the projected body to `/tmp/gh-resolver-<N>/issue-body-projected.md` and apply via `gh issue edit <N> --repo <owner/repo> --body-file /tmp/gh-resolver-<N>/issue-body-projected.md`. Record in the state summary: `DoD reconciliation: applied <K> missing tick(s) from prior phase(s)`.
 5. If no drift, record `DoD reconciliation: in sync`. **Never un-tick.** Bullets that are `- [x]` but not in the expected set are left alone (likely a human edit or plan-revision residue) and flagged as `DoD reconciliation: unexpected tick on bullet <N> (<text excerpt>) — left as-is`.
 
+**Defensive re-plan drift detection.** After step 5, walk currently-ticked bullets one more time and compare each annotation's phase reference against the captured phase list (see [`_shared/dod-annotations.md`](../_shared/dod-annotations.md) for the annotation parser). For each `(closed by phase <N>, ...)` annotation: if the captured phase list contains a phase numbered `<N>` and its `closes-dod` includes this bullet's index → consistent. Otherwise → drift. Drift cases:
+
+- The annotated phase number doesn't exist in the captured phase list (phase removed or renumbered by a prior re-plan).
+- The annotated phase exists but its current `closes-dod` no longer includes this bullet's index (reassignment).
+
+Record drift in the state summary as `DoD re-plan drift: <K> annotation(s) reference phases the current plan no longer claims this bullet for — re-run \`github-issue-planner revise\` to reconcile`. **Do not auto-mutate the body.** The deliberate reconciliation path is the planner's "Re-plan reconciliation" (it handles the user-engaged classification + apply at step 9); this defensive layer is a backstop that catches cases where the planner's body-edit failed or where the user bypassed the planner by hand-editing. If drift is present, continue with the run — projection of the current phase still applies — but the user sees the flag and knows to re-run the planner.
+
 Reconciliation is read-only on routing — it never influences which phase ships next. The Phase tracker remains the single source of truth for "where to resume." See "DoD projection rule" in §9 for the projection mechanism that fires on each new push, and the boundary statement near §11 for the resolver/evaluator split.
 
 ## If the issue is an Epic
@@ -980,7 +987,18 @@ For code changes (all `git push` and `gh pr create` commands run from inside the
 - **If you're continuing an existing PR** (per step 5): just push the new commits to that branch. The PR updates automatically. Don't open a new one. **If this is a multi-phase issue and the push just shipped a phase** (per §4.7), also tick that phase off the PR body's `## Phase tracker` via `gh pr edit <PR#> --body-file <updated-body>` — write the updated body to `/tmp/gh-resolver-<issue-number>/pr-body.md`, flipping only the just-shipped phase's `- [ ]` to `- [x] (commit <sha>)` and leaving the rest as-is. The tracker is the evaluator's input on its final DoD check and a human-readable map of progress; an unticked tracker on a pushed phase will read as in-flight work to the next reader.
 
   **Then project the phase's `closes-dod` onto the issue body's `## Definition of done`.** Read the current issue body (re-`Read` `/tmp/gh-resolver-<issue-number>/issue-<N>-body.md` from §2's `GATHER_ISSUE`, or refresh via `gh issue view <N> --json body -q .body > /tmp/gh-resolver-<issue-number>/issue-<N>-body.md` if it's stale). Apply the "DoD projection rule" below to compute the projection diff (which bullets should flip `- [ ]` → `- [x]` with what annotation), stage the projected body to `/tmp/gh-resolver-<issue-number>/issue-body-projected.md`, and apply via `gh issue edit <N> --repo <owner/repo> --body-file /tmp/gh-resolver-<issue-number>/issue-body-projected.md`. **Do not abort the resolver run on projection failure** — commits and Phase tracker ticks are preserved; the next re-entrant run's §4.7 reconciliation re-derives the missing ticks from `Phase tracker × closes-dod` and re-applies them. Surface the failure in the §11 summary so the user can see what didn't land.
-- **If this is a fresh PR**: push the branch and open a PR:
+- **If this is a fresh PR**: push the branch and open a PR.
+
+  **Fresh-PR branch detection on re-entry (predecessor PR).** Before computing the branch name, check whether a closed PR exists on this issue from a prior HARD-path "Start fresh" revise (see `github-issue-planner`'s "Re-plan reconciliation"). Detect via:
+
+  ```bash
+  gh pr list --repo <owner/repo> --state closed --search "<issue-number> in:body" \
+    --json number,headRefName,closedAt,body --limit 5
+  ```
+
+  Filter to PRs whose body references this issue's number and was closed with a re-plan note (the planner's close comment contains the literal text `Re-plan superseded this PR`). If one or more matches exist, the new branch must not collide with the predecessor's. Use the `-vN` convention: scan existing branches with `git ls-remote --heads origin "<issue>-<slug>*"`, find the highest existing `-vN` suffix (the unsuffixed `<issue>-<slug>` is `v1`), and increment. Example: predecessor branch `142-add-csv-export` → new branch `142-add-csv-export-v2`. A subsequent fresh-start would pick `-v3`. When no predecessor PR exists, use the unsuffixed `<issue>-<slug>` as today.
+
+  When opening on a `-vN` branch, mirror the new plan's `## Predecessor` section (the planner authored it during the HARD revise) into the PR body as a `## Predecessor` section — link the closed PR, link the predecessor branch, repeat the reminder to delete the old branch after this PR lands. The plan's `## Predecessor` and the PR's `## Predecessor` carry identical content; both exist so a reader on either surface sees the audit trail without cross-referencing.
 
   Write the PR body to `/tmp/gh-resolver-<issue-number>/pr-body.md` (a per-run scratch dir keyed on the issue number, so concurrent resolver runs don't clobber it, and the body never lands in the worktree where it could be committed), then:
 
