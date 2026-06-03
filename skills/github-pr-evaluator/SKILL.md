@@ -457,7 +457,47 @@ For each issue in `closingIssuesReferences`, evaluate five dimensions. Write you
 
 **Scope match.** Does the diff change what the issue asked to change, and only that? Drive-by edits unrelated to the issue's stated problem are a flag. Small incidental fixes (typos in touched files, missing `Localizable.xcstrings` entries required by the build) are acceptable if called out in the PR body.
 
-**Acceptance criteria / Definition of done.** For features, stories, and incomplete-feature issues, walk every item in `## Acceptance criteria` or `## Definition of done` and judge it against the diff and test files. An unchecked item that the diff doesn't address is a gap.
+**Acceptance criteria / Definition of done.** For features, stories, and incomplete-feature issues, the DoD check has two paths depending on whether the resolver projected per-phase claims onto the issue body (`github-issue-resolver` §9's "DoD projection rule").
+
+- **Projection annotations present.** When one or more bullets carry a `(closed by phase <N>, commit <short-sha>)` or `(closed by commit <short-sha>)` or `(closed by phase <N>, operator action <ISO-date>)` suffix, **verify each projected tick against its attributed phase's diff** rather than re-judging the whole PR diff per bullet. Use the per-phase verification mechanics below to extract the commit range for each phase from the PR's `## Phase tracker`. A clear semantic mismatch between the attributed diff and the bullet's text → un-tick + soft-reject per "Un-tick on rejection" below. Soft / partial mismatches → flag in the review body but leave the tick in place. A bullet currently unticked and missing an annotation is a gap the resolver should have closed — flag as a planner/resolver coverage gap (the bullet's owning phase per the plan's `closes-dod` is the right place for the user to look).
+- **No projection annotations** (the issue predates the projection mechanism, was resolved by an older resolver, the projection failed to land and reconciliation hasn't fired, or the issue carries `## Acceptance criteria` rather than a checkbox DoD). Fall back to the historical behaviour: walk every item in `## Acceptance criteria` or `## Definition of done` and judge it against the diff and test files. An unchecked item that the diff doesn't address is a gap. This is the backwards-compatible path; do not insist on projection annotations as a precondition for evaluation.
+
+In either path, the bullet text itself is the authoritative requirement — annotations are attribution metadata, not part of the requirement.
+
+**Per-phase verification mechanics.** When projection annotations are present, the PR's `## Phase tracker` is the canonical phase → commit mapping. Each tracker entry carries the head-of-phase commit SHA (`- [x] Phase N — title (commit <sha>)`); fixup commits that landed between Phase N's tracker SHA and Phase N+1's tracker SHA belong to Phase N too. Run these inside the §5.5.0 worktree at `.worktrees/<branch>` (already on the PR head):
+
+```bash
+# Enumerate every PR commit in branch order (oldest first).
+git log --reverse --pretty=format:"%H %s" origin/<base-ref>..HEAD \
+  > /tmp/gh-pr-eval-<N>/pr-commits.txt
+
+# For phase N's commit range:
+#   PHASE_END = SHA from this phase's `## Phase tracker` entry
+#   PHASE_START = SHA from the prior phase's tracker entry, OR the PR base if N == 1
+git diff <PHASE_START>..<PHASE_END> > /tmp/gh-pr-eval-<N>/phase-<N>-diff.txt
+# Or, for a single-commit phase:
+git show <PHASE_END> > /tmp/gh-pr-eval-<N>/phase-<N>-diff.txt
+```
+
+Then judge each projected bullet against its phase's diff — same standard the historical path applies to the whole-PR diff, just scoped to the attributed phase. Edge cases:
+
+- **Operator / decision-only phase** (the annotation form is `operator action <ISO-date>` and there is no commit range): the phase ships no diff. There is nothing for the evaluator to verify against — record `verification: operator-phase claim — accepted on faith; verify out-of-band` in the review body for each such bullet, do **not** un-tick. The user is responsible for verifying operator action outputs separately (the marker comment on the issue is the audit trail).
+- **Broken SHA reference** (the annotation cites a commit no longer reachable from `HEAD` — force-pushed away during a rebase): flag as `verification: unverifiable — attributed commit <sha> not in branch history`, leave the tick in place. Don't un-tick on a missing reference; that punishes the contributor for unrelated branch hygiene.
+- **Single-phase fallback** (annotation form is `(closed by commit <short-sha>)` with no phase number): the whole PR is the phase. Use the whole-PR diff for verification — no per-commit extraction needed.
+
+**Un-tick on rejection.** When per-phase verification finds a clear semantic mismatch (the attributed diff does not implement what the bullet's text requires), un-tick the bullet by replacing its line in the issue body with the sticky-veto form:
+
+```
+- [ ] <bullet text> (resolver claimed phase <N>, commit <sha>; evaluator rejected: <one-line reason>)
+```
+
+The annotation is the **signal to the next resolver run** that the projection was disputed — the resolver's "DoD projection rule" treats annotated-as-rejected bullets as not-projected, even when `Phase tracker × closes-dod` would tick them. The disagreement is resolved by re-planning (the planner reassigns the bullet to a different phase), by a new code phase whose diff actually satisfies the bullet, or by user intervention. Apply the un-tick atomically: stage the corrected body to `/tmp/gh-pr-eval-<N>/issue-body-corrected.md`, then route through `github-ops`:
+
+> `PERSIST_ISSUE_BODY(id=<issue-#>, repo=<owner/repo>, body_path=/tmp/gh-pr-eval-<N>/issue-body-corrected.md)`
+
+If `PERSIST_ISSUE_BODY` is not available in the local `github-ops` profile, fall back to a direct `gh issue edit <N> --repo <owner/repo> --body-file /tmp/gh-pr-eval-<N>/issue-body-corrected.md` in the main loop. Post the un-tick **before** the PR review (so when a reader follows the review's `## DoD verification` section to the issue, the body already reflects the un-tick). On `gh issue edit` failure, still post the PR review with the un-tick verdict — the next resolver run's §4.7 reconciliation will leave the disputed bullet alone (it can't tell projection-not-applied from un-tick-failed, but in either case the safe behaviour is the same: don't re-tick without new evidence).
+
+**Threshold for un-ticking.** Clear semantic mismatch — the attributed diff fails to implement what the bullet's text plainly requires, judged by the same standard the dimension applies today (LLM judgment against the diff). Soft mismatches, partial satisfaction, or implementations that take a surprising-but-defensible path → flag in the review body, **do not un-tick**. The threshold has to be high; un-ticks propagate to the resolver as sticky vetoes and an over-eager evaluator becomes a per-phase nitpicker that blocks merges on disagreements of interpretation.
 
 **Doc grounding.** Per the project's issue resolver workflow, PR bodies must include a `## Doc grounding` section citing the PRD, Architecture doc, or CLAUDE.md sections that constrained the approach. A missing or vague doc-grounding section is a flag for any non-trivial feature or refactor. (Skip for: one-line bug fixes, pure doc/typo changes, and repos with no docs at all.)
 
@@ -479,6 +519,18 @@ For each issue in `closingIssuesReferences`, evaluate five dimensions. Write you
 **Comment-rejection** (`gh pr review --comment`) when:
 - `HEALTH_OK == false` — **always; this is a hard block.** A red branch never approves regardless of how well the code satisfies the issue. Lead the review body with `HEALTH_BODY`, name the failing command, and link to the cache comment. List any review-dimension gaps below it.
 - Any review dimension fails — body lists each gap with the specific evidence that would close it. Use `--comment`, not `--request-changes` — `--comment` is a soft signal; `--request-changes` blocks merge and is heavy-handed for this workflow. Only switch to `--request-changes` if the user explicitly asks for a hard block.
+- **Per-phase DoD verification un-ticked one or more projected bullets.** A sticky veto is a soft-reject regardless of whether other dimensions pass — the issue's DoD record now reflects the dispute, and the resolver needs to address it (re-plan, ship satisfying code, or surface for user resolution) before another approval pass.
+
+**`## DoD verification` body section.** When the DoD dimension fired per-phase verification (annotations were present), include a `## DoD verification` section in the review body. Omit the section entirely when no per-phase verification ran (the historical-path issue) or when every projected tick verified clean and there is nothing to surface. Per un-ticked bullet, emit:
+
+```markdown
+- **Bullet <index>** — <verbatim bullet text>
+  - **Resolver claimed:** phase <N>, commit `<short-sha>`
+  - **Evidence:** <file:line range or short diff excerpt showing the mismatch>
+  - **Why rejected:** <one-sentence rationale>
+```
+
+When the section is present but every projected tick verified clean (rare — keep this case in mind for callers who want explicit confirmation), include a single line `All <K> projected DoD ticks verified against their attributed phase diffs.` instead of the per-bullet block. Don't surface operator-phase bullets here unless the verdict turns on them — the `verification: operator-phase claim — accepted on faith` note belongs in the bullet-walkthrough body, not the verification summary.
 
 When `HEALTH_OK == null` (user opted to skip): proceed with the dimension-only verdict and include `HEALTH_BODY` verbatim at the top of the review body so the human reviewer can see health was skipped.
 
@@ -572,6 +624,8 @@ Stage the review body to `/tmp/gh-pr-eval-<N>/review.md`, then hand the path to 
 > `PERSIST_COMMENT(target=pr-review, id=<N>, repo=<owner/repo>, body_path=/tmp/gh-pr-eval-<N>/review.md, review_action=<approve | comment | request-changes>)`
 
 `review_action=approve` for an approval; `comment` for a soft-rejection **or** when the §2 self-approval pre-check flagged that you authored the PR (GitHub rejects self-`--approve` with 422 — the body stays identical, only the action changes). `github-ops` returns the review URL plus `body_bytes` / `body_sha256`; share the URL with the user.
+
+**Issue-body un-ticks (DoD verification path).** When per-phase verification un-ticked one or more bullets (§6 "Un-tick on rejection"), apply the un-ticks to the issue body **before** posting the PR review. The order matters: a reader who follows the review's `## DoD verification` section to the issue should see the un-tick already in place. Stage the corrected body to `/tmp/gh-pr-eval-<N>/issue-body-corrected.md`, then either route through `github-ops` if `PERSIST_ISSUE_BODY` is available, or fall back to a direct `gh issue edit <N> --repo <owner/repo> --body-file /tmp/gh-pr-eval-<N>/issue-body-corrected.md` from the main loop. If the issue-edit fails, still post the PR review — the verdict is the load-bearing signal and the next resolver run's §4.7 reconciliation respects un-ticks via the same sticky-veto rule whether or not the body itself was updated this time. Surface the issue-edit failure in the review body so the user can re-apply it manually.
 
 ### 12. Run the merge
 
@@ -843,7 +897,7 @@ Detection: `headRefName` matches `epic/<N>-<slug>` AND `baseRefName == main`.
 2. For scope evaluation: the diff should be the accumulated stories — each story's squash commit landing on the epic branch. Drive-by changes beyond what the stories describe are a flag.
 3. Verify `Fixes #<epic-number>` is in the PR body.
 4. Verify every story PR is listed in the body.
-5. Walk every item in `## Definition of done` and judge it against the accumulated diff. Unfulfilled items → rejection.
+5. Walk every item in `## Definition of done` and judge it against the accumulated diff. Unfulfilled items → rejection. Epic integration uses the historical "walk every item" path — not the per-phase verification path. Per-phase DoD projection lives on the **child story** issues (each child story's resolver run projects its own per-phase ticks onto the story body), so by integration time the child story DoDs are already mostly ticked there. The epic body's DoD tracks epic-level outcomes; it's reconciled by the resolver's epic-integration close-out batch flip after this PR merges (`github-issue-resolver` §676–679). The evaluator's job here is to verify the accumulated diff actually satisfies those epic-level bullets, not to verify per-phase projections.
 6. Strategy: merge commit (if `commits.totalCount > 1`), squash (if single commit).
 7. This PR carries more risk than a story PR — it lands the entire epic on main at once. Hold approval if DoD is incomplete or if the diff contains unexpected changes. Ask before proceeding if uncertain. The merge gate in §12 also stays explicit for epic integration PRs even on a clean APPROVE — see §12b. This is the only PR type where the evaluator still asks before merging.
 
@@ -863,6 +917,8 @@ Detection: `headRefName` matches `epic/<N>-<slug>` AND `baseRefName == main`.
 - For standard and story PRs with an APPROVE verdict, the merge runs automatically after the review posts (§12a) — the verdict itself is the approval, and §10 has already shown the recommended strategy and the composed squash subject. The explicit `AskUserQuestion` gate is reserved for epic integration PRs (§12b — where the diff is the accumulated work of every child story landing on `main` at once) and for any PR with `mergeStateStatus ∈ {DIRTY, BLOCKED}` (§12c — where auto-merging would just produce a noisy gh failure). Once a merge runs, cleanup (worktree removal, story-issue close, epic checkbox) follows automatically without asking again.
 - Don't compose a squash subject with a double `(#NN)` suffix. Strip any trailing ` (#\d+)` from the PR title before appending `(#<pr-number>)`.
 - Don't post `--approve` for a self-authored PR — GitHub will 422. Use `--comment` with the same body.
+- **Don't un-tick a DoD bullet on a soft mismatch.** The un-tick annotation is a sticky veto that propagates to the resolver's projection logic — once the body shows `- [ ] <text> (resolver claimed phase <N>, ...; evaluator rejected: ...)`, no subsequent resolver run will re-tick the bullet on a normal push. Use the un-tick **only** when the diff in the attributed commit(s) clearly fails to satisfy the bullet's stated requirement, judged by the same standard the dimension applies today. Partial satisfaction, implementations that take a surprising-but-defensible path, and disagreements of interpretation get flagged in the review body — not un-ticked. An over-eager evaluator un-ticking on every reading disagreement turns the sticky veto into a merge-blocker for normal review back-and-forth.
+- **Don't infer per-phase verification when the issue carries no projection annotations.** The fallback "walk every item against the diff" path is the right call for unticked bullets on pre-projection issues, single-phase issues that ran an older resolver, or issues whose first push's projection-edit failed and reconciliation hasn't fired. Don't synthesize annotations from `## Phase tracker` + `closes-dod` ad-hoc just to drive a per-phase verification — the resolver projects deliberately, and the evaluator's absence-of-annotation read is the backwards-compat signal. Inferring annotations turns the verification path into a parallel projection authority, which breaks the resolver/evaluator boundary in the other direction.
 - Don't block approval over `mergeStateStatus == BEHIND` or `DIRTY` — approve on code merit and surface the merge-readiness blocker separately.
 - Don't use `--request-changes` unless the user explicitly asks for it — `--comment` is the project default for soft rejections.
 - Don't skip the doc-grounding check for features and stories — it's load-bearing for traceability.
