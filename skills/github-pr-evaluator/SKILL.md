@@ -112,7 +112,7 @@ Then for every issue number in `closingIssuesReferences`, fetch the issue **with
 
 The issue's body, thread, and plan-marker body land at the returned `issue_body_path` / `thread_path` / `marker_comment_path` — `Read` them when you need their content.
 
-**Draft PR guard.** If the PR `state` is `DRAFT`, stop here. Tell the user to mark it ready for review before evaluating.
+**Draft PR guard.** If the PR `state` is `DRAFT`, stop here. Tell the user to mark it ready for review before evaluating. (The canonical resolver handoff path doesn't trip this guard: `github-issue-resolver` §11's *last planned phase shipped* row flips a multi-phase PR draft → ready immediately before emitting the handoff, so a draft PR reaching this evaluator is either a genuinely-in-progress PR — multi-phase or otherwise — or a manual invocation on an unfinished PR. In both cases stopping here is the right behavior. On the soft-reject path the evaluator's own §11 flips the PR back to draft so the resolver can re-enter cleanly; that re-flip is part of this skill's contract with the resolver, not a violation of this guard.)
 
 **Story PR detection.** If `baseRefName` matches `epic/<N>-<slug>`, also fetch the parent epic's body and extract its `## Goal` and `## Background` sections for use in step 6.
 
@@ -625,6 +625,16 @@ Stage the review body to `/tmp/gh-pr-eval-<N>/review.md`, then hand the path to 
 
 `review_action=approve` for an approval; `comment` for a soft-rejection **or** when the §2 self-approval pre-check flagged that you authored the PR (GitHub rejects self-`--approve` with 422 — the body stays identical, only the action changes). `github-ops` returns the review URL plus `body_bytes` / `body_sha256`; share the URL with the user.
 
+**Flip the PR back to draft on a real COMMENT verdict.** When §7's verdict was COMMENT-REJECTION (any of: `HEALTH_OK == false`, a dimension failed, the per-phase DoD un-tick fired) — *not* when `review_action=comment` was the §2 self-approval downgrade of an APPROVE verdict — flip the PR back to draft immediately after the review post:
+
+```bash
+gh pr ready <N> --repo <owner/repo> --undo
+```
+
+This is the other half of the handoff contract with `github-issue-resolver` (which flips ready before its forward handoff on the §11 *last planned phase shipped* row; see `github-issue-resolver` SKILL.md §1015–1017). On the soft-reject path the PR's signal should be "not ready for re-review until the gaps land," which on GitHub is the `draft` state. Leaving the PR ready after a soft-reject forces the resolver's §5 existing-PR check to surface it as drift to the user every re-entry — exactly the noise the contract avoids. The §2 self-approval downgrade is the explicit exception: the verdict was APPROVE, the PR is approval-equivalent, and it should stay ready for the manual merge.
+
+This flip is best-effort: if `gh pr ready --undo` fails (e.g., the PR was already in draft because the user beat the evaluator to it), log the failure and continue — the §15 handoff carries the canonical state for the next session.
+
 **Issue-body un-ticks (DoD verification path).** When per-phase verification un-ticked one or more bullets (§6 "Un-tick on rejection"), apply the un-ticks to the issue body **before** posting the PR review. The order matters: a reader who follows the review's `## DoD verification` section to the issue should see the un-tick already in place. Stage the corrected body to `/tmp/gh-pr-eval-<N>/issue-body-corrected.md`, then either route through `github-ops` if `PERSIST_ISSUE_BODY` is available, or fall back to a direct `gh issue edit <N> --repo <owner/repo> --body-file /tmp/gh-pr-eval-<N>/issue-body-corrected.md` from the main loop. If the issue-edit fails, still post the PR review — the verdict is the load-bearing signal and the next resolver run's §4.7 reconciliation respects un-ticks via the same sticky-veto rule whether or not the body itself was updated this time. Surface the issue-edit failure in the review body so the user can re-apply it manually.
 
 ### 12. Run the merge
@@ -772,7 +782,7 @@ Pull the snapshot from data already in hand: the §3 `GATHER_PR` payload (issue/
 | Story PR clean APPROVE → §12a auto-merged, more sibling stories pending | **Forward → `github-issue-resolver`** on the next story in dependency order. Story / Epic / PR / Cleanup lines; Epic progress is e.g. `open (2 of 5 stories closed)`. |
 | Story PR clean APPROVE → §12a auto-merged, *last* sibling story | **Forward → `github-issue-resolver`** on the Epic, in Epic-integration mode. Story / Epic / PR / Cleanup lines; Epic progress is `open (5 of 5 stories closed)`. |
 | Epic integration PR clean APPROVE → §12b merged (merge-commit or squash) | **Terminal.** Epic line, PR line with `merge: merge → main@<sha>` (or `squash → main@<sha>` if §12b chose Squash), Cleanup line. |
-| Any PR, COMMENT verdict (soft-reject) — §7's `comment` action | **Re-route → `github-issue-resolver continue #<N>`.** Issue / PR lines; PR line carries `review: COMMENT (soft-reject)` and `merge: skipped (verdict)`. No Cleanup line. |
+| Any PR, COMMENT verdict (soft-reject) — §7's `comment` action driven by a real COMMENT verdict | **Re-route → `github-issue-resolver continue #<N>`.** Issue / PR lines; PR line carries `state: draft` (§11 flipped it back), `review: COMMENT (soft-reject)`, and `merge: skipped (verdict)`. No Cleanup line. |
 | APPROVE but `mergeStateStatus ∈ {DIRTY, BLOCKED}` → §12c skipped | **Terminal with manual command.** Issue / PR lines (PR line: `merge: skipped (DIRTY)` or `skipped (BLOCKED)`); no Cleanup. The `Next:` action quotes the recommended `gh pr merge` command verbatim and names the blocker; the `Why:` line names what the user needs to do to clear the blocker. |
 | §12b epic-integration "Don't merge yet" choice | **Same shape as the DIRTY/BLOCKED case** — terminal with the recommended `gh pr merge` command. The `Why:` notes the user opted to merge manually. |
 
@@ -842,19 +852,19 @@ Self-authored PRs (the §2 self-approval pre-check that downgraded `--approve` t
 **Why:** the integration PR landed every child story's work on `main` in one merge commit (§12b chose Merge commit, preserving the story squash commits in `main`'s history). The Epic is closed by `Fixes #150`; the pipeline ends here.
 ```
 
-**Soft-reject — re-route to resolver.** §7 produced a `comment` action; the review names the dimension gaps; the resolver continues on the existing branch.
+**Soft-reject — re-route to resolver.** §7 produced a `comment` action driven by a real COMMENT verdict (not a §2 self-approval downgrade); §11's draft-flip ran, so the PR is now back in draft. The review names the dimension gaps; the resolver continues on the existing branch (now back in draft) without re-deadlocking on the §3 draft-PR guard the next time it hands back.
 
 ```
 ## Handoff
 
 **Issue:** #142 — Add CSV export · open · feature · plan: ✓
-**PR:** #287 — Add CSV export (#142) · open · base main · review: COMMENT (soft-reject) · health: ✅ at abc1234 · merge: skipped (verdict)
+**PR:** #287 — Add CSV export (#142) · draft · base main · review: COMMENT (soft-reject) · health: ✅ at abc1234 · merge: skipped (verdict)
 
-**Next:** address the review's gaps in a fresh session — the resolver continues on the existing branch.
+**Next:** address the review's gaps in a fresh session — the resolver continues on the existing branch (now in draft).
 
     /github-issue-resolver continue #287
 
-**Why:** the review cites <N> dimension gaps (acceptance-criterion #3 unaddressed; one plan-locked test missing — see the review comment for the full evidence). The resolver's §10 review loop will address each finding, re-push, and re-trigger evaluation when it's done.
+**Why:** the review cites <N> dimension gaps (acceptance-criterion #3 unaddressed; one plan-locked test missing — see the review comment for the full evidence). §11 flipped the PR back to draft so the resolver's §5 existing-PR check picks it up as in-progress work, not as drift; the resolver's §10 review loop will address each finding, re-push, and (on the §11 *last planned phase shipped* row for multi-phase issues, or directly for single-phase) re-flip to ready before its next forward handoff.
 ```
 
 **APPROVE but merge skipped — terminal with manual command.** The PR earned approval but isn't mergeable yet (DIRTY or BLOCKED), or the user opted to merge later from §12b. Print the recommended `gh pr merge` command verbatim in the fenced block; the user runs it themselves when the blocker clears.
@@ -923,7 +933,8 @@ Detection: `headRefName` matches `epic/<N>-<slug>` AND `baseRefName == main`.
 - Don't use `--request-changes` unless the user explicitly asks for it — `--comment` is the project default for soft rejections.
 - Don't skip the doc-grounding check for features and stories — it's load-bearing for traceability.
 - Don't recommend a strategy the repo doesn't allow — always clamp to the `allow_*` fields.
-- Don't skip the draft-PR guard — evaluating a draft produces a confusing review that may mislead the author.
+- Don't skip the draft-PR guard — evaluating a draft produces a confusing review that may mislead the author. The guard is also the load-bearing half of the handoff contract with `github-issue-resolver`: the resolver flips ready before its forward handoff so this guard doesn't fire on the canonical path; a draft reaching here means in-progress work, not a missed handoff.
+- Don't skip §11's draft-flip on a real COMMENT verdict. Leaving the PR ready after a soft-reject signals "ready for review" on GitHub while the actual signal is "needs more work" — and the resolver's §5 existing-PR check then has to surface it as drift to the user every re-entry. Flip back to draft (`gh pr ready <N> --undo`) so the resolver picks up cleanly. The §2 self-approval downgrade is the exception: that's an APPROVE in COMMENT clothing; the PR stays ready for the manual merge.
 - Don't try to approve a PR that has `reviewDecision == REVIEW_REQUIRED` waiting on a named reviewer unless the user confirms. The approval will post, but it may confuse the pending reviewer.
 - Don't use `--auto` — the repo has `allow_auto_merge: false`.
 - Don't conflate issue-fit and code-quality. Issue-fit (this skill) asks "did the PR deliver what the issue asked for." Code quality (`/review`) asks "is this code well-written." Both are necessary; neither substitutes for the other.

@@ -65,21 +65,21 @@ The next phase ships a comment or runs an operator action, not commits. The reso
 
 ## Forward — multi-phase, last planned phase shipped
 
-Every phase in `## Phases` is ticked in `## Phase tracker`. The PR stays in draft; the evaluator decides whether to mark it ready as part of its DoD check.
+Every phase in `## Phases` is ticked in `## Phase tracker`. **Immediately before emitting this handoff, run `gh pr ready <N> --repo <owner/repo>` to flip the PR draft → ready.** Without that flip, the evaluator's §3 draft-PR guard deadlocks the handoff (transcript: `/tmp/671-resolver.md` + `/tmp/671-evaluator.md`). The PR-line's `state: open` marker below reflects the post-flip state and overrides pr-state.json's pre-flip `isDraft: true` for this rendering.
 
 ```
 ## Handoff
 
 **Issue:** #640 — Spike: Mitigate Gemini thinking-token truncation · open · feature · plan: ✓ (multi-phase: 4 of 4 phases shipped)
-**PR:** #649 — feat(llm): #640 spike harness · draft · base main · review: ✓ at 9f0a112 · health: ✓ at 9f0a112 · merge: not run
+**PR:** #649 — feat(llm): #640 spike harness · open · base main · review: ✓ at 9f0a112 · health: ✓ at 9f0a112 · merge: not run
 
-**Phases:** all 4 planned phases shipped at 9f0a112 (PR remains draft; evaluator gates merge readiness).
+**Phases:** all 4 planned phases shipped at 9f0a112; PR flipped to ready for the evaluator (`gh pr ready 649`).
 
 **Next:** evaluate the PR in a fresh session.
 
     /github-pr-evaluator #649
 
-**Why:** every phase in the plan's `## Phases` has been ticked on the PR's `## Phase tracker`, and each ticked phase's `closes-dod` bullets have been projected onto the issue body's `## Definition of done` as the phases shipped. The evaluator verifies each projected DoD tick against its attributed phase's diff (per-phase commit ranges from the Phase tracker), runs its branch-health gate and review against the plan's locked decisions, un-ticks any bullet whose attributed diff doesn't actually satisfy it (sticky soft-reject), and — on a clean APPROVE — marks the draft PR ready and merges. The resolver never marks a multi-phase PR ready; that decision belongs to the evaluator's per-phase DoD verification.
+**Why:** every phase in the plan's `## Phases` has been ticked on the PR's `## Phase tracker`, and each ticked phase's `closes-dod` bullets have been projected onto the issue body's `## Definition of done` as the phases shipped. The evaluator verifies each projected DoD tick against its attributed phase's diff (per-phase commit ranges from the Phase tracker), runs its branch-health gate and review against the plan's locked decisions, un-ticks any bullet whose attributed diff doesn't actually satisfy it (sticky soft-reject), and — on a clean APPROVE — merges. On a COMMENT (soft-reject) verdict, the evaluator flips the PR back to draft (`github-pr-evaluator` §11) so this resolver can re-enter in continue mode and address the gaps without re-deadlocking on the draft guard.
 ```
 
 ## Forward — Epic integration PR
