@@ -113,13 +113,27 @@ When in doubt: if the phases produce distinct trackable user-facing deliverables
 - **Small, well-understood bug** → a short plan (Approach + Changes + Test plan) is enough; skip the sections that would be empty.
 - **Feature, incomplete feature, story, epic, multi-phase issue** → the full machinery below. These are where a captured, verified plan earns its keep.
 
-## Step 4: Ingest external documentation sources
+## Step 4: Ingest research (the dossier) and external sources
 
-Your training knowledge has a cutoff and the project may depend on framework versions or APIs newer than that. Before researching, ask once:
+Your training knowledge has a cutoff, and the project may depend on framework versions or APIs newer than that. Two things feed this step: a research dossier, if one was posted, and any sources the user hands you directly.
 
-> "Any updated external docs or links I should consult — new framework docs, an API reference, a design spec? Paste URLs or file paths and I'll treat them as authoritative over my own knowledge for the relevant tech."
+**First, ingest the research dossier if it exists.** `github-issue-researcher` posts a durable, cited `<!-- issue-research:v1 -->` comment of current, *fetched* external truth for exactly this purpose. Look it up and stage it to disk — you already have the thread from Step 2, so this is a targeted single-comment fetch, not a re-gather:
 
-Pull what they give you (`WebFetch` for URLs, `Read` for files). When a provided source contradicts your prior knowledge about a library or API, **trust the source** — that's why the user gave it to you. Record which source informed which decision in the plan's `## External sources consulted` section so the resolver and evaluator can see the provenance (and re-check it if the source later changes).
+```bash
+gh api "repos/<owner/repo>/issues/<N>/comments" \
+  --jq 'first(.[] | select(.body | startswith("<!-- issue-research:v1 -->")) | .body) // ""' \
+  > /tmp/gh-planner-<N>/research.md
+```
+
+If `research.md` is non-empty, `Read` it. It carries current guidance *with provenance* — each claim cites a source and a fetch date — and it is **input, not authority**: it informs your `## Doc grounding` and `## Architecture decisions`, but you own every decision. Treat its `## Tensions for the planner to resolve` as questions to settle (from precedent, the docs, or the step-6.5 gate), never as instructions. Record each source it used in the plan's `## External sources consulted` with its fetch date and tier, so the resolver and evaluator see the provenance and can re-check it if the source moves. A dossier finding that contradicts the project docs is a **deviation** (step 6) or a tension you resolve *toward* the docs — the dossier never overrides `docs/constitution.md`.
+
+**Then ask once for anything the dossier didn't cover:**
+
+> "Any updated external docs or links I should consult beyond the research dossier — a newer API reference, a design spec? Paste URLs or file paths and I'll treat them as authoritative over my own knowledge for the relevant tech."
+
+Pull what they give you (`WebFetch` for URLs, `Read` for files), trust the source over stale recall, and record it in `## External sources consulted` alongside the dossier's entries.
+
+**If no dossier exists and the issue clearly turns on current external truth you can't reliably recall** (a dependency/API/version at or past your training cutoff), don't guess — handle it via the knowledge-gap path in Step 5.
 
 ## Step 5: Research and ground the approach
 
@@ -144,6 +158,13 @@ Whichever route you take, the result is the same shape: a manifest of `path:line
 - Identify the concrete symbols, file paths, and signatures the implementation will add or modify — these become the `## Changes` section.
 
 **Every architectural decision in the plan must cite codebase precedent or an `architecture.md` / `architecture-notes.md` section. Every UI decision must cite `ui-design.md` precedent.** A decision with no cited grounding is either a deviation (surface it — step 6) or under-researched (keep digging).
+
+**Knowledge-gap handling (current external truth).** Grounding above is about *internal* precedent — the codebase and docs. When it instead surfaces a gap in *external* truth you can't reliably recall — the current behaviour of a dependency/API at or past your training cutoff, a version-specific default, a deprecation timeline — do not ground the plan on a guess. Match the mechanism to the gap's depth:
+
+- **A single quick fact** → spawn a focused web-research sub-agent inline (`subagent_type: "Explore"` or `"general-purpose"`) with a tight prompt: the exact question, the dependency and its pinned version (from the manifest), and the instruction to answer **only** from a fetched primary source and return the claim with its URL + fetch date — no recall. Fold the verified fact in, cite it in `## External sources consulted`, and continue planning.
+- **Anything broad** — several questions, conflicting sources, or a whole surface you're unsure of → stop and route to `github-issue-researcher`, which gathers and verifies it into a durable, ingestible dossier. Emit the planner→researcher re-route handoff (Step 12) naming the specific ungroundable fact; the user runs `/github-issue-researcher #N — <questions>`, then re-runs you, and Step 4 ingests the refreshed dossier.
+
+This is the same "lock decisions from grounded truth, never a guess" discipline that Step 7.5 enforces for internal decisions, extended to the external facts the plan rests on. A step-7.5 hedge that turns out to be an *external* knowledge gap (not an internal design choice) resolves here — inline fact-check or researcher route — before you consider the Decision gate or a watchpoint.
 
 ## Step 6: Surface deviations before finalising (interactive gate)
 
@@ -444,7 +465,7 @@ Every clean run ends with a single `## Handoff` block — the schema, omission r
 
 This step fires at the end of every clean exit path: after Step 10 (single-issue plan posted), after Step 11 (Epic fan-out complete), and from the trivial-skip branch at Step 3 where the planner declined to author a plan. Revise mode (below) routes through the same step.
 
-The snapshot lines are mechanical — the issue/Epic number and title are already in hand from Step 2's `GATHER_ISSUE`, the plan-comment URL was captured at Step 10, and child-story state for an Epic is from Step 11's `GATHER_EPIC`. The `Why:` line is judgment — describe what the next session will do.
+The snapshot lines are mechanical — the issue/Epic number and title are already in hand from Step 2's `GATHER_ISSUE`, the plan-comment URL was captured at Step 10, and child-story state for an Epic is from Step 11's `GATHER_EPIC`. When Step 4 ingested a research dossier, the `Issue:` / `Story:` line also carries `research: ✓ (<dossier-url>)` (omitted when no dossier exists), per `_shared/handoff-format.md`. The `Why:` line is judgment — describe what the next session will do.
 
 ### Renderings
 
@@ -504,6 +525,20 @@ If the Epic ran but the child stories weren't filed yet (Step 11's "stop after t
     /github-issue-resolver #142
 
 **Why:** this issue is a one-line copy fix — no implementation plan is warranted (the planner's Step 3 scale-to-work judgment). The resolver opens the PR directly.
+```
+
+**Knowledge gap — re-route to the researcher.** When Step 5's grounding hit external truth you couldn't reliably recall and the gap was too broad for an inline fact-check, stop and route to the researcher instead of posting a plan built on a guess. The `Why:` names the specific ungroundable fact so the researcher targets exactly that gap.
+
+```
+## Handoff
+
+**Issue:** #142 — Migrate to <dependency> v<X> · open · feature · research: ✗ · plan: ✗
+
+**Next:** gather and verify the current behaviour the plan depends on, in a fresh session.
+
+    /github-issue-researcher #142 — current supported API for <dependency> v<X>; was the pre-v<X> approach deprecated?
+
+**Why:** the plan turns on <dependency> v<X> behaviour that postdates my training cutoff — planning on recall would lock a guess. The researcher posts a cited dossier; re-run `/github-issue-planner #142` afterward and Step 4 ingests it.
 ```
 
 **Revise mode — plan refreshed.** Same forward shape; the plan URL in the `Issue:` line is the *new* comment URL captured at Step 10 (the stale one was deleted via `delete_marker_id`).

@@ -1,6 +1,6 @@
 # Handoff format — shared reference
 
-The four GitHub-pipeline skills (`github-issue-drafter`, `github-issue-planner`, `github-issue-resolver`, `github-pr-evaluator`) close every clean run with a single **`## Handoff`** block. Each skill runs in its own Claude Code session, so the handoff is the only bridge between sessions — it must read cold and carry a copy-pasteable command for the user to start the next session.
+The five GitHub-pipeline skills (`github-issue-drafter`, `github-issue-researcher`, `github-issue-planner`, `github-issue-resolver`, `github-pr-evaluator`) close every clean run with a single **`## Handoff`** block. Each skill runs in its own Claude Code session, so the handoff is the only bridge between sessions — it must read cold and carry a copy-pasteable command for the user to start the next session.
 
 This file is the single source of truth for the schema, the omission rules, and the state-marker vocabulary. Per-skill renderings (which clean-exit branches a given skill emits, and the exact wording for each) live in that skill's `SKILL.md`.
 
@@ -9,7 +9,7 @@ This file is the single source of truth for the schema, the omission rules, and 
 ```
 ## Handoff
 
-**Issue:** #N — <title> · <state> · <type> · plan: <✓ | ✗ | stale>
+**Issue:** #N — <title> · <state> · <type> · research: <✓ | ✗ | stale> · plan: <✓ | ✗ | stale>
 **PR:** #M — <title> · <state> · base <ref> · review: <verdict | not run> · health: <✅/❌ at <short-sha> | not run> · merge: <strategy → <ref>@<short-sha> | skipped (<reason>) | not run>
 **Cleanup:** <one-line worktree / branch / scratch summary>
 
@@ -28,6 +28,7 @@ The block is always present on a clean exit. Lines are omitted (not blanked, not
   - Single non-Epic issue → `Issue:`.
   - Epic in any role (drafter Epic batch, planner Epic fan-out, evaluator on an Epic integration PR) → `Epic:`. Add a `Stories:` line listing the child stories with their state markers.
   - A story under an Epic (evaluator after a story PR merges, resolver working on a story) → `Story:` for the story plus an `Epic:` line for the parent's progress (e.g. `open (3 of 5 stories closed)`).
+- **`research:`** — the research-dossier marker, placed before `plan:` on the `Issue:` / `Story:` line. Present on the researcher's own clean exits (`✓` dossier posted, `✗` judged nothing-to-research) and carried forward on any later skill's handoff for an issue that has a dossier (e.g. the planner shows `research: ✓` once it has ingested one). **Omitted entirely** on issues that never went through the researcher — so the drafter's renderings, and the planner / resolver / evaluator renderings on dossier-less issues, are unchanged. When the marker carries a URL (the researcher's clean exit), append it in parentheses like `plan:` does.
 - **`PR:`** — omit entirely when no PR exists. Drafter clean exits and the planner's plan-comment-only clean exits skip this line. Resolver clean exits always have a PR. Evaluator clean exits always have a PR.
 - **`Cleanup:`** — evaluator-only, and only after the merge ran (§14's worktree teardown / removal / scratch purge sequence has executed). Omit on the evaluator's no-merge branches (soft-reject, DIRTY/BLOCKED-skip, user-declined merge) and on every other skill's clean exit.
 - **Fenced next-action block** — replaced with the literal `(terminal — no follow-up skill)` for terminal endings (evaluator clean merge of a standard PR, evaluator clean merge of an Epic integration PR). The `Why:` line still appears and explains why the pipeline ends here.
@@ -41,6 +42,7 @@ Use these exact words. Don't invent synonyms.
 |---|---|
 | Issue `state` | `open`, `closed` |
 | Issue `type` | `bug`, `feature`, `incomplete`, `story`, `epic` |
+| Issue `research` | `✓` (dossier posted), `✗` (none / judged not needed), `stale` (posted but superseded by an issue or source change) |
 | Issue `plan` | `✓` (posted), `✗` (none), `stale` (posted but superseded) |
 | PR `state` | `draft`, `open`, `merged`, `closed` |
 | PR `review` | `APPROVE`, `COMMENT (soft-reject)`, `not run` |
@@ -97,11 +99,15 @@ A re-route is a handoff whose `Next:` points at a prior skill — typically:
 
 - resolver → planner (the plan's locked decisions don't survive contact with the code; refresh the plan)
 - resolver → drafter (the issue body fails the resolver's fitness-to-implement audit, or contradicts a doc the resolver can't reconcile)
+- planner → researcher (the plan needs current external truth the model can't reliably recall — a dependency/API/version at or past the training cutoff; gather and verify the research first, then re-run the planner)
+
+(The reverse, researcher → planner, is the *forward* route this pipeline normally takes — research is the planner's input — and follows the standard schema, not these re-route rules.)
 
 The schema does not change. The `Why:` line is the load-bearing piece — it must name the specific evidence so the user (and the prior skill, when re-run) can act without re-investigating:
 
 - Plan re-routes: quote the locked decision verbatim and cite the `file:line` where the contradiction surfaced.
 - Drafter re-routes: quote the body's claim verbatim, name the missing or contradictory symbol, and cite the closest-match `file:line`.
+- Researcher re-routes (planner → researcher): name the specific ungroundable fact verbatim (the dependency/API/version and what's unknown), so the researcher targets exactly that gap rather than re-researching the whole issue.
 
 The resolver does **not** invoke the prior skill via the `Skill` tool on a re-route. The handoff is the only signal; the user runs the revise command in a fresh session. This is intentional: session-per-skill is the architectural choice that lets each skill stay context-clean, and crossing session boundaries silently from inside a skill defeats it.
 
