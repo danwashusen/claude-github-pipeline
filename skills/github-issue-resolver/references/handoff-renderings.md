@@ -16,7 +16,7 @@ The default code-change outcome. For a story PR under an open epic, the `Issue:`
 
 **Next:** evaluate the PR in a fresh session.
 
-    /github-pr-evaluator #287
+    /github-pipeline:github-pr-evaluator #287
 
 **Why:** the evaluator runs the branch-health gate, checks the diff against the issue's acceptance criteria + the plan's locked decisions, posts a formal review, and on a clean APPROVE auto-merges (standard / story PRs) or asks for the merge mode (Epic integration).
 ```
@@ -33,7 +33,7 @@ A code-shipping phase landed on the draft PR; the plan's `## Phases` still lists
 
 **Next:** continue with the next phase in a fresh session.
 
-    /github-issue-resolver #640
+    /github-pipeline:github-issue-resolver #640
 
 **Why:** the plan's `## Phases` declares 4 phases; this run shipped Phase 2 (`harness PR`) onto the draft. Phase 2's `closes-dod` bullets have been projected onto the issue body's `## Definition of done`. The next planned phase is **Phase 2-measurement** (operator run — see the operator-action handoff if it fires next), followed by **Phase 3 — decision write-up**. The PR stays in draft until every phase has shipped and the evaluator runs its DoD check.
 ```
@@ -58,7 +58,7 @@ The next phase ships a comment or runs an operator action, not commits. The reso
 
 **Then:** once the measurement comment is posted, continue with the following phase in a fresh session.
 
-    /github-issue-resolver #640
+    /github-pipeline:github-issue-resolver #640
 
 **Why:** the plan's Phase 2-measurement is `kind: operator` — it ships a per-cell measurement comment on the issue, not PR commits. The resolver can't run the harness for you; once you post the measurement comment, Phase 3 (decision write-up) becomes runnable from the resolver. The `<!-- operator-phase-complete: <N> -->` marker is the next resolver's deterministic signal that the operator phase landed — it ticks the PR's `## Phase tracker` and projects the phase's `closes-dod` onto the issue body's `## Definition of done`. Omitting the marker is fine; the next resolver run will ask via `AskUserQuestion` instead of auto-applying.
 ```
@@ -77,7 +77,7 @@ Every phase in `## Phases` is ticked in `## Phase tracker`. **Immediately before
 
 **Next:** evaluate the PR in a fresh session.
 
-    /github-pr-evaluator #649
+    /github-pipeline:github-pr-evaluator #649
 
 **Why:** every phase in the plan's `## Phases` has been ticked on the PR's `## Phase tracker`, and each ticked phase's `closes-dod` bullets have been projected onto the issue body's `## Definition of done` as the phases shipped. The evaluator verifies each projected DoD tick against its attributed phase's diff (per-phase commit ranges from the Phase tracker), runs its branch-health gate and review against the plan's locked decisions, un-ticks any bullet whose attributed diff doesn't actually satisfy it (sticky soft-reject), and — on a clean APPROVE — merges. On a COMMENT (soft-reject) verdict, the evaluator flips the PR back to draft (`github-pr-evaluator` §11) so this resolver can re-enter in continue mode and address the gaps without re-deadlocking on the draft guard.
 ```
@@ -95,7 +95,7 @@ Same forward direction (→ pr-evaluator), but the `Why:` line calls out the hig
 
 **Next:** evaluate the Epic integration PR in a fresh session.
 
-    /github-pr-evaluator #300
+    /github-pipeline:github-pr-evaluator #300
 
 **Why:** integration PRs land the accumulated diff of every child story onto `main` at once. pr-evaluator's escalation rules fire on `pr_type: epic-integration` — the full canonical test suite runs before merge, the verdict is checked against the epic's `## Definition of done`, and the merge mode is gated (§12b) even on a clean APPROVE.
 ```
@@ -112,12 +112,12 @@ Triggered by §4.6 plan-currency drift or §8 plan-invalidation. The `Why:` line
 
 **Next:** revise the plan in a fresh session — implementation revealed a locked decision is unbuildable.
 
-    /github-issue-planner revise #142
+    /github-pipeline:github-issue-planner revise #142
 
 **Why:** the plan's `## Architecture decisions` line "<quoted decision>" assumed <X>, but `<path:line>` reveals <Y>. The §4.6 plan-currency check failed (alternatively: §8's plan-invalidation gate fired mid-implementation). Refresh the plan against today's surface before resuming. The draft PR stays open; re-run the resolver in continue mode after the plan revise lands.
 ```
 
-If no PR was opened yet (§4.6 fired before §8 started), omit the PR line entirely and the resolver continues with `/github-issue-resolver #142` instead of `continue #287`.
+If no PR was opened yet (§4.6 fired before §8 started), omit the PR line entirely and the resolver continues with `/github-pipeline:github-issue-resolver #142` instead of `continue #287`.
 
 ## Re-route → drafter (fitness audit)
 
@@ -130,7 +130,7 @@ Triggered by §4.5 finding a blocker (typically a body claim that references a s
 
 **Next:** revise the issue body in a fresh session — the §4.5 fitness-to-implement audit found a blocker.
 
-    /github-issue-drafter revise #142
+    /github-pipeline:github-issue-drafter revise #142
 
 **Why:** the body's acceptance criterion "<quoted criterion>" references `<symbol>`, which doesn't exist in the current codebase (closest match: `<symbol>` at `<path:line>`). The criterion needs to be reshaped against today's surface — or the codebase needs a precursor change — before planning can ground in real precedent.
 ```
@@ -146,7 +146,7 @@ Triggered by §6 finding that the issue body directly contradicts a project doc 
 
 **Next:** reshape the issue body in a fresh session — the body contradicts `docs/prd.md`.
 
-    /github-issue-drafter revise #142
+    /github-pipeline:github-issue-drafter revise #142
 
 **Why:** `docs/prd.md` §4 says "entries are immutable after submit"; the issue body proposes an edit-after-submit feature. The user chose `Reshape issue` at the §6 doc-conflict gate. The drafter's revise mode either reshapes the body to fit the PRD or routes the conflict back to the user to decide whether the PRD itself should change.
 ```

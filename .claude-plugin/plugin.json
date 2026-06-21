@@ -1,0 +1,12 @@
+{
+  "name": "github-pipeline",
+  "description": "GitHub issue/PR pipeline — draft, research, plan, resolve, and evaluate issues end-to-end via the gh CLI, with a mechanical github-ops executor sub-agent.",
+  "author": {
+    "name": "Dan Washusen",
+    "email": "dan@reactive.org"
+  },
+  "homepage": "https://github.com/danwashusen/claude-github-pipeline",
+  "repository": "https://github.com/danwashusen/claude-github-pipeline",
+  "license": "MIT",
+  "keywords": ["github", "issues", "pull-requests", "workflow", "gh-cli"]
+}

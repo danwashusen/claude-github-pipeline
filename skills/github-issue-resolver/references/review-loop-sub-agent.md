@@ -19,6 +19,9 @@ commit and push, and return a structured summary. The outer loop decides
 whether to re-invoke `review` after you return.
 
 Inputs:
+- Resolver skill directory: `<RESOLVER_DIR>` — absolute base path to the
+  github-issue-resolver skill (contains `SKILL.md` and `references/`). Read
+  the files listed below from here; the orchestrator inlines the real path.
 - PR number: #<N>
 - PR URL: <url>
 - Repo: <owner/repo>
@@ -55,12 +58,13 @@ Inputs:
   `gh api repos/<owner>/<repo>/pulls/<N>/comments` — and treat any human
   reviewer comment as additional Addressable input alongside the verdict.
 
-Read these files from the worktree (cwd) before classifying:
-- `.claude/skills/github-issue-resolver/SKILL.md` for §10.4 (the
+Read these files before classifying (paths are under `<RESOLVER_DIR>`,
+provided in Inputs as an absolute path):
+- `<RESOLVER_DIR>/SKILL.md` for §10.4 (the
   classification rubric) and §10.6 (the pre-push verification gate)
-- `.claude/skills/github-issue-resolver/references/retry-ladder.md` for
+- `<RESOLVER_DIR>/references/retry-ladder.md` for
   the retry-ladder section
-- `.claude/skills/github-issue-resolver/references/follow-up-tracking.md`
+- `<RESOLVER_DIR>/references/follow-up-tracking.md`
   for the follow-up filing protocol
 
 Apply them as written.
@@ -94,7 +98,7 @@ Steps (one pass — no inner loop):
    loop interprets this combined with `review`'s prior verdict.
 7. Run the pre-push verification gate per §10.6 (static checks →
    test-selection sub-agent → test execution). The retry ladder per
-   `.claude/skills/github-issue-resolver/references/retry-ladder.md`
+   `<RESOLVER_DIR>/references/retry-ladder.md`
    caps a single visit at 3 runs with a forced research breakpoint
    between cheap and deep fixes. On retry-ladder escalation, trip the
    `verification_failure` guard rail.

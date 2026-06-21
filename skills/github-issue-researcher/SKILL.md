@@ -40,7 +40,7 @@ Shape every ask the same way:
 
 This skill runs on a high-effort model, but only the *research judgment* — deriving questions, weighing sources, synthesizing, holding the input-not-authority boundary — is worth that. The judgment-free GitHub I/O (fetching the issue + thread, looking up an existing dossier, posting/editing the comment) does not need it.
 
-Delegate that I/O to the **`github-ops`** sub-agent (`subagent_type: "github-ops"`, pinned to Sonnet + medium effort — spawn it with **no `model` override**). It runs the named operation and returns faithful structured results: `GATHER_ISSUE` and `PERSIST_COMMENT` are the two this skill uses (see `.claude/agents/github-ops.md` for the full contract). It returns issue bodies and threads **verbatim** — never summarized — so every judgment stays yours. Web research does **not** go through `github-ops` — it is the GitHub-I/O executor only; you run `WebSearch`/`WebFetch` (and the `deep-research` escalation) yourself.
+Delegate that I/O to the **`github-ops`** sub-agent (`subagent_type: "github-pipeline:github-ops"`, pinned to Sonnet + medium effort — spawn it with **no `model` override**). It runs the named operation and returns faithful structured results: `GATHER_ISSUE` and `PERSIST_COMMENT` are the two this skill uses (see `${CLAUDE_PLUGIN_ROOT}/agents/github-ops.md` for the full contract). It returns issue bodies and threads **verbatim** — never summarized — so every judgment stays yours. Web research does **not** go through `github-ops` — it is the GitHub-I/O executor only; you run `WebSearch`/`WebFetch` (and the `deep-research` escalation) yourself.
 
 Like the validator, `github-ops` cannot call `AskUserQuestion`. If it hits an ambiguity or a write conflict it returns `DECISION_NEEDED: <…>` and performs no write; surface that to the user and re-dispatch with the answer. You only hand it a `PERSIST_*` after the user has cleared step 5's gate.
 
@@ -53,8 +53,8 @@ Like the validator, `github-ops` cannot call `AskUserQuestion`. If it hits an am
 
 ## Modes
 
-- **Broad** (`/github-issue-researcher #N`) — derive the research questions from the issue + the project's stack, confirm them, gather, synthesize, post the dossier. The default first run.
-- **Targeted** (`/github-issue-researcher #N — <question>`) — the questions are given (typically because the planner hit a specific knowledge gap and routed here). Skip derivation and the confirm gate; gather + validate + update the relevant dossier section; post.
+- **Broad** (`/github-pipeline:github-issue-researcher #N`) — derive the research questions from the issue + the project's stack, confirm them, gather, synthesize, post the dossier. The default first run.
+- **Targeted** (`/github-pipeline:github-issue-researcher #N — <question>`) — the questions are given (typically because the planner hit a specific knowledge gap and routed here). Skip derivation and the confirm gate; gather + validate + update the relevant dossier section; post.
 - **Revise** — an `<!-- issue-research:v1 -->` dossier already exists. Refresh what changed (re-fetch sources that may have moved, add answers to new questions, re-date claims) and delete-and-repost. Don't re-research untouched sections from scratch; show the user a diff.
 
 ## The core loop
@@ -186,7 +186,7 @@ Keep findings tight and attributed. The reader is the planner, who needs *facts 
 
 Before showing the dossier, hand it to an isolated validation sub-agent — the same pattern the planner and drafter use, for the same reason: you synthesized this holding the conversation and your search notes, none of which appear in the posted comment, so you can't tell whether it stands on its own. The sub-agent simulates the planner reading only the dossier + the issue + the project docs.
 
-**Invocation.** Spawn an `Explore` sub-agent with the prompt template at `references/research-validator-prompt.md`, filling the `<<placeholders>>`: the dossier body, `mode`, `issue_number`, `repo_owner`/`repo_name`, `repo_root`, and `dimensions`. It runs **without** the conversation history — that isolation is what makes the check meaningful. It may re-fetch a cited URL to confirm the dossier represents it faithfully.
+**Invocation.** Spawn an `Explore` sub-agent with the prompt template at `${CLAUDE_PLUGIN_ROOT}/skills/github-pipeline:github-issue-researcher/references/research-validator-prompt.md`, filling the `<<placeholders>>`: the dossier body, `mode`, `issue_number`, `repo_owner`/`repo_name`, `repo_root`, and `dimensions`. It runs **without** the conversation history — that isolation is what makes the check meaningful. It may re-fetch a cited URL to confirm the dossier represents it faithfully.
 
 **Dimensions** (defined in the prompt): 1 citation integrity, 2 source credibility, 3 currency, 4 scope discipline (input-not-authority), 5 governing-doc conflict surfaced-not-decided, 6 answer coverage. Pass all six on a normal run.
 
@@ -227,7 +227,7 @@ A user who wants to review before posting can say "research but don't post yet";
 
 ## Step 10: Handoff
 
-End every clean run with a single `## Handoff` block — the schema, omission rules, and state-marker vocabulary live in [`../_shared/handoff-format.md`](../_shared/handoff-format.md). The forward route is to the planner: research is the planner's input.
+End every clean run with a single `## Handoff` block — the schema, omission rules, and state-marker vocabulary live in [`${CLAUDE_PLUGIN_ROOT}/skills/_shared/handoff-format.md`](${CLAUDE_PLUGIN_ROOT}/skills/_shared/handoff-format.md). The forward route is to the planner: research is the planner's input.
 
 **Dossier posted.** Forward to the planner.
 
@@ -238,7 +238,7 @@ End every clean run with a single `## Handoff` block — the schema, omission ru
 
 **Next:** plan the approach in a fresh session; the planner ingests the dossier.
 
-    /github-issue-planner #142
+    /github-pipeline:github-issue-planner #142
 
 **Why:** the dossier captures the current, fetched behaviour of <dependency> v<X> with provenance. The planner grounds its decisions in it and records the sources in its plan's `## External sources consulted`.
 ```
@@ -252,7 +252,7 @@ End every clean run with a single `## Handoff` block — the schema, omission ru
 
 **Next:** plan the approach in a fresh session.
 
-    /github-issue-planner #142
+    /github-pipeline:github-issue-planner #142
 
 **Why:** this issue touches nothing with currency risk — the model's knowledge is sufficient, so no dossier was posted. The planner proceeds directly.
 ```

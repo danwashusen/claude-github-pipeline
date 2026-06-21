@@ -45,9 +45,9 @@ strategy call — is what's worth the expensive model. The judgment-free GitHub 
 is not: fetching the PR + diff + linked issues + prior reviews, the health-cache
 marker lookup, the implementation-plan lookup, and posting the cache comment and
 the final review. Delegate that to the **`github-ops`** sub-agent
-(`subagent_type: "github-ops"`, Sonnet + medium effort — spawn with **no `model`
+(`subagent_type: "github-pipeline:github-ops"`, Sonnet + medium effort — spawn with **no `model`
 override**): `GATHER_PR`, `GATHER_ISSUE`, `PERSIST_COMMENT` (see
-`.claude/agents/github-ops.md`). It returns PR/issue bodies, threads, and the diff
+`${CLAUDE_PLUGIN_ROOT}/agents/github-ops.md`). It returns PR/issue bodies, threads, and the diff
 **verbatim** so the evaluation stays yours.
 
 **What does *not* delegate:** the §2 self-approval pre-check and the §5 branch-
@@ -459,7 +459,7 @@ For each issue in `closingIssuesReferences`, evaluate five dimensions. Write you
 
 **Scope match.** Does the diff change what the issue asked to change, and only that? Drive-by edits unrelated to the issue's stated problem are a flag. Small incidental fixes (typos in touched files, missing `Localizable.xcstrings` entries required by the build) are acceptable if called out in the PR body.
 
-**Acceptance criteria / Definition of done.** For features, stories, and incomplete-feature issues, the DoD check has two paths depending on whether the resolver projected per-phase claims onto the issue body (`github-issue-resolver` §9's "DoD projection rule"). Annotation shapes and parser live in [`_shared/dod-annotations.md`](../_shared/dod-annotations.md) — this skill reads the `closed by ...` ticked forms to drive per-phase verification, and writes the `resolver claimed ... evaluator rejected: ...` sticky-veto un-tick form.
+**Acceptance criteria / Definition of done.** For features, stories, and incomplete-feature issues, the DoD check has two paths depending on whether the resolver projected per-phase claims onto the issue body (`github-issue-resolver` §9's "DoD projection rule"). Annotation shapes and parser live in [`${CLAUDE_PLUGIN_ROOT}/skills/_shared/dod-annotations.md`](${CLAUDE_PLUGIN_ROOT}/skills/_shared/dod-annotations.md) — this skill reads the `closed by ...` ticked forms to drive per-phase verification, and writes the `resolver claimed ... evaluator rejected: ...` sticky-veto un-tick form.
 
 - **Projection annotations present.** When one or more bullets carry a `(closed by phase <N>, commit <short-sha>)` or `(closed by commit <short-sha>)` or `(closed by phase <N>, operator action <ISO-date>)` suffix, **verify each projected tick against its attributed phase's diff** rather than re-judging the whole PR diff per bullet. Use the per-phase verification mechanics below to extract the commit range for each phase from the PR's `## Phase tracker`. A clear semantic mismatch between the attributed diff and the bullet's text → un-tick + soft-reject per "Un-tick on rejection" below. Soft / partial mismatches → flag in the review body but leave the tick in place. A bullet currently unticked and missing an annotation is a gap the resolver should have closed — flag as a planner/resolver coverage gap (the bullet's owning phase per the plan's `closes-dod` is the right place for the user to look). A bullet carrying the predecessor annotation form (`previously claimed by phase <N>, commit <sha> on closed PR #<M>`) — written by the planner during a HARD-path "Start fresh" revise — is treated like a regular `- [ ]`: it's a bullet the current PR still needs to satisfy. The historical attribution is metadata only; the verification target is the current PR's diff.
 - **No projection annotations** (the issue predates the projection mechanism, was resolved by an older resolver, the projection failed to land and reconciliation hasn't fired, or the issue carries `## Acceptance criteria` rather than a checkbox DoD). Fall back to the historical behaviour: walk every item in `## Acceptance criteria` or `## Definition of done` and judge it against the diff and test files. An unchecked item that the diff doesn't address is a gap. This is the backwards-compatible path; do not insist on projection annotations as a precondition for evaluation.
@@ -772,7 +772,7 @@ Then end the run with the Step 15 Handoff block (next section) — the handoff i
 
 ### 15. Handoff
 
-Every clean run of the evaluator ends with a single `## Handoff` block — the schema, omission rules, and state-marker vocabulary live in [`../_shared/handoff-format.md`](../_shared/handoff-format.md). The handoff is the only bridge between this session and the next; it replaces §14's previously-inlined bullet-list summary. Don't emit both.
+Every clean run of the evaluator ends with a single `## Handoff` block — the schema, omission rules, and state-marker vocabulary live in [`${CLAUDE_PLUGIN_ROOT}/skills/_shared/handoff-format.md`](${CLAUDE_PLUGIN_ROOT}/skills/_shared/handoff-format.md). The handoff is the only bridge between this session and the next; it replaces §14's previously-inlined bullet-list summary. Don't emit both.
 
 Pull the snapshot from data already in hand: the §3 `GATHER_PR` payload (issue/PR numbers, titles, base ref), the §5.5 / §5.6 cache-comment results (`HEALTH_OK`, `<short-sha>`, `TIER`), §7's verdict (`APPROVE` or `COMMENT`), §12's merge command and outcome (target ref + resulting commit SHA when the merge ran, the failure reason when it didn't), and §14's worktree teardown / removal results. The `Why:` line is judgment — describe what the next session does, or for terminal endings, why the pipeline ends here.
 
@@ -818,7 +818,7 @@ Self-authored PRs (the §2 self-approval pre-check that downgraded `--approve` t
 
 **Next:** start the next story in dependency order in a fresh session.
 
-    /github-issue-resolver #152
+    /github-pipeline:github-issue-resolver #152
 
 **Why:** story #151 merged into the epic branch; the Epic checkbox is ticked. Story #152 (next in sequence) has its plan posted and is ready for implementation.
 ```
@@ -835,7 +835,7 @@ Self-authored PRs (the §2 self-approval pre-check that downgraded `--approve` t
 
 **Next:** open the Epic integration PR in a fresh session.
 
-    /github-issue-resolver #150
+    /github-pipeline:github-issue-resolver #150
 
 **Why:** every child story is closed and on `epic/150-chat-ux`. The resolver in Epic mode opens the integration PR against `main`; pr-evaluator will then escalate to the full canonical test suite (per the `pr_type: epic-integration` rule) before recommending the merge mode.
 ```
@@ -864,7 +864,7 @@ Self-authored PRs (the §2 self-approval pre-check that downgraded `--approve` t
 
 **Next:** address the review's gaps in a fresh session — the resolver continues on the existing branch (now in draft).
 
-    /github-issue-resolver continue #287
+    /github-pipeline:github-issue-resolver continue #287
 
 **Why:** the review cites <N> dimension gaps (acceptance-criterion #3 unaddressed; one plan-locked test missing — see the review comment for the full evidence). §11 flipped the PR back to draft so the resolver's §5 existing-PR check picks it up as in-progress work, not as drift; the resolver's §10 review loop will address each finding, re-push, and (on the §11 *last planned phase shipped* row for multi-phase issues, or directly for single-phase) re-flip to ready before its next forward handoff.
 ```

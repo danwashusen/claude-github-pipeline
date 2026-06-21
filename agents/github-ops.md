@@ -79,7 +79,7 @@ improvising.
    it and will not re-query to double-check.
 
 7. **Use the bundled scripts. Do not roll your own.** Every op that has a
-   script in `.claude/agents/scripts/` MUST be invoked through that
+   script in `${CLAUDE_PLUGIN_ROOT}/scripts/` MUST be invoked through that
    script. Today:
    - `gh-gather.sh` for `GATHER_ISSUE`
    - `gh-pr-gather.sh` for `GATHER_PR`
@@ -174,7 +174,7 @@ the script exits 2 with `EMPTY_BODY_FILE: <path>` on stderr and you return
 ### `GATHER_ISSUE(issue, repo, marker_prefix?, scratch_dir?)`
 Per rule 7, the **only** execution path is the bundled script:
 ```bash
-.claude/agents/scripts/gh-gather.sh <issue> <repo> "<marker_prefix>" <scratch_dir>
+${CLAUDE_PLUGIN_ROOT}/scripts/gh-gather.sh <issue> <repo> "<marker_prefix>" <scratch_dir>
 ```
 Do not issue your own `gh issue view` / `gh api` / `gh pr list` calls — the
 script bundles them, applies the rule-8 byte-threshold routing, and writes
@@ -225,7 +225,7 @@ reconnaissance — do not opine on sequencing or scope.
 ### `GATHER_PR(pr, repo, marker_prefix?, scratch_dir?, include_diff?, include_line_comments?)`
 Per rule 7, the **only** execution path is the bundled script:
 ```bash
-.claude/agents/scripts/gh-pr-gather.sh <pr> <repo> "<marker_prefix>" \
+${CLAUDE_PLUGIN_ROOT}/scripts/gh-pr-gather.sh <pr> <repo> "<marker_prefix>" \
   <scratch_dir> [--with-diff] [--with-line-comments]
 ```
 Do not issue your own `gh pr view` / `gh pr diff` / `gh api .../pulls/.../comments`
@@ -366,7 +366,7 @@ bytes already; you don't reproduce them. Per rule 7, the only execution
 path is the bundled script:
 
 ```bash
-.claude/agents/scripts/gh-persist.sh comment <repo> <target> <id> <body_path> \
+${CLAUDE_PLUGIN_ROOT}/scripts/gh-persist.sh comment <repo> <target> <id> <body_path> \
   [--review-action approve|comment|request-changes] \
   [--delete-marker-id <id>]
 ```
@@ -400,7 +400,7 @@ because there is no tmp file written here at all.
   staged verbatim replacement body). Per rule 7, the only execution path
   is the bundled script:
   ```bash
-  .claude/agents/scripts/gh-persist.sh edit-body <repo> <issue> <body_path>
+  ${CLAUDE_PLUGIN_ROOT}/scripts/gh-persist.sh edit-body <repo> <issue> <body_path>
   ```
   The script's leading `test -s "$body_path"` is the empty-body gate.
   On a missing or zero-byte file it exits 2 with `EMPTY_BODY_FILE: <path>`
@@ -423,7 +423,7 @@ because there is no tmp file written here at all.
   `<scratch_dir>/issue-<N>-pointer-body.md`, then post via the same
   script:
   ```bash
-  .claude/agents/scripts/gh-persist.sh edit-body <repo> <issue> \
+  ${CLAUDE_PLUGIN_ROOT}/scripts/gh-persist.sh edit-body <repo> <issue> \
     <scratch_dir>/issue-<N>-pointer-body.md
   ```
   Pointer mode is the one PERSIST flow where this agent legitimately
@@ -451,7 +451,7 @@ dispatching and passes the absolute path as `body_path`. Per rule 7, the
 only execution path is the bundled script:
 
 ```bash
-.claude/agents/scripts/gh-persist.sh create <repo> <body_path> \
+${CLAUDE_PLUGIN_ROOT}/scripts/gh-persist.sh create <repo> <body_path> \
   --title "<title>" [--label <L>] [--label <L>] ...
 ```
 

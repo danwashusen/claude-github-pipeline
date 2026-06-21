@@ -46,10 +46,10 @@ The judgment in this skill — classification, PRD-tension calls, drafting, appl
 review findings — is what's worth a high-effort model. The judgment-free I/O is
 not: fetching an issue + thread for revise mode, reading referenced issues,
 checking templates/labels, and the `gh issue create` / `gh issue edit` writes.
-Delegate that to the **`github-ops`** sub-agent (`subagent_type: "github-ops"`,
+Delegate that to the **`github-ops`** sub-agent (`subagent_type: "github-pipeline:github-ops"`,
 Sonnet + medium effort — spawn with **no `model` override**). It runs a named
 operation and returns faithful structured results: `GATHER_ISSUE`,
-`PERSIST_BODY`, `PERSIST_CREATE` — see `.claude/agents/github-ops.md`. It
+`PERSIST_BODY`, `PERSIST_CREATE` — see `${CLAUDE_PLUGIN_ROOT}/agents/github-ops.md`. It
 returns bodies and threads **verbatim** so the classification and
 latest-direction judgment stay yours. Codebase searches for coherence checks
 do **not** go through `github-ops` (it's the GitHub-I/O executor) — use
@@ -484,13 +484,13 @@ You drafted the issue while holding informal feedback, prior turns, the user's t
 
 ### Invocation contract
 
-Invoke an `Explore` sub-agent with the prompt template at `references/issue-reviewer-prompt.md`. Inline the draft into the prompt and pass the structural inputs:
+Invoke an `Explore` sub-agent with the prompt template at `${CLAUDE_PLUGIN_ROOT}/skills/github-pipeline:github-issue-drafter/references/issue-reviewer-prompt.md`. Inline the draft into the prompt and pass the structural inputs:
 
 ```
 Agent({
   subagent_type: "Explore",
   description: "Review GitHub issue draft for coherence",
-  prompt: <contents of references/issue-reviewer-prompt.md
+  prompt: <contents of ${CLAUDE_PLUGIN_ROOT}/skills/github-pipeline:github-issue-drafter/references/issue-reviewer-prompt.md
            with placeholders filled: draft, mode, repo_root,
            dimensions, related_drafts>
 })
@@ -601,7 +601,7 @@ Then ask via `AskUserQuestion` (header "File issue?"): **File it** — create th
 
 ## Step 7: File the issue
 
-Once the user has approved at step 6, hand the create to `github-ops` by passing the staged path — not by re-inlining the body. `github-ops` shells out to `.claude/agents/scripts/gh-persist.sh create`, whose very first action is `test -s <body_path>`; if your staging step succeeded, the file is non-empty and the script posts those exact bytes. If you forgot to stage or the file is somehow empty, `github-ops` returns `DECISION_NEEDED: PERSIST_CREATE called with empty body file at <path>` and posts nothing — re-write `draft_path` and re-dispatch with the same path.
+Once the user has approved at step 6, hand the create to `github-ops` by passing the staged path — not by re-inlining the body. `github-ops` shells out to `${CLAUDE_PLUGIN_ROOT}/scripts/gh-persist.sh create`, whose very first action is `test -s <body_path>`; if your staging step succeeded, the file is non-empty and the script posts those exact bytes. If you forgot to stage or the file is somehow empty, `github-ops` returns `DECISION_NEEDED: PERSIST_CREATE called with empty body file at <path>` and posts nothing — re-write `draft_path` and re-dispatch with the same path.
 
 > `PERSIST_CREATE(repo=<owner/repo>, title=<approved title>, body_path=<draft_path>, labels=[<label>, …])`
 
@@ -624,7 +624,7 @@ If any `PERSIST_CREATE` fails mid-batch, stop and report exactly which issues we
 
 ## Step 8: Handoff
 
-Every clean run of this skill ends with a single `## Handoff` block — the schema, omission rules, and state-marker vocabulary live in [`../_shared/handoff-format.md`](../_shared/handoff-format.md). The handoff is the only bridge between this session and the next: the user will copy the fenced command into a fresh Claude Code session to continue. Don't skip it on a clean exit; don't add anything after it.
+Every clean run of this skill ends with a single `## Handoff` block — the schema, omission rules, and state-marker vocabulary live in [`${CLAUDE_PLUGIN_ROOT}/skills/_shared/handoff-format.md`](${CLAUDE_PLUGIN_ROOT}/skills/_shared/handoff-format.md). The handoff is the only bridge between this session and the next: the user will copy the fenced command into a fresh Claude Code session to continue. Don't skip it on a clean exit; don't add anything after it.
 
 Pull the snapshot from data you already have — the `PERSIST_CREATE` result(s) carry the issue/Epic/story numbers and titles; `plan: ✗` is correct because the drafter never authors plans. The `Why:` line is yours to write — describe what the next session will do (don't repeat the schema).
 
@@ -639,7 +639,7 @@ Pull the snapshot from data you already have — the `PERSIST_CREATE` result(s) 
 
 **Next:** plan the implementation in a fresh session.
 
-    /github-issue-planner #142
+    /github-pipeline:github-issue-planner #142
 
 **Why:** the planner will research the approach, ground it in docs + codebase precedent, post a verified `<!-- implementation-plan:v1 -->` comment, and lock the decisions the resolver needs.
 ```
@@ -654,7 +654,7 @@ Pull the snapshot from data you already have — the `PERSIST_CREATE` result(s) 
 
 **Next:** plan the Epic in a fresh session — the planner will fan out and plan each child story.
 
-    /github-issue-planner #150
+    /github-pipeline:github-issue-planner #150
 
 **Why:** the planner posts the Epic-level plan first, then plans each child story and sequences them. Don't run the resolver on any story until its plan is posted.
 ```
@@ -672,7 +672,7 @@ Pull the snapshot from data you already have — the `PERSIST_CREATE` result(s) 
 
 **Next:** refresh the plan in a fresh session — this revision materially changed scope.
 
-    /github-issue-planner revise #142
+    /github-pipeline:github-issue-planner revise #142
 
 **Why:** the revise reshaped the acceptance criteria (added bulk-export and removed PDF). The implementation plan from <date> assumed the previous shape; re-running the planner in revise mode rebuilds the plan against the new body before any code work resumes.
 ```

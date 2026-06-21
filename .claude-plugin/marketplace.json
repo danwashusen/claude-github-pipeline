@@ -1,0 +1,14 @@
+{
+  "name": "reactive-tools",
+  "owner": {
+    "name": "Dan Washusen",
+    "email": "dan@reactive.org"
+  },
+  "plugins": [
+    {
+      "name": "github-pipeline",
+      "source": "./",
+      "description": "GitHub issue/PR pipeline — draft, research, plan, resolve, and evaluate issues end-to-end via the gh CLI, with a mechanical github-ops executor sub-agent."
+    }
+  ]
+}
