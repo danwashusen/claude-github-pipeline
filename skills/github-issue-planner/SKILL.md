@@ -13,32 +13,7 @@ The plan's job is to **lock the decisions** an implementer would otherwise have 
 
 ### Asking the user a decision
 
-When you need a decision from the user — an approval gate, a choice between named
-paths, or a confirmation before a GitHub write — ask it through the `AskUserQuestion`
-tool, not as freeform prose. The tool renders the same multiple-choice card every
-time, so the user pattern-matches the decision at a glance instead of re-parsing a
-differently-worded question on each run.
-
-Shape every ask the same way:
-- One decision per question. `header` ≤ 12 chars (e.g. "Post plan", "Merge mode").
-  The `question` field carries the full prose you'd otherwise have typed.
-- 2–4 options. Each `label` is the action in imperative form ("Post it", "Squash",
-  "Approve"); each `description` says what that choice does and its consequence.
-- The tool always appends an "Other" free-text choice, so don't pad to four options
-  with a catch-all — leave room for the user to type a custom answer.
-- `multiSelect: true` only when the choices genuinely combine (rare here).
-- Ask once, act on the answer. Don't re-state the same gate in prose afterwards.
-
-When the candidate paths aren't fixed (e.g. "which of these issues did you mean?"),
-generate the options dynamically from what you found. When the answer is inherently
-open-ended (e.g. "paste any external doc URLs"), a prose ask is still fine — don't
-force it into options.
-
-`AskUserQuestion` is not available inside a sub-agent spawned via the `Agent` tool.
-Any gate that arises during sub-agent work must be surfaced by the sub-agent
-returning a structured "decision needed" signal to this main loop, which asks the
-user and re-dispatches with the answer. Never tell a sub-agent to call
-`AskUserQuestion` itself.
+When you need a decision from the user — an approval gate, a disambiguation, or a confirmation before a GitHub write — follow the shared contract in [`../_shared/asking-the-user.md`](../_shared/asking-the-user.md): one decision per `AskUserQuestion` card, `header` ≤ 12 chars, imperative `label`s with consequence-bearing `description`s, options generated dynamically when the candidates aren't fixed, and the rule that a sub-agent never calls `AskUserQuestion` itself but surfaces a "decision needed" signal back to this main loop. That file is the single source of truth for every gate in this skill.
 
 ### Delegating mechanical work to `github-ops`
 
@@ -53,7 +28,7 @@ Delegate that I/O to the **`github-ops`** sub-agent (`subagent_type: "github-pip
 pinned to Sonnet + medium effort — spawn it with **no `model` override** so the
 pinned tier applies). It runs the named operation and returns faithful structured
 results: `GATHER_ISSUE`, `GATHER_EPIC`, `PERSIST_COMMENT`, `PERSIST_BODY`
-(see `${CLAUDE_PLUGIN_ROOT}/agents/github-ops.md` for the contract). It returns issue
+(see `../../agents/github-ops.md` for the contract). It returns issue
 bodies and threads **verbatim** — never summarized — so every judgment below
 stays yours. Codebase-precedent searches do **not** go through `github-ops`
 — it's for GitHub I/O only; see Step 5 for how those are run.
@@ -204,80 +179,7 @@ Use this schema verbatim — the resolver and pr-evaluator parse these section h
 
 `<plan-ref>@<short-sha>` records the integration target the plan was built against, giving the resolver's step-4.6 currency check both the branch and the commit: `origin/main` for a regular issue, or the **full, un-truncated** `epic/<N>-<slug>` branch for an epic or a story under an epic. Don't elide the branch to `epic/<N>-…` — it is also the resolver's PR base.
 
-```
-<!-- implementation-plan:v1 -->
-**Implementation plan** — #<N> <title> — planned <ISO-8601 UTC> at `<plan-ref>@<short-sha>`
-
-## Approach
-<1–3 paragraphs: the strategy and why it's the right shape for this codebase>
-
-## Doc grounding
-<the PRD / architecture / architecture-notes / ui-design / constitution sections that
-constrain this, with §refs — the citations, not a restatement of the approach>
-
-## Architecture decisions
-- <decision> — <rationale> — [precedent: `path/to/File.swift:NN` | architecture.md §X | architecture-notes §Y | user decision <date> | DEVIATION (agreed <date>) → see Deviations]
-- ...
-
-## UI decisions                  (omit if no UI surface)
-- <decision> — [precedent: ui-design §X | DEVIATION (agreed <date>)]
-
-## Changes (file-level)
-- `path/to/File.swift` — <what changes; new/modified types, methods, signatures; layer>
-- ...
-
-## Data model / schema impact     (omit if none)
-- <new/changed @Model fields, relationships, migration considerations per constitution §8>
-
-## Test plan
-- Unit: <suites to add/extend, per constitution §5 coverage targets>
-- UI: <XCUITest flows, accessibility identifiers, USE_MOCK_LLM expectations>
-
-## Phases                         (multi-phase issues only — omit for single-phase; epics use the dedicated ## Story breakdown / ## Integration strategy sections)
-1. **Phase 1 — <short title>**
-   - kind: code-shipping | operator | decision-only
-   - ships: PR commits to the issue branch | comment on the issue | external follow-up issue
-   - closes-dod: <1-indexed DoD-bullet refs against the issue body — `(none)` when this phase only enables later phases (substrate, harness infrastructure)>
-   - deliverable: <one-line concrete artifact this phase produces — quoted verbatim by the resolver's handoff for operator/decision-only phases>
-   - depends-on: <earlier phase numbers, or `(none)` for the head phase>
-2. **Phase 2 — <short title>**
-   - kind: ...
-   - ...
-
-## External sources consulted     (omit if none)
-- <url or path> — <what decision it informed>
-
-## Deviations from project docs    (omit if none)
-- <what deviates> — <why> — agreed with user <date>
-
-## Risks & watchpoints
-- <runtime invariant the resolver must preserve while implementing
-  (e.g. "keep the trigger gated on the empty-chat invariant so the
-  worst case is a single no-op, not a spurious bubble")>
-- <false-positive trap from a shim or dual-emit, with the named
-  retirement condition: a target that still resolves through a
-  temporary shim or dual-emit, so a green run is not proof the change
-  is complete — name the shim, the file/line, and the condition that
-  retires it (e.g. "`chatSurface.history` still emits via a shim until
-  #563; a test using it passes today but the migration is incomplete
-  — assert against the new identifier")>
-- <edge-case behaviour the plan has *already decided* how to handle,
-  surfaced so the resolver doesn't second-guess it (e.g. "cross-day
-  completion: no special handling needed because the Finalise button
-  isn't surfaced on a past day anyway")>
-
-**This section does not carry open design decisions.** Phrasings that
-defer a choice ("Resolver picks", "either approach is acceptable",
-"option A or option B", "TBD", "recommend", "could", "might",
-"consider", "evaluate during implementation", "implementer decides")
-do not belong here. They go in `## Architecture decisions` (pinned
-from precedent — see step 7.5) or surface to the user via the
-Decision gate at step 6.5 — never here.
-
-_Authored by `github-issue-planner` and verified in <N> review pass(es). The resolver treats
-the decisions above as binding; a plan-invalidating discovery routes back here in revise mode.
-Re-run this skill to revise — do not hand-edit._
-```
+**See [`references/plan-schema.md`](references/plan-schema.md) for the verbatim `<!-- implementation-plan:v1 -->` schema** — the ordered section headings the resolver and pr-evaluator parse (`## Approach`, `## Doc grounding`, `## Architecture decisions`, `## UI decisions`, `## Changes`, `## Data model / schema impact`, `## Test plan`, `## Phases`, `## External sources consulted`, `## Deviations from project docs`, `## Risks & watchpoints`) and the closing provenance footer. Use it verbatim; omit optional sections when empty, never pad. The `## Phases` per-key semantics (`kind` / `ships` / `closes-dod` / `deliverable` / `depends-on`) are detailed below.
 
 For a **multi-phase issue** (Step 3's classification), the `## Phases` section above is **load-bearing for the resolver and the evaluator** — its structured bullets are how both consumers route work without re-parsing prose. Required keys per phase:
 
@@ -352,7 +254,7 @@ For each hit, choose **one** of the following — in this priority order, do not
 
 Before showing the plan to the user, hand it to an isolated review sub-agent — the same pattern the drafter and resolver use, for the same reason: you drafted the plan holding the conversation, the user's framing, and your research notes, none of which appear in the posted comment. From that vantage you can't tell whether the plan stands on its own. The sub-agent simulates a fresh implementer reading only the plan + the issue + the docs + the codebase. If it can't tell whether the plan is executable from those inputs alone, neither can the resolver.
 
-**Invocation.** Spawn an `Explore` sub-agent with the prompt template at `${CLAUDE_PLUGIN_ROOT}/skills/github-pipeline:github-issue-planner/references/plan-reviewer-prompt.md`, filling the `<<placeholders>>`: the plan body, `mode` (`draft` or `revise <N>`), `issue_number`, `repo_owner`/`repo_name`, `repo_root`, `plan_ref` (the git ref the plan was built against — `origin/main`, or the epic branch for a story under an open epic), `dimensions`, `external_sources`, and `sibling_plans` (for an epic, each sibling story's plan). The sub-agent runs **without** the conversation history — that isolation is what makes the review meaningful.
+**Invocation.** Spawn an `Explore` sub-agent with the prompt template at `references/plan-reviewer-prompt.md`, filling the `<<placeholders>>`: the plan body, `mode` (`draft` or `revise <N>`), `issue_number`, `repo_owner`/`repo_name`, `repo_root`, `plan_ref` (the git ref the plan was built against — `origin/main`, or the epic branch for a story under an open epic), `dimensions`, `external_sources`, and `sibling_plans` (for an epic, each sibling story's plan). The sub-agent runs **without** the conversation history — that isolation is what makes the review meaningful.
 
 **Dimensions.** Seven, defined in the prompt. Pass the subset that applies:
 
@@ -372,7 +274,7 @@ Dimensions: 1 doc/constitution coherence, 2 codebase coherence, 3 goal coherence
 - At least one phase is `kind: code-shipping`. A plan with only `operator` / `decision-only` phases doesn't need this skill — it's a discussion, not an implementation; flag as BLOCKER and route back to the user to reclassify.
 - Each `operator` / `decision-only` phase's `deliverable` reads as actionable prose a human can execute without re-deriving context (the resolver quotes it verbatim into the user-facing handoff). A `deliverable: "the measurement run"` is too vague — BLOCKER; `deliverable: "run ./scripts/spike-640.sh, post the per-cell table from build/spike-640-*.log to #640"` is correct.
 
-Pass the dimensions list to the reviewer prompt as the `<<dimensions>>` placeholder. When you add Dimension 7 to the call, also update `${CLAUDE_PLUGIN_ROOT}/skills/github-pipeline:github-issue-planner/references/plan-reviewer-prompt.md` so its `## Dimensions` section defines what 7 checks (the bullets above are the spec) and its `Dimensions to check` line accepts the value — the prompt currently enumerates `{1, 2, 3, 4, 5, 6}` and would treat `7` as out-of-set otherwise.
+Pass the dimensions list to the reviewer prompt as the `<<dimensions>>` placeholder. When you add Dimension 7 to the call, also update `references/plan-reviewer-prompt.md` so its `## Dimensions` section defines what 7 checks (the bullets above are the spec) and its `Dimensions to check` line accepts the value — the prompt currently enumerates `{1, 2, 3, 4, 5, 6}` and would treat `7` as out-of-set otherwise.
 
 **Loop control** — same shape as the drafter/resolver loops:
 
@@ -463,107 +365,19 @@ When the target is an **epic**:
 
 ## Step 12: Handoff
 
-Every clean run ends with a single `## Handoff` block — the schema, omission rules, and state-marker vocabulary live in [`${CLAUDE_PLUGIN_ROOT}/skills/_shared/handoff-format.md`](${CLAUDE_PLUGIN_ROOT}/skills/_shared/handoff-format.md). The handoff bridges this session and the next: the user will copy the fenced command into a fresh Claude Code session. Don't skip it on a clean exit; don't add anything after it.
+Every clean run ends with a single `## Handoff` block — the schema, omission rules, and state-marker vocabulary live in [`../_shared/handoff-format.md`](../_shared/handoff-format.md). The handoff bridges this session and the next: the user will copy the fenced command into a fresh Claude Code session. Don't skip it on a clean exit; don't add anything after it.
 
 This step fires at the end of every clean exit path: after Step 10 (single-issue plan posted), after Step 11 (Epic fan-out complete), and from the trivial-skip branch at Step 3 where the planner declined to author a plan. Revise mode (below) routes through the same step.
 
-The snapshot lines are mechanical — the issue/Epic number and title are already in hand from Step 2's `GATHER_ISSUE`, the plan-comment URL was captured at Step 10, and child-story state for an Epic is from Step 11's `GATHER_EPIC`. When Step 4 ingested a research dossier, the `Issue:` / `Story:` line also carries `research: ✓ (<dossier-url>)` (omitted when no dossier exists), per `${CLAUDE_PLUGIN_ROOT}/skills/_shared/handoff-format.md`. The `Why:` line is judgment — describe what the next session will do.
+The snapshot lines are mechanical — the issue/Epic number and title are already in hand from Step 2's `GATHER_ISSUE`, the plan-comment URL was captured at Step 10, and child-story state for an Epic is from Step 11's `GATHER_EPIC`. When Step 4 ingested a research dossier, the `Issue:` / `Story:` line also carries `research: ✓ (<dossier-url>)` (omitted when no dossier exists), per `../_shared/handoff-format.md`. The `Why:` line is judgment — describe what the next session will do.
 
-### Renderings
-
-**Single-issue plan posted.** Forward to the resolver.
-
-```
-## Handoff
-
-**Issue:** #142 — Add CSV export · open · feature · plan: ✓ (https://github.com/owner/repo/issues/142#issuecomment-XXXXX)
-
-**Next:** implement the plan in a fresh session.
-
-    /github-pipeline:github-issue-resolver #142
-
-**Why:** the plan locks architecture, file-level changes, layer assignments, and test strategy. The resolver executes against it and opens the PR; if implementation reveals a locked decision is wrong, it will re-route back here in revise mode.
-```
-
-**Epic plan + all child story plans posted.** Forward to the resolver on the first story in dependency order. The Epic's `## Story breakdown` section names the order (top-to-bottom); pick the head of it.
-
-```
-## Handoff
-
-**Epic:** #150 — Chat & session UX polish · open · epic · plan: ✓
-**Stories:** #151 ✓, #152 ✓, #153 ✓, #154 ✓, #155 ✓ (5 plans posted, sequenced)
-
-**Next:** start the first story in dependency order in a fresh session.
-
-    /github-pipeline:github-issue-resolver #151
-
-**Why:** stories build on each other in the order planned (#151 → #152 → #153 → #154 → #155). The resolver will open a PR targeting the `epic/150-chat-ux` integration branch.
-```
-
-If the Epic ran but the child stories weren't filed yet (Step 11's "stop after the epic-level plan" branch), the next step is the drafter — that's a forward route to file the stories, then the user re-runs the planner on the Epic:
-
-```
-## Handoff
-
-**Epic:** #150 — Chat & session UX polish · open · epic · plan: ✓ (https://github.com/owner/repo/issues/150#issuecomment-XXXXX)
-**Stories:** plain bullets (not yet filed as issues)
-
-**Next:** file the child stories in a fresh session, then re-run the planner on the Epic.
-
-    /github-pipeline:github-issue-drafter
-
-**Why:** the planner doesn't file issues — that's the drafter's job. Once the stories are filed (each with the `**Epic:** #150` backlink), re-run `/github-pipeline:github-issue-planner #150` and Step 11 will fan out and plan each story.
-```
-
-**Trivial change — planner declined to author a plan.** Forward straight to the resolver.
-
-```
-## Handoff
-
-**Issue:** #142 — Fix typo in onboarding copy · open · bug · plan: ✗
-
-**Next:** implement the fix in a fresh session.
-
-    /github-pipeline:github-issue-resolver #142
-
-**Why:** this issue is a one-line copy fix — no implementation plan is warranted (the planner's Step 3 scale-to-work judgment). The resolver opens the PR directly.
-```
-
-**Knowledge gap — re-route to the researcher.** When Step 5's grounding hit external truth you couldn't reliably recall and the gap was too broad for an inline fact-check, stop and route to the researcher instead of posting a plan built on a guess. The `Why:` names the specific ungroundable fact so the researcher targets exactly that gap.
-
-```
-## Handoff
-
-**Issue:** #142 — Migrate to <dependency> v<X> · open · feature · research: ✗ · plan: ✗
-
-**Next:** gather and verify the current behaviour the plan depends on, in a fresh session.
-
-    /github-pipeline:github-issue-researcher #142 — current supported API for <dependency> v<X>; was the pre-v<X> approach deprecated?
-
-**Why:** the plan turns on <dependency> v<X> behaviour that postdates my training cutoff — planning on recall would lock a guess. The researcher posts a cited dossier; re-run `/github-pipeline:github-issue-planner #142` afterward and Step 4 ingests it.
-```
-
-**Revise mode — plan refreshed.** Same forward shape; the plan URL in the `Issue:` line is the *new* comment URL captured at Step 10 (the stale one was deleted via `delete_marker_id`).
-
-```
-## Handoff
-
-**Issue:** #142 — Add CSV export · open · feature · plan: ✓ (https://github.com/owner/repo/issues/142#issuecomment-YYYYY)
-
-**Next:** resume implementation in a fresh session.
-
-    /github-pipeline:github-issue-resolver continue #287
-
-**Why:** the plan was refreshed against today's codebase (the `<X>` symbol the previous plan named was renamed to `<Y>` at `<path:line>`). PR #287 is still open on the same branch; the resolver continues from there with the updated locked decisions.
-```
-
-If no PR exists yet (the resolver hasn't started), drop the `continue #287` and use `/github-pipeline:github-issue-resolver #142` instead.
+**See [`references/handoff-renderings.md`](references/handoff-renderings.md)** for the worked `## Handoff` shapes the planner emits — single-issue plan posted, Epic + all story plans posted, Epic plan with stories not yet filed (re-route to the drafter), trivial change (no plan), knowledge-gap re-route to the researcher, and revise-mode refreshed. Each carries the closed-set state-marker vocabulary from [`../_shared/handoff-format.md`](../_shared/handoff-format.md); fill the snapshot from the data Step 12 lists above.
 
 ## Revise mode
 
 Triggered when a plan comment already exists (step 2) or the user asks to update/refresh a plan. Plans go stale: the codebase moves, the issue body gets revised, external docs change, the comment thread settles on a new direction. This mode refreshes the plan against today's reality.
 
-When the issue already has work in flight (a draft PR with shipped phases on its `## Phase tracker`), revising the plan can also disturb already-projected DoD ticks on the issue body (see `github-issue-resolver` §9's "DoD projection rule" and [`${CLAUDE_PLUGIN_ROOT}/skills/_shared/dod-annotations.md`](${CLAUDE_PLUGIN_ROOT}/skills/_shared/dod-annotations.md) for the projection contract). The planner is the deliberate owner of the reconciliation between the old plan, the new plan, and the body's ticks — see "Re-plan reconciliation" below.
+When the issue already has work in flight (a draft PR with shipped phases on its `## Phase tracker`), revising the plan can also disturb already-projected DoD ticks on the issue body (see `github-issue-resolver` §9's "DoD projection rule" and [`../_shared/dod-annotations.md`](../_shared/dod-annotations.md) for the projection contract). The planner is the deliberate owner of the reconciliation between the old plan, the new plan, and the body's ticks — see "Re-plan reconciliation" below.
 
 1. **Fetch the existing plan + downstream state.** Fetch the existing plan comment (step 2) and the issue + thread (note the plan's recorded SHA). Also check whether a draft PR exists for this issue (`gh pr list --search "linked:#<N>" --json number,state,isDraft,body,headRefName`) — if so, fetch its body and parse the `## Phase tracker`. Fetch the issue body to capture the current state of its `## Definition of done` annotations. Hold all four (old plan, issue body, PR body+tracker, captured annotations) in working context for the diff.
 2. **Identify what changed since the plan was written** — re-walk the thread for newer decisions, re-grep the codebase for symbols the plan names that may have drifted, re-read any external sources.
@@ -575,74 +389,7 @@ When the issue already has work in flight (a draft PR with shipped phases on its
 
 ## Re-plan reconciliation
 
-When step 4 above runs against an issue with a draft PR that has shipped phases, the body's `## Definition of done` may already carry projected ticks attributed to phases of the **old** plan (e.g. `- [x] <text> (closed by phase 2, commit abc1234)`). Annotation shapes and parser are in [`${CLAUDE_PLUGIN_ROOT}/skills/_shared/dod-annotations.md`](${CLAUDE_PLUGIN_ROOT}/skills/_shared/dod-annotations.md). The planner is responsible for reconciling those projections against the new plan; the user is engaged at step 9's confirm gate to see what's about to change.
-
-### SOFT vs HARD classification
-
-LLM judgment, bounded by structural rules:
-
-**Always HARD:**
-
-- A code-shipping phase in the old plan whose entry is ticked in the PR's `## Phase tracker` (i.e. shipped) has its `ships`, `deliverable`, or `kind` field changed in the new plan.
-- The old plan's `## Architecture decisions` block has a decision reversed in the new plan **and** that decision is reflected in a shipped phase's code (extract the shipped phase's diff per the recipe in `github-pr-evaluator` §6's "Per-phase verification mechanics" and reason about whether the diff embodies the decision).
-- A code-shipping phase that's ticked in the PR's `## Phase tracker` is removed entirely from the new plan.
-- The issue body's `## Definition of done` had a top-level bullet's text edited (between old plan run and new plan run) **and** that bullet was ticked under the old plan. Detect by comparing the old plan's recorded DoD-bullet count + indexes against the current body's count + text.
-
-**Always SOFT:**
-
-- Only `closes-dod` indexes changed in the new plan (no other structural changes).
-- Only un-shipped phases changed (forward-looking only).
-- Only doc-grounding text was tweaked.
-- New phases added beyond what's shipped.
-
-**Judgment call (LLM reasoning + surface uncertainty):**
-
-- `## Changes` block text edits — does the existing diff still match the new wording? Read the shipped phase's diff and reason about it. When uncertain, lean HARD.
-- DoD bullet wording adjustments without structural change — is the new wording a refinement of the old, or a meaningful shift? Lean HARD.
-
-When the classification is ambiguous, lean HARD and let the user override at step 9's three-way confirm — surprising visible progress regression on a SOFT misclassification is worse than offering "Start fresh" on a borderline-SOFT case the user can decline.
-
-### SOFT-path body reconciliation
-
-Walk the captured body annotations and the new plan's `closes-dod` mappings together:
-
-- **Unchanged attribution** (annotation says phase X, new plan's phase X still claims this bullet index) → no edit needed.
-- **Reassignment, new phase hasn't shipped** (annotation says phase X, new plan's phase Y claims this bullet; Y not in the PR's ticked Phase tracker) → un-tick to `- [ ] <text> (resolver claimed phase X, commit <sha>; evaluator rejected: re-plan reassigned to phase Y, awaiting its ship)`. Reusing the evaluator-rejection annotation shape (per `${CLAUDE_PLUGIN_ROOT}/skills/_shared/dod-annotations.md`) is intentional: the resolver's projection logic already respects this as a sticky veto, so the bullet won't be re-ticked on the next resolver run until phase Y actually ships.
-- **Reassignment, new phase has shipped** (annotation says phase X, new plan's phase Y claims this bullet; Y is ticked in the PR's Phase tracker) → re-attribute, leave ticked: `- [x] <text> (closed by phase Y, commit <Y-sha>)`. Both phases' diffs exist; the new plan says Y owns this bullet; no visible regression.
-- **Phase removed/renumbered** (annotation says phase X, no phase in the new plan has that number) → un-tick to `- [ ] <text> (resolver claimed phase X, commit <sha>; evaluator rejected: re-plan removed phase X — needs re-verification)`. Same sticky-veto reuse as above.
-- **Orphaned bullet** (no phase in the new plan's `closes-dod` claims this bullet index) → un-tick with the same orphan annotation; surface as a Dimension-7 violation in the new plan's verify loop (the new plan should have caught this — it's a re-plan bug).
-- **Evaluator-rejected bullet** (annotation form `- [ ] ... evaluator rejected: ...`) → preserve verbatim. Surface to the user at the step 9 confirm so they see the rejection alongside the diff and can confirm the new plan addresses it. **Do not auto-clear the rejection annotation** even when the new plan reassigns the bullet to a different phase — the rejection is evidence the prior code didn't satisfy the bullet, and the user needs to make the call on whether the new plan's approach will.
-
-The reconciled body is staged to `/tmp/gh-planner-<N>/issue-body-reconciled.md` and applied via `gh issue edit <N> --repo <owner/repo> --body-file /tmp/gh-planner-<N>/issue-body-reconciled.md` after the user confirms at step 9. Use the same `github-ops` `PERSIST_BODY` route the pointer-line step (step 10) uses if available — fall back to a direct `gh issue edit` otherwise.
-
-### HARD-path: Start fresh
-
-When the user picks **Start fresh (recommended)** at step 9's three-way confirm:
-
-1. **Close the existing PR with a re-plan note.**
-   ```bash
-   gh pr close <PR#> --repo <owner/repo> --comment "Re-plan superseded this PR. See updated plan at <new-plan-comment-url>. A new branch and PR will open at the next \`/github-pipeline:github-issue-resolver #<N>\` run."
-   ```
-2. **Un-tick the issue body's DoD bullets** that were ticked under the old plan. Each gets the predecessor annotation (per `${CLAUDE_PLUGIN_ROOT}/skills/_shared/dod-annotations.md`):
-   ```
-   - [ ] <text> (previously claimed by phase X, commit <sha> on closed PR #<M>)
-   ```
-   Bullets that were already `- [ ]` are unchanged. Bullets carrying an evaluator-rejection annotation get their annotation rewritten to the predecessor form — the closed PR makes the rejection no longer load-bearing. Stage the reconciled body to `/tmp/gh-planner-<N>/issue-body-reconciled.md` and apply.
-3. **Add a `## Predecessor` section to the new plan comment.** Insert immediately after `## Approach`:
-   ```
-   ## Predecessor
-
-   This plan supersedes a prior plan that drove PR #<closed-PR> (closed <YYYY-MM-DD>) after a HARD re-plan. The closed PR's branch (`<branch-name>`) is preserved for audit and should be deleted by the user after the new PR lands. The brief reason for starting fresh: <one-line rationale from the user or the planner's classification>.
-   ```
-4. **Leave the closed PR's branch in place.** Do not delete it. The reminder in the `## Predecessor` section is the user's cue to clean up after the new PR lands.
-
-The resolver's existing fresh-PR path (§9) handles the next step: on the next `/github-pipeline:github-issue-resolver #<N>` invocation, the resolver sees no open PR, detects the closed predecessor PR + branch via `gh pr list --state closed --search "<issue-number>" --json number,headRefName`, computes the next `-vN` branch suffix (`<issue>-<slug>-v2`, `-v3`, …), opens a fresh PR on that branch, and mirrors the `## Predecessor` section into the PR body. See the resolver's §9 "Fresh-PR branch detection on re-entry" for the branch-suffix logic.
-
-### Worked examples
-
-*SOFT — closes-dod reshuffle:* old plan's Phase 1 has `closes-dod: 1, 3`; new plan's Phase 1 has `closes-dod: 1` and a new Phase 4 has `closes-dod: 3`. Phase 1 already shipped at commit `abc1234`. The body's bullet 3 currently reads `- [x] Document the export format (closed by phase 1, commit abc1234)`. Phase 4 hasn't shipped. SOFT-path reconciliation un-ticks bullet 3 to `- [ ] Document the export format (resolver claimed phase 1, commit abc1234; evaluator rejected: re-plan reassigned to phase 4, awaiting its ship)`. When Phase 4 ships, the resolver's projection re-attributes to phase 4.
-
-*HARD — shipped phase's `ships` changed:* old plan's Phase 1 says `ships: PR commits implementing a service-layer abstraction`; user re-plans because the architecture decided otherwise. New plan's Phase 1 says `ships: PR commits implementing protocol-based dependency injection`. Phase 1 already shipped at commit `abc1234`. The shipped diff doesn't match the new `ships` field. Planner classifies HARD, recommends Start fresh. On Start fresh: PR #287 closes with re-plan note, body's three ticked DoD bullets become `- [ ] <text> (previously claimed by phase 1, commit abc1234 on closed PR #287)`, new plan's `## Predecessor` section names PR #287 + branch `142-add-csv-export` + reminder to delete. Next resolver run opens PR on branch `142-add-csv-export-v2`.
+**See [`references/revise-reconciliation.md`](references/revise-reconciliation.md)** for the full re-plan reconciliation procedure — the SOFT vs HARD classification rules, the SOFT-path body-annotation reconciliation, the HARD-path "Start fresh" sequence (close the PR, predecessor-annotate the DoD bullets, add a `## Predecessor` section), and two worked examples. Annotation shapes and the parser are in [`../_shared/dod-annotations.md`](../_shared/dod-annotations.md).
 
 ## Common pitfalls
 

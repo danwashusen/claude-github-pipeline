@@ -13,32 +13,7 @@ This skill is the first stage of a pipeline: it files the issue; `github-issue-p
 
 ### Asking the user a decision
 
-When you need a decision from the user — an approval gate, a choice between named
-paths, or a confirmation before a GitHub write — ask it through the `AskUserQuestion`
-tool, not as freeform prose. The tool renders the same multiple-choice card every
-time, so the user pattern-matches the decision at a glance instead of re-parsing a
-differently-worded question on each run.
-
-Shape every ask the same way:
-- One decision per question. `header` ≤ 12 chars (e.g. "Post plan", "Merge mode").
-  The `question` field carries the full prose you'd otherwise have typed.
-- 2–4 options. Each `label` is the action in imperative form ("Post it", "Squash",
-  "Approve"); each `description` says what that choice does and its consequence.
-- The tool always appends an "Other" free-text choice, so don't pad to four options
-  with a catch-all — leave room for the user to type a custom answer.
-- `multiSelect: true` only when the choices genuinely combine (rare here).
-- Ask once, act on the answer. Don't re-state the same gate in prose afterwards.
-
-When the candidate paths aren't fixed (e.g. "which of these issues did you mean?"),
-generate the options dynamically from what you found. When the answer is inherently
-open-ended (e.g. "paste any external doc URLs"), a prose ask is still fine — don't
-force it into options.
-
-`AskUserQuestion` is not available inside a sub-agent spawned via the `Agent` tool.
-Any gate that arises during sub-agent work must be surfaced by the sub-agent
-returning a structured "decision needed" signal to this main loop, which asks the
-user and re-dispatches with the answer. Never tell a sub-agent to call
-`AskUserQuestion` itself.
+When you need a decision from the user — an approval gate, a disambiguation, or a confirmation before a GitHub write — follow the shared contract in [`../_shared/asking-the-user.md`](../_shared/asking-the-user.md): one decision per `AskUserQuestion` card, `header` ≤ 12 chars, imperative `label`s with consequence-bearing `description`s, options generated dynamically when the candidates aren't fixed, and the rule that a sub-agent never calls `AskUserQuestion` itself but surfaces a "decision needed" signal back to this main loop. That file is the single source of truth for every gate in this skill.
 
 ### Delegating mechanical work to `github-ops`
 
@@ -49,7 +24,7 @@ checking templates/labels, and the `gh issue create` / `gh issue edit` writes.
 Delegate that to the **`github-ops`** sub-agent (`subagent_type: "github-pipeline:github-ops"`,
 Sonnet + medium effort — spawn with **no `model` override**). It runs a named
 operation and returns faithful structured results: `GATHER_ISSUE`,
-`PERSIST_BODY`, `PERSIST_CREATE` — see `${CLAUDE_PLUGIN_ROOT}/agents/github-ops.md`. It
+`PERSIST_BODY`, `PERSIST_CREATE` — see `../../agents/github-ops.md`. It
 returns bodies and threads **verbatim** so the classification and
 latest-direction judgment stay yours. Codebase searches for coherence checks
 do **not** go through `github-ops` (it's the GitHub-I/O executor) — use
@@ -340,124 +315,7 @@ Drop the `[Bug]`/`[Incomplete]` prefix if the repo uses labels for type (most do
 
 ### Built-in templates (use only if repo has no template)
 
-**Bug template:**
-
-```markdown
-## Description
-<one-paragraph summary of the bug>
-
-## Steps to reproduce
-1. <step>
-2. <step>
-3. <step>
-
-## Expected behavior
-<what should happen>
-
-## Actual behavior
-<what actually happens, including any error messages>
-
-## Environment
-- <OS / browser / version / etc., if relevant>
-
-## Related issues
-<only if user referenced other issues — see "Detecting related issues" above. Omit section if none.>
-
-## Additional context
-<screenshots, logs, anything else — omit section if none>
-```
-
-**Incomplete feature template:**
-
-```markdown
-## What exists today
-<what currently works>
-
-## What's missing
-<the specific gap>
-
-## Definition of done
-- [ ] <criterion>
-- [ ] <criterion>
-
-## Context
-<why this was left incomplete, if known>
-
-## Related issues
-<only if user referenced other issues. Omit section if none.>
-```
-
-**New feature template (user story):**
-
-```markdown
-## User story
-As a **<persona>**, I want **<capability>** so that **<benefit>**.
-
-## Background
-<why this matters — the underlying motivation>
-
-## Acceptance criteria
-- [ ] <criterion>
-- [ ] <criterion>
-
-## Related issues
-<only if user referenced other issues. Omit section if none.>
-```
-
-**Epic template:**
-
-```markdown
-## Goal
-<one paragraph: what this epic delivers, what problem it solves>
-
-## Background
-<why now — what prompted this work; reference PRD/architecture sections where relevant>
-
-## Stories
-- [ ] <Story 1 title>
-- [ ] <Story 2 title>
-
-## Definition of done
-- [ ] All stories above are closed
-- [ ] <any epic-level acceptance bar, e.g. "5 UI flows green in CI">
-
-## Related issues
-<only if user referenced other issues. Omit section if none.>
-
-## PRD impact
-<only if applicable. Omit otherwise.>
-```
-
-**Story template:**
-
-```markdown
-**Epic:** #<epic-#> — <Epic title>
-
-## What exists today
-<what currently works in this area, and what limitation prompted this story>
-
-## What's missing
-<the specific gap this story closes; reference architecture/PRD sections where relevant>
-
-## Definition of done
-- [ ] <criterion>
-- [ ] <criterion>
-
-## Context
-<optional — dependencies, constraints, why this was deferred>
-
-## Related issues
-<only if user referenced other issues. Omit section if none.>
-```
-
-**About the "Out of scope" section:** Omit it by default. Only include it when one of these is true:
-
-1. **The user explicitly excluded something** — e.g., "but I don't want to deal with X right now," "let's not bother with Y." Capture what they said, don't extrapolate.
-2. **The title or capability is genuinely ambiguous about something a reader would reasonably assume is included.** For example, a feature titled "Add export to PDF" might reasonably make a reader assume bulk export is included; if it's not, that's worth calling out. The bar is high — only flag this when the ambiguity is real, not speculative.
-
-Default to omitting. Acceptance criteria already define what's in scope; don't pad the issue with speculative exclusions. Inventing out-of-scope items the user never mentioned is a form of hallucination — resist it.
-
-If you find yourself wanting to write "Out of scope" but can't point to either trigger above, leave it out.
+These are a fallback — prefer the repo's own issue template when one exists (Step 2). **See [`references/issue-templates.md`](references/issue-templates.md)** for the built-in Bug, Incomplete-feature, New-feature (user-story), Epic, and Story body templates, plus the rule for when to include an `## Out of scope` section (omit by default; only on an explicit user exclusion or a genuine scope ambiguity).
 
 ### Labels and priority
 
@@ -484,13 +342,13 @@ You drafted the issue while holding informal feedback, prior turns, the user's t
 
 ### Invocation contract
 
-Invoke an `Explore` sub-agent with the prompt template at `${CLAUDE_PLUGIN_ROOT}/skills/github-pipeline:github-issue-drafter/references/issue-reviewer-prompt.md`. Inline the draft into the prompt and pass the structural inputs:
+Invoke an `Explore` sub-agent with the prompt template at `references/issue-reviewer-prompt.md`. Inline the draft into the prompt and pass the structural inputs:
 
 ```
 Agent({
   subagent_type: "Explore",
   description: "Review GitHub issue draft for coherence",
-  prompt: <contents of ${CLAUDE_PLUGIN_ROOT}/skills/github-pipeline:github-issue-drafter/references/issue-reviewer-prompt.md
+  prompt: <contents of references/issue-reviewer-prompt.md
            with placeholders filled: draft, mode, repo_root,
            dimensions, related_drafts>
 })
@@ -624,60 +482,11 @@ If any `PERSIST_CREATE` fails mid-batch, stop and report exactly which issues we
 
 ## Step 8: Handoff
 
-Every clean run of this skill ends with a single `## Handoff` block — the schema, omission rules, and state-marker vocabulary live in [`${CLAUDE_PLUGIN_ROOT}/skills/_shared/handoff-format.md`](${CLAUDE_PLUGIN_ROOT}/skills/_shared/handoff-format.md). The handoff is the only bridge between this session and the next: the user will copy the fenced command into a fresh Claude Code session to continue. Don't skip it on a clean exit; don't add anything after it.
+Every clean run of this skill ends with a single `## Handoff` block — the schema, omission rules, and state-marker vocabulary live in [`../_shared/handoff-format.md`](../_shared/handoff-format.md). The handoff is the only bridge between this session and the next: the user will copy the fenced command into a fresh Claude Code session to continue. Don't skip it on a clean exit; don't add anything after it.
 
 Pull the snapshot from data you already have — the `PERSIST_CREATE` result(s) carry the issue/Epic/story numbers and titles; `plan: ✗` is correct because the drafter never authors plans. The `Why:` line is yours to write — describe what the next session will do (don't repeat the schema).
 
-### Renderings
-
-**Single issue filed (the common case).** Forward to the planner.
-
-```
-## Handoff
-
-**Issue:** #142 — Add CSV export · open · feature · plan: ✗
-
-**Next:** plan the implementation in a fresh session.
-
-    /github-pipeline:github-issue-planner #142
-
-**Why:** the planner will research the approach, ground it in docs + codebase precedent, post a verified `<!-- implementation-plan:v1 -->` comment, and lock the decisions the resolver needs.
-```
-
-**Epic batch filed.** Forward to the planner on the Epic — the planner's own fan-out plans each child story under its `## Stories` list and sequences them.
-
-```
-## Handoff
-
-**Epic:** #150 — Chat & session UX polish · open · epic · plan: ✗
-**Stories:** #151, #152, #153, #154, #155 (5 filed, dependency-ordered)
-
-**Next:** plan the Epic in a fresh session — the planner will fan out and plan each child story.
-
-    /github-pipeline:github-issue-planner #150
-
-**Why:** the planner posts the Epic-level plan first, then plans each child story and sequences them. Don't run the resolver on any story until its plan is posted.
-```
-
-**Revise mode (single issue or Epic).** What's next depends on whether a plan already exists for this issue and whether the revise materially changed scope, acceptance criteria, or the contracts the plan was built against (Step R6 already flags this — re-use that judgment for the handoff):
-
-- **No plan exists yet** (`plan: ✗`) → forward to the planner to author one. Same shape as the first rendering above.
-- **Plan exists and the revise was material** → the plan is now `stale`; forward to the planner in revise mode to refresh it.
-- **Plan exists and the revise was cosmetic** (typo fix, link tidy, untouched contracts) → the plan stays current. Either the issue already has a PR in flight (terminal — issue and plan and PR are aligned, nothing for a follow-up skill to do here) or no work has started yet and the user can run the resolver when ready.
-
-```
-## Handoff
-
-**Issue:** #142 — Add CSV export · open · feature · plan: stale
-
-**Next:** refresh the plan in a fresh session — this revision materially changed scope.
-
-    /github-pipeline:github-issue-planner revise #142
-
-**Why:** the revise reshaped the acceptance criteria (added bulk-export and removed PDF). The implementation plan from <date> assumed the previous shape; re-running the planner in revise mode rebuilds the plan against the new body before any code work resumes.
-```
-
-For an Epic revise that re-ordered or merged child stories (dimension-5 / dimension-7 surfacing during R-special-case), the `Why:` line cites the specific bullet change so the planner's re-audit can ground in evidence.
+**See [`references/handoff-renderings.md`](references/handoff-renderings.md)** for the worked `## Handoff` shapes the drafter emits — single issue filed (forward to the planner), Epic batch filed (forward to the planner), and revise-mode (forward to author a plan, stale-refresh, or terminal — per whether a plan exists and whether the revise was material). Each carries the closed-set state-marker vocabulary from [`../_shared/handoff-format.md`](../_shared/handoff-format.md); fill the snapshot from the data Step 8 lists above.
 
 ## Handling edge cases
 

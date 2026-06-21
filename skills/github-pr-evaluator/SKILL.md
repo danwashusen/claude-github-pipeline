@@ -11,32 +11,7 @@ Evaluate whether a PR actually delivers what its origin issue asked for, post a 
 
 ### Asking the user a decision
 
-When you need a decision from the user — an approval gate, a choice between named
-paths, or a confirmation before a GitHub write — ask it through the `AskUserQuestion`
-tool, not as freeform prose. The tool renders the same multiple-choice card every
-time, so the user pattern-matches the decision at a glance instead of re-parsing a
-differently-worded question on each run.
-
-Shape every ask the same way:
-- One decision per question. `header` ≤ 12 chars (e.g. "Post plan", "Merge mode").
-  The `question` field carries the full prose you'd otherwise have typed.
-- 2–4 options. Each `label` is the action in imperative form ("Post it", "Squash",
-  "Approve"); each `description` says what that choice does and its consequence.
-- The tool always appends an "Other" free-text choice, so don't pad to four options
-  with a catch-all — leave room for the user to type a custom answer.
-- `multiSelect: true` only when the choices genuinely combine (rare here).
-- Ask once, act on the answer. Don't re-state the same gate in prose afterwards.
-
-When the candidate paths aren't fixed (e.g. "which of these issues did you mean?"),
-generate the options dynamically from what you found. When the answer is inherently
-open-ended (e.g. "paste any external doc URLs"), a prose ask is still fine — don't
-force it into options.
-
-`AskUserQuestion` is not available inside a sub-agent spawned via the `Agent` tool.
-Any gate that arises during sub-agent work must be surfaced by the sub-agent
-returning a structured "decision needed" signal to this main loop, which asks the
-user and re-dispatches with the answer. Never tell a sub-agent to call
-`AskUserQuestion` itself.
+When you need a decision from the user — an approval gate, a disambiguation, or a confirmation before a GitHub write — follow the shared contract in [`../_shared/asking-the-user.md`](../_shared/asking-the-user.md): one decision per `AskUserQuestion` card, `header` ≤ 12 chars, imperative `label`s with consequence-bearing `description`s, options generated dynamically when the candidates aren't fixed, and the rule that a sub-agent never calls `AskUserQuestion` itself but surfaces a "decision needed" signal back to this main loop. That file is the single source of truth for every gate in this skill.
 
 ### Delegating mechanical work to `github-ops`
 
@@ -47,7 +22,7 @@ marker lookup, the implementation-plan lookup, and posting the cache comment and
 the final review. Delegate that to the **`github-ops`** sub-agent
 (`subagent_type: "github-pipeline:github-ops"`, Sonnet + medium effort — spawn with **no `model`
 override**): `GATHER_PR`, `GATHER_ISSUE`, `PERSIST_COMMENT` (see
-`${CLAUDE_PLUGIN_ROOT}/agents/github-ops.md`). It returns PR/issue bodies, threads, and the diff
+`../../agents/github-ops.md`). It returns PR/issue bodies, threads, and the diff
 **verbatim** so the evaluation stays yours.
 
 **What does *not* delegate:** the §2 self-approval pre-check and the §5 branch-
@@ -265,117 +240,7 @@ Determine the PR type from data already in memory (per the "If the PR is a story
 
 Collect the PR's GitHub labels from the step-3 fetch (`labels` array). If any label name matches an entry in the `pr-evaluator-escalation-labels` block, set `escalation_label_matched: <label-name>`; otherwise empty.
 
-Spawn the sub-agent with this prompt template (substitute the placeholders at call time):
-
-```
-You are selecting which test suites to run for a Claude Code github-pr-evaluator
-gate against an open PR. Your output drives the next test command; the rest of the
-workflow does not see your reasoning, so be explicit in your rationale.
-
-Inputs:
-- Worktree path: <absolute path to .worktrees/<branch>>
-- PR base branch (diff base): <baseRefName>
-- PR HEAD SHA: <headRefOid>
-- PR type: <regular | story | epic-integration>
-- Escalation label matched (if any): <label name, or empty>
-- Test-target config (verbatim from the project's COMMANDS.md / CLAUDE.md):
-  <contents of the <!-- pr-evaluator-test-target --> block>
-
-Escalation rules — apply in this order, BEFORE running heuristics:
-
-1. If PR type is `epic-integration` → return the full-suite command from the
-   config's `full-suite-command` line. The whole point of an epic-integration
-   PR is verifying that all child stories integrate cleanly against `main` —
-   targeted selection on the merged diff would defeat the purpose of this gate.
-2. If an escalation label matched → return the full-suite command. The user has
-   explicitly asked for the canonical run on this PR.
-
-Otherwise, apply the heuristics below.
-
-Steps for the heuristic path:
-
-1. Compute the diff: `git diff origin/<base>...HEAD` from the worktree (where
-   <base> is the PR base branch from the inputs above). Read both file paths
-   and hunk contents — don't decide based on paths alone. If empty, return
-   COMMAND: (none) and a one-line rationale.
-2. List each declared target's directory: `ls <target>/` for each target.
-3. Apply these heuristics in order, building a union of suite identifiers
-   across all declared targets:
-   a. Direct filename mapping per the target's `naming` rule.
-   b. Test files modified directly → include their suite.
-   c. Symbol references — identify symbols introduced, modified, removed, or
-      renamed in the diff (types, functions, accessibility identifiers, error
-      cases, string-catalog keys). For renames, search both old and new names.
-      `grep -l` across each target's directory; include any test file that
-      mentions any matching symbol.
-   d. `@testable import` tracking — a test file that imports a sub-module
-      touched by the diff is a candidate even if no explicit symbol matches.
-4. Apply per-target widening rules from the config:
-   - Helpers-fallback triggers when a test-side helper changes.
-   - Broad-change-fallback triggers when the diff changes a widely-referenced
-     type (>5 test files mention it), a persistence-model schema, generated
-     config, or any change you cannot narrow with confidence.
-   - If a target declares a fallback as `none`, do not widen for that target.
-5. UI blast-radius exploration. Name/symbol proximity is fine for unit tests
-   but a poor proxy for UI tests, because UI tests are integration tests that
-   transit shared view-tree state. A small diff in a high-fanout view (the
-   running app's root, a top-level navigation container, a view that gates
-   the rest of the UI behind a sheet) can break unrelated UI tests, and
-   step 3's symbol-grep won't catch it. Before finalising the UI test set,
-   do a focused exploration pass:
-
-   a. For each modified Swift file under the project's source tree, decide
-      whether it is a View. A View is anything declaring `: View` or whose
-      name matches the project's view-naming convention (e.g. `*View.swift`).
-
-   b. For each modified View, trace its consumers: `grep -rln "<TypeName>("`
-      across the source tree (excluding tests). Build a small list of "Views
-      that use this View." If any consumer has UI tests (by symbol grep or
-      name proximity), those UI tests are candidates regardless of whether
-      they reference the diff directly.
-
-   c. Treat any of these as broad UI impact and widen the UI selection to
-      the per-target broad-change-fallback (or, if that is `none`, to the
-      union of every UI test file that transits the affected view-tree
-      surface):
-
-      - The diff modifies the app entry point (`@main`) or the top-level
-        body composition reachable from it.
-      - The diff modifies a View instantiated in another View's `body`, and
-        that other View is reached by existing UI tests.
-      - The diff adds, removes, or modifies a presentation modifier on a
-        root-reachable View — `.sheet`, `.fullScreenCover`, `.alert`,
-        `.confirmationDialog`, `.popover`, `.overlay`. These insert global
-        UI surface that intercepts unrelated tests.
-      - The diff changes `@Environment` or `.environment(...)` injection
-        at or near the app root, or modifies launch-environment reading or
-        initial-state gating logic.
-
-   d. When uncertain about a UI file's blast radius, widen rather than
-      narrow. The targeted-selection win on UI is bounded (UI tests are
-      already expensive per case); the cost of merging a root-view
-      regression masquerading as a leaf change is the entire next baseline,
-      plus the diagnostic cost. The asymmetry strongly favours widening.
-
-   You decide how deep to read. Stop when you can name the affected surface
-   confidently or when further reads aren't changing the test set; widen
-   rather than continue exploring.
-6. Pure-docs / comment-only diffs → COMMAND: (none).
-
-Output exactly two sections, in this order, with these literal headers:
-
-COMMAND:
-<single shell command using the wrapper from the config plus -only-testing
-flags for each selected suite, OR the full-suite-command from the config when
-an escalation rule fired, OR one of the per-target fallback commands, OR the
-literal string `(none)` if zero suites selected>
-
-RATIONALE:
-<one or two sentences. If an escalation rule fired, name it explicitly:
-"Escalation: epic-integration PR → full-suite-command." or "Escalation: PR
-label `full-suite-required` matched → full-suite-command." Otherwise name
-the selected suites and the heuristic that produced them.>
-```
+**See [`references/test-selection-sub-agent.md`](references/test-selection-sub-agent.md) for the full prompt template** — substitute the worktree path, PR base branch, HEAD SHA, `pr_type`, the matched escalation label (if any), and the `<!-- pr-evaluator-test-target -->` block contents at dispatch. It applies the escalation rules (epic-integration or escalation-label → full suite) before the heuristic path (diff-driven suite selection plus the UI blast-radius widening pass), and returns exactly two sections with the literal headers `COMMAND:` and `RATIONALE:`.
 
 The step-5 exploration pass is the heart of the selection's safety against root-view regressions: a small diff in a high-fanout view can break unrelated UI tests, and name proximity won't catch it. Trust the sub-agent to decide how deep to read; widening is the correct default when blast radius is uncertain. The full `RATIONALE:` is also written into the cache comment in §5.6, so post-mortems can audit *why* a given run was targeted vs. full.
 
@@ -459,7 +324,7 @@ For each issue in `closingIssuesReferences`, evaluate five dimensions. Write you
 
 **Scope match.** Does the diff change what the issue asked to change, and only that? Drive-by edits unrelated to the issue's stated problem are a flag. Small incidental fixes (typos in touched files, missing `Localizable.xcstrings` entries required by the build) are acceptable if called out in the PR body.
 
-**Acceptance criteria / Definition of done.** For features, stories, and incomplete-feature issues, the DoD check has two paths depending on whether the resolver projected per-phase claims onto the issue body (`github-issue-resolver` §9's "DoD projection rule"). Annotation shapes and parser live in [`${CLAUDE_PLUGIN_ROOT}/skills/_shared/dod-annotations.md`](${CLAUDE_PLUGIN_ROOT}/skills/_shared/dod-annotations.md) — this skill reads the `closed by ...` ticked forms to drive per-phase verification, and writes the `resolver claimed ... evaluator rejected: ...` sticky-veto un-tick form.
+**Acceptance criteria / Definition of done.** For features, stories, and incomplete-feature issues, the DoD check has two paths depending on whether the resolver projected per-phase claims onto the issue body (`github-issue-resolver` §9's "DoD projection rule"). Annotation shapes and parser live in [`../_shared/dod-annotations.md`](../_shared/dod-annotations.md) — this skill reads the `closed by ...` ticked forms to drive per-phase verification, and writes the `resolver claimed ... evaluator rejected: ...` sticky-veto un-tick form.
 
 - **Projection annotations present.** When one or more bullets carry a `(closed by phase <N>, commit <short-sha>)` or `(closed by commit <short-sha>)` or `(closed by phase <N>, operator action <ISO-date>)` suffix, **verify each projected tick against its attributed phase's diff** rather than re-judging the whole PR diff per bullet. Use the per-phase verification mechanics below to extract the commit range for each phase from the PR's `## Phase tracker`. A clear semantic mismatch between the attributed diff and the bullet's text → un-tick + soft-reject per "Un-tick on rejection" below. Soft / partial mismatches → flag in the review body but leave the tick in place. A bullet currently unticked and missing an annotation is a gap the resolver should have closed — flag as a planner/resolver coverage gap (the bullet's owning phase per the plan's `closes-dod` is the right place for the user to look). A bullet carrying the predecessor annotation form (`previously claimed by phase <N>, commit <sha> on closed PR #<M>`) — written by the planner during a HARD-path "Start fresh" revise — is treated like a regular `- [ ]`: it's a bullet the current PR still needs to satisfy. The historical attribution is metadata only; the verification target is the current PR's diff.
 - **No projection annotations** (the issue predates the projection mechanism, was resolved by an older resolver, the projection failed to land and reconciliation hasn't fired, or the issue carries `## Acceptance criteria` rather than a checkbox DoD). Fall back to the historical behaviour: walk every item in `## Acceptance criteria` or `## Definition of done` and judge it against the diff and test files. An unchecked item that the diff doesn't address is a gap. This is the backwards-compatible path; do not insist on projection annotations as a precondition for evaluation.
@@ -772,119 +637,11 @@ Then end the run with the Step 15 Handoff block (next section) — the handoff i
 
 ### 15. Handoff
 
-Every clean run of the evaluator ends with a single `## Handoff` block — the schema, omission rules, and state-marker vocabulary live in [`${CLAUDE_PLUGIN_ROOT}/skills/_shared/handoff-format.md`](${CLAUDE_PLUGIN_ROOT}/skills/_shared/handoff-format.md). The handoff is the only bridge between this session and the next; it replaces §14's previously-inlined bullet-list summary. Don't emit both.
+Every clean run of the evaluator ends with a single `## Handoff` block — the schema, omission rules, and state-marker vocabulary live in [`../_shared/handoff-format.md`](../_shared/handoff-format.md). The handoff is the only bridge between this session and the next; it replaces §14's previously-inlined bullet-list summary. Don't emit both.
 
 Pull the snapshot from data already in hand: the §3 `GATHER_PR` payload (issue/PR numbers, titles, base ref), the §5.5 / §5.6 cache-comment results (`HEALTH_OK`, `<short-sha>`, `TIER`), §7's verdict (`APPROVE` or `COMMENT`), §12's merge command and outcome (target ref + resulting commit SHA when the merge ran, the failure reason when it didn't), and §14's worktree teardown / removal results. The `Why:` line is judgment — describe what the next session does, or for terminal endings, why the pipeline ends here.
 
-#### Rendering rubric
-
-| Outcome | Step 15 rendering |
-|---|---|
-| Standard PR clean APPROVE → §12a auto-merged | **Terminal.** Issue line, PR line with `merge: squash → main@<sha>`, Cleanup line. |
-| Story PR clean APPROVE → §12a auto-merged, more sibling stories pending | **Forward → `github-issue-resolver`** on the next story in dependency order. Story / Epic / PR / Cleanup lines; Epic progress is e.g. `open (2 of 5 stories closed)`. |
-| Story PR clean APPROVE → §12a auto-merged, *last* sibling story | **Forward → `github-issue-resolver`** on the Epic, in Epic-integration mode. Story / Epic / PR / Cleanup lines; Epic progress is `open (5 of 5 stories closed)`. |
-| Epic integration PR clean APPROVE → §12b merged (merge-commit or squash) | **Terminal.** Epic line, PR line with `merge: merge → main@<sha>` (or `squash → main@<sha>` if §12b chose Squash), Cleanup line. |
-| Any PR, COMMENT verdict (soft-reject) — §7's `comment` action driven by a real COMMENT verdict | **Re-route → `github-issue-resolver continue #<N>`.** Issue / PR lines; PR line carries `state: draft` (§11 flipped it back), `review: COMMENT (soft-reject)`, and `merge: skipped (verdict)`. No Cleanup line. |
-| APPROVE but `mergeStateStatus ∈ {DIRTY, BLOCKED}` → §12c skipped | **Terminal with manual command.** Issue / PR lines (PR line: `merge: skipped (DIRTY)` or `skipped (BLOCKED)`); no Cleanup. The `Next:` action quotes the recommended `gh pr merge` command verbatim and names the blocker; the `Why:` line names what the user needs to do to clear the blocker. |
-| §12b epic-integration "Don't merge yet" choice | **Same shape as the DIRTY/BLOCKED case** — terminal with the recommended `gh pr merge` command. The `Why:` notes the user opted to merge manually. |
-
-Self-authored PRs (the §2 self-approval pre-check that downgraded `--approve` to `--comment`) still follow the table above — the verdict is approval-equivalent; only the review action differed.
-
-#### Renderings
-
-**Standard PR clean merged — terminal.**
-
-```
-## Handoff
-
-**Issue:** #142 — Add CSV export · closed · feature · plan: ✓
-**PR:** #287 — Add CSV export (#142) · merged · base main · review: APPROVE · health: ✅ at abc1234 · merge: squash → main@def5678
-**Cleanup:** worktree removed; teardown ran; scratch dir purged
-
-**Next:** (terminal — no follow-up skill)
-
-**Why:** the PR satisfied every dimension cleanly and merged into main. The issue is closed by GitHub's auto-close; no follow-up skill is required for this issue.
-```
-
-**Story PR merged — more stories pending.** The Epic stays open; the resolver picks up the next story in dependency order. Read the Epic body's `## Stories` list (re-fetched in §13) to pick the next-in-sequence; if the Epic's `## Sequencing` section pins an order, follow it.
-
-```
-## Handoff
-
-**Story:** #151 — Add export service · closed · story · plan: ✓
-**Epic:** #150 — Chat & session UX polish · open (1 of 5 stories closed)
-**PR:** #287 — Add export service (#151) · merged · base epic/150-chat-ux · review: APPROVE · health: ✅ at abc1234 · merge: squash → epic/150-chat-ux@def5678
-**Cleanup:** worktree removed; epic checkbox ticked; story issue closed
-
-**Next:** start the next story in dependency order in a fresh session.
-
-    /github-pipeline:github-issue-resolver #152
-
-**Why:** story #151 merged into the epic branch; the Epic checkbox is ticked. Story #152 (next in sequence) has its plan posted and is ready for implementation.
-```
-
-**Story PR merged — last sibling, Epic integration ready.** Every child story is now closed. The next step is the resolver in Epic-integration mode (it opens the integration PR against `main`).
-
-```
-## Handoff
-
-**Story:** #155 — Final polish · closed · story · plan: ✓
-**Epic:** #150 — Chat & session UX polish · open (5 of 5 stories closed)
-**PR:** #295 — Final polish (#155) · merged · base epic/150-chat-ux · review: APPROVE · health: ✅ at fed4321 · merge: squash → epic/150-chat-ux@9876abc
-**Cleanup:** worktree removed; epic checkbox ticked; story issue closed
-
-**Next:** open the Epic integration PR in a fresh session.
-
-    /github-pipeline:github-issue-resolver #150
-
-**Why:** every child story is closed and on `epic/150-chat-ux`. The resolver in Epic mode opens the integration PR against `main`; pr-evaluator will then escalate to the full canonical test suite (per the `pr_type: epic-integration` rule) before recommending the merge mode.
-```
-
-**Epic integration PR clean merged — terminal.**
-
-```
-## Handoff
-
-**Epic:** #150 — Chat & session UX polish · closed · epic · plan: ✓
-**PR:** #300 — Chat & session UX polish (epic #150) · merged · base main · review: APPROVE · health: ✅ at 1357bdf · merge: merge → main@2468ace
-**Cleanup:** worktree removed; teardown ran; scratch dir purged
-
-**Next:** (terminal — no follow-up skill)
-
-**Why:** the integration PR landed every child story's work on `main` in one merge commit (§12b chose Merge commit, preserving the story squash commits in `main`'s history). The Epic is closed by `Fixes #150`; the pipeline ends here.
-```
-
-**Soft-reject — re-route to resolver.** §7 produced a `comment` action driven by a real COMMENT verdict (not a §2 self-approval downgrade); §11's draft-flip ran, so the PR is now back in draft. The review names the dimension gaps; the resolver continues on the existing branch (now back in draft) without re-deadlocking on the §3 draft-PR guard the next time it hands back.
-
-```
-## Handoff
-
-**Issue:** #142 — Add CSV export · open · feature · plan: ✓
-**PR:** #287 — Add CSV export (#142) · draft · base main · review: COMMENT (soft-reject) · health: ✅ at abc1234 · merge: skipped (verdict)
-
-**Next:** address the review's gaps in a fresh session — the resolver continues on the existing branch (now in draft).
-
-    /github-pipeline:github-issue-resolver continue #287
-
-**Why:** the review cites <N> dimension gaps (acceptance-criterion #3 unaddressed; one plan-locked test missing — see the review comment for the full evidence). §11 flipped the PR back to draft so the resolver's §5 existing-PR check picks it up as in-progress work, not as drift; the resolver's §10 review loop will address each finding, re-push, and (on the §11 *last planned phase shipped* row for multi-phase issues, or directly for single-phase) re-flip to ready before its next forward handoff.
-```
-
-**APPROVE but merge skipped — terminal with manual command.** The PR earned approval but isn't mergeable yet (DIRTY or BLOCKED), or the user opted to merge later from §12b. Print the recommended `gh pr merge` command verbatim in the fenced block; the user runs it themselves when the blocker clears.
-
-```
-## Handoff
-
-**Issue:** #142 — Add CSV export · open · feature · plan: ✓
-**PR:** #287 — Add CSV export (#142) · open · base main · review: APPROVE · health: ✅ at abc1234 · merge: skipped (DIRTY)
-
-**Next:** resolve the conflict, then run the merge yourself:
-
-    gh pr merge 287 --repo owner/repo --squash --subject "feat: add CSV export (#287)" --body-file /tmp/squash-body-287.md --delete-branch
-
-**Why:** the PR is approved on its merits but `mergeStateStatus == DIRTY` — there's a conflict with the base branch. Resolve the conflict (rebase or merge `main` into the PR branch), confirm the conflict is gone (`gh pr view 287 --json mergeStateStatus`), then run the command above. No follow-up skill — once the merge lands, GitHub auto-closes the issue.
-```
-
-For the §12b "Don't merge yet" path, the same shape applies with `merge: skipped (user-declined)` and a Why line noting the user's choice to merge manually.
+**See [`references/handoff-renderings.md`](references/handoff-renderings.md)** for the outcome→rendering rubric and the worked `## Handoff` shapes the evaluator emits — standard-PR terminal merge, story-merged (more stories pending / last sibling → Epic integration), epic-integration terminal, soft-reject re-route to the resolver, and approve-but-merge-skipped (DIRTY/BLOCKED or user-declined). Each shape carries the closed-set state-marker vocabulary from [`../_shared/handoff-format.md`](../_shared/handoff-format.md); fill the snapshot from the data §15 lists above.
 
 ---
 

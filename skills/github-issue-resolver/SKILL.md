@@ -13,32 +13,7 @@ This skill is the implementation stage of a pipeline: `github-issue-drafter` fil
 
 ### Asking the user a decision
 
-When you need a decision from the user — an approval gate, a choice between named
-paths, or a confirmation before a GitHub write — ask it through the `AskUserQuestion`
-tool, not as freeform prose. The tool renders the same multiple-choice card every
-time, so the user pattern-matches the decision at a glance instead of re-parsing a
-differently-worded question on each run.
-
-Shape every ask the same way:
-- One decision per question. `header` ≤ 12 chars (e.g. "Post plan", "Merge mode").
-  The `question` field carries the full prose you'd otherwise have typed.
-- 2–4 options. Each `label` is the action in imperative form ("Post it", "Squash",
-  "Approve"); each `description` says what that choice does and its consequence.
-- The tool always appends an "Other" free-text choice, so don't pad to four options
-  with a catch-all — leave room for the user to type a custom answer.
-- `multiSelect: true` only when the choices genuinely combine (rare here).
-- Ask once, act on the answer. Don't re-state the same gate in prose afterwards.
-
-When the candidate paths aren't fixed (e.g. "which of these issues did you mean?"),
-generate the options dynamically from what you found. When the answer is inherently
-open-ended (e.g. "paste any external doc URLs"), a prose ask is still fine — don't
-force it into options.
-
-`AskUserQuestion` is not available inside a sub-agent spawned via the `Agent` tool.
-Any gate that arises during sub-agent work must be surfaced by the sub-agent
-returning a structured "decision needed" signal to this main loop, which asks the
-user and re-dispatches with the answer. Never tell a sub-agent to call
-`AskUserQuestion` itself.
+When you need a decision from the user — an approval gate, a disambiguation, or a confirmation before a GitHub write — follow the shared contract in [`../_shared/asking-the-user.md`](../_shared/asking-the-user.md): one decision per `AskUserQuestion` card, `header` ≤ 12 chars, imperative `label`s with consequence-bearing `description`s, options generated dynamically when the candidates aren't fixed, and the rule that a sub-agent never calls `AskUserQuestion` itself but surfaces a "decision needed" signal back to this main loop. That file is the single source of truth for every gate in this skill.
 
 ### Delegating mechanical work to `github-ops`
 
@@ -48,7 +23,7 @@ The judgment-free GitHub I/O is not — fetching the issue + thread, the open-PR
 check, the known-issue triage search, and posting result comments. Delegate
 that to the **`github-ops`** sub-agent (`subagent_type: "github-pipeline:github-ops"`,
 Sonnet + medium effort — spawn with **no `model` override**): `GATHER_ISSUE`,
-`PERSIST_COMMENT` (see `${CLAUDE_PLUGIN_ROOT}/agents/github-ops.md`). It writes issue
+`PERSIST_COMMENT` (see `../../agents/github-ops.md`). It writes issue
 bodies, threads, and plan-marker bodies **verbatim to per-run scratch files**
 and returns `## RESULT` scalars with `*_path` references — `Read` from those
 paths to get content. Pass `scratch_dir=/tmp/gh-resolver-<N>/` to every
@@ -196,7 +171,7 @@ The §7 baseline gate is now narrower in scope: "is the project's static toolcha
 
 §8 and §10.6 each spawn a read-only `Explore` agent for selection. Reasoning happens entirely inside the sub-agent so the main conversation never sees the diff hunks, the test directory listings, or the grep output — only the sub-agent's two-section verdict. The sub-agent uses Bash/Read/Glob/Grep against the worktree to read the diff, list each declared target's directory, and grep for changed symbols.
 
-**See [`${CLAUDE_PLUGIN_ROOT}/skills/github-pipeline:github-issue-resolver/references/test-selection-sub-agent.md`](${CLAUDE_PLUGIN_ROOT}/skills/github-pipeline:github-issue-resolver/references/test-selection-sub-agent.md) for the full prompt template** (inputs schema, heuristic steps 1–6, the UI blast-radius rules at step 5, and worked-example output shapes). Substitute the worktree path, integration target, and the `<!-- issue-resolver-test-target -->` block contents at dispatch time. The sub-agent returns two sections with literal headers `COMMAND:` and `RATIONALE:`.
+**See [`references/test-selection-sub-agent.md`](references/test-selection-sub-agent.md) for the full prompt template** (inputs schema, heuristic steps 1–6, the UI blast-radius rules at step 5, and worked-example output shapes). Substitute the worktree path, integration target, and the `<!-- issue-resolver-test-target -->` block contents at dispatch time. The sub-agent returns two sections with literal headers `COMMAND:` and `RATIONALE:`.
 
 The skill parses these two sections and proceeds:
 - `COMMAND: (none)` → skip test execution entirely; print the rationale to the user; mark the iteration's test status as "skipped (no tests selected)" and continue.
@@ -234,13 +209,13 @@ The reason is wall-clock: a plain `<wrapper> test` recompiles the whole app targ
 
 The pre-push verification gate (§8 before the first push, §10.6 after each round of review feedback) caps a single visit at **3 test runs total** with a forced research breakpoint between cheap fixes and any deep fix. Run 1 includes the unrelated-failure triage (cheap `gh issue list` lookup before spending the fix budget); run 2 enforces the adaptive cheap-fix rule (sticky failures force the breakpoint immediately); run 3 is the research-informed deep fix. When run 3 is also red, escalate via `AskUserQuestion` (`header: "Tests red"`) with three options: **Push with reds** / **Defer the tests** / **Restructure**. Each entry to §8 or §10.6 starts a fresh ladder.
 
-**See [`${CLAUDE_PLUGIN_ROOT}/skills/github-pipeline:github-issue-resolver/references/retry-ladder.md`](${CLAUDE_PLUGIN_ROOT}/skills/github-pipeline:github-issue-resolver/references/retry-ladder.md) for the full ladder, triage rules, adaptive-fix rule, research breakpoint, and escalation rubric.**
+**See [`references/retry-ladder.md`](references/retry-ladder.md) for the full ladder, triage rules, adaptive-fix rule, research breakpoint, and escalation rubric.**
 
 ## Follow-up issue tracking
 
 Follow-up items surface at four moments — §7 baseline detours, the retry-ladder's escalation option 2, §10.4 reviewer-routed deferrals, and §11 summary cleanup. The registry has five fields (`type`, `title hint`, `description`, `parent reference`, `urgency`). Filing decision rule: trackable work → file as an issue via the drafter-proxy sub-agent protocol; procedural / informational notes → capture in the PR body or §11 summary instead. Urgency `file-now` items must land before the iteration's push (so `// TODO(#NNN)` markers and `XCTSkip("Deferred to #NNN — …")` reasons reference real issue numbers); urgency `file-at-checkpoint` items batch at end-of-§10 before §11 fires. Every filed issue routes through `github-issue-drafter` (PRD-grounded, sub-agent-reviewed) — no hand-crafted `gh issue create` bodies. After filing, weave the URL into the code's TODO/XCTSkip markers, the PR body's `## Follow-ups` section, and §11's summary.
 
-**See [`${CLAUDE_PLUGIN_ROOT}/skills/github-pipeline:github-issue-resolver/references/follow-up-tracking.md`](${CLAUDE_PLUGIN_ROOT}/skills/github-pipeline:github-issue-resolver/references/follow-up-tracking.md) for the full registry schema, filing-vs-capturing rule, hybrid timing table, end-of-§10 checkpoint, and the drafter-proxy sub-agent prompt.**
+**See [`references/follow-up-tracking.md`](references/follow-up-tracking.md) for the full registry schema, filing-vs-capturing rule, hybrid timing table, end-of-§10 checkpoint, and the drafter-proxy sub-agent prompt.**
 
 ## Workflow
 
@@ -337,13 +312,13 @@ git fetch --quiet origin <branch-from-audit-ref>
 
 A failed fetch (network unavailable, ref doesn't exist on origin) is surfaced to the user and aborts the audit — the same shape as the existing `git fetch` calls in the Epic flow. Don't fall back to a stale local ref silently; the audit's correctness depends on reading the tip of the integration target.
 
-**Sub-agent invocation.** Spawn an `Explore` sub-agent with the prompt template at `${CLAUDE_PLUGIN_ROOT}/skills/github-pipeline:github-issue-resolver/references/issue-audit-prompt.md`. Inline the placeholders:
+**Sub-agent invocation.** Spawn an `Explore` sub-agent with the prompt template at `references/issue-audit-prompt.md`. Inline the placeholders:
 
 ```
 Agent({
   subagent_type: "Explore",
   description: "Audit issue fitness-to-implement before code work",
-  prompt: <contents of ${CLAUDE_PLUGIN_ROOT}/skills/github-pipeline:github-issue-resolver/references/issue-audit-prompt.md
+  prompt: <contents of references/issue-audit-prompt.md
            with placeholders filled: issue_number, issue_type, repo_owner,
            repo_name, repo_root, dimensions, related_issues, audit_ref>
 })
@@ -474,7 +449,7 @@ Some non-trivial issues split into a sequence of phases that share one issue and
 4. If any drift exists, write the projected body to `/tmp/gh-resolver-<N>/issue-body-projected.md` and apply via `gh issue edit <N> --repo <owner/repo> --body-file /tmp/gh-resolver-<N>/issue-body-projected.md`. Record in the state summary: `DoD reconciliation: applied <K> missing tick(s) from prior phase(s)`.
 5. If no drift, record `DoD reconciliation: in sync`. **Never un-tick.** Bullets that are `- [x]` but not in the expected set are left alone (likely a human edit or plan-revision residue) and flagged as `DoD reconciliation: unexpected tick on bullet <N> (<text excerpt>) — left as-is`.
 
-**Defensive re-plan drift detection.** After step 5, walk currently-ticked bullets one more time and compare each annotation's phase reference against the captured phase list (see [`${CLAUDE_PLUGIN_ROOT}/skills/_shared/dod-annotations.md`](${CLAUDE_PLUGIN_ROOT}/skills/_shared/dod-annotations.md) for the annotation parser). For each `(closed by phase <N>, ...)` annotation: if the captured phase list contains a phase numbered `<N>` and its `closes-dod` includes this bullet's index → consistent. Otherwise → drift. Drift cases:
+**Defensive re-plan drift detection.** After step 5, walk currently-ticked bullets one more time and compare each annotation's phase reference against the captured phase list (see [`../_shared/dod-annotations.md`](../_shared/dod-annotations.md) for the annotation parser). For each `(closed by phase <N>, ...)` annotation: if the captured phase list contains a phase numbered `<N>` and its `closes-dod` includes this bullet's index → consistent. Otherwise → drift. Drift cases:
 
 - The annotated phase number doesn't exist in the captured phase list (phase removed or renumbered by a prior re-plan).
 - The annotated phase exists but its current `closes-dod` no longer includes this bullet's index (reassignment).
@@ -1016,7 +991,7 @@ For code changes (all `git push` and `gh pr create` commands run from inside the
 
   **Multi-phase issues open as draft and carry a `## Phase tracker` block.** When §4.7 identified this as a multi-phase issue, two things change about the fresh-PR open:
 
-  - Pass `--draft` to `gh pr create`. The PR stays in draft while phases remain unshipped in `## Phases`. **On the §11 outcome-rubric's *last planned phase shipped* row**, the resolver flips draft → ready via `gh pr ready <N> --repo <owner/repo>` immediately before emitting the handoff. Without that flip, the evaluator's §3 draft-PR guard would deadlock the handoff. (The handoff's PR-line `state:` marker reflects the post-flip state — `state: open` — and overrides pr-state.json's pre-flip `isDraft: true` for this row; see `${CLAUDE_PLUGIN_ROOT}/skills/github-pipeline:github-issue-resolver/references/handoff-renderings.md` "Forward — multi-phase, last planned phase shipped".) If the evaluator soft-rejects (COMMENT verdict), it flips the PR back to draft per `github-pr-evaluator` §11 and the resolver re-enters in continue mode against the now-draft PR. `Closes #<number>` in the body is unchanged — `Closes` only fires on merge, and a draft PR cannot merge, so the draft state during phase-by-phase work is itself the auto-close guard.
+  - Pass `--draft` to `gh pr create`. The PR stays in draft while phases remain unshipped in `## Phases`. **On the §11 outcome-rubric's *last planned phase shipped* row**, the resolver flips draft → ready via `gh pr ready <N> --repo <owner/repo>` immediately before emitting the handoff. Without that flip, the evaluator's §3 draft-PR guard would deadlock the handoff. (The handoff's PR-line `state:` marker reflects the post-flip state — `state: open` — and overrides pr-state.json's pre-flip `isDraft: true` for this row; see `references/handoff-renderings.md` "Forward — multi-phase, last planned phase shipped".) If the evaluator soft-rejects (COMMENT verdict), it flips the PR back to draft per `github-pr-evaluator` §11 and the resolver re-enters in continue mode against the now-draft PR. `Closes #<number>` in the body is unchanged — `Closes` only fires on merge, and a draft PR cannot merge, so the draft state during phase-by-phase work is itself the auto-close guard.
 
   - Add a `## Phase tracker` block to the body mirroring the plan's `## Phases`, with this phase already ticked (every later phase still `- [ ]`):
 
@@ -1038,7 +1013,7 @@ In both cases, capture the PR number/URL — you'll need it for the review loop.
 
 Both push paths above (existing-PR continuation, fresh-PR open) project the just-shipped phase's `closes-dod` onto the issue body. The rule below specifies what to project and how to compose the annotation. Reconciliation on re-entry (§4.7) follows the same rule with the same inputs.
 
-**Annotation shapes and parser:** see [`${CLAUDE_PLUGIN_ROOT}/skills/_shared/dod-annotations.md`](${CLAUDE_PLUGIN_ROOT}/skills/_shared/dod-annotations.md) for the closed set of annotation forms (code-phase / operator / single-phase / evaluator-rejected / predecessor), the 1-based top-level-bullet indexing rule, the recognition regex, and the invariants every reader must respect. This skill writes the three `closed by ...` ticked forms — the rest are written by `github-pr-evaluator` (sticky-veto un-ticks) and `github-issue-planner` (revise-mode predecessor un-ticks); they are read here to respect existing annotations during projection.
+**Annotation shapes and parser:** see [`../_shared/dod-annotations.md`](../_shared/dod-annotations.md) for the closed set of annotation forms (code-phase / operator / single-phase / evaluator-rejected / predecessor), the 1-based top-level-bullet indexing rule, the recognition regex, and the invariants every reader must respect. This skill writes the three `closed by ...` ticked forms — the rest are written by `github-pr-evaluator` (sticky-veto un-ticks) and `github-issue-planner` (revise-mode predecessor un-ticks); they are read here to respect existing annotations during projection.
 
 **Reconciliation source.** The projection's expected DoD-bullet set is computed from two inputs only:
 
@@ -1060,7 +1035,7 @@ The union of `closes-dod` across all ticked code-shipping and operator phases is
 - Operator / decision-only phase: `- [x] <text> (closed by phase <N>, operator action <ISO-date>)`
 - Single-phase fallback (no `## Phases`): `- [x] <text> (closed by commit <short-sha>)`
 
-Use 7-char short SHAs (matching `## Phase tracker` and `${CLAUDE_PLUGIN_ROOT}/skills/_shared/handoff-format.md`). The bullet text itself is preserved verbatim; the annotation is appended after the existing text. When a bullet already carries a prior annotation (rare — typically only on plan-revision mid-flight, see "Edge cases" below), replace the prior annotation in full rather than appending a second.
+Use 7-char short SHAs (matching `## Phase tracker` and `../_shared/handoff-format.md`). The bullet text itself is preserved verbatim; the annotation is appended after the existing text. When a bullet already carries a prior annotation (rare — typically only on plan-revision mid-flight, see "Edge cases" below), replace the prior annotation in full rather than appending a second.
 
 **Respect the evaluator's sticky veto.** A bullet annotated `- [ ] <text> (resolver claimed phase <N>, commit <sha>; evaluator rejected: <reason>)` is the evaluator's rejection of a prior projection — the diff in the attributed commit(s) didn't satisfy the bullet. Treat such bullets as **not projected**, even when `Phase tracker × closes-dod` would tick them. The disagreement is resolved by re-planning (the planner reassigns the bullet to a different phase), by a new code phase whose diff actually satisfies the bullet, or by user intervention — never by silent re-ticking on the next push.
 
@@ -1090,7 +1065,7 @@ Phase 2-measurement is `kind: operator` with `closes-dod: (none)`. On the next r
 
 **This step is mandatory for any issue resolved with code changes. Do not skip it, do not merge, and do not consider the work done until review approves the PR.**
 
-**Multi-phase issues run §10 on every phase's push, unchanged.** `review` is a per-push code-quality gate; it has no awareness of phases and shouldn't. The loop's exit condition stays the same — verdict approved + zero classified items per §10.4 — and what changes is only what happens *after* the loop exits: §11's outcome rubric decides whether the next step is "back to the resolver for the next phase" (more phases remain in `## Phases`) or "forward to the evaluator" (last phase shipped). Treat §10 as scoped to "is this push reviewable code?" and §11 as scoped to "is the plan exhausted?" — the two decisions are independent. Before emitting §11, re-confirm the §4.7 captured phase list is in your working context. The multi-phase renderings in `${CLAUDE_PLUGIN_ROOT}/skills/github-pipeline:github-issue-resolver/references/handoff-renderings.md` require the next phase's title verbatim from the plan's `## Phases` — if you can't quote it, you've dropped §4.7's state and need to re-read the plan-marker comment from `/tmp/gh-resolver-<ISSUE>/issue-<N>-plan.md` (the `github-ops` GATHER scratch file).
+**Multi-phase issues run §10 on every phase's push, unchanged.** `review` is a per-push code-quality gate; it has no awareness of phases and shouldn't. The loop's exit condition stays the same — verdict approved + zero classified items per §10.4 — and what changes is only what happens *after* the loop exits: §11's outcome rubric decides whether the next step is "back to the resolver for the next phase" (more phases remain in `## Phases`) or "forward to the evaluator" (last phase shipped). Treat §10 as scoped to "is this push reviewable code?" and §11 as scoped to "is the plan exhausted?" — the two decisions are independent. Before emitting §11, re-confirm the §4.7 captured phase list is in your working context. The multi-phase renderings in `references/handoff-renderings.md` require the next phase's title verbatim from the plan's `## Phases` — if you can't quote it, you've dropped §4.7's state and need to re-read the plan-marker comment from `/tmp/gh-resolver-<ISSUE>/issue-<N>-plan.md` (the `github-ops` GATHER scratch file).
 
 After the PR is opened, the resolver runs an **outer loop in the main conversation** that, on each iteration, invokes the `review` skill once and then dispatches a single sub-agent to act on the verdict. The sub-agent applies the §10.4 classification rubric, addresses feedback, runs the §10.6 pre-push verification gate, commits, pushes, and returns a structured JSON summary — entirely within its own execution scope. The main loop reads the JSON, decides whether to loop again, and re-invokes `review` on the new SHA. If the skill is re-invoked later (a human reviewer commented, the previous run was interrupted), step 5's reuse rule lands you back in the existing worktree and the outer loop runs again from the top — the sub-agent's prompt is told it may be picking up mid-flow.
 
@@ -1101,7 +1076,7 @@ After the PR is opened, the resolver runs an **outer loop in the main conversati
 **Outer-loop control (main conversation).** One iteration of the loop is:
 
 1. **Invoke `review`** via the `Skill` tool: `Skill(skill="review", args="<PR#>")`. The skill runs in the main conversation; its findings land in your context as the skill completes. **After `/review`'s verdict text is in the conversation, your next emissions in the same turn are operational only** — `Write` the verdict file at `/tmp/gh-resolver-<ISSUE>/review-verdict.md` (`mkdir -p` first), `gh pr comment <N> --body-file …` (only if `/review` did not already post a PR comment itself — check via `gh pr view <N> --comments`), then `Agent` dispatch per step 2. **No additional prose between the verdict text and the `Write` call.** The verdict text is `/review`'s legitimate output; what's forbidden is *further* prose that paraphrases, summarises, or interprets the verdict before the operational steps fire. The PR comment is how the user follows the loop on GitHub; the verdict file is what the sub-agent classifies.
-2. **Dispatch the sub-agent** immediately. Use the `Agent` tool with `subagent_type: "general-purpose"`, `description: "Act on review verdict for PR #<N>"`, and the prompt template referenced below. Inline every input placeholder at dispatch time. The sub-agent has full tool access — `Bash` + `Read` + `Edit` + `Write` for code changes, `Agent` for nested test-selection and build delegations. `Skill` is in its toolset for invoking `github-issue-drafter` follow-ups, but never for `review`/`code-review` (which it cannot reach anyway). `AskUserQuestion` is deliberately **not** available inside a sub-agent. When a guard rail fires, the sub-agent returns a `needs_decision` payload and this main loop renders the question. **Even when `/review` returned "approved, zero open suggestions", step 2 is still mandatory.** The sub-agent's step 6 (see `${CLAUDE_PLUGIN_ROOT}/skills/github-pipeline:github-issue-resolver/references/review-loop-sub-agent.md`) handles the zero-items path with an early return; the dispatch itself is the structural beat that protects against turn-boundary stops. Skipping it because the verdict "looks clean" is the documented `/tmp/no-handoff.md` failure mode.
+2. **Dispatch the sub-agent** immediately. Use the `Agent` tool with `subagent_type: "general-purpose"`, `description: "Act on review verdict for PR #<N>"`, and the prompt template referenced below. Inline every input placeholder at dispatch time. The sub-agent has full tool access — `Bash` + `Read` + `Edit` + `Write` for code changes, `Agent` for nested test-selection and build delegations. `Skill` is in its toolset for invoking `github-issue-drafter` follow-ups, but never for `review`/`code-review` (which it cannot reach anyway). `AskUserQuestion` is deliberately **not** available inside a sub-agent. When a guard rail fires, the sub-agent returns a `needs_decision` payload and this main loop renders the question. **Even when `/review` returned "approved, zero open suggestions", step 2 is still mandatory.** The sub-agent's step 6 (see `references/review-loop-sub-agent.md`) handles the zero-items path with an early return; the dispatch itself is the structural beat that protects against turn-boundary stops. Skipping it because the verdict "looks clean" is the documented `/tmp/no-handoff.md` failure mode.
 3. **Read the JSON return.** Parse the sub-agent's terminal status:
    - `iteration_complete` with empty `items_addressed` → **Exit branch — §10.7 then §11 then §12 fire immediately.** The verdict had no Addressable / Cheap-fix-override items (everything was Explicitly-deferred or there were no items at all). Combined with `review`'s approved verdict on this iteration, the loop's exit condition holds. Your next emissions in the same run are: (a) §10.7's mandatory `gh pr view <N> --json …` state refresh, (b) §11's summary block, (c) §12's `## Handoff`. No-stop rule applies — read the JSON, fire §10.7, compose §11, emit §12 in one continuous turn.
    - `iteration_complete` with non-empty `items_addressed` → the sub-agent committed and pushed fixes. The verdict reviewed an older SHA; loop back to step 1 to re-review the new SHA.
@@ -1112,7 +1087,7 @@ After the PR is opened, the resolver runs an **outer loop in the main conversati
 
 The prompt template below covers what the sub-agent does once dispatched. The outer loop is yours to drive.
 
-**See [`${CLAUDE_PLUGIN_ROOT}/skills/github-pipeline:github-issue-resolver/references/review-loop-sub-agent.md`](${CLAUDE_PLUGIN_ROOT}/skills/github-pipeline:github-issue-resolver/references/review-loop-sub-agent.md) for the full sub-agent prompt template, JSON return schema, and the three guard-rail definitions** (`deadlock`, `architectural`, `verification_failure`). Substitute every placeholder (PR number/URL, repo, worktree path, originating issue, parent epic, integration target, iteration index, verdict file path, doc-grounding statement, audit-override block, test-config blocks, prior addressed items, prior decisions, resume hint, and the resolver skill directory `<RESOLVER_DIR>` = `${CLAUDE_PLUGIN_ROOT}/skills/github-pipeline:github-issue-resolver`) at dispatch time. Key invariants the outer loop relies on: the sub-agent does **not** invoke `review` itself (it's the built-in not reachable from `Agent`-dispatched sub-agents); the sub-agent's **step 6** is an early return with `status: "iteration_complete"` and empty `items_addressed` when classification finds zero Addressable / Cheap-fix-override items — this is the documented zero-items path, dispatched even on "approved with zero suggestions" verdicts; guard-rail firings return `needs_decision` and never call `AskUserQuestion`.
+**See [`references/review-loop-sub-agent.md`](references/review-loop-sub-agent.md) for the full sub-agent prompt template, JSON return schema, and the three guard-rail definitions** (`deadlock`, `architectural`, `verification_failure`). Substitute every placeholder (PR number/URL, repo, worktree path, originating issue, parent epic, integration target, iteration index, verdict file path, doc-grounding statement, audit-override block, test-config blocks, prior addressed items, prior decisions, resume hint, and the resolver skill directory `<RESOLVER_DIR>` = `${CLAUDE_PLUGIN_ROOT}/skills/github-issue-resolver`) at dispatch time. Key invariants the outer loop relies on: the sub-agent does **not** invoke `review` itself (it's the built-in not reachable from `Agent`-dispatched sub-agents); the sub-agent's **step 6** is an early return with `status: "iteration_complete"` and empty `items_addressed` when classification finds zero Addressable / Cheap-fix-override items — this is the documented zero-items path, dispatched even on "approved with zero suggestions" verdicts; guard-rail firings return `needs_decision` and never call `AskUserQuestion`.
 
 **Consume the return summary.** Parse the JSON the sub-agent returns on every iteration. The outer loop control above already names the four branch-on-status arms (`iteration_complete` with/without addressed items, `needs_decision`, `aborted`); the rules below say what to *carry forward* into §11 once the loop has exited.
 
@@ -1168,13 +1143,13 @@ gh pr view <N> --repo <owner/repo> \
   > /tmp/gh-resolver-<ISSUE>/pr-state.json
 ```
 
-This is a **mandatory** tool call, not advisory. It serves three purposes simultaneously: (a) refreshes the PR state markers (`review: APPROVE at <sha>`, `state: draft`, `base: <branch>`, etc.) that §12's renderings consume — `${CLAUDE_PLUGIN_ROOT}/skills/_shared/handoff-format.md` enumerates the closed-set marker vocabulary; (b) breaks the prose-emission momentum from `/review`'s verdict (the same operational-anchor pattern that makes `github-pr-evaluator` immune to the turn-boundary failure on its own verdict-to-handoff path — pr-evaluator's §7→§15 chain runs through acceptance-criteria check, branch-health gate, merge action, each a forced `gh` call); (c) gives §11/§12 a single canonical input file rather than relying on in-conversation state that may have rolled out of focus. **Read the file's content** into the summary's PR-line markers; do not re-derive from earlier conversation memory.
+This is a **mandatory** tool call, not advisory. It serves three purposes simultaneously: (a) refreshes the PR state markers (`review: APPROVE at <sha>`, `state: draft`, `base: <branch>`, etc.) that §12's renderings consume — `../_shared/handoff-format.md` enumerates the closed-set marker vocabulary; (b) breaks the prose-emission momentum from `/review`'s verdict (the same operational-anchor pattern that makes `github-pr-evaluator` immune to the turn-boundary failure on its own verdict-to-handoff path — pr-evaluator's §7→§15 chain runs through acceptance-criteria check, branch-health gate, merge action, each a forced `gh` call); (c) gives §11/§12 a single canonical input file rather than relying on in-conversation state that may have rolled out of focus. **Read the file's content** into the summary's PR-line markers; do not re-derive from earlier conversation memory.
 
 ### 11. Summarise for the user
 
 §11 fires on every clean exit from §10. Do not skip it on an approved + zero-items iteration. Do not summarize-and-stop after the loop. The Step 12 `## Handoff` at the end of §11 is the only bridge to the next session — its absence is indistinguishable from "work is done", which on a multi-phase issue is wrong.
 
-**Before composing the summary, `Read ${CLAUDE_PLUGIN_ROOT}/skills/github-pipeline:github-issue-resolver/references/handoff-renderings.md`** — this is the file that holds the seven rendering shapes you'll match the outcome against. Forced into the chain here so that the renderings are in your working context regardless of where SKILL.md was truncated on initial load (SKILL.md exceeds the default Read cap; the forced Read is load-bearing for §12's emission). Also read §10.7's `/tmp/gh-resolver-<ISSUE>/pr-state.json` — that file is the canonical source for §12's PR-line state markers (`review: APPROVE at <sha>`, `state: draft`, etc.).
+**Before composing the summary, `Read references/handoff-renderings.md`** — this is the file that holds the seven rendering shapes you'll match the outcome against. Forced into the chain here so that the renderings are in your working context regardless of where SKILL.md was truncated on initial load (SKILL.md exceeds the default Read cap; the forced Read is load-bearing for §12's emission). Also read §10.7's `/tmp/gh-resolver-<ISSUE>/pr-state.json` — that file is the canonical source for §12's PR-line state markers (`review: APPROVE at <sha>`, `state: draft`, etc.).
 
 **Outcome rubric — what shape does the Step 12 handoff take?**
 
@@ -1225,7 +1200,7 @@ If the resolved issue was a **story** under an open epic, include two additional
 
 ### 12. Handoff
 
-Every clean run of the resolver ends with a single `## Handoff` block — the schema, omission rules, and state-marker vocabulary live in [`${CLAUDE_PLUGIN_ROOT}/skills/_shared/handoff-format.md`](${CLAUDE_PLUGIN_ROOT}/skills/_shared/handoff-format.md). The handoff is the only bridge between this session and the next: the user copies the fenced command into a fresh Claude Code session.
+Every clean run of the resolver ends with a single `## Handoff` block — the schema, omission rules, and state-marker vocabulary live in [`../_shared/handoff-format.md`](../_shared/handoff-format.md). The handoff is the only bridge between this session and the next: the user copies the fenced command into a fresh Claude Code session.
 
 **Re-route rule.** When the outcome is a re-route (§4.5 fitness audit, §4.6 plan-currency, §6 doc-conflict, §8 plan-invalidation), the handoff is the **only** form of next-step communication. **Do not** invoke the prior skill via the `Skill` tool — that would cross a session boundary silently and defeat the session-per-skill design. The handoff names the revise command; the user runs it in a fresh session.
 
@@ -1233,7 +1208,7 @@ Pull the snapshot from data already in hand: the issue/plan state from §2's `GA
 
 #### Renderings
 
-**See [`${CLAUDE_PLUGIN_ROOT}/skills/github-pipeline:github-issue-resolver/references/handoff-renderings.md`](${CLAUDE_PLUGIN_ROOT}/skills/github-pipeline:github-issue-resolver/references/handoff-renderings.md) for the seven rendering shapes** the resolver emits — forward (standard / story), re-route (multi-phase non-final, multi-phase operator-action, multi-phase last shipped, planner-revise, drafter-revise-fitness, drafter-revise-doc-conflict), forward (epic-integration), and terminal (non-PR). The §11 forced `Read` of that file ensures every shape is in your working context before composing the summary. Each rendering carries the closed-set state-marker vocabulary from `${CLAUDE_PLUGIN_ROOT}/skills/_shared/handoff-format.md` (`plan: ✓ | ✗ | stale`, `review: APPROVE | COMMENT | not run`, `health: ✓ at <sha> | ❌ at <sha> | not run`, `merge: not run`); §10.7's `pr-state.json` refresh feeds those markers their current values.
+**See [`references/handoff-renderings.md`](references/handoff-renderings.md) for the seven rendering shapes** the resolver emits — forward (standard / story), re-route (multi-phase non-final, multi-phase operator-action, multi-phase last shipped, planner-revise, drafter-revise-fitness, drafter-revise-doc-conflict), forward (epic-integration), and terminal (non-PR). The §11 forced `Read` of that file ensures every shape is in your working context before composing the summary. Each rendering carries the closed-set state-marker vocabulary from `../_shared/handoff-format.md` (`plan: ✓ | ✗ | stale`, `review: APPROVE | COMMENT | not run`, `health: ✓ at <sha> | ❌ at <sha> | not run`, `merge: not run`); §10.7's `pr-state.json` refresh feeds those markers their current values.
 
 ## Common pitfalls
 
