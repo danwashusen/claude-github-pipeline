@@ -1,5 +1,7 @@
 ---
 name: github-issue-researcher
+model: opus
+effort: medium
 description: You're prepping a filed GitHub issue for planning and it hinges on something the model may not recall accurately — a dependency/SDK/framework/platform version, a migration path, breaking changes, current API behavior or defaults, or vendor guidance. Use this skill to look it up on the web, verify it against authoritative/official sources, and post a dated, cited research summary as a comment on that issue. Trigger on requests to pull a current migration guide or breaking changes for #N, check the latest behavior of a named technology, verify a claim against official docs, or re-ground research a planner flagged as stale — then write it onto the ticket. Common framing is "my memory/training is out of date, ground this in real docs before we plan #N"; even so, the goal is gathering external truth, not designing. Do NOT use for: filing a new issue (github-issue-drafter); settling the approach or architecture or file changes (github-issue-planner); writing or fixing code (github-issue-resolver); reviewing or merging a PR (github-pr-evaluator); the project's own internal code; or quick questions with no issue and no currency risk.
 ---
 

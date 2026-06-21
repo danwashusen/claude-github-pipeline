@@ -1,5 +1,7 @@
 ---
 name: github-issue-resolver
+model: opus
+effort: xhigh
 description: Investigate and resolve a specific GitHub issue end-to-end via the `gh` CLI. Trigger when the user gives an issue number/URL or asks to "look at", "work on", "fix", "implement", "resolve", "triage", or "respond to" an issue — bugs, features, questions, or refactors. Reads the issue and its full comment thread (separating stale early discussion from latest decisions), on a fresh implementation start audits the issue body for fitness-to-implement (doc tensions, cross-issue contract drift, underspecified contracts) and routes blocker findings to `github-issue-drafter` in revise mode before any code work begins, skips the audit when continuing an in-flight PR, checks for existing open/draft/prior PRs to avoid trampling in-progress work, decides the response type, does the work, and posts a comment or opens a PR. For code changes, opens or continues a PR and loops with the `review` skill until approved. Reads `docs/prd.md`, `docs/architecture.md`, and `CLAUDE.md` to ground implementations. Recognises epics (long-lived `epic/<N>-<slug>` integration branch, child-story audit, integration PR) and stories under an open epic (PR base = epic branch). Use even on casual mentions ("look at #423?", "what is left in the auth epic?") — don't handle GitHub issues without it.
 ---
 
