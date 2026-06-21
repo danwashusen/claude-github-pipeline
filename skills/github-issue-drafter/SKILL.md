@@ -49,7 +49,7 @@ checking templates/labels, and the `gh issue create` / `gh issue edit` writes.
 Delegate that to the **`github-ops`** sub-agent (`subagent_type: "github-pipeline:github-ops"`,
 Sonnet + medium effort — spawn with **no `model` override**). It runs a named
 operation and returns faithful structured results: `GATHER_ISSUE`,
-`PERSIST_BODY`, `PERSIST_CREATE` — see `${CLAUDE_PLUGIN_ROOT}/agents/github-ops.md`. It
+`PERSIST_BODY`, `PERSIST_CREATE` — see `../../agents/github-ops.md`. It
 returns bodies and threads **verbatim** so the classification and
 latest-direction judgment stay yours. Codebase searches for coherence checks
 do **not** go through `github-ops` (it's the GitHub-I/O executor) — use
@@ -484,13 +484,13 @@ You drafted the issue while holding informal feedback, prior turns, the user's t
 
 ### Invocation contract
 
-Invoke an `Explore` sub-agent with the prompt template at `${CLAUDE_PLUGIN_ROOT}/skills/github-pipeline:github-issue-drafter/references/issue-reviewer-prompt.md`. Inline the draft into the prompt and pass the structural inputs:
+Invoke an `Explore` sub-agent with the prompt template at `references/issue-reviewer-prompt.md`. Inline the draft into the prompt and pass the structural inputs:
 
 ```
 Agent({
   subagent_type: "Explore",
   description: "Review GitHub issue draft for coherence",
-  prompt: <contents of ${CLAUDE_PLUGIN_ROOT}/skills/github-pipeline:github-issue-drafter/references/issue-reviewer-prompt.md
+  prompt: <contents of references/issue-reviewer-prompt.md
            with placeholders filled: draft, mode, repo_root,
            dimensions, related_drafts>
 })
@@ -624,7 +624,7 @@ If any `PERSIST_CREATE` fails mid-batch, stop and report exactly which issues we
 
 ## Step 8: Handoff
 
-Every clean run of this skill ends with a single `## Handoff` block — the schema, omission rules, and state-marker vocabulary live in [`${CLAUDE_PLUGIN_ROOT}/skills/_shared/handoff-format.md`](${CLAUDE_PLUGIN_ROOT}/skills/_shared/handoff-format.md). The handoff is the only bridge between this session and the next: the user will copy the fenced command into a fresh Claude Code session to continue. Don't skip it on a clean exit; don't add anything after it.
+Every clean run of this skill ends with a single `## Handoff` block — the schema, omission rules, and state-marker vocabulary live in [`../_shared/handoff-format.md`](../_shared/handoff-format.md). The handoff is the only bridge between this session and the next: the user will copy the fenced command into a fresh Claude Code session to continue. Don't skip it on a clean exit; don't add anything after it.
 
 Pull the snapshot from data you already have — the `PERSIST_CREATE` result(s) carry the issue/Epic/story numbers and titles; `plan: ✗` is correct because the drafter never authors plans. The `Why:` line is yours to write — describe what the next session will do (don't repeat the schema).
 
