@@ -225,6 +225,8 @@ Everything else gets pinned in the plan:
 
 The test for whether something belongs in the plan: *would a competent implementer reading the plan cold have to pause and decide?* If yes, the plan decides it first. The earlier *"would re-litigation in review"* bar is too lax — by the time review fires, the round-trip cost is already paid.
 
+**When a decision nonetheless slips through unlocked** — Step 7.5's sweep and the reviewer's dimension-4 check exist to stop this, but one occasionally survives — the resolver does *not* get blanket license to improvise. Its contract (`github-issue-resolver` §8 "Stick to the plan") is a mini Step 7.5 at the seam: it settles the gap from precedent when precedent decides it unambiguously — recording the call in the PR body so you see it on the next revise — and otherwise routes back to you in revise mode when the choice carries a user-visible consequence. The resolver fills what you left open, plus the mechanics *entailed* by a locked decision, freely (locked decisions are a floor, not a ceiling — an additive test or an entailed call-site edit is not a deviation); it never silently *reverses* what you locked. The asymmetry is the point — it may fill gaps, never overturn decisions — so under-specification still costs a round-trip and remains the failure mode this section exists to prevent.
+
 ## Step 7.5: Pre-flight — resolve every open decision
 
 Before invoking the reviewer, sweep the draft yourself. The reviewer is expensive (a fresh sub-agent re-reading docs and codebase at `<plan_ref>`); catching hedges in-loop costs almost nothing. The reviewer should be the second line of defence, not the first.
