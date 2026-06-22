@@ -1,0 +1,256 @@
+# Block authoring reference
+
+The authoring spec for every block `github-pipeline-setup` writes: exact shape, what belongs
+in each, how to infer the contents from the repo, and how to migrate the legacy single-block
+declaration. Read this before drafting anything in §3 of the skill.
+
+The source of truth for *how each block is consumed* lives in the skills that read them —
+`github-issue-resolver` §P3.1 / §P2 and `github-pr-evaluator` "Repo health-check declaration".
+This file mirrors those formats for the *authoring* side; if they ever disagree, the consuming
+skill wins.
+
+## Contents
+
+- [Two shared shapes](#two-shared-shapes)
+- [The blocks](#the-blocks)
+  - [issue-resolver-fast-checks](#issue-resolver-fast-checks)
+  - [issue-resolver-test-target](#issue-resolver-test-target)
+  - [issue-resolver-canonical-suite](#issue-resolver-canonical-suite)
+  - [pr-evaluator-static-checks](#pr-evaluator-static-checks)
+  - [pr-evaluator-test-target](#pr-evaluator-test-target)
+  - [pr-evaluator-escalation-labels](#pr-evaluator-escalation-labels)
+  - [worktree-setup / worktree-teardown](#worktree-setup--worktree-teardown)
+- [Detection heuristics](#detection-heuristics)
+- [Legacy migration: health-checks → static-checks + test-target](#legacy-migration)
+- [A worked example (food-journal)](#worked-example)
+
+## Two shared shapes
+
+Every block is one of two shapes:
+
+**Command-list** (`*-fast-checks`, `*-static-checks`, `worktree-*`) — one Markdown list entry per
+command: a backtick-quoted command, then ` — `, then a short human description. **Order matters** —
+commands run in declaration order, and the static lists are *fail-fast* (the first non-zero exit
+stops the run), so put the cheapest/fastest commands first.
+
+```markdown
+- `<command>` — <description>
+- `<command>` — <description>
+```
+
+**Prose config** (`*-test-target`) — structured Markdown the consuming skill reads as natural
+language (it is *not* parsed). Don't compress it into a one-liner; the per-target indentation and
+labels are what make it legible to the test-selection sub-agent.
+
+## The blocks
+
+### issue-resolver-fast-checks
+
+Fail-fast **static** commands the resolver runs at its §7 baseline and before every push (§8/§10.6):
+codegen, dependency resolution, lints, layer-import boundary checks. **No test invocations belong
+here** — tests are the test-target block's job. Keep it to things that finish in seconds.
+
+```markdown
+<!-- issue-resolver-fast-checks -->
+- `<command>` — <description>
+<!-- /issue-resolver-fast-checks -->
+```
+
+### issue-resolver-test-target
+
+Configuration for the resolver's test-selection sub-agent at the story gates (targeted selection
+only). Declares the test `wrapper` and, per target, how source files map to suite identifiers and
+what to fall back to when a change can't be mapped to one suite.
+
+```markdown
+<!-- issue-resolver-test-target -->
+- wrapper: `<test-runner command>`
+- targets:
+  - `<TargetName>` (unit | UI)
+    - naming: <how source files map to suite identifiers>
+    - helpers-fallback: <command, or "none">
+    - broad-change-fallback: <command, or "none">
+<!-- /issue-resolver-test-target -->
+```
+
+- **wrapper** — the test runner the project invokes (`./scripts/xcb.sh`, `pytest`, `go test`, …).
+- **naming** — the convention mapping a changed source file to the suite(s) that cover it. Project
+  knowledge; interview the user rather than inventing it.
+- **helpers-fallback** — what to run when a changed file is a shared helper that doesn't map to one
+  suite (run the whole target, or `none`).
+- **broad-change-fallback** — what to run when a change is too broad to scope (run the whole target,
+  or `none`).
+
+### issue-resolver-canonical-suite
+
+The **full** suite, read only by the resolver's epic-baseline / bootstrap / post-rectification flow —
+never at a story gate. Three labelled commands so re-runs don't cold-rebuild:
+
+```markdown
+<!-- issue-resolver-canonical-suite -->
+- full-suite: `<one-shot canonical command>`
+- build-once: `<compile-the-test-bundle-once command>`
+- retry-without-rebuild: `<re-run-without-recompile command>`
+<!-- /issue-resolver-canonical-suite -->
+```
+
+If the project's runner can't separate compile from run (most non-Apple stacks), set all three to the
+same command and note it — the labels still satisfy the reader, you just lose the no-rebuild re-run
+optimisation. Skip this block on projects that have no "epic" flow; the resolver falls back to
+`pr-evaluator-test-target`'s `full-suite-command` when it's absent.
+
+### pr-evaluator-static-checks
+
+The evaluator's equivalent of `issue-resolver-fast-checks` — fail-fast always-run hygiene, run first
+at every gate. Same command-list shape and the same "no test invocations here" rule. Commands use
+repo-root-relative paths (the evaluator `cd`s into the branch worktree first).
+
+```markdown
+<!-- pr-evaluator-static-checks -->
+- `<command>` — <description>
+<!-- /pr-evaluator-static-checks -->
+```
+
+### pr-evaluator-test-target
+
+Like `issue-resolver-test-target`, plus a **`full-suite-command`** — the command returned when
+escalation rules fire (epic-integration PR, or an escalation label matched).
+
+```markdown
+<!-- pr-evaluator-test-target -->
+- wrapper: `<test-runner command>`
+- full-suite-command: `<full canonical suite command>`
+- targets:
+  - `<TargetName>` (unit | UI)
+    - naming: <how source files map to suite identifiers>
+    - helpers-fallback: <command, or "none">
+    - broad-change-fallback: <command, or "none">
+<!-- /pr-evaluator-test-target -->
+```
+
+The resolver and evaluator test-target blocks usually share the same `wrapper`, target names, and
+naming conventions — draft them together and keep them consistent. The only structural difference is
+this block's `full-suite-command` line.
+
+### pr-evaluator-escalation-labels
+
+GitHub PR labels that force the full suite instead of targeted selection. **An empty or absent block
+means "no label-based escalation"** — which is a perfectly normal choice. If the user wants no
+escalation labels, write the block empty (it documents the decision) or skip it.
+
+```markdown
+<!-- pr-evaluator-escalation-labels -->
+- `full-suite-required` — bypass targeted selection
+- `pre-release` — run everything before a release cut
+<!-- /pr-evaluator-escalation-labels -->
+```
+
+### worktree-setup / worktree-teardown
+
+**Optional**, and most repos don't need them — skip unless the project provisions a per-worktree
+resource the test commands depend on (an isolated iOS Simulator, a free localhost port, a scratch DB,
+a branch-keyed cache). Command-list shape. Setup runs after a worktree is created/entered and is
+*fail-fast*; teardown runs before a worktree is removed and is *best-effort*. Both must be
+**idempotent** — setup may re-run on a reused worktree, teardown may run on a half-provisioned or
+already-cleaned one.
+
+```markdown
+<!-- worktree-setup -->
+- `<command>` — <description>
+<!-- /worktree-setup -->
+
+<!-- worktree-teardown -->
+- `<command>` — <description>
+<!-- /worktree-teardown -->
+```
+
+## Detection heuristics
+
+Propose drafts from what the repo already declares, then confirm. Sources, roughly in order of
+signal strength:
+
+1. **CI workflows** (`.github/workflows/*.yml`) — the commands CI runs are the strongest signal for
+   what the static and test commands *should* be, because they're already the project's source of
+   truth for "is this green". Map CI's lint/typecheck steps → static checks; its test step → the
+   test wrapper / full-suite-command.
+2. **Task runner manifests:**
+   - **Node / TS** — `package.json` `scripts`: `lint`, `typecheck`/`tsc`, `build` → static checks;
+     `test`, `test:unit`, `test:e2e` → test wrapper (`npm run <script>` / `pnpm <script>`). Test
+     framework + dir (`jest`, `vitest`, `__tests__/`, `*.test.ts`) → target names and naming.
+   - **Go** — `go vet ./...`, `golangci-lint run` → static; `go test ./...` → wrapper; packages are
+     the targets; naming maps `foo.go` ↔ `foo_test.go` in the same package.
+   - **Python** — `ruff check`/`flake8`, `mypy` → static; `pytest` → wrapper; `tests/` modules are
+     the targets; naming maps `module.py` ↔ `tests/test_module.py`.
+   - **Swift / Apple** — `swiftlint`, layer-import scripts, `scripts/xcb.sh` style wrappers → static;
+     `xcodebuild test` or the project's `xcb.sh` → wrapper; `<App>Tests` (unit) / `<App>UITests` (UI)
+     are the targets; canonical-suite's three labels come from the wrapper's build-vs-run flags.
+   - **Make** — `Makefile` targets: `make lint`/`make check` → static; `make test` → wrapper.
+3. **Project-type signals** — `Package.swift`/`*.xcodeproj`, `go.mod`, `pyproject.toml`/`setup.cfg`,
+   `Cargo.toml`, `pom.xml`/`build.gradle` — disambiguate stack when the manifests above are absent.
+4. **`scripts/*.sh`** — repos often wrap their real commands (`scripts/check-*.sh`, `scripts/test.sh`,
+   `scripts/xcb.sh`); prefer the wrapper over the raw tool when one exists, since that's what the
+   project maintains.
+
+Rules of thumb:
+- **Prefer the project's own wrapper** over a raw tool invocation — it's what's maintained and what
+  CI uses.
+- **Static lists exclude tests.** If detection surfaces a single "test everything" command, that's
+  the test-target wrapper / full-suite-command, not a static check.
+- **Never fabricate.** If a source yields nothing for a block, present it empty and ask — a wrong
+  command wired in silently is worse than an absent block the pipeline skill asks about at runtime.
+
+## Legacy migration
+
+Older repos declare one `pr-evaluator-health-checks` block holding both static checks and the test
+invocation as a flat command list. Re-running setup offers to split it:
+
+1. `config-block.sh read <file> pr-evaluator-health-checks` — get the current commands.
+2. **Static commands** (lints, codegen, dep resolution, boundary checks) → `pr-evaluator-static-checks`.
+3. **The test invocation** → the basis for `pr-evaluator-test-target`: that command becomes both the
+   `wrapper` and the `full-suite-command`. The per-target `naming` / fallbacks aren't recoverable from
+   a flat command — interview the user (or carry over from `issue-resolver-test-target` if it already
+   exists and matches).
+4. Confirm the split, `upsert` both new blocks, then `remove pr-evaluator-health-checks`.
+
+Migration is opt-in and reversible-by-eye (the user sees the diff). Don't remove the legacy block
+until both replacements are written and confirmed.
+
+## Worked example
+
+A Swift/Apple project (`food-journal`) — the canonical shape the evaluator documents:
+
+```markdown
+<!-- pr-evaluator-static-checks -->
+- `./scripts/check-layer-imports.sh` — Layer-import boundary lint (fast, <5s)
+- `CI=1 ./scripts/run-swiftlint.sh` — SwiftLint in CI strict mode
+<!-- /pr-evaluator-static-checks -->
+
+<!-- pr-evaluator-test-target -->
+- wrapper: `./scripts/xcb.sh`
+- full-suite-command: `./scripts/xcb.sh`
+- targets:
+  - `FoodJournalTests` (unit)
+    - naming: source `<X>.swift` ↔ `FoodJournalTests/<X>Tests.swift`; suite id `FoodJournalTests/<X>Tests`.
+    - helpers-fallback: `./scripts/xcb.sh -only-testing FoodJournalTests`
+    - broad-change-fallback: `./scripts/xcb.sh -only-testing FoodJournalTests`
+  - `FoodJournalUITests` (UI)
+    - naming: flow-oriented; map by symbol references and `@testable import`.
+    - helpers-fallback: `./scripts/xcb.sh -only-testing FoodJournalUITests`
+    - broad-change-fallback: none
+<!-- /pr-evaluator-test-target -->
+
+<!-- pr-evaluator-escalation-labels -->
+- `full-suite-required` — bypass targeted selection
+<!-- /pr-evaluator-escalation-labels -->
+```
+
+The resolver side mirrors this — same `wrapper`, target names, naming, and fallbacks — minus the
+`full-suite-command` line, plus the `issue-resolver-canonical-suite` block for the epic flow:
+
+```markdown
+<!-- issue-resolver-canonical-suite -->
+- full-suite: `./scripts/xcb.sh test`
+- build-once: `./scripts/xcb.sh build-for-testing`
+- retry-without-rebuild: `./scripts/xcb.sh test-without-building`
+<!-- /issue-resolver-canonical-suite -->
+```

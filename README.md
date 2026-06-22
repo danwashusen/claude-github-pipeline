@@ -1,8 +1,9 @@
 # github-pipeline
 
 A Claude Code plugin that runs a complete GitHub issue/PR workflow through the `gh` CLI — five
-session-per-step skills that hand off to one another, backed by a mechanical `github-ops` executor
-sub-agent and three bundled shell scripts.
+session-per-step skills that hand off to one another, plus a one-shot setup skill that configures a
+repo to use them, backed by a mechanical `github-ops` executor sub-agent and four bundled shell
+scripts.
 
 ```
 draft ──▶ research ──▶ plan ──▶ resolve ──▶ evaluate
@@ -16,6 +17,7 @@ that starts the next one, so context stays clean across the pipeline.
 
 | Component | What it does |
 |---|---|
+| `/github-pipeline:github-pipeline-setup` | **Run this first.** Detects your project's lint/test/build commands and writes the marker blocks the resolver/evaluator read from `COMMANDS.md`/`CLAUDE.md`. Idempotent — safe to re-run to re-configure; migrates legacy blocks. Not a pipeline stage. |
 | `/github-pipeline:github-issue-drafter` | Turns informal feedback into a well-structured issue (or Epic + stories) and files it. |
 | `/github-pipeline:github-issue-researcher` | Web-researches version/API/migration questions and posts a dated, cited dossier on the issue. |
 | `/github-pipeline:github-issue-planner` | Designs the implementation approach, grounded in repo precedent + project docs, and posts a verified `<!-- implementation-plan:v1 -->` comment. |
@@ -24,7 +26,8 @@ that starts the next one, so context stays clean across the pipeline.
 | `github-pipeline:github-ops` (agent) | Internal executor. The skills delegate all mechanical `gh`/`git` fetch + persist I/O to it (runs on Sonnet) so the expensive model isn't spent on round-trips. Not for direct use. |
 
 The `_shared/` skill folder holds the cross-skill handoff schema and Definition-of-Done annotation
-contract; `scripts/` holds the bundled `gh-gather.sh`, `gh-pr-gather.sh`, and `gh-persist.sh`.
+contract; `scripts/` holds the bundled `gh-gather.sh`, `gh-pr-gather.sh`, `gh-persist.sh`, and
+`config-block.sh` (the deterministic, idempotent reader/writer for the marker blocks above).
 
 ## Requirements
 
@@ -54,8 +57,12 @@ provides:
   marker blocks, which the resolver and evaluator read to learn how to test and gate your project:
   - `<!-- issue-resolver-test-target -->`, `<!-- issue-resolver-fast-checks -->`,
     `<!-- issue-resolver-canonical-suite -->`
-  - `<!-- pr-evaluator-health-checks -->`, `<!-- pr-evaluator-static-checks -->`,
-    `<!-- pr-evaluator-test-target -->`, `<!-- pr-evaluator-escalation-labels -->`
+  - `<!-- pr-evaluator-static-checks -->`, `<!-- pr-evaluator-test-target -->`,
+    `<!-- pr-evaluator-escalation-labels -->` (and the legacy `<!-- pr-evaluator-health-checks -->`)
+
+  You don't have to write these by hand — run **`/github-pipeline:github-pipeline-setup`** and it
+  detects your project's commands, proposes drafts, and writes the blocks idempotently (and offers to
+  migrate the legacy `health-checks` block).
 - **Optional grounding docs** read if present: `docs/prd.md`, `docs/architecture.md`,
   `docs/constitution.md`, and `CLAUDE.md`. The planner and resolver use them to align designs and
   audit implementations; missing docs are simply skipped.
