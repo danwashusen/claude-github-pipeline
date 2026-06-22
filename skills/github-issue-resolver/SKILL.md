@@ -57,7 +57,11 @@ ambiguity it returns `DECISION_NEEDED: <…>` and writes nothing — surface it 
 
 If `gh` isn't authenticated, stop and tell the user — don't try to work around it.
 
-## Working in a worktree
+## Procedures
+
+Reusable procedures the flows below (§1–§12, Epic, Story) invoke by ID — each carries a stable §P-ID, cited as "per §P2" the way the flows already cite "per §10.6".
+
+### §P1 Working in a worktree
 
 For any code-change issue, the skill works inside a `git worktree` rather than the main checkout. This lets multiple issues stay in flight at once — each branch lives in its own working tree, builds and tests run independently, and the main checkout stays untouched on whatever branch you had open before.
 
@@ -75,7 +79,7 @@ For any code-change issue, the skill works inside a `git worktree` rather than t
 
 **Comment-only responses skip this entirely.** Questions, blocked issues, duplicates, and other no-code responses don't need a worktree — there's no branch to host. Skip directly to drafting the comment.
 
-## Worktree setup & teardown commands
+### §P2 Worktree setup & teardown commands
 
 Worktrees give every issue a sandboxed checkout, but some projects also need per-worktree resources the worktree itself can't carry: an isolated iOS Simulator, a free localhost port, a scratch database, a cache directory keyed to the branch. Without lifecycle hooks the project would have to wedge that work into individual test commands — fragile and easy to forget. With hooks the project declares setup and teardown commands once and the skill runs them at the right moments. The skill stays opaque to *what* the commands do — that's the project's concern. It only guarantees they run inside the worktree at the right point in the worktree lifecycle.
 
@@ -108,7 +112,7 @@ Format matches the other list-style command blocks (`issue-resolver-fast-checks`
 
 **No stamp file needed.** The skill ties setup to the worktree-creation event, not to a persistent stamp on disk. If the user manually re-runs setup on a reused worktree (e.g., to recover a lost resource), that's their call — the skill doesn't track it.
 
-## Test selection during iteration
+### §P3 Test selection during iteration
 
 §7 baseline runs the project's static-checks block. **§8 (after the first round of code changes, before the first push) and every §10.6 iteration (after addressing review feedback, before the next push)** run the static-checks block followed by a Claude-selected set of test suites scoped to the diff vs the integration target — this is the **pre-push verification gate** described below. Both gates are mandatory before a push; never push code without one of them having run green. The full canonical suite (every unit test + every UI test) is **not** run inside this skill at any gate. The point of this design is fast feedback during development: a one-Service edit should run that Service's tests, not a 10-minute UI suite.
 
@@ -118,7 +122,7 @@ The bug this design avoids: if the test gate lived only inside §10.6, a clean f
 
 **These conventions apply only when step 7 applies.** Comment-only flows (questions, blocked issues, duplicates, doc/typo edits) skip steps 7/8/10/11 entirely and use none of this.
 
-### Project-side blocks the skill reads
+#### §P3.1 Project-side blocks the skill reads
 
 ```markdown
 <!-- issue-resolver-fast-checks -->
@@ -155,7 +159,7 @@ Read these blocks once at the start of step 7 and remember them for the rest of 
 
 If neither block is present, fall back to the `pr-evaluator-static-checks` block for static checks (or the legacy `pr-evaluator-health-checks` block if that's all that exists) at the gates where tests are needed (§8 and §10.6 — §7 stays static-only). This is the worst case, but it preserves correctness on projects that haven't declared either issue-resolver-side block.
 
-### Per-step behaviour
+#### §P3.2 Per-step behaviour
 
 | Step | Static checks | Test selection sub-agent | Test execution |
 |---|---|---|---|
@@ -167,7 +171,7 @@ If neither block is present, fall back to the `pr-evaluator-static-checks` block
 
 The §7 baseline gate is now narrower in scope: "is the project's static toolchain healthy?" — not "is the full test suite green on `main`?" The latter is the project's CI's responsibility. Trust-decay rules and the `Baseline established` epic comment format stay (they govern when to *re-run* the baseline at all); they no longer record a tier.
 
-### Test-selection sub-agent
+#### §P3.3 Test-selection sub-agent
 
 §8 and §10.6 each spawn a read-only `Explore` agent for selection. Reasoning happens entirely inside the sub-agent so the main conversation never sees the diff hunks, the test directory listings, or the grep output — only the sub-agent's two-section verdict. The sub-agent uses Bash/Read/Glob/Grep against the worktree to read the diff, list each declared target's directory, and grep for changed symbols.
 
@@ -177,7 +181,7 @@ The skill parses these two sections and proceeds:
 - `COMMAND: (none)` → skip test execution entirely; print the rationale to the user; mark the iteration's test status as "skipped (no tests selected)" and continue.
 - `COMMAND: <shell command>` → print the rationale to the user; delegate execution per the next section.
 
-### Test execution — Apple-platform subagent delegation
+#### §P3.4 Test execution — Apple-platform subagent delegation
 
 If the resolved command begins with `xcodebuild` (or invokes a wrapper that runs `xcodebuild`, like `./scripts/xcb.sh`), delegate execution to the `apple-platform-build-tools:builder` subagent. The subagent absorbs the verbose build log and returns terse pass/fail plus the first error if any — keeping conversation context clean. Non-xcodebuild commands (e.g., `pytest`, `go test`) run inline. **Exception:** the *full* canonical suite in the epic-baseline / bootstrap / post-rectification flow is **not** delegated to the builder — it is a 15–30 min run owned by the main loop; see "Running the full canonical suite" below.
 
@@ -187,7 +191,9 @@ Concretely, the prompt should look like: *"Run this exact command from this exac
 
 This mirrors `github-pr-evaluator` §5.5.3. The targeted-tests strategy means each invocation runs only the selected suites, so the build log per iteration is much shorter than a full-suite run anyway — but the delegation layer is still useful and keeps the convention consistent across both skills.
 
-### Running the full canonical suite (epic baseline / bootstrap / post-rectification)
+#### Running the full canonical suite (epic baseline / bootstrap / post-rectification)
+
+> **Epic-only — not a §P-procedure.** Invoked solely by the epic-baseline / bootstrap / post-rectification flows; relocates to `references/epic-flow.md` in Phase 4. Deliberately excluded from the Procedures library (single-consumer, epic-path-only).
 
 This subsection applies **only** to the epic-baseline, bootstrap, and post-rectification flows in "If the issue is an Epic" — the places that legitimately run the project's *full* canonical suite (every unit + UI test) in a worktree. It does **not** loosen the §8/§10.6 story gates, which stay targeted-only (see "Don't run the full unit + UI suite inside this skill" in Common pitfalls). It exists because a full-suite run is a 15–30 minute, cold-build-bearing operation, and three foot-guns turned one such run into a multi-hour hang in the past.
 
@@ -205,13 +211,13 @@ The reason is wall-clock: a plain `<wrapper> test` recompiles the whole app targ
 - **Use absolute paths; never chain the real command behind a relative `cd … &&`.** The skill's shell cwd may already be the worktree (cwd persists between Bash calls), so a relative `cd .worktrees/<branch> && …` *fails* — and `&&` then silently short-circuits the whole command to a no-op that exits `0`, so it looks like the suite passed when nothing ran. Resolve an absolute worktree path into a variable and `cd "$WT"` on its own line, or pass the command's directory explicitly.
 - **Capture to files and read the file — don't re-run to see output.** Tee the full log to one file and a one-line pass/fail summary to another; on the completion notification, read the summary file. Re-running a 15–30 min suite just to see scrolled-off output is the same wasted cost the build-once rule exists to avoid (mirrors `COMMANDS.md`'s live-test "always re-read the log; never re-run" guidance).
 
-## Retry ladder for the verification gate
+### §P4 Retry ladder for the verification gate
 
 The pre-push verification gate (§8 before the first push, §10.6 after each round of review feedback) caps a single visit at **3 test runs total** with a forced research breakpoint between cheap fixes and any deep fix. Run 1 includes the unrelated-failure triage (cheap `gh issue list` lookup before spending the fix budget); run 2 enforces the adaptive cheap-fix rule (sticky failures force the breakpoint immediately); run 3 is the research-informed deep fix. When run 3 is also red, escalate via `AskUserQuestion` (`header: "Tests red"`) with three options: **Push with reds** / **Defer the tests** / **Restructure**. Each entry to §8 or §10.6 starts a fresh ladder.
 
 **See [`references/retry-ladder.md`](references/retry-ladder.md) for the full ladder, triage rules, adaptive-fix rule, research breakpoint, and escalation rubric.**
 
-## Follow-up issue tracking
+### §P5 Follow-up issue tracking
 
 Follow-up items surface at four moments — §7 baseline detours, the retry-ladder's escalation option 2, §10.4 reviewer-routed deferrals, and §11 summary cleanup. The registry has five fields (`type`, `title hint`, `description`, `parent reference`, `urgency`). Filing decision rule: trackable work → file as an issue via the drafter-proxy sub-agent protocol; procedural / informational notes → capture in the PR body or §11 summary instead. Urgency `file-now` items must land before the iteration's push (so `// TODO(#NNN)` markers and `XCTSkip("Deferred to #NNN — …")` reasons reference real issue numbers); urgency `file-at-checkpoint` items batch at end-of-§10 before §11 fires. Every filed issue routes through `github-issue-drafter` (PRD-grounded, sub-agent-reviewed) — no hand-crafted `gh issue create` bodies. After filing, weave the URL into the code's TODO/XCTSkip markers, the PR body's `## Follow-ups` section, and §11's summary.
 
