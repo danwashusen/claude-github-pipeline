@@ -486,7 +486,7 @@ Every clean run of this skill ends with a single `## Handoff` block — the sche
 
 Pull the snapshot from data you already have — the `PERSIST_CREATE` result(s) carry the issue/Epic/story numbers and titles; `plan: ✗` is correct because the drafter never authors plans. The `Why:` line is yours to write — describe what the next session will do (don't repeat the schema).
 
-**See [`references/handoff-renderings.md`](references/handoff-renderings.md)** for the worked `## Handoff` shapes the drafter emits — single issue filed (forward to the planner), Epic batch filed (forward to the planner), and revise-mode (forward to author a plan, stale-refresh, or terminal — per whether a plan exists and whether the revise was material). Each carries the closed-set state-marker vocabulary from [`../_shared/handoff-format.md`](../_shared/handoff-format.md); fill the snapshot from the data Step 8 lists above.
+**Before composing the handoff, `Read references/handoff-renderings.md`** — it holds the worked `## Handoff` shapes the drafter emits: single issue filed (forward to the planner), Epic batch filed (forward to the planner), and revise-mode (forward to author a plan, stale-refresh, or terminal — per whether a plan exists and whether the revise was material). It's a progressively-disclosed reference — not auto-loaded with this skill — so the forced Read is what guarantees the shapes are in your working context before you emit; without it the handoff may be written from memory and drift from the closed-set shapes. Each carries the closed-set state-marker vocabulary from [`../_shared/handoff-format.md`](../_shared/handoff-format.md); fill the snapshot from the data Step 8 lists above.
 
 ## Handling edge cases
 
