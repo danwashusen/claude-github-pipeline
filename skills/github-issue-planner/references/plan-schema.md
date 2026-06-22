@@ -14,22 +14,22 @@ The `<!-- implementation-plan:v1 -->` comment body uses this schema verbatim —
 constrain this, with §refs — the citations, not a restatement of the approach>
 
 ## Architecture decisions
-- <decision> — <rationale> — [precedent: `path/to/File.swift:NN` | architecture.md §X | architecture-notes §Y | user decision <date> | DEVIATION (agreed <date>) → see Deviations]
+- <decision> — <rationale> — [precedent: `path/to/file:NN` | architecture.md §X | architecture-notes §Y | user decision <date> | DEVIATION (agreed <date>) → see Deviations]
 - ...
 
 ## UI decisions                  (omit if no UI surface)
 - <decision> — [precedent: ui-design §X | DEVIATION (agreed <date>)]
 
 ## Changes (file-level)
-- `path/to/File.swift` — <what changes; new/modified types, methods, signatures; layer>
+- `path/to/file` — <what changes; new/modified types, methods, signatures; layer>
 - ...
 
 ## Data model / schema impact     (omit if none)
-- <new/changed @Model fields, relationships, migration considerations per constitution §8>
+- <new/changed model fields/columns, relationships, migration considerations per constitution §8>
 
 ## Test plan
 - Unit: <suites to add/extend, per constitution §5 coverage targets>
-- UI: <XCUITest flows, accessibility identifiers, USE_MOCK_LLM expectations>
+- UI / integration: <integration-test flows, identifiers/selectors, mock/fixture expectations>
 
 ## Phases                         (multi-phase issues only — omit for single-phase; epics use the dedicated ## Story breakdown / ## Integration strategy sections)
 1. **Phase 1 — <short title>**

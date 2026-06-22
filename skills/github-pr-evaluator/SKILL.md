@@ -240,9 +240,9 @@ Determine the PR type from data already in memory (per the "If the PR is a story
 
 Collect the PR's GitHub labels from the step-3 fetch (`labels` array). If any label name matches an entry in the `pr-evaluator-escalation-labels` block, set `escalation_label_matched: <label-name>`; otherwise empty.
 
-**See [`references/test-selection-sub-agent.md`](references/test-selection-sub-agent.md) for the full prompt template** — substitute the worktree path, PR base branch, HEAD SHA, `pr_type`, the matched escalation label (if any), and the `<!-- pr-evaluator-test-target -->` block contents at dispatch. It applies the escalation rules (epic-integration or escalation-label → full suite) before the heuristic path (diff-driven suite selection plus the UI blast-radius widening pass), and returns exactly two sections with the literal headers `COMMAND:` and `RATIONALE:`.
+**See [`references/test-selection-sub-agent.md`](references/test-selection-sub-agent.md) for the full prompt template** — substitute the worktree path, PR base branch, HEAD SHA, `pr_type`, the matched escalation label (if any), and the `<!-- pr-evaluator-test-target -->` block contents at dispatch. It applies the escalation rules (epic-integration or escalation-label → full suite) before the heuristic path (diff-driven suite selection plus the integration blast-radius widening pass), and returns exactly two sections with the literal headers `COMMAND:` and `RATIONALE:`.
 
-The step-5 exploration pass is the heart of the selection's safety against root-view regressions: a small diff in a high-fanout view can break unrelated UI tests, and name proximity won't catch it. Trust the sub-agent to decide how deep to read; widening is the correct default when blast radius is uncertain. The full `RATIONALE:` is also written into the cache comment in §5.6, so post-mortems can audit *why* a given run was targeted vs. full.
+The step-5 exploration pass is the heart of the selection's safety against root-surface regressions: a small diff in a high-fanout integration-surface file can break unrelated integration tests, and name proximity won't catch it. Trust the sub-agent to decide how deep to read; widening is the correct default when blast radius is uncertain. The full `RATIONALE:` is also written into the cache comment in §5.6, so post-mortems can audit *why* a given run was targeted vs. full.
 
 The skill parses these two sections. Print `RATIONALE:` to the user verbatim as the gate's status line — that's how the user audits the selection in real time. Capture it as `SELECTION_REASONING` for use in the cache comment. Set `TIER`:
 - `full` if `COMMAND:` matches the config's `full-suite-command`
@@ -262,7 +262,7 @@ END=$(date +%s)
 DURATION=$((END - START))
 ```
 
-If the command begins with `xcodebuild` (or invokes a wrapper that runs `xcodebuild`, like `./scripts/xcb.sh`), delegate to the `apple-platform-build-tools:builder` subagent — it absorbs the verbose build log and returns only pass/fail plus the first error. For all other commands, run inline.
+If the command begins with `xcodebuild` (or invokes a wrapper that runs `xcodebuild`, like `./scripts/xcb.sh`), delegate to the `apple-platform-build-tools:builder` subagent — it absorbs the verbose build log and returns only pass/fail plus the first error. For all other commands (e.g. `bin/rails test`, `pytest`, `go test`), run inline.
 
 **Bound the subagent's scope explicitly when invoking it.** The builder is a build-runner, not an autonomous coder. The delegation is narrow and one-shot: run the command exactly as given, capture the result, and report pass/fail plus the first error. It must not edit code, "fix" failures it diagnoses, re-run with different flags, or expand scope. Failures bubble back to this skill — `HEALTH_OK=false` is the right outcome for a real failure, and the user (or `github-issue-resolver` on a re-run) decides what to fix. A silent diagnose-and-fix loop inside the subagent uncaps the wall-clock cost of a single delegation, hides code changes from the PR's commit history, and breaks the cache schema's assumption that `HEALTH_OK` reflects the suite's actual state. State the constraint in the prompt:
 
@@ -752,7 +752,7 @@ A repository declares the gate's behaviour through three marker-delimited blocks
 <!-- /pr-evaluator-escalation-labels -->
 ```
 
-**Example** (food-journal):
+**Examples.** The same schema across two stacks — only the commands and naming change. Swift/Apple (`food-journal`):
 
 ```markdown
 <!-- pr-evaluator-static-checks -->
@@ -771,6 +771,33 @@ A repository declares the gate's behaviour through three marker-delimited blocks
   - `FoodJournalUITests` (UI)
     - naming: flow-oriented; map by symbol references and `@testable import`.
     - helpers-fallback: `./scripts/xcb.sh -only-testing FoodJournalUITests`
+    - broad-change-fallback: none
+<!-- /pr-evaluator-test-target -->
+
+<!-- pr-evaluator-escalation-labels -->
+- `full-suite-required` — bypass targeted selection
+<!-- /pr-evaluator-escalation-labels -->
+```
+
+The same fields for a Ruby on Rails project (`books-api`) — note the system-test target stands in for the UI target, and Rails has no separate compile step:
+
+```markdown
+<!-- pr-evaluator-static-checks -->
+- `bin/rubocop` — Ruby style + lint
+- `bin/brakeman --no-pager -q` — static security scan
+<!-- /pr-evaluator-static-checks -->
+
+<!-- pr-evaluator-test-target -->
+- wrapper: `bin/rails test`
+- full-suite-command: `bin/rails test && bin/rails test:system`
+- targets:
+  - `test` (unit)
+    - naming: source `app/<layer>/<x>.rb` ↔ `test/<layer>/<x>_test.rb`; suite identifier `test/<layer>/<x>_test.rb`.
+    - helpers-fallback: `bin/rails test test/<layer>`
+    - broad-change-fallback: `bin/rails test`
+  - `test/system` (system / integration)
+    - naming: flow-oriented; map by symbol references and rendered partials/routes.
+    - helpers-fallback: `bin/rails test test/system`
     - broad-change-fallback: none
 <!-- /pr-evaluator-test-target -->
 

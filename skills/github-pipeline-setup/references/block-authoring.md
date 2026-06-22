@@ -22,7 +22,7 @@ skill wins.
   - [worktree-setup / worktree-teardown](#worktree-setup--worktree-teardown)
 - [Detection heuristics](#detection-heuristics)
 - [Legacy migration: health-checks → static-checks + test-target](#legacy-migration)
-- [A worked example (food-journal)](#worked-example)
+- [Two worked examples — Swift and Rails](#worked-examples)
 
 ## Two shared shapes
 
@@ -73,7 +73,7 @@ what to fall back to when a change can't be mapped to one suite.
 <!-- /issue-resolver-test-target -->
 ```
 
-- **wrapper** — the test runner the project invokes (`./scripts/xcb.sh`, `pytest`, `go test`, …).
+- **wrapper** — the test runner the project invokes (`./scripts/xcb.sh`, `bin/rails test`, `pytest`, `go test`, …).
 - **naming** — the convention mapping a changed source file to the suite(s) that cover it. Project
   knowledge; interview the user rather than inventing it.
 - **helpers-fallback** — what to run when a changed file is a shared helper that doesn't map to one
@@ -184,9 +184,15 @@ signal strength:
    - **Swift / Apple** — `swiftlint`, layer-import scripts, `scripts/xcb.sh` style wrappers → static;
      `xcodebuild test` or the project's `xcb.sh` → wrapper; `<App>Tests` (unit) / `<App>UITests` (UI)
      are the targets; canonical-suite's three labels come from the wrapper's build-vs-run flags.
+   - **Ruby / Rails** — `rubocop`, `brakeman` → static; `bin/rails test` (or `bundle exec rspec`) →
+     wrapper; `test/` (Minitest) or `spec/` (RSpec) modules are the targets, with system/feature
+     tests (`test/system`, `spec/system`/`spec/features`) as the integration target; naming maps
+     `app/<layer>/<x>.rb` ↔ `test/<layer>/<x>_test.rb` (or `spec/<layer>/<x>_spec.rb`). No separate
+     compile step, so canonical-suite's three labels collapse to the one test command.
    - **Make** — `Makefile` targets: `make lint`/`make check` → static; `make test` → wrapper.
 3. **Project-type signals** — `Package.swift`/`*.xcodeproj`, `go.mod`, `pyproject.toml`/`setup.cfg`,
-   `Cargo.toml`, `pom.xml`/`build.gradle` — disambiguate stack when the manifests above are absent.
+   `Cargo.toml`, `pom.xml`/`build.gradle`, `Gemfile`/`config/application.rb` — disambiguate stack when
+   the manifests above are absent.
 4. **`scripts/*.sh`** — repos often wrap their real commands (`scripts/check-*.sh`, `scripts/test.sh`,
    `scripts/xcb.sh`); prefer the wrapper over the raw tool when one exists, since that's what the
    project maintains.
@@ -215,9 +221,13 @@ invocation as a flat command list. Re-running setup offers to split it:
 Migration is opt-in and reversible-by-eye (the user sees the diff). Don't remove the legacy block
 until both replacements are written and confirmed.
 
-## Worked example
+## Worked examples
 
-A Swift/Apple project (`food-journal`) — the canonical shape the evaluator documents:
+The same schema, filled in for two different stacks. Read them side by side: the block *shapes*
+and field names are identical — only the commands, target names, and naming rules change with the
+stack. That's the contract working as intended; nothing here is stack-specific by design.
+
+### Swift / Apple (`food-journal`) — the canonical shape the evaluator documents
 
 ```markdown
 <!-- pr-evaluator-static-checks -->
@@ -245,12 +255,52 @@ A Swift/Apple project (`food-journal`) — the canonical shape the evaluator doc
 ```
 
 The resolver side mirrors this — same `wrapper`, target names, naming, and fallbacks — minus the
-`full-suite-command` line, plus the `issue-resolver-canonical-suite` block for the epic flow:
+`full-suite-command` line, plus the `issue-resolver-canonical-suite` block for the epic flow. Swift
+builds and runs tests in separate steps, so the canonical-suite's three labels are distinct:
 
 ```markdown
 <!-- issue-resolver-canonical-suite -->
 - full-suite: `./scripts/xcb.sh test`
 - build-once: `./scripts/xcb.sh build-for-testing`
 - retry-without-rebuild: `./scripts/xcb.sh test-without-building`
+<!-- /issue-resolver-canonical-suite -->
+```
+
+### Ruby on Rails (`books-api`) — the same schema, a different stack
+
+```markdown
+<!-- pr-evaluator-static-checks -->
+- `bin/rubocop` — Ruby style + lint
+- `bin/brakeman --no-pager -q` — static security scan
+<!-- /pr-evaluator-static-checks -->
+
+<!-- pr-evaluator-test-target -->
+- wrapper: `bin/rails test`
+- full-suite-command: `bin/rails test && bin/rails test:system`
+- targets:
+  - `test` (unit)
+    - naming: source `app/<layer>/<x>.rb` ↔ `test/<layer>/<x>_test.rb`; suite id `test/<layer>/<x>_test.rb`.
+    - helpers-fallback: `bin/rails test test/<layer>`
+    - broad-change-fallback: `bin/rails test`
+  - `test/system` (system / integration)
+    - naming: flow-oriented; map by symbol references and rendered partials/routes.
+    - helpers-fallback: `bin/rails test test/system`
+    - broad-change-fallback: none
+<!-- /pr-evaluator-test-target -->
+
+<!-- pr-evaluator-escalation-labels -->
+- `full-suite-required` — bypass targeted selection
+<!-- /pr-evaluator-escalation-labels -->
+```
+
+Rails runs tests directly — there's no separate compile step — so the canonical-suite's three
+labels collapse to the single test command (the all-three-identical degenerate case the
+`issue-resolver-canonical-suite` authoring notes call out for non-compile stacks):
+
+```markdown
+<!-- issue-resolver-canonical-suite -->
+- full-suite: `bin/rails test && bin/rails test:system`
+- build-once: `bin/rails test && bin/rails test:system`
+- retry-without-rebuild: `bin/rails test && bin/rails test:system`
 <!-- /issue-resolver-canonical-suite -->
 ```

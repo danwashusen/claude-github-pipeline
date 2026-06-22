@@ -165,3 +165,27 @@ but key behaviors are driven by markers the *consuming* repo provides — not by
   prose, never a cross-reference. **The §P-ID scheme is resolver-local** — it exists because the
   resolver is the one file long and reorder-prone enough to need it; do not roll §P-IDs out to the
   other skills, which navigate fine by `§N` alone.
+- **Skills stay tech-stack-agnostic; stack specifics live in the consuming repo, not the prompts.**
+  The pipeline was extracted from a Swift/iOS project (`food-journal`) and is also run against other
+  stacks (e.g. Ruby on Rails), so a prompt that *assumes* one stack is a bug, not a quirk. Stack
+  specifics are meant to be carried out-of-band — the consuming repo's marker-comment config
+  (`<!-- issue-resolver-test-target -->` etc.), the worktree setup/teardown hooks, and the **gated**
+  `xcodebuild`→`apple-platform-build-tools:builder` delegation — so prompt bodies must not hard-code a
+  language, framework, test runner, or file convention as *the* default. Three forms of tech-mention
+  are allowed; one is banned:
+  - **Banned — assumed default.** An instruction that only parses for one stack: "for each modified
+    *Swift* file", "the wrapper supports `-only-testing FoodJournalTests`", "capture
+    `app.debugDescription`". On the wrong repo these are wrong instructions the model will try to
+    follow. Rewrite to the stack-neutral principle (the universal concept stated first, e.g.
+    "high-fanout integration-surface file", "the wrapper's targeted-run syntax").
+  - **Allowed — conditional integration** gated on a runtime signal that no-ops elsewhere ("if the
+    command begins with `xcodebuild`, delegate to the Apple builder; otherwise run inline"). Keep
+    these — it's how a stack-specific optimization stays agnostic.
+  - **Allowed — labeled multi-stack example.** Name concrete stacks *as examples*, and show **≥2**
+    (the convention here is Swift *and* Rails) so the schema reads as neutral; never present one
+    stack's worked example as "the canonical shape." State the generic principle first, then
+    illustrate. The `block-authoring.md` worked examples and the test-selection sub-agent's step-5
+    SwiftUI/Rails branches are the reference patterns.
+  - No build/test here, so a grep is the validator:
+    `grep -rniE 'swift|xcode|xcb\.sh|foodjournal|rails|rspec|pytest' skills/ agents/` — every hit must
+    be a gated integration or a labeled multi-stack example; a bare assumption is a regression.

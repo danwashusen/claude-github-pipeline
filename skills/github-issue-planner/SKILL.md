@@ -216,7 +216,7 @@ Everything else gets pinned in the plan:
 
 - every new symbol's **type signature** — name, parameter labels, return type, throws/async, generics
 - every new enum case's name, raw value, associated payload (or explicit "no payload"), and ordering/priority
-- every new field's type, nullability, units, initial value, and `@Relationship` shape (for `@Model` fields)
+- every new field's type, nullability, units, initial value, and relationship shape (for model/schema fields — e.g. a SwiftData `@Relationship`, a Rails association / foreign key)
 - the **file path and layer** each new symbol lives in (per constitution §2)
 - the **choice between competing implementation patterns** when more than one is plausible — name the rejected alternatives and why, so a future reader doesn't re-open the question
 - the file path of every new test file; the suite/`// MARK: -` section for every new test added to an existing file
@@ -242,7 +242,7 @@ evaluate during implementation | leave to (the )?resolver | (depends on|figure o
 
 For each hit, choose **one** of the following — in this priority order, do not skip ahead:
 
-1. **Resolve from precedent.** Re-read the actual code at `<plan_ref>` with `git show <plan_ref>:<path>` (and `git grep` for the sibling pattern). Pin the decision by rewriting the bullet with a concrete answer and a `[precedent: path/to/File.swift:NN]` citation. Most hedges dissolve here — the planner already knows what to do, it just hasn't committed to it yet.
+1. **Resolve from precedent.** Re-read the actual code at `<plan_ref>` with `git show <plan_ref>:<path>` (and `git grep` for the sibling pattern). Pin the decision by rewriting the bullet with a concrete answer and a `[precedent: path/to/file:NN]` citation. Most hedges dissolve here — the planner already knows what to do, it just hasn't committed to it yet.
 
 2. **Surface as a Decision gate (step 6.5).** Used only when step 1 genuinely cannot decide — two approaches are equally grounded and the choice has a user-visible consequence. Loop back to step 6.5, get the user's call, fold the answer into `## Architecture decisions` with `[user decision <date>]`.
 
