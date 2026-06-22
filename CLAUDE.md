@@ -150,3 +150,18 @@ but key behaviors are driven by markers the *consuming* repo provides — not by
 - **A long `SKILL.md` exceeds the default Read cap.** The resolver/evaluator deliberately force a
   `Read` of certain `references/*.md` files mid-flow so the needed renderings are in context
   regardless of where the initial load truncated. Preserve those forced reads when refactoring.
+- **Stable §-anchors over positional cross-references.** Skills navigate themselves and each other
+  by stable anchors — workflow steps as `§N`/`step N`, and (resolver-only) reusable primitives as
+  `§P-IDs` under the resolver's `## Procedures` band (`§P1`–`§P5`, cited as "per §P2" the way the
+  flows cite "per §10.6"). Never reference a section by position ("the section above", "per X
+  below") or by a hard line range (`§1015–1017`) — both silently dangle or invert the moment
+  content is moved. When you add or move a reusable resolver primitive, give it a §P-ID and point
+  every caller at the ID; when you reference another skill's section, name it (`§9 "DoD projection
+  rule"`), don't cite its line number. There is no build/test, so a grep is the validator: the
+  referenced set must be a subset of the defined set —
+  `grep -oE '§P[0-9]+(\.[0-9]+)?' skills/github-issue-resolver/SKILL.md | sort -u` (referenced)
+  vs `grep -nE '^#+ .*§P[0-9]' skills/github-issue-resolver/SKILL.md` (defined headings), and
+  `grep -nE '\b(above|below)\b' skills/github-issue-resolver/SKILL.md` should surface only genuine
+  prose, never a cross-reference. **The §P-ID scheme is resolver-local** — it exists because the
+  resolver is the one file long and reorder-prone enough to need it; do not roll §P-IDs out to the
+  other skills, which navigate fine by `§N` alone.
