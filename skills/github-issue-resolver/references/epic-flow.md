@@ -125,7 +125,7 @@ Every step runs from the new epic worktree; the main checkout is never touched:
    git worktree add -b epic/<N>-<slug> .worktrees/epic-<N>-<slug> origin/main
    cd .worktrees/epic-<N>-<slug>
    ```
-   Announce the path. Every subsequent command in the bootstrap (and every later epic-as-target run) lives here. Branching from `origin/main` rather than local `main` lets the bootstrap proceed without a `git checkout main` in the main tree, while still preserving the SHA invariant — the worktree's HEAD equals `MAIN_SHA` at creation time. If a fresh worktree was created (not reused), run the project's worktree-setup commands per SKILL.md §P2 before continuing to step 3.
+   Announce the path. Every subsequent command in the bootstrap (and every later epic-as-target run) lives here. Branching from `origin/main` rather than local `main` lets the bootstrap proceed without a `git checkout main` in the main tree, while still preserving the SHA invariant — the worktree's HEAD equals `MAIN_SHA` at creation time. Run the project's worktree-setup commands per SKILL.md §P2 before continuing to step 3 — on both the create and reuse arms; idempotent.
 3. Run the project's full canonical suite *in the worktree* per "Running the full canonical suite". This is the green baseline — it will be inherited by every story under this epic until invalidated. If red, follow SKILL.md §7's standard handling (detour-first or explicit override). If overridden, post a `Baseline override` comment on this epic issue before proceeding so any later story re-establishes the baseline.
 4. On green (or after override), push the new branch from the worktree:
    ```bash
@@ -143,4 +143,4 @@ git worktree add .worktrees/epic-<N>-<slug> epic/<N>-<slug>
 cd .worktrees/epic-<N>-<slug>
 ```
 
-If a fresh worktree was created (not reused), run the project's worktree-setup commands per SKILL.md §P2 before the canonical suite. Run the canonical suite *in the worktree* (per "Running the full canonical suite"), and on green post the comment with the current epic-branch SHA and the current `git merge-base origin/main origin/epic/<N>-<slug>` as `Main SHA`. Without this comment, every story under the epic would otherwise stop and redirect back here — establishing it once unblocks the whole epic.
+Run the project's worktree-setup commands per SKILL.md §P2 before the canonical suite — on both the create and reuse arms; idempotent. Run the canonical suite *in the worktree* (per "Running the full canonical suite"), and on green post the comment with the current epic-branch SHA and the current `git merge-base origin/main origin/epic/<N>-<slug>` as `Main SHA`. Without this comment, every story under the epic would otherwise stop and redirect back here — establishing it once unblocks the whole epic.

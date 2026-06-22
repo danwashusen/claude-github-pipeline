@@ -620,7 +620,7 @@ git worktree add -b issue-<story-number>-<slug> \
   origin/epic/<N>-<slug>
 ```
 
-Follow all the same worktree rules (nesting guard, `.gitignore` check, reuse rule) as in the main worktree section. If a fresh worktree was created (not reused), run the project's worktree-setup commands per §P2 before continuing.
+Follow all the same worktree rules (nesting guard, `.gitignore` check, reuse rule) as in the main worktree section. Run the project's worktree-setup commands per §P2 before continuing — on both the create and reuse arms; idempotent per §P2.
 
 **Open the PR with `--base epic/<N>-<slug>`**, not `--base main`. The PR body must include a line:
 
@@ -651,12 +651,12 @@ Before creating any branch, decide what to do based on what's already in flight:
 **Setting up the worktree.** When step 5 directs you to check out an existing PR's branch — your own open PR, or a takeover of a stale one — set it up as a worktree rather than `gh pr checkout` in the main tree:
 
 1. Get the branch name: `gh pr view <pr-number> --repo <owner/repo> --json headRefName -q .headRefName`.
-2. Run `git worktree list --porcelain` and check whether the target branch already has a worktree. If yes, `cd` to that path and stop here — reuse it.
+2. Run `git worktree list --porcelain` and check whether the target branch already has a worktree. If yes, `cd` to that path and skip the add (steps 3–4), continuing at step 5 — reuse it.
 3. Otherwise, fetch the branch (`git fetch origin <branch>`), then add the worktree:
    - **Continuing your own PR**: `git worktree add .worktrees/<branch> <branch>`.
    - **Taking over a stale PR**: pick a new local branch name (e.g. `issue-<N>-takeover`) and run `git worktree add -b <new-branch> .worktrees/<new-branch> <stale-pr-branch>`.
 4. `cd .worktrees/<dir>` — every subsequent command in this run is from there. Announce the path to the user.
-5. Run the project's worktree-setup commands per §P2. Step 2's reuse exit skips this — those commands already ran when the worktree was first created.
+5. Run the project's worktree-setup commands per §P2 — on both the create arm and the reuse arm (step 2). §P2's idempotency contract makes the reuse run a near-no-op: reuse the resolved resource, re-provision only stale state.
 6. **Check the story branch for drift against its base.** The story branch's integration target is the epic branch (or `main`, for stories with no open parent epic). Compute:
 
    ```bash
@@ -1147,7 +1147,7 @@ Pull the snapshot from data already in hand: the issue/plan state from §2's `GA
 - **Don't edit a parent epic's body from inside a story-target run.** The epic's body is authoritative state; it should only be updated from an epic-target run where you can see the full story-reconciliation picture.
 - **Don't push within the review loop without re-running the full suite.** Same reason as the baseline: the only way to attribute new failures to the right commit is to keep the suite green at every push. Skipping the test run between feedback rounds defeats the green-baseline gate retroactively.
 - **Don't skip worktree-setup on the create arm.** A worktree without its setup commands run is in a partially-initialised state — tests may run against missing resources (a simulator that doesn't exist, a port that's already in use, a database that wasn't seeded). Run setup immediately after every `git worktree add` succeeds, before any test, lint, or build.
-- **Don't run worktree-setup on the reuse arm.** A reused worktree already has its resources from the original create event. Re-running setup risks double-provisioning: a second simulator alongside the first, a port collision, a fresh database that wipes the worktree's existing state. The reuse arm is a "skip setup" arm by design.
+- **Make worktree-setup idempotent — it runs on the reuse arm, too.** Setup fires on *every* worktree entry (§P2), reuse included. A non-idempotent setup double-provisions on reuse — a second simulator alongside the first, a port collision, a fresh database that wipes the worktree's existing state — but the fix is idempotency (reuse the existing resource when it still resolves; re-provision only stale state), **not** skipping setup. Skipping on reuse is the worse failure: a worktree whose per-worktree state was lost then silently falls back to a global resource, defeating the per-worktree isolation the hook exists to provide.
 - **Don't auto-clean a worktree without running teardown first.** Teardown releases the resources setup created — orphan simulators, orphan containers, leaked ports — so skipping it leaks them silently. The skill never auto-removes worktrees in any case (manual cleanup is the user's call), but when the user does cleanup, the sequence matters: teardown first, then `git worktree remove`. The §11 reminder names both.
 - **Don't hand-craft follow-up issue bodies.** Every follow-up that warrants an issue goes through the sub-agent protocol in "Follow-up issue tracking". Hand-crafting (writing the body inline, running `gh issue create` directly) bypasses the drafter's PRD-grounded review loop and produces issues with inconsistent format, missing parent references, and unvalidated framing against the project's architecture / constitution. The drafter exists exactly for this — its classification, body templates, and sub-agent review are what make filed issues consistent across the repo. Use it.
 - **Don't conflate filing with capturing.** Procedural reminders (drift, epic-checkbox sync, "watch out for X in the next iteration") belong in the PR body or §11 notes, not as filed issues. Issues are for trackable work that needs a separate place to discuss, plan, or assign; PR-body notes are for informational caveats a future contributor can act on with the PR context alone. Filing both as issues clutters the backlog; capturing both as PR-body notes loses the trackable ones. Use the filing-vs-capturing criterion in "Follow-up issue tracking".
