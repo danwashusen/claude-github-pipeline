@@ -73,11 +73,15 @@ density, not minimum length.
 
 ### 3. Adversarial panel (parallel, one subagent per lens)
 
-Spawn the **four lenses in [`references/review-lenses.md`](references/review-lenses.md) in
-parallel** (one `Agent` each, `general-purpose`, read-only). Give each: the original section, your
-current rewrite, the target file path (so it can grep the rest of the document), and the path to
-`compression-rules.md`. Each returns structured findings — `severity` (`blocker` | `major` |
-`minor`), an evidence quote, and a suggested fix.
+Launch the **four lenses in [`references/review-lenses.md`](references/review-lenses.md) as parallel
+foreground `Agent` calls in a single message** (one `Agent` each, `general-purpose`, read-only) and
+let all four return before the fix pass. Do **not** run them with `run_in_background`, and do **not**
+call `Monitor`/poll to wait — foreground parallel agents return together, so there is no wait step to
+manage (a backgrounded panel is what tempts the loop to reach for `Monitor`, which then fails with
+`Invalid tool parameters`). Give each: the original section, your current rewrite, the target file
+path (so it can grep the rest of the document), and the path to `compression-rules.md`. Each returns
+structured findings — `severity` (`blocker` | `major` | `minor`), an evidence quote, and a suggested
+fix.
 
 - **L1 — Precision & scope-loss:** what instruction, scope qualifier, or intent does the rewrite
   drop or weaken under a *literal* reading?
@@ -138,6 +142,10 @@ the proposal.
 
 - Default to the `Agent` tool for the panel — it is always available. If the user has
   Workflow/ultracode enabled, you *may* run the panel+loop as a workflow, but it is not required.
+- **Foreground, not background; never poll.** Run the panel as parallel *foreground* `Agent` calls
+  (per §3) and wait for them to return — don't `run_in_background` the lenses or call `Monitor` to
+  wait on them. Foreground parallel agents return together; reaching for `Monitor` is what throws the
+  `Invalid tool parameters` you may have seen mid-run.
 - This skill is **not** part of the published `github-pipeline` plugin (it lives in the repo's
   `.claude/skills/`), so it cannot use `subagent_type: "github-pipeline:…"`. Use `general-purpose`
   reviewers and reference its own bundled files by relative path.
