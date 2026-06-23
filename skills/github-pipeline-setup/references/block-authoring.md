@@ -177,11 +177,14 @@ Governs whether the evaluator's merge step (its §12) runs hands-free or routes 
 ### worktree-setup / worktree-teardown
 
 **Optional**, and most repos don't need them — skip unless the project provisions a per-worktree
-resource the test commands depend on (an isolated iOS Simulator, a free localhost port, a scratch DB,
-a branch-keyed cache). Command-list shape. Setup runs after a worktree is created/entered and is
-*fail-fast*; teardown runs before a worktree is removed and is *best-effort*. Both must be
-**idempotent** — setup may re-run on a reused worktree, teardown may run on a half-provisioned or
-already-cleaned one.
+resource the test commands depend on (an isolated iOS Simulator on a Swift project, a free localhost
+port or scratch DB on a Rails one, a branch-keyed cache). Command-list shape. Setup runs after a
+worktree is created/entered and is *fail-fast*; teardown runs before a worktree is removed and is
+*best-effort*. Both must be **idempotent** — setup may re-run on a reused worktree, teardown may run
+on a half-provisioned or already-cleaned one. The full runtime contract (discovery, idempotency
+rationale, status lines, the `worktree-hooks.sh` executor the resolver/evaluator run) lives in
+[`../../_shared/worktree-lifecycle.md`](../../_shared/worktree-lifecycle.md) — this section only
+covers the authoring shape.
 
 ```markdown
 <!-- worktree-setup -->

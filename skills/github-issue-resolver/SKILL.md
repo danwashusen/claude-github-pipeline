@@ -65,52 +65,29 @@ Reusable procedures the flows (§1–§12, Epic, Story) invoke by ID — each ca
 
 For any code-change issue, the skill works inside a `git worktree` rather than the main checkout. This lets multiple issues stay in flight at once — each branch lives in its own working tree, builds and tests run independently, and the main checkout stays untouched on whatever branch you had open before.
 
-**Where they live.** `.worktrees/<branch-name>/` inside the repo. Before creating the first worktree, ensure `.gitignore` contains a `.worktrees/` line — append it if missing (small, idempotent edit; never remove anything else). Without that entry every worktree's files show up as untracked in the main checkout's `git status`.
+**The full worktree contract is shared.** The `.worktrees/<branch-name>/` path convention, the `.gitignore` guard, the reuse rule, the nesting guard, the idempotent setup-on-every-entry guarantee, the marker-block format, and the status-line strings all live in [`../_shared/worktree-lifecycle.md`](../_shared/worktree-lifecycle.md) — the single source of truth shared with `github-pr-evaluator`. **`Read` it before your first worktree operation in this run** (this SKILL.md exceeds the default Read cap, so the forced read guarantees the contract is in context). Only this skill's caller-specific glue stays inline: *which* branch each flow creates (§8 off the default branch, the Story flow off the epic branch) and *where* it triggers setup.
 
-**The worktree is the working directory.** Once a worktree is created or reused, `cd .worktrees/<branch-name>` is the cwd for every subsequent command in this skill run — baseline tests in step 7, edits in step 8, `git add/commit/push` and `gh pr create` in step 9, the review loop in step 10. State the path explicitly when you switch so the user can follow along (and run their own commands in the same place).
+**The worktree is the working directory.** Once created or reused, `cd .worktrees/<branch-name>` is the cwd for every subsequent command in this run — baseline tests in step 7, edits in step 8, `git add/commit/push` and `gh pr create` in step 9, the review loop in step 10. State the path explicitly when you switch.
 
-**Reuse rule.** Before any `git worktree add`, run `git worktree list --porcelain` and check whether the target branch is already checked out somewhere. If it is, `cd` to that path and continue — don't try to add it again (git will error) and don't recreate it. The existing worktree is the source of truth.
-
-**Nesting guard.** If `git rev-parse --git-dir` shows a path under `.git/worktrees/`, the skill is already running inside a worktree. Don't nest. Find the main working tree (the first `worktree` entry in `git worktree list --porcelain`) and run `git worktree add` with paths relative to that main tree's root.
-
-**Setup hook on worktree entry.** After every `git worktree add` *and* on every reuse of an existing worktree, run the project's worktree-setup commands (see §P2). Setup must be idempotent by the convention documented in that section; re-running on a healthy worktree is a near-no-op (e.g., reuse the existing simulator UDID when it still resolves, otherwise discard stale state and re-provision). Running on every entry protects against the case where the original create-arm run missed the discovery (a recurring failure mode) or where the worktree's per-worktree state has been lost.
-
-**Cleanup is manual.** The skill never runs `git worktree remove`. A worktree may hold unpushed commits or in-flight edits, and tearing it down silently would lose work. When the user is done with an issue they run `git worktree remove .worktrees/<branch-name>` themselves (preceded by the project's worktree-teardown commands, if any are declared). Step 11 reminds them; that's all.
+**This skill creates and sets up; it never removes.** The resolver runs setup on every worktree entry (per §P2) but never runs `git worktree remove` — a worktree may hold unpushed commits or in-flight edits, and silent teardown would lose work. Cleanup (teardown + removal) is the user's job, or the evaluator's (`github-pr-evaluator` §14, the only automatic remover). Step 11 reminds the user of the manual sequence.
 
 **Comment-only responses skip this entirely.** Questions, blocked issues, duplicates, and other no-code responses don't need a worktree — there's no branch to host. Skip directly to drafting the comment.
 
-### §P2 Worktree setup & teardown commands
+### §P2 Worktree setup commands
 
-Worktrees give every issue a sandboxed checkout, but some projects also need per-worktree resources the worktree itself can't carry: an isolated iOS Simulator, a free localhost port, a scratch database, a cache directory keyed to the branch. Without lifecycle hooks the project would have to wedge that work into individual test commands — fragile and easy to forget. With hooks the project declares setup and teardown commands once and the skill runs them at the right moments. The skill stays opaque to *what* the commands do — that's the project's concern. It only guarantees they run inside the worktree at the right point in the worktree lifecycle.
+Some projects need per-worktree resources the worktree itself can't carry — an isolated simulator, a free localhost port, a scratch database, a branch-keyed cache. They declare setup commands in a `<!-- worktree-setup -->` marker block (and a teardown counterpart the evaluator runs); the format, discovery rules, and idempotency contract are documented in [`../_shared/worktree-lifecycle.md`](../_shared/worktree-lifecycle.md). The skill stays opaque to *what* the commands do.
 
-**Where the commands live.** A project declares hooks via two marker-delimited blocks in `COMMANDS.md` (preferred) or `CLAUDE.md`:
+**Run setup through the bundled script — never hand-roll the discover/parse/run loop.** After every `git worktree add` *and* on every reuse of an existing worktree, run:
 
-```markdown
-<!-- worktree-setup -->
-- `<command>` — <description>
-- `<command>` — <description>
-<!-- /worktree-setup -->
-
-<!-- worktree-teardown -->
-- `<command>` — <description>
-<!-- /worktree-teardown -->
+```bash
+${CLAUDE_PLUGIN_ROOT}/scripts/worktree-hooks.sh setup <worktree-path> <repo-root> [--reused]
 ```
 
-Format matches the other list-style command blocks (`issue-resolver-fast-checks`, `pr-evaluator-static-checks`): one Markdown list entry per command, backtick-quoted command followed by ` — ` and a short human description. Order matters — commands run in declaration order. **Setup is fail-fast** (the first non-zero exit stops the run); **teardown is best-effort** (a failure is logged but doesn't block subsequent teardown commands or the worktree removal that follows).
+Pass `--reused` on the reuse arm so the status line names it. The script discovers the block (scanning `COMMANDS.md`/`CLAUDE.md` + their `@`-includes), runs each command from inside the worktree in declaration order, fail-fast, and streams the status-line announcements to stderr. **On a non-zero exit, surface the `first_failure.command` and `output_tail` from its JSON result and stop the workflow** — the worktree exists but isn't ready for tests, and proceeding would run against a missing resource. A `phase_present: false` result means no block is declared (a clean no-op); say nothing.
 
-**Discovery.** Scan `COMMANDS.md` and `CLAUDE.md` at the repo root, plus any file `@`-included from either and reachable from root. If neither block is present, the corresponding phase no-ops silently — many projects won't need either hook, and the skill should not warn or prompt about their absence.
+**The trigger sites.** Every worktree create/reuse decision in this skill runs the setup script on **both** arms: §5 takeover ("Setting up the worktree"), §8 fresh branch, the epic-bootstrap and legacy-recovery flows in "If the issue is an Epic", and the story-worktree creation in "If the issue is a Story". Running on reuse too is load-bearing — see the idempotency rationale in the shared doc.
 
-**When setup runs.** Immediately after a `git worktree add` returns success **and** immediately after entering a reused worktree at any worktree decision in this skill (§5 takeover, §8 fresh branch, the epic-bootstrap and legacy-recovery flows in "If the issue is an Epic", and the story-worktree creation in "If the issue is a Story"). Setup is idempotent by contract (see "What setup commands typically do"), so re-entering a healthy worktree costs only the idempotency check. The cost of skipping setup on reuse is far higher: a worktree whose state file is missing for any reason (the original create-arm run missed discovery, a sibling tool deleted it, the user wiped `.worktree-state/`) will silently fall back to whatever global resource the test wrapper's defaults pick, which defeats the per-worktree isolation the hook exists to provide. Run each setup command from inside the worktree (`cd .worktrees/<branch>` first), in declaration order, fail-fast. On failure, surface the failing command and the last 50 lines of its output and stop the workflow — the worktree exists but isn't ready for tests, and silently proceeding would mean running against a missing resource.
-
-**When teardown runs.** This skill never removes worktrees, so it never runs teardown directly. The hook is documented here for symmetry; the executor is `github-pr-evaluator` §14 (the only place a worktree is removed automatically). Step 11's manual-cleanup reminder names the teardown commands and `git worktree remove` together so users running cleanup outside the evaluator know the sequence.
-
-**What setup commands typically do.** Provision per-worktree resources and persist any state the rest of the workflow needs. The skill does not interpret that state — projects use whatever mechanism fits. Common patterns: write a `<worktree>/.worktree-state/<key>` file the project's other commands read; allocate a free port and export it via a `.envrc`; provision a scratch container and record its name. Make setup idempotent against a half-failed prior run so the user can re-trigger without orphan resources.
-
-**What teardown commands typically do.** Release the resources setup created. Read the same state and tear them down. Idempotent and tolerant of missing state — teardown may run on a worktree whose setup partially failed, or which the user has already cleaned up manually.
-
-**Status line announcements.** Setup on a fresh worktree: *"Running worktree setup (N command(s))…"* before the first command; *"Worktree setup complete."* on full pass; *"Worktree setup failed at step i: `<command>`"* with the output tail on failure. Setup on a reused worktree: print *"Running worktree setup (N command(s))… (worktree reused; setup is idempotent)"* before the first command, then the same complete / failure lines as the fresh-worktree case. The reuse variant fires even when setup is a true no-op on a healthy worktree, so users learn that setup ran defensively rather than wondering whether it was skipped. Teardown (executed by the evaluator, but the convention is shared): *"Running worktree teardown (N command(s))…"* / *"Worktree teardown complete."* / *"Worktree teardown step i failed: `<command>`"* — log and continue to the next command.
-
-**No stamp file needed.** The skill ties setup to the worktree-creation event, not to a persistent stamp on disk. If the user manually re-runs setup on a reused worktree (e.g., to recover a lost resource), that's their call — the skill doesn't track it.
+**Teardown is the evaluator's job.** This skill never runs teardown (or removal). The `<!-- worktree-teardown -->` block is executed by `github-pr-evaluator` §14 via the same script's `teardown` subcommand; Step 11's manual-cleanup reminder names the sequence for users cleaning up outside the evaluator.
 
 ### §P3 Test selection during iteration
 
@@ -553,7 +530,7 @@ State the chosen strategy and the one-sentence rationale to the user. **Proceed 
 **All stories closed + all DoD items verifiable → "ready to integrate then close"**
 
 1. Confirm the integration branch exists. Verify that every story's PR has merged into it by checking each story PR's `baseRefName` via `gh pr list --search "closes #<N> OR fixes #<N>"` and inspecting `--json baseRefName`. Flag any story whose PR targeted `main` directly.
-2. Set up a worktree on the epic branch (follow the worktree rules in §P1), merge `origin/main` into it if drift exists, run the full canonical suite (per "Running the full canonical suite"), and report results.
+2. Set up a worktree on the epic branch (follow §P1; run worktree setup per §P2 on create and reuse), merge `origin/main` into it if drift exists, run the full canonical suite (per "Running the full canonical suite"), and report results.
 3. If the suite is green, draft an integration PR body (`epic/<N>-<slug>` → `main`) listing every story PR that landed in it, citing the epic's `## Goal` and DoD checklist, and including `Fixes #<epic-number>` so GitHub auto-closes the epic on merge. Write it to `/tmp/gh-resolver-<N>/integration-pr.md` (run `mkdir -p "/tmp/gh-resolver-<N>"` first), then open the PR:
    ```bash
    gh pr create --repo <owner/repo> --base main --head epic/<N>-<slug> --title "Epic #<N>: <title>" --body-file /tmp/gh-resolver-<N>/integration-pr.md
@@ -620,7 +597,7 @@ git worktree add -b issue-<story-number>-<slug> \
   origin/epic/<N>-<slug>
 ```
 
-Follow all the same worktree rules (nesting guard, `.gitignore` check, reuse rule) as in the main worktree section. Run the project's worktree-setup commands per §P2 before continuing — on both the create and reuse arms; idempotent per §P2.
+Follow the same worktree rules (nesting guard, `.gitignore` check, reuse rule) per §P1. Run worktree setup per §P2 (the `worktree-hooks.sh setup` script) before continuing — on both the create and reuse arms (pass `--reused` on reuse).
 
 **Open the PR with `--base epic/<N>-<slug>`**, not `--base main`. The PR body must include a line:
 
@@ -656,7 +633,7 @@ Before creating any branch, decide what to do based on what's already in flight:
    - **Continuing your own PR**: `git worktree add .worktrees/<branch> <branch>`.
    - **Taking over a stale PR**: pick a new local branch name (e.g. `issue-<N>-takeover`) and run `git worktree add -b <new-branch> .worktrees/<new-branch> <stale-pr-branch>`.
 4. `cd .worktrees/<dir>` — every subsequent command in this run is from there. Announce the path to the user.
-5. Run the project's worktree-setup commands per §P2 — on both the create arm and the reuse arm (step 2). §P2's idempotency contract makes the reuse run a near-no-op: reuse the resolved resource, re-provision only stale state.
+5. Run worktree setup per §P2 — on both the create arm and the reuse arm (step 2); pass `--reused` on the reuse arm. The script's idempotency contract makes the reuse run a near-no-op.
 6. **Check the story branch for drift against its base.** The story branch's integration target is the epic branch (or `main`, for stories with no open parent epic). Compute:
 
    ```bash
@@ -836,7 +813,7 @@ For code changes:
   - Ensure `.gitignore` contains `.worktrees/` (append if missing) before the first worktree is added.
   - From the main working tree, run `git worktree add -b issue-<number>-<short-slug> .worktrees/issue-<number>-<short-slug>`.
   - `cd .worktrees/issue-<number>-<short-slug>` — every subsequent command runs from there. Announce the path to the user.
-  - Run the project's worktree-setup commands per §P2 before any code edits or test runs.
+  - Run worktree setup per §P2 (the `worktree-hooks.sh setup` script) before any code edits or test runs.
 - Make the changes.
 - **Run the pre-push verification gate before §9 push.** Three steps in this order, per §P3:
   1. **Static checks** — run the `<!-- issue-resolver-fast-checks -->` block inline, fail-fast in declaration order. Outputs are small (lints, codegen, layer-import boundary checks); no need to delegate.
@@ -1041,7 +1018,7 @@ The summary MUST include a clearly-labeled **Iteration test status** line that n
 
 Then: a short summary of what you did, what you posted (if anything), and a **Follow-ups** section split into two bullets — *Filed* (URLs of issues filed via the protocol, both `file-now` and `file-at-checkpoint`) and *Procedural notes* (informational items captured in the PR body, not filed as issues per the filing-vs-capturing criterion). When the run went through §10's review loop, the main loop's accumulated lists populate both bullets directly: the union of every iteration's `items_filed_as_followups` provides the *Filed* entries (one bullet per URL), the union of every iteration's `items_carried_as_procedural_notes` provides the *Procedural notes* entries, and each `user_decisions` entry across the run adds one additional *Procedural notes* line naming the guard rail that fired and the user's choice (so any deadlock, architectural-decision, verification-failure, or iteration-cap intervention stays visible). If you created or reused a worktree, include its path and the manual cleanup sequence. The `github-pr-evaluator` skill runs both phases automatically after a green merge (its §14); the manual form that follows is for runs that don't go through the evaluator (declined merge, manual close, abandoned issue):
 
-1. From inside the worktree, run the project's worktree-teardown commands (see "Worktree setup & teardown commands"). If `COMMANDS.md` declares no `<!-- worktree-teardown -->` block, skip this step.
+1. Run the project's worktree-teardown commands: `${CLAUDE_PLUGIN_ROOT}/scripts/worktree-hooks.sh teardown <worktree-path> <repo-root>` (best-effort; a no-op if no `<!-- worktree-teardown -->` block is declared). Teardown must run **before** removal — its commands live inside the worktree (see [`../_shared/worktree-lifecycle.md`](../_shared/worktree-lifecycle.md)).
 2. From the main checkout, run `git worktree remove .worktrees/<branch-name>`.
 
 Don't run cleanup yourself: a worktree may hold unpushed work, and teardown may release resources still useful for debugging.

@@ -198,9 +198,13 @@ git worktree add ".worktrees/<branch>" "origin/<branch>" 2>/dev/null \
       git -C ".worktrees/<branch>" checkout <HEAD_SHA>)
 ```
 
-**Run the worktree-setup commands before every test run** — on both the create arm above and the reuse arm. Setup is required to be idempotent by the convention documented at the bottom of this file ("Repo health-check declaration") and in `github-issue-resolver` §P2 "Worktree setup & teardown commands"; re-running it on a healthy worktree must be a no-op or near-no-op (e.g., reuse the existing simulator UDID when it still resolves, otherwise discard stale state and provision afresh). This guarantee removes the failure mode where a reused worktree's per-worktree resources have been lost (state file deleted, simulator wiped externally, or setup never ran in the first place because the original `github-issue-resolver` invocation missed the discovery) and the test wrapper silently falls back to a shared/global resource — masking the per-worktree isolation the setup hook exists to provide.
+**Run worktree setup before every test run — on both the create arm above and the reuse arm:**
 
-Discovery: scan `COMMANDS.md` and `CLAUDE.md` at the repo root, plus any file `@`-included from either, for a `<!-- worktree-setup -->` block. Each list item is one Markdown bullet — backtick-quoted command followed by ` — ` and a description (same format as the static-checks block above). Run each command from inside the worktree (`cd .worktrees/<branch>`), in declaration order, fail-fast. On failure, stop and surface the failing command and the last 50 lines of its output — gates against an unprovisioned worktree are unreliable. If no block is present, no-op silently. The teardown counterpart runs in step 14 paired with worktree removal. (`github-issue-resolver` documents the same convention in detail under §P2 "Worktree setup & teardown commands".)
+```bash
+${CLAUDE_PLUGIN_ROOT}/scripts/worktree-hooks.sh setup ".worktrees/<branch>" <repo-root> [--reused]
+```
+
+The script discovers the `<!-- worktree-setup -->` block (scanning `COMMANDS.md`/`CLAUDE.md` + their `@`-includes), runs each command from inside the worktree in declaration order, fail-fast. **On a non-zero exit, stop and surface the `first_failure.command` and `output_tail` from its JSON result** — a gate against an unprovisioned worktree is unreliable. A `phase_present: false` result means no block is declared (no-op silently). The setup-on-reuse guarantee is load-bearing — a reused worktree whose per-worktree state was lost otherwise falls back to a shared/global resource and masks the isolation the hook provides; the full contract (block format, idempotency rationale, status lines) lives in [`../_shared/worktree-lifecycle.md`](../_shared/worktree-lifecycle.md), shared with `github-issue-resolver` §P2. The teardown counterpart runs in §14 paired with worktree removal.
 
 ##### 5.5.1 Static checks
 
@@ -691,7 +695,11 @@ Clean up temp files after. If the checkbox is already `[x]` (another tool beat u
 
 **If the merge ran**, execute cleanup immediately — no further confirmation needed:
 
-1. **Run worktree-teardown** (if any commands are declared and a worktree exists). Discover the `<!-- worktree-teardown -->` block from `COMMANDS.md` / `CLAUDE.md` (and any file `@`-included from either), using the same parser as the health-check block. From inside the worktree (`cd .worktrees/<branch>`), run each command in declaration order. **Best-effort**: log any failure with the failing command and the last 50 lines of its output, then continue to the next command and on to step 2. Skip silently if no block is declared. This releases per-worktree resources the project provisioned at setup (simulators, containers, ports, scratch databases, etc.) before the worktree itself is removed.
+1. **Run worktree-teardown** (if a worktree exists for this PR's branch), via the bundled script:
+   ```bash
+   ${CLAUDE_PLUGIN_ROOT}/scripts/worktree-hooks.sh teardown ".worktrees/<branch>" <repo-root>
+   ```
+   The script discovers the `<!-- worktree-teardown -->` block (same discovery as setup), runs each command from inside the worktree in declaration order, **best-effort** — it logs each failure and always exits 0, so a failing command never blocks step 2. A `phase_present: false` result means no block is declared (no-op silently). This releases per-worktree resources the project provisioned at setup (simulators, containers, ports, scratch databases, etc.) **before** the worktree is removed — the ordering is load-bearing because the teardown commands live inside the worktree (see [`../_shared/worktree-lifecycle.md`](../_shared/worktree-lifecycle.md)).
 
 2. **Remove the worktree** (if one exists for this PR's branch):
    ```bash

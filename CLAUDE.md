@@ -10,7 +10,8 @@ code, no package manager, and no test framework. The "source" is:
 - **Skill prompts** — `skills/<name>/SKILL.md` plus a `references/` folder of extracted prompt
   fragments per skill.
 - **One sub-agent prompt** — `agents/github-ops.md`.
-- **Three POSIX-ish bash scripts** — `scripts/gh-*.sh`.
+- **Five POSIX-ish bash scripts** — `scripts/*.sh`: three `gh-*` GitHub/git executors, plus
+  `config-block.sh` (marker-block read/write) and `worktree-hooks.sh` (worktree setup/teardown).
 - **Shared contracts** — `skills/_shared/*.md`.
 - **Plugin manifests** — `.claude-plugin/plugin.json` and `.claude-plugin/marketplace.json`.
 
@@ -86,7 +87,11 @@ Two invariants in that agent are load-bearing and easy to break when editing:
   context. The scripts apply this internally and surface a `*_mode: inline|path` per section;
   override via `GH_OPS_INLINE_THRESHOLD_BYTES`.
 
-### The three scripts encode the cross-skill contract
+### The scripts encode the cross-skill contract
+
+The three `gh-*` scripts are routed through `github-ops` (Rule 7); the worktree pair is routed
+through the **calling skill's main loop** instead (the worktree lifecycle is cwd-stateful — see the
+`github-ops` boundary above).
 
 - `scripts/gh-gather.sh` — the fixed issue-fetch envelope (`GATHER_ISSUE`): one round-trip instead
   of three, with threshold routing.
@@ -96,9 +101,19 @@ Two invariants in that agent are load-bearing and easy to break when editing:
   `test -s <body_path>` is the **empty-body gate**: the caller stages the verbatim body to its own
   scratch dir and passes the path, so nothing re-serializes the body across the prompt boundary.
   An empty/missing file exits 2 with `EMPTY_BODY_FILE:` and forces a `DECISION_NEEDED`. Supports
-  `--dry-run` and returns a `body_sha256` so callers can verify byte-for-byte. Keep these scripts
-  as the single execution path for all four caller skills — that is what makes the contract
+  `--dry-run` and returns a `body_sha256` so callers can verify byte-for-byte. Keep these `gh-*`
+  scripts as the single execution path for all four caller skills — that is what makes the contract
   self-consistent. If a real op doesn't fit a script, extend the script; don't bypass it.
+- `scripts/worktree-hooks.sh` — the worktree setup/teardown executor (`setup`/`teardown`
+  subcommands), shared by the **resolver** (setup on every create/reuse) and the **evaluator**
+  (teardown before removal, §14). It discovers the consuming repo's `<!-- worktree-setup -->` /
+  `<!-- worktree-teardown -->` block (delegating the per-file block read to `config-block.sh`), runs
+  the commands inside the worktree (setup fail-fast → exit 1; teardown best-effort → always exit 0),
+  and returns a JSON result. It does **not** create or remove the worktree — those cwd-stateful git
+  ops stay in the caller. The shared contract lives in `skills/_shared/worktree-lifecycle.md`; both
+  skills cite it rather than restating the discover/parse/run loop inline.
+- `scripts/config-block.sh` — deterministic marker-block `read`/`list`/`upsert`/`remove`, the single
+  execution path for `github-pipeline-setup` and the block reader `worktree-hooks.sh` delegates to.
 
 ### Shared contracts in `skills/_shared/`
 
@@ -109,9 +124,14 @@ Two invariants in that agent are load-bearing and easy to break when editing:
   **evaluator** verifies and writes sticky-veto un-ticks, the **planner** reconciles during revise
   mode. Annotation form and checkbox state must always agree; a bullet never stacks two
   annotations.
+- `worktree-lifecycle.md` — the worktree contract (path convention, reuse/nesting rules, the
+  idempotent setup-on-every-entry guarantee, the `<!-- worktree-setup/teardown -->` block format,
+  status-line strings, and the ownership split). The **resolver** creates worktrees and runs setup
+  (§P1/§P2, never removes); the **evaluator** runs teardown and removes (§5.5.0, §14). Both cite
+  this file and call `scripts/worktree-hooks.sh` rather than restating the mechanics inline.
 
-When changing behavior that touches handoffs or DoD annotations, edit the `_shared` file (the
-single source of truth) and keep the per-skill renderings consistent with it.
+When changing behavior that touches handoffs, DoD annotations, or the worktree lifecycle, edit the
+`_shared` file (the single source of truth) and keep the per-skill renderings consistent with it.
 
 ### Coupling to a consuming repo is convention-driven
 
