@@ -122,7 +122,9 @@ but key behaviors are driven by markers the *consuming* repo provides — not by
   evaluator how to test/gate: `<!-- issue-resolver-test-target -->`,
   `<!-- issue-resolver-fast-checks -->`, `<!-- issue-resolver-canonical-suite -->`,
   `<!-- pr-evaluator-health-checks -->`, `<!-- pr-evaluator-static-checks -->`,
-  `<!-- pr-evaluator-test-target -->`, `<!-- pr-evaluator-escalation-labels -->`.
+  `<!-- pr-evaluator-test-target -->`, `<!-- pr-evaluator-escalation-labels -->`. The evaluator also
+  reads `<!-- pr-evaluator-merge-policy -->` (per-PR-type `ask | auto`) to decide whether its merge
+  step gates on a human operator — **default `ask`** when the block is absent.
 - **Epic integration branches** named `epic/<N>-<slug>` — the resolver/evaluator discover and
   classify Epic vs story PRs by this pattern.
 - **Durable marker comments** the skills post/read: `<!-- implementation-plan:v1 -->` (planner),

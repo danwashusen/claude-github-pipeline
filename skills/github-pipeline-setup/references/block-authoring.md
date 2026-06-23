@@ -19,6 +19,7 @@ skill wins.
   - [pr-evaluator-static-checks](#pr-evaluator-static-checks)
   - [pr-evaluator-test-target](#pr-evaluator-test-target)
   - [pr-evaluator-escalation-labels](#pr-evaluator-escalation-labels)
+  - [pr-evaluator-merge-policy](#pr-evaluator-merge-policy)
   - [worktree-setup / worktree-teardown](#worktree-setup--worktree-teardown)
 - [Detection heuristics](#detection-heuristics)
 - [Legacy migration: health-checks → static-checks + test-target](#legacy-migration)
@@ -144,6 +145,34 @@ escalation labels, write the block empty (it documents the decision) or skip it.
 - `pre-release` — run everything before a release cut
 <!-- /pr-evaluator-escalation-labels -->
 ```
+
+### pr-evaluator-merge-policy
+
+Governs whether the evaluator's merge step (its §12) runs hands-free or routes through the §12.0
+**operator decision gate** (a human approves/rejects the merge). One list item per PR type,
+`<pr-type>: <ask | auto>` — a small key/value list, not the command-list or prose-config shape:
+
+```markdown
+<!-- pr-evaluator-merge-policy -->
+- standard: ask
+- story: ask
+<!-- /pr-evaluator-merge-policy -->
+```
+
+- **Keys** are `standard` and `story`. **Values** are `ask` (gate before merge — the operator must
+  Approve / Needs Revision / Reject) or `auto` (merge directly on a clean automated approval).
+- **Default is `ask`.** The evaluator treats an absent block — or a PR type omitted from a present
+  block — as `ask`, so a repo gets human-in-the-loop merges with no configuration at all. `auto` is
+  strictly opt-in, per PR type.
+- **`epic-integration` is not configurable** and isn't a valid key here — epic integration PRs land
+  every child story's diff on `main` at once and are *always* gated. The evaluator ignores an
+  `epic-integration:` line if one appears.
+- **Not detected — it's a preference, not a repo fact.** There's nothing in the repo to infer this
+  from; ask the user which PR types they want to approve by hand. Propose `ask` for both (the safe
+  default) and let them opt specific types into `auto`.
+- **Stack-independent.** Unlike every other block here, this one's content never varies by language,
+  framework, or test runner — there's no per-stack variant. The one shape above *is* the whole
+  schema, which is why the worked examples below don't repeat it.
 
 ### worktree-setup / worktree-teardown
 

@@ -429,6 +429,24 @@ If the recommended strategy isn't allowed by the repo, fall back to the next bes
 
 Never suggest `--auto` — the repo's `allow_auto_merge: false`.
 
+#### Resolve the merge-approval policy
+
+Before §12 decides whether to merge hands-free or put a human in the loop, resolve the repo's **merge-approval policy** into `MERGE_POLICY` (a per-PR-type `ask | auto`). Discover it the same way as the §5.4 health-check blocks: scan `COMMANDS.md` and `CLAUDE.md` at the repo root, plus any file either `@`-includes, for a `<!-- pr-evaluator-merge-policy -->` block. Each list item is `<pr-type>: <ask | auto>`:
+
+```
+<!-- pr-evaluator-merge-policy -->
+- standard: ask
+- story: ask
+<!-- /pr-evaluator-merge-policy -->
+```
+
+- `ask` — on a clean APPROVE + mergeable PR, run the §12.0 operator decision gate before merging.
+- `auto` — merge directly on a clean APPROVE with no prompt (the legacy §12a behaviour).
+- **Default is `ask`.** An absent block, or a PR type omitted from a present block, resolves to `ask` — so a repo that has never configured this gets human-in-the-loop merges by default. `auto` is strictly opt-in.
+- **`epic-integration` is not configurable** — it is **always** `ask` (an epic integration PR lands every child story's diff on `main` at once; §12.0 always gates it). Ignore an `epic-integration:` line if one is present; note it to the user rather than honouring `auto`.
+
+Carry `MERGE_POLICY[standard]` / `MERGE_POLICY[story]` forward to §10 (the expectation line) and §12 (the merge routing). The block's authoring spec lives at the bottom of this file under "Repo health-check declaration".
+
 ### 9. Compose the squash subject (when recommending squash)
 
 Format: `<type>(<scope>)?: <summary> (#<pr-number>)`
@@ -445,7 +463,7 @@ Always show the proposed subject and body to the user before posting (step 10). 
 
 ### 10. Show the draft and post the review
 
-Show the user a summary of the verdict and merge plan, then **immediately post the review without waiting for confirmation**. The review is informational — confirming it buys nothing and adds friction.
+Show the user a summary of the verdict and merge plan. When the review posts in §11 — the `MERGE_POLICY` = `auto` path and the COMMENT-verdict path — **post it immediately without waiting for confirmation**; the review is informational and confirming it buys nothing. When the §12.0 operator gate will run (APPROVE under `MERGE_POLICY` = `ask`, or any epic integration PR), the summary you show here *is* the basis for the operator's gate decision, and the review posts in §12.0 carrying that decision — so don't post it in §11 (see §11's deferral rule).
 
 Display before posting:
 
@@ -476,9 +494,10 @@ Proposed squash body:
 - `mergeStateStatus == BLOCKED` → "Merge blocked by branch protection — check status checks."
 - `reviewDecision == REVIEW_REQUIRED` and owed to another reviewer → "Awaiting review from @reviewer — your approval will still post, but merge may be gated."
 
-Close with one short line setting expectations for what happens after the review posts, derived from the §12 branch table:
-- Standard or story PR, APPROVE, `mergeStateStatus` not in {DIRTY, BLOCKED} → "I'll auto-merge with `<strategy>` after the review posts."
-- Epic integration PR, APPROVE → "I'll ask you to confirm the merge mode after the review posts."
+Close with one short line setting expectations for what happens after the review posts, derived from the §12 branch table and the §8 `MERGE_POLICY`:
+- Standard or story PR, APPROVE, `mergeStateStatus` not in {DIRTY, BLOCKED}, `MERGE_POLICY` = `auto` → "I'll auto-merge with `<strategy>` after the review posts."
+- Standard or story PR, APPROVE, `mergeStateStatus` not in {DIRTY, BLOCKED}, `MERGE_POLICY` = `ask` (the default) → "I'll ask you to approve before merging — you can also approve, comment, or request changes on the PR directly."
+- Epic integration PR, APPROVE → "I'll ask you to approve and confirm the merge mode after the review posts."
 - APPROVE but `mergeStateStatus` ∈ {DIRTY, BLOCKED} → "Merge skipped — `<DIRTY | BLOCKED>`. I'll print the command for you to run after resolving it."
 - COMMENT (soft-reject) → "No merge — fix the gaps above and re-evaluate."
 
@@ -486,7 +505,11 @@ Don't restate the recommended strategy or the squash subject already shown above
 
 ### 11. Post the review
 
-Stage the review body to `/tmp/gh-pr-eval-<N>/review.md`, then hand the path to `github-ops` with the `review_action` set by the verdict (§7) and the §2 self-approval check. Same path-based contract as §5.6: the body posts byte-for-byte from disk via `gh-persist.sh`, never through the sub-agent prompt.
+**When the §12.0 operator gate will run, defer this post to §12.0.** If the verdict is APPROVE **and** the §8 `MERGE_POLICY` for this PR type is `ask` (the default) — or the PR is an epic integration PR (always gated) — do **not** post the review here. The operator's decision sets the review action and an attribution header, so the review must reflect *their* call, not a pre-emptive automated one (posting `--approve` before the human has approved would misstate the PR's state). Stage the review body to `/tmp/gh-pr-eval-<N>/review.md` now, then proceed to §12 — §12.0 posts it after the operator decides.
+
+Post here in this step only when **(a)** the verdict is COMMENT — a soft-reject short-circuits the gate (there's nothing to approve), so post it now and flip to draft as below; or **(b)** the verdict is APPROVE and `MERGE_POLICY` = `auto` for this PR type — post the approval now, then §12a merges hands-free.
+
+**When posting here** (cases (a)/(b) above), stage the review body to `/tmp/gh-pr-eval-<N>/review.md`, then hand the path to `github-ops` with the `review_action` set by the verdict (§7) and the §2 self-approval check. Same path-based contract as §5.6: the body posts byte-for-byte from disk via `gh-persist.sh`, never through the sub-agent prompt. (On the deferred path, you've already staged the body; §12.0 posts it.)
 
 > `PERSIST_COMMENT(target=pr-review, id=<N>, repo=<owner/repo>, body_path=/tmp/gh-pr-eval-<N>/review.md, review_action=<approve | comment | request-changes>)`
 
@@ -506,20 +529,72 @@ This flip is best-effort: if `gh pr ready --undo` fails (e.g., the PR was alread
 
 ### 12. Run the merge
 
-After the review posts, branch on PR type, verdict, and merge-readiness. The verdict at this point is already known from §7; only APPROVE verdicts proceed to a merge attempt (COMMENT soft-rejections stop here — see 12c). Never use `--auto`.
+After §11 (the review either posted there or is staged for the §12.0 gate to post), branch on PR type, verdict, merge-readiness, and the §8 `MERGE_POLICY`. The verdict at this point is already known from §7; only APPROVE verdicts proceed toward a merge (COMMENT soft-rejections stop here — see 12c). Never use `--auto`.
 
 The matrix:
 
-| PR type | Verdict | `mergeStateStatus` | Behaviour |
-|---|---|---|---|
-| Standard / Story | APPROVE | not in {DIRTY, BLOCKED} | **12a. Auto-merge** — run the recommended `gh pr merge` directly. No prompt. |
-| Epic integration | APPROVE | not in {DIRTY, BLOCKED} | **12b. Confirm** — keep the explicit `AskUserQuestion` gate. |
-| Standard / Story / Epic integration | APPROVE | DIRTY or BLOCKED | **12c. Skip with command** — print the recommended command and stop. |
-| Any | COMMENT (soft-reject) | any | **No merge** — already enforced by §7 producing a `comment` review action; nothing runs in §12. Jump to §14's "merge did not run" summary. |
+| PR type | Verdict | `mergeStateStatus` | `MERGE_POLICY` | Behaviour |
+|---|---|---|---|---|
+| Standard / Story | APPROVE | not in {DIRTY, BLOCKED} | `auto` | **12a. Auto-merge** — run the recommended `gh pr merge` directly. No prompt. |
+| Standard / Story | APPROVE | not in {DIRTY, BLOCKED} | `ask` (default) | **12.0 → 12a.** Run the operator decision gate; on **Approve**, merge as 12a. |
+| Epic integration | APPROVE | not in {DIRTY, BLOCKED} | (always `ask`) | **12.0 → 12b.** Run the operator decision gate; on **Approve (mode)**, merge as 12b. |
+| Standard / Story / Epic integration | APPROVE | DIRTY or BLOCKED | any | **12c. Skip with command** — print the recommended command and stop. (When policy = `ask` / epic, run the §12.0 gate first so the operator's decision is still recorded; an **Approve** then lands here because the branch isn't mergeable.) |
+| Any | COMMENT (soft-reject) | any | any | **No merge** — already enforced by §7 producing a `comment` review action; nothing runs in §12. Jump to §14's "merge did not run" summary. |
+
+Operator **Needs Revision** / **Reject** at the §12.0 gate routes to the soft-reject path (no merge) regardless of the row above — see §12.0 step 4.
 
 Self-authored APPROVE PRs (review posted as `--comment` per §7) still take the APPROVE branches above — the verdict is approval-equivalent; only the review action differed.
 
+#### 12.0 Operator decision gate (policy = `ask`, or any epic integration PR)
+
+Runs after §10's draft is shown and before any merge, whenever the §8 `MERGE_POLICY` for this PR type is `ask` (the default) **or** the PR is an epic integration PR (always gated). It puts a human in the loop on the merge and records their decision on the PR. When `MERGE_POLICY` = `auto` for a standard/story PR, skip this gate entirely and go straight to §12a. (A COMMENT verdict never reaches here — it short-circuited to a soft-reject in §11.)
+
+**1. Refresh the PR's latest state.** The operator may have approved, commented, requested changes, merged, or closed the PR directly on GitHub while this run was in flight — act on current truth, not the §3 snapshot. Re-fetch via a lightweight `GATHER_PR` (no diff, no line comments):
+
+> `GATHER_PR(pr=<N>, repo=<owner/repo>, include_diff=false, include_line_comments=false, scratch_dir=/tmp/gh-pr-eval-<N>/)`
+
+Read `state`, `isDraft`, `mergeStateStatus`, `mergeable`, `reviewDecision`, `latestReviews`, and `url`. Then:
+- **PR already `merged` or `closed`** → stop. Report it and run nothing further; treat it as "merge did not run" (the operator resolved it out-of-band) and let §15's handoff carry the externally-resolved state.
+- **`latestReviews` carries a human `CHANGES_REQUESTED`** at the current head that this run hasn't addressed → surface it and default the gate's recommended option to **Needs Revision**.
+- **`latestReviews` carries a human `APPROVED`** at the current head → surface it and default the recommended option to **Approve** (the operator already signed off on GitHub; the gate confirms the merge action).
+- This freshness re-fetch is **not** the forbidden "re-verify your own write" (see Common pitfalls). That rule forbids re-querying a post *you* just made; this is detecting *external operator action*, which the gate exists to reconcile.
+
+**2. Ask the operator.** A single `AskUserQuestion` (`header: "Approve PR"`), conforming to [`../_shared/asking-the-user.md`](../_shared/asking-the-user.md). The `question` prose **names the PR and includes its `<url>`** (from step 1) so the operator can open it on GitHub, plus a one-line recap of the verdict and the recommended merge strategy. Use this fixed, named option set every run so the operator pattern-matches the same card each time (recommended option — the skill's computed verdict, or the out-of-band human review from step 1 — first):
+- **Approve** — sign off and merge. For a standard/story PR the strategy is squash (§8). For an epic integration PR, present the mode as **two** Approve options — **Approve (merge commit)** and **Approve (squash)** — preserving the §12b choice in one card.
+- **Needs Revision** — changes needed before merge; the soft-reject path runs (the PR flips back to draft and re-routes to the resolver). The operator's reason is recorded.
+- **Reject** — the PR should not proceed; same soft-reject path, reason recorded.
+
+The tool appends an "Other" free-text choice — that covers e.g. "approve but I'll merge manually later" (record it as Approve, then route to §12c's print-the-command/no-merge path; §15 emits the approve-but-skipped handoff with `merge: skipped (deferred)`).
+
+The operator's decision is authoritative and **may override the skill's computed verdict** — Approving a PR the skill soft-rejected, or Rejecting one it approved. Record the override explicitly in step 3.
+
+**3. Post the review as the operator's decision.** This is the deferred §11 post: the review now reflects the *operator's* call, attributed to them. Compose the review body as the §11-staged assessment (`/tmp/gh-pr-eval-<N>/review.md`) with an operator-attribution header prepended, mirroring the `operator action <ISO-date>` form from [`../_shared/dod-annotations.md`](../_shared/dod-annotations.md):
+
+```
+**Operator decision: <Approve | Needs Revision | Reject>** — operator action <ISO-8601 UTC>
+
+<rationale: the operator's reason from the gate's free-text / notes, or "confirmed the evaluator's <APPROVE|COMMENT> verdict" when they took the recommended option with no added note>
+<when it overrides the run's verdict, add: "Overrides this run's automated verdict (<APPROVE|COMMENT>).">
+
+_Recorded by `github-pr-evaluator` on behalf of the human operator._
+```
+
+Then post via `github-ops` with the `review_action` the decision implies — **Approve** → `approve` (or `comment` when the §2 self-approval check flagged a self-authored PR — GitHub 422s self-`--approve`); **Needs Revision** / **Reject** → `comment`:
+
+> `PERSIST_COMMENT(target=pr-review, id=<N>, repo=<owner/repo>, body_path=/tmp/gh-pr-eval-<N>/review.md, review_action=<approve | comment>)`
+
+Posting the operator **Approve** as a GitHub `--approve` review (when not self-authored) also satisfies a branch-protection required-review. This same operator-attributed post is what you write when the operator instructs a decision directly in chat ("approve #N", "reject it — the API choice is wrong") outside a full evaluation run: capture their decision and rationale, post it with this shape, then act on it.
+
+**4. Route on the decision:**
+- **Approve**, `mergeStateStatus` not in {DIRTY, BLOCKED} → proceed to §12a (standard/story) or §12b (epic) to run the merge.
+- **Approve** but `mergeStateStatus ∈ {DIRTY, BLOCKED}`, or the "Other" deferred-merge choice → §12c (print the command; no merge now).
+- **Needs Revision** / **Reject** → the soft-reject path: flip the PR back to draft (the §11 draft-flip mechanism, `gh pr ready <N> --undo`) and re-route to the resolver via §15 — same downstream as a §7 COMMENT verdict. No merge runs. (The review was already posted as `comment` in step 3.)
+
 #### 12a. Auto-merge (standard / story, APPROVE, mergeable)
+
+Reached either directly (`MERGE_POLICY` = `auto`, no gate) or from §12.0 after the operator chose **Approve**.
+
+**When you arrive here from the `auto` path** (no §12.0 gate ran), first confirm the PR is still `open` and mergeable — the operator may have merged or closed it on GitHub since the §3 fetch. Re-check with a lightweight `GATHER_PR(pr=<N>, repo=<owner/repo>, include_diff=false, include_line_comments=false, scratch_dir=/tmp/gh-pr-eval-<N>/)`; if `state` is no longer `open` or `mergeStateStatus` has gone DIRTY/BLOCKED, stop and report rather than firing a stale merge. (Arriving from §12.0, step 1 already refreshed this.)
 
 Print one line so the user sees the command in the transcript before invocation, e.g.:
 
@@ -536,26 +611,20 @@ gh pr merge <N> --repo <owner/repo> --squash \
 
 On non-zero exit: surface the `gh` output to the user and stop. Do **not** proceed to §13 (story-issue close / epic checkbox) or §14 (worktree cleanup) — the PR is still mergeable and the user may want to re-invoke after addressing whatever failed. The worktree stays in place exactly as it would if the user had declined the merge.
 
-#### 12b. Confirm (epic integration, APPROVE, mergeable)
+#### 12b. Merge an epic integration PR (after §12.0 Approve)
 
-Epic integration PRs land the accumulated diff of every child story onto `main` in one merge — a qualitatively different risk surface than a single-issue PR. Keep the explicit gate so the user can take one last look at the merged history before it ships.
+Reached when the §12.0 operator gate returned an **Approve** option for an epic integration PR. Epic integration PRs land the accumulated diff of every child story onto `main` in one merge — a qualitatively different risk surface than a single-issue PR, which is why §12.0 always gates them. The gate already captured the mode in the chosen option (**Approve (merge commit)** or **Approve (squash)**) and recorded the operator decision; §12b just runs the matching command. (The "Don't merge yet" / deferred-merge case is the §12.0 "Other" choice and routes to §12c; **Needs Revision** / **Reject** never reach here.)
 
-Ask via a single `AskUserQuestion` (`header: "Merge mode"`; question text: "Merge PR #\<N\>? I recommend the mode below for this PR.") with these options, recommended-mode-first:
+Confirm the PR is still `open` and mergeable from the §12.0 step-1 refresh before invoking `gh pr merge` — don't fire a stale merge if the operator landed or closed it on GitHub in the meantime.
 
-- **Merge commit** — preserves all story squash commits as distinct entries in `main`'s history (default for epic integration with `commits.totalCount > 1`).
-- **Squash** — description carries the composed subject. Use when the epic collapsed to a single commit (rare but possible — §8 detects this).
-- **Don't merge yet** — post nothing further; leave the PR mergeable for the user to land later.
-
-The chosen option determines which command runs.
-
-If the user chooses **Merge commit**:
+For **Approve (merge commit)** — preserves all story squash commits as distinct entries in `main`'s history (the default for an epic with `commits.totalCount > 1`):
 
 ```bash
 gh pr merge <N> --repo <owner/repo> --merge \
   --delete-branch   # if delete_branch_on_merge is false
 ```
 
-If the user chooses **Squash**:
+For **Approve (squash)** — when the epic collapsed to a single commit (rare but possible; §8 detects it), the description carries the composed subject:
 
 ```bash
 gh pr merge <N> --repo <owner/repo> --squash \
@@ -564,11 +633,9 @@ gh pr merge <N> --repo <owner/repo> --squash \
   --delete-branch   # if delete_branch_on_merge is false
 ```
 
-If the user chooses **Don't merge yet**: skip ahead to §14's "If the merge did not run" branch.
+#### 12c. Skip with command (APPROVE but DIRTY or BLOCKED, or operator-deferred)
 
-#### 12c. Skip with command (APPROVE but DIRTY or BLOCKED)
-
-The branch can't merge in its current state, so auto-invoking `gh pr merge` would just emit a noisy failure. Print the recommended command for the user to run after resolving the blocker, name the blocker (`DIRTY` → conflicts to resolve; `BLOCKED` → branch protection check to satisfy), then stop. Do **not** proceed to §13 or §14's cleanup — like 12a's failure path, the worktree stays in place so the user can resolve the blocker and retry.
+When `MERGE_POLICY` = `ask` (or the PR is epic integration), the §12.0 operator gate has already run and recorded the operator's decision; an **Approve** whose branch is DIRTY/BLOCKED — or the §12.0 "Other" deferred-merge choice on a mergeable branch — lands here. The operator approved, but no merge runs now. The branch can't merge in its current state, so auto-invoking `gh pr merge` would just emit a noisy failure. Print the recommended command for the user to run after resolving the blocker, name the blocker (`DIRTY` → conflicts to resolve; `BLOCKED` → branch protection check to satisfy), then stop. Do **not** proceed to §13 or §14's cleanup — like 12a's failure path, the worktree stays in place so the user can resolve the blocker and retry.
 
 Temp files from steps 11–12 are cleaned up after use (or left in place for the 12a-fail / 12c paths so a retry can reuse them).
 
@@ -576,9 +643,9 @@ Temp files from steps 11–12 are cleaned up after use (or left in place for the
 
 Story PRs merge into `epic/<N>-<slug>`, not `main`. GitHub's auto-close-on-merge only fires when a PR merges into the default branch, so `Fixes #<story-number>` in the PR body is never triggered. Both actions below are needed to reflect reality in the issue tracker.
 
-Skip this entire step if the merge didn't run (the user declined in step 12). Neither action should fire before the branch has actually landed.
+Skip this entire step if the merge didn't run (see §14's "merge did not run" branch — operator deferred/rejected, DIRTY/BLOCKED skip, or COMMENT verdict). Neither action should fire before the branch has actually landed.
 
-The user already approved the merge — run both cleanup actions immediately without asking again.
+The merge already ran — the operator approved it (§12.0) or it auto-merged (§12a, `auto` policy) — so run both cleanup actions immediately without asking again.
 
 **First: close the story issue.** Re-fetch its current state in case another tool already closed it:
 
@@ -614,7 +681,7 @@ Clean up temp files after. If the checkbox is already `[x]` (another tool beat u
 
 ### 14. Clean up and summarise
 
-"Merge ran" here covers both the §12a auto-merge path and the §12b confirmed-merge path — the cleanup logic is shared. The §12a-failure path, the §12c skip path, and the §12b "Don't merge yet" choice all fall into the "merge did not run" branch below.
+"Merge ran" here covers both the §12a auto-merge path and the §12b confirmed-merge path — the cleanup logic is shared. The §12a-failure path, the §12c skip path, the §12.0 operator **Needs Revision** / **Reject** decisions, and the §12.0 "Other" deferred-merge choice all fall into the "merge did not run" branch below.
 
 **If the merge ran**, execute cleanup immediately — no further confirmation needed:
 
@@ -633,15 +700,15 @@ Clean up temp files after. If the checkbox is already `[x]` (another tool beat u
 
 Then end the run with the Step 15 Handoff block (next section) — the handoff is the closing structured summary, replacing the bullet-list summary previously emitted here. The handoff's `Cleanup:` line carries the substantive subset (worktree teardown outcome, removal, scratch-dir status); the URLs of the review, the merge commit, the closed story issue, and the ticked epic checkbox flow into earlier output as they're produced (§11, §12, §13) and don't repeat in the handoff.
 
-**If the merge did not run** (user declined in step 12, or §12c skipped on DIRTY/BLOCKED, or §7 produced a COMMENT verdict), still end the run with the Step 15 Handoff. The handoff's `Cleanup:` line is **omitted** (the worktree stayed in place); the `Next:` action shifts per the §15 rubric — for §12c skips and user-declined merges the handoff carries the manual `gh pr merge` command for the user to run after the blocker resolves; for soft-rejections the handoff re-routes to `github-issue-resolver continue #<N>`.
+**If the merge did not run** (the §12.0 operator chose Needs Revision / Reject or the "Other" deferred-merge option, or §12c skipped on DIRTY/BLOCKED, or §7 produced a COMMENT verdict, or the §12.0 step-1 refresh found the PR already merged/closed externally), still end the run with the Step 15 Handoff. The handoff's `Cleanup:` line is **omitted** (the worktree stayed in place); the `Next:` action shifts per the §15 rubric — for §12c skips and operator-deferred merges the handoff carries the manual `gh pr merge` command for the user to run after the blocker resolves; for soft-rejections and operator Needs-Revision / Reject the handoff re-routes to `github-issue-resolver continue #<N>`.
 
 ### 15. Handoff
 
 Every clean run of the evaluator ends with a single `## Handoff` block — the schema, omission rules, and state-marker vocabulary live in [`../_shared/handoff-format.md`](../_shared/handoff-format.md). The handoff is the only bridge between this session and the next; it replaces §14's previously-inlined bullet-list summary. Don't emit both.
 
-Pull the snapshot from data already in hand: the §3 `GATHER_PR` payload (issue/PR numbers, titles, base ref), the §5.5 / §5.6 cache-comment results (`HEALTH_OK`, `<short-sha>`, `TIER`), §7's verdict (`APPROVE` or `COMMENT`), §12's merge command and outcome (target ref + resulting commit SHA when the merge ran, the failure reason when it didn't), and §14's worktree teardown / removal results. The `Why:` line is judgment — describe what the next session does, or for terminal endings, why the pipeline ends here.
+Pull the snapshot from data already in hand: the §3 `GATHER_PR` payload (issue/PR numbers, titles, base ref), the §5.5 / §5.6 cache-comment results (`HEALTH_OK`, `<short-sha>`, `TIER`), §7's verdict (`APPROVE` or `COMMENT`), the §12.0 operator decision when the gate ran (`Approve` / `Needs Revision` / `Reject` — it sets the operator-attributed `review:` marker and may have overridden the verdict), §12's merge command and outcome (target ref + resulting commit SHA when the merge ran, the failure reason or `skipped (<reason>)` when it didn't), and §14's worktree teardown / removal results. The `Why:` line is judgment — describe what the next session does, or for terminal endings, why the pipeline ends here.
 
-**Before composing the handoff, `Read references/handoff-renderings.md`** — it holds the outcome→rendering rubric and the worked `## Handoff` shapes the evaluator emits: standard-PR terminal merge, story-merged (more stories pending / last sibling → Epic integration), epic-integration terminal, soft-reject re-route to the resolver, and approve-but-merge-skipped (DIRTY/BLOCKED or user-declined). It's a progressively-disclosed reference — not auto-loaded with this skill — and this SKILL.md exceeds the default Read cap, so the forced Read is what guarantees the rubric is in your working context regardless of where the initial load truncated; without it the handoff may be emitted from memory and drift from the closed-set shapes. Each shape carries the closed-set state-marker vocabulary from [`../_shared/handoff-format.md`](../_shared/handoff-format.md); fill the snapshot from the data §15 lists above.
+**Before composing the handoff, `Read references/handoff-renderings.md`** — it holds the outcome→rendering rubric and the worked `## Handoff` shapes the evaluator emits: standard-PR terminal merge, story-merged (more stories pending / last sibling → Epic integration), epic-integration terminal, soft-reject re-route to the resolver, and approve-but-merge-skipped (DIRTY/BLOCKED or operator-deferred). It's a progressively-disclosed reference — not auto-loaded with this skill — and this SKILL.md exceeds the default Read cap, so the forced Read is what guarantees the rubric is in your working context regardless of where the initial load truncated; without it the handoff may be emitted from memory and drift from the closed-set shapes. Each shape carries the closed-set state-marker vocabulary from [`../_shared/handoff-format.md`](../_shared/handoff-format.md); fill the snapshot from the data §15 lists above.
 
 ---
 
@@ -668,7 +735,7 @@ Detection: `headRefName` matches `epic/<N>-<slug>` AND `baseRefName == main`.
 4. Verify every story PR is listed in the body.
 5. Walk every item in `## Definition of done` and judge it against the accumulated diff. Unfulfilled items → rejection. Epic integration uses the historical "walk every item" path — not the per-phase verification path. Per-phase DoD projection lives on the **child story** issues (each child story's resolver run projects its own per-phase ticks onto the story body), so by integration time the child story DoDs are already mostly ticked there. The epic body's DoD tracks epic-level outcomes; it's reconciled by the resolver's epic-integration close-out batch flip after this PR merges (`github-issue-resolver` §676–679). The evaluator's job here is to verify the accumulated diff actually satisfies those epic-level bullets, not to verify per-phase projections.
 6. Strategy: merge commit (if `commits.totalCount > 1`), squash (if single commit).
-7. This PR carries more risk than a story PR — it lands the entire epic on main at once. Hold approval if DoD is incomplete or if the diff contains unexpected changes. Ask before proceeding if uncertain. The merge gate in §12 also stays explicit for epic integration PRs even on a clean APPROVE — see §12b. This is the only PR type where the evaluator still asks before merging.
+7. This PR carries more risk than a story PR — it lands the entire epic on main at once. Hold approval if DoD is incomplete or if the diff contains unexpected changes. Ask before proceeding if uncertain. The §12.0 operator decision gate is **always** in force for an epic integration PR even on a clean APPROVE, regardless of the `<!-- pr-evaluator-merge-policy -->` block — standard/story PRs gate only when their policy is `ask` (the default), but epic integration is never auto-mergeable.
 
 ---
 
@@ -683,7 +750,9 @@ Detection: `headRefName` matches `epic/<N>-<slug>` AND `baseRefName == main`.
 - Don't re-verify a `github-ops` write. `PERSIST_COMMENT` (the §5.6 cache comment, the §11 review) returns the canonical URL on success — that *is* the confirmation. Re-fetching the comment thread (`gh api …/comments`, `gh pr view … --json comments`) or spawning a second `github-ops` call to "check it posted" burns context and tokens for nothing. A tool result that seems slow is buffered, not lost — wait, don't probe.
 - Don't approve a PR whose latest `/review` run left unresolved flagged issues — cite them in the rejection body.
 - Don't recommend rebase for this project — it's allowed but unused. Squash is the grain; go with it.
-- For standard and story PRs with an APPROVE verdict, the merge runs automatically after the review posts (§12a) — the verdict itself is the approval, and §10 has already shown the recommended strategy and the composed squash subject. The explicit `AskUserQuestion` gate is reserved for epic integration PRs (§12b — where the diff is the accumulated work of every child story landing on `main` at once) and for any PR with `mergeStateStatus ∈ {DIRTY, BLOCKED}` (§12c — where auto-merging would just produce a noisy gh failure). Once a merge runs, cleanup (worktree removal, story-issue close, epic checkbox) follows automatically without asking again.
+- **Don't auto-merge unless the policy says so.** `MERGE_POLICY` defaults to `ask` (§8) — a standard/story PR with an APPROVE verdict goes through the §12.0 operator decision gate before merging, *not* straight to §12a. Auto-merge (§12a with no prompt) happens only when the repo's `<!-- pr-evaluator-merge-policy -->` block sets that PR type to `auto`. Epic integration PRs are **always** gated (§12.0 → §12b), regardless of the block. Once a merge actually runs, cleanup (worktree removal, story-issue close, epic checkbox) follows automatically without asking again.
+- **Re-fetch the PR's latest state before the gate and before any merge.** The operator may approve, comment, request changes, merge, or close the PR directly on GitHub at any time (§12.0 step 1; the §12a `auto`-path re-check). Act on current truth. This is **not** the forbidden "re-verify your own write" — that rule is about confirming a post *you* just made; this is detecting *external operator action*, which the gate exists to reconcile.
+- **Record operator decisions on the PR with clear human attribution.** A decision made at the §12.0 gate (or instructed directly in chat) is posted as the review with an `operator action <ISO-date>` header and the operator's rationale (§12.0 step 3) — distinct from, and authoritative over, the skill's automated verdict. Don't let an operator override merge silently; the PR's audit trail must show a human made the call.
 - Don't compose a squash subject with a double `(#NN)` suffix. Strip any trailing ` (#\d+)` from the PR title before appending `(#<pr-number>)`.
 - Don't post `--approve` for a self-authored PR — GitHub will 422. Use `--comment` with the same body.
 - **Don't un-tick a DoD bullet on a soft mismatch.** The un-tick annotation is a sticky veto that propagates to the resolver's projection logic — once the body shows `- [ ] <text> (resolver claimed phase <N>, ...; evaluator rejected: ...)`, no subsequent resolver run will re-tick the bullet on a normal push. Use the un-tick **only** when the diff in the attributed commit(s) clearly fails to satisfy the bullet's stated requirement, judged by the same standard the dimension applies today. Partial satisfaction, implementations that take a surprising-but-defensible path, and disagreements of interpretation get flagged in the review body — not un-ticked. An over-eager evaluator un-ticking on every reading disagreement turns the sticky veto into a merge-blocker for normal review back-and-forth.
@@ -700,7 +769,7 @@ Detection: `headRefName` matches `epic/<N>-<slug>` AND `baseRefName == main`.
 - Don't approve a PR that silently deviates from a stored plan. If the issue has a `github-issue-planner` plan and the diff reverses a locked decision without disclosing it (no `## Deviations` entry on the plan, no `## Plan override` in the PR body), that's a soft-reject — quote the decision and the diverging diff. Harmless in-spirit detail differences are fine; the plan locks decisions, not lines.
 - Don't require a plan on issues filed before the planner existed, or on trivial fixes. Plan adherence only binds issues that *have* a plan comment. Absence is noted, never a hard block.
 - Don't rely on `Fixes #<story-number>` to auto-close a story issue — story PRs merge into `epic/<N>-<slug>`, not `main`, so GitHub records the linkage but never fires the close. Step 13 closes the story issue explicitly.
-- Don't silently write any of the three configuration blocks (`<!-- pr-evaluator-static-checks -->`, `<!-- pr-evaluator-test-target -->`, `<!-- pr-evaluator-escalation-labels -->`) to `COMMANDS.md` / `CLAUDE.md` — always ask the user for confirmation before modifying project files.
+- Don't silently write any of the configuration blocks (`<!-- pr-evaluator-static-checks -->`, `<!-- pr-evaluator-test-target -->`, `<!-- pr-evaluator-escalation-labels -->`, `<!-- pr-evaluator-merge-policy -->`) to `COMMANDS.md` / `CLAUDE.md` — always ask the user for confirmation before modifying project files.
 - Don't run worktree-teardown when the merge didn't run. Teardown is paired with worktree removal; if the worktree stays, teardown stays deferred. The user will either re-invoke the evaluator (which retries the merge → cleanup pair) or run the manual cleanup sequence (`github-issue-resolver` §11) themselves. Running teardown without removing the worktree leaves a worktree whose resources have been released — tests started from there would silently fail against missing dependencies.
 - Don't `git worktree remove` before running worktree-teardown. The teardown commands live inside the worktree — for example, `./scripts/worktree-teardown.sh` is a script in the repo, so once the worktree is removed, the script is gone too and any per-worktree resources it would have released (simulators, containers, ports, scratch databases) become orphans the user has to clean up by hand. §14's step order is load-bearing: step 1 (teardown) must complete — or be confirmed as no-op because no `<!-- worktree-teardown -->` block is declared — before step 2 (worktree removal) can run.
 - Don't fail the cleanup step if teardown fails. Teardown is best-effort: log the failure and continue to `git worktree remove`. A leaked resource is recoverable (the user can find and clean it up manually); a stuck worktree blocks future runs against the same branch.
@@ -718,7 +787,7 @@ Detection: `headRefName` matches `epic/<N>-<slug>` AND `baseRefName == main`.
 
 ## Repo health-check declaration
 
-A repository declares the gate's behaviour through three marker-delimited blocks in `COMMANDS.md` or `CLAUDE.md` (or any file either `@`-includes that is reachable from the repo root). All three are invisible in rendered Markdown.
+A repository declares the gate's behaviour through marker-delimited blocks in `COMMANDS.md` or `CLAUDE.md` (or any file either `@`-includes that is reachable from the repo root), all invisible in rendered Markdown. Three configure the health gate (static checks, test target, escalation labels); a fourth — the **merge-approval policy** — governs whether the merge step puts a human in the loop (§8, §12.0).
 
 **1. Static checks** (`<!-- pr-evaluator-static-checks -->`) — fail-fast list of always-run hygiene. Runs first at every gate. Commands use repo-root-relative paths; the skill `cd`s into the branch worktree before invoking each.
 
@@ -751,6 +820,20 @@ A repository declares the gate's behaviour through three marker-delimited blocks
 - `pre-release` — <description>
 <!-- /pr-evaluator-escalation-labels -->
 ```
+
+**4. Merge-approval policy** (`<!-- pr-evaluator-merge-policy -->`) — governs whether the merge step (§12) runs hands-free or routes through the §12.0 operator decision gate. One list item per PR type, `<pr-type>: <ask | auto>`:
+
+```markdown
+<!-- pr-evaluator-merge-policy -->
+- standard: ask
+- story: ask
+<!-- /pr-evaluator-merge-policy -->
+```
+
+- Keys are `standard` and `story`; values are `ask` (gate before merge) or `auto` (merge directly on a clean APPROVE).
+- **Default is `ask`** — an absent block, or a PR type omitted from a present one, gets the human-in-the-loop gate. `auto` is strictly opt-in.
+- `epic-integration` is **always** `ask` and is not configurable here; an `epic-integration:` line is ignored (noted, not honoured).
+- Unlike the three health-gate blocks, this block is **stack-independent** — its content never varies by language, framework, or test runner — so the single example above is the whole schema; there's no per-stack variant to show.
 
 **Examples.** The same schema across two stacks — only the commands and naming change. Swift/Apple (`food-journal`):
 

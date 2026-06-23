@@ -6,15 +6,16 @@ Every clean run of the evaluator ends with a single `## Handoff` block. The sche
 
 | Outcome | Step 15 rendering |
 |---|---|
-| Standard PR clean APPROVE → §12a auto-merged | **Terminal.** Issue line, PR line with `merge: squash → main@<sha>`, Cleanup line. |
-| Story PR clean APPROVE → §12a auto-merged, more sibling stories pending | **Forward → `github-issue-resolver`** on the next story in dependency order. Story / Epic / PR / Cleanup lines; Epic progress is e.g. `open (2 of 5 stories closed)`. |
-| Story PR clean APPROVE → §12a auto-merged, *last* sibling story | **Forward → `github-issue-resolver`** on the Epic, in Epic-integration mode. Story / Epic / PR / Cleanup lines; Epic progress is `open (5 of 5 stories closed)`. |
-| Epic integration PR clean APPROVE → §12b merged (merge-commit or squash) | **Terminal.** Epic line, PR line with `merge: merge → main@<sha>` (or `squash → main@<sha>` if §12b chose Squash), Cleanup line. |
+| Standard PR merged — §12a `auto`, or §12.0 operator **Approve** | **Terminal.** Issue line, PR line with `merge: squash → main@<sha>`, Cleanup line. `review:` is `APPROVE` (auto path) or `APPROVE (operator)` (gate path). |
+| Story PR merged, more sibling stories pending | **Forward → `github-issue-resolver`** on the next story in dependency order. Story / Epic / PR / Cleanup lines; Epic progress is e.g. `open (2 of 5 stories closed)`. `review:` is `APPROVE` or `APPROVE (operator)`. |
+| Story PR merged, *last* sibling story | **Forward → `github-issue-resolver`** on the Epic, in Epic-integration mode. Story / Epic / PR / Cleanup lines; Epic progress is `open (5 of 5 stories closed)`. |
+| Epic integration PR merged — §12.0 operator **Approve (merge commit / squash)** → §12b | **Terminal.** Epic line, PR line with `merge: merge → main@<sha>` (or `squash → main@<sha>`), Cleanup line. `review:` is `APPROVE (operator)` (epic is always gated). |
 | Any PR, COMMENT verdict (soft-reject) — §7's `comment` action driven by a real COMMENT verdict | **Re-route → `github-issue-resolver continue #<N>`.** Issue / PR lines; PR line carries `state: draft` (§11 flipped it back), `review: COMMENT (soft-reject)`, and `merge: skipped (verdict)`. No Cleanup line. |
+| Any PR, §12.0 operator **Needs Revision** / **Reject** | **Re-route → `github-issue-resolver continue #<N>`.** Same shape as the COMMENT-verdict row, but `review:` is `COMMENT (operator: needs-revision)` or `COMMENT (operator: reject)` and `merge: skipped (verdict)`. `state: draft` (§12.0 flipped it back). The `Why:` carries the operator's recorded rationale. For a **story PR**, this is **not** the forward-to-next-story route — §13 didn't run because no merge landed; the next story is deferred to a later evaluator run that actually merges this one. |
 | APPROVE but `mergeStateStatus ∈ {DIRTY, BLOCKED}` → §12c skipped | **Terminal with manual command.** Issue / PR lines (PR line: `merge: skipped (DIRTY)` or `skipped (BLOCKED)`); no Cleanup. The `Next:` action quotes the recommended `gh pr merge` command verbatim and names the blocker; the `Why:` line names what the user needs to do to clear the blocker. |
-| §12b epic-integration "Don't merge yet" choice | **Same shape as the DIRTY/BLOCKED case** — terminal with the recommended `gh pr merge` command. The `Why:` notes the user opted to merge manually. |
+| §12.0 operator-deferred merge ("Other": approved, merge manually later) | **Same shape as the DIRTY/BLOCKED case** — terminal with the recommended `gh pr merge` command; `merge: skipped (deferred)`. The `Why:` notes the operator approved but opted to merge manually. For a **story PR**, same nuance as the Needs-Revision/Reject row: §13 didn't run, so this is terminal-with-command, not forward-to-next-story. |
 
-Self-authored PRs (the §2 self-approval pre-check that downgraded `--approve` to `--comment`) still follow the table above — the verdict is approval-equivalent; only the review action differed.
+Self-authored PRs (the §2 self-approval pre-check that downgraded `--approve` to `--comment`) still follow the table above — the verdict is approval-equivalent; only the review action differed. On the §12.0 gate path the operator **Approve** posts as `--comment` for the same 422 reason, but the `review:` marker stays `APPROVE (operator)`.
 
 #### Renderings
 
@@ -31,6 +32,8 @@ Self-authored PRs (the §2 self-approval pre-check that downgraded `--approve` t
 
 **Why:** the PR satisfied every dimension cleanly and merged into main. The issue is closed by GitHub's auto-close; no follow-up skill is required for this issue.
 ```
+
+The `review: APPROVE` above is the `auto`-policy (§12a) shape. Under the default `ask` policy the operator approved at the §12.0 gate, so the same terminal shape carries `review: APPROVE (operator)` and the `Why:` may note the operator's sign-off. The merge / Cleanup / terminal lines are identical either way.
 
 **Story PR merged — more stories pending.** The Epic stays open; the resolver picks up the next story in dependency order. Read the Epic body's `## Stories` list (re-fetched in §13) to pick the next-in-sequence; if the Epic's `## Sequencing` section pins an order, follow it.
 
@@ -110,4 +113,19 @@ Self-authored PRs (the §2 self-approval pre-check that downgraded `--approve` t
 **Why:** the PR is approved on its merits but `mergeStateStatus == DIRTY` — there's a conflict with the base branch. Resolve the conflict (rebase or merge `main` into the PR branch), confirm the conflict is gone (`gh pr view 287 --json mergeStateStatus`), then run the command above. No follow-up skill — once the merge lands, GitHub auto-closes the issue.
 ```
 
-For the §12b "Don't merge yet" path, the same shape applies with `merge: skipped (user-declined)` and a Why line noting the user's choice to merge manually.
+For the §12.0 operator-deferred path ("Other": approved but merge manually later), the same shape applies with `merge: skipped (deferred)` and a Why line noting the operator's choice to merge manually.
+
+**Operator soft-reject (Needs Revision / Reject) — re-route to resolver.** The §12.0 gate returned **Needs Revision** or **Reject**; §12.0 posted the review as `--comment` with an `operator action <ISO-date>` header carrying the operator's rationale, then flipped the PR back to draft. The shape matches the COMMENT-verdict soft-reject, but the `review:` marker names the operator decision and the `Why:` carries their reason. (For a story PR, no merge landed, so this re-routes to the resolver on the *same* story — not forward to the next one.)
+
+```
+## Handoff
+
+**Issue:** #142 — Add CSV export · open · feature · plan: ✓
+**PR:** #287 — Add CSV export (#142) · draft · base main · review: COMMENT (operator: needs-revision) · health: ✅ at abc1234 · merge: skipped (verdict)
+
+**Next:** address the operator's requested changes in a fresh session — the resolver continues on the existing branch (now in draft).
+
+    /github-pipeline:github-issue-resolver continue #287
+
+**Why:** the automated evaluation passed, but the operator requested revision at the merge gate (recorded on the PR, <ISO-date>): "export should stream rather than buffer the whole file in memory for large datasets." §12.0 flipped the PR back to draft so the resolver's §5 existing-PR check picks it up as in-progress work; the resolver's §10 review loop addresses the note, re-pushes, and re-flips to ready before the next forward handoff.
+```
