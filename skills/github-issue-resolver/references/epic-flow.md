@@ -6,7 +6,7 @@ References back to SKILL.md primitives are written as "SKILL.md §PN" / "SKILL.m
 
 ## Running the full canonical suite (epic baseline / bootstrap / post-rectification)
 
-This subsection applies **only** to the epic-baseline, bootstrap, and post-rectification flows in SKILL.md "If the issue is an Epic" — the places that legitimately run the project's *full* canonical suite (every unit + integration test) in a worktree. It does **not** loosen the §8/§10.6 story gates, which stay targeted-only (see "Don't run the full unit + integration suite at the §8/§10.6 story gates" in SKILL.md Common pitfalls). It exists because a full-suite run is a 15–30 minute, cold-build-bearing operation, and three foot-guns turned one such run into a multi-hour hang in the past.
+This subsection applies **only** to the epic-baseline, bootstrap, and post-rectification flows in SKILL.md "If the issue is an Epic" — the places that legitimately run the project's *full* canonical suite (every unit + integration test) in a worktree. It does **not** loosen the §8/§10.6 story gates, which stay targeted-only (see "Don't run the full unit + integration suite at the §8/§10.6 story gates" in [`common-pitfalls.md`](common-pitfalls.md), indexed under SKILL.md's Common pitfalls). It exists because a full-suite run is a 15–30 minute, cold-build-bearing operation, and three foot-guns turned one such run into a multi-hour hang in the past.
 
 **1. Which command — never improvise it, and never cold-rebuild on every attempt.** Read the project's `issue-resolver-canonical-suite` block (per SKILL.md §P3.1) and use its labelled commands:
 
