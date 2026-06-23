@@ -211,3 +211,46 @@ but key behaviors are driven by markers the *consuming* repo provides — not by
   - No build/test here, so a grep is the validator:
     `grep -rniE 'swift|xcode|xcb\.sh|foodjournal|rails|rspec|pytest' skills/ agents/` — every hit must
     be a gated integration or a labeled multi-stack example; a bare assumption is a regression.
+- **Compressing a prompt without losing precision.** These skill/agent bodies are Opus instruction
+  prompts (skills: `opus` at `medium`/`high`/`xhigh`; `github-ops`: `sonnet`), not chat prompts — so
+  when reducing tokens the target is the *smallest set of high-signal tokens that fully specifies the
+  behaviour*, **not the shortest text** (Anthropic's "minimal ≠ short"; corroborated by OpenAI and
+  Google prompt guidance). This is load-bearing because Opus 4.8 follows instructions **literally** at
+  these effort levels: it will not silently generalise a scope you trimmed or re-infer an intent you
+  dropped, and there is no offline harness to catch the regression. Cut low-signal prose; keep every
+  token that carries scope, intent, or contract.
+  - **Compress — token wins with no precision cost:** delete filler and hedging ("in order to",
+    "it's worth noting", restated context); de-duplicate against the point-of-use copy (an intro may
+    lean on a fact restated at its `§N` *only when that copy is actually present*); use imperative
+    action verbs ("Delegate", "Read from the path") over "you should consider…"; structure with
+    Markdown headers / labelled blocks / lists; state what to do, not a list of what not to do.
+  - **Do NOT — looks like compression, costs precision:**
+    - **Word-for-symbol shorthand** — `w/`→"with", `&`→"and", `->`→"leads to" *in prose*. No vendor
+      endorses it, the token saving is ~zero, and it reads ambiguously next to `gh` flags and code. (A
+      flow arrow in a structured list — `Broad search → spawn Explore` — and `+` as a list-join —
+      `PR + diff`, `Sonnet + medium` — are existing house style and fine; the ban is on substituting
+      symbols for words in running prose.)
+    - **Paraphrasing a contract token** — a synonym for a parsed identifier is a contract break, not a
+      compression. Preserve verbatim: op names (`GATHER_ISSUE`, `PERSIST_COMMENT`, …), `subagent_type`
+      strings (`github-pipeline:github-ops`), the `no model override` pin, marker comments
+      (`<!-- … -->`), §-anchors / §P-IDs, scratch-dir/path conventions (`/tmp/gh-resolver-<N>/`), and
+      the closed-set vocabularies in `skills/_shared/handoff-format.md` and `dod-annotations.md`
+      (`open`/`closed`, `APPROVE`/`COMMENT`, `squash`/`merge`, the DoD annotation forms). Rule of
+      thumb: if another skill or a script parses it, it's contract; the prose around it is compressible.
+    - **Dropping the "why"** — a rationale clause (`#626/#627 race`, "cwd-stateful", "single source of
+      truth") is high-signal: it's what stops a later editor reintroducing the bug. Compressing an
+      explained invariant down to a bare command is the exact failure Anthropic warns against.
+    - **Collapsing a scope qualifier** — "on every dispatch", "across GATHER calls", "first phase
+      only", "before any code work begins" are the words Opus 4.8 won't re-infer.
+  - **Phrasing:** prefer plain imperatives over `CRITICAL`/`MUST`/ALL-CAPS (these over-trigger on
+    current models); reserve **bold** for genuinely load-bearing invariants, not default emphasis.
+    Don't add a blanket "be concise" directive to a skill body — the models are already terse; put the
+    concision where you want it.
+  - No build/test here, so a grep is the validator: the contract-token set must not shrink across a
+    compression pass —
+    `grep -roE '<!-- [a-z0-9:-]+ -->|§P?[0-9]+(\.[0-9]+)?|GATHER_[A-Z]+|PERSIST_[A-Z]+|github-pipeline:[a-z-]+' skills/ agents/ | sort | uniq -c`
+    before and after (no count drops unless you deliberately removed that op/anchor); and
+    `grep -rnE '\bw/' skills/ agents/` should return nothing (banned shorthand).
+  - The **`compress-skill-section`** skill (in `.claude/skills/`) automates this rule end-to-end: it
+    drafts a denser version, runs an adversarial review→fix loop and a whole-document coherence check
+    against these rules, runs the validators above, and proposes the result — it never edits the file.
