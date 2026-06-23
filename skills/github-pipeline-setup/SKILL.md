@@ -65,7 +65,7 @@ Staging-then-passing-the-path (not re-inlining the body on a command line) is th
 
 ### The blocks you configure
 
-Eight blocks across two consumer skills, plus the worktree-lifecycle pair. **Before drafting any of
+Nine blocks across two consumer skills, plus the worktree-lifecycle pair. **Before drafting any of
 them, `Read` [`references/block-authoring.md`](references/block-authoring.md)** — it is the
 authoring spec (exact shape, what belongs in each, detection heuristics for inferring the contents
 from the repo, and the legacy-migration mapping). It is progressively disclosed, so the forced Read
@@ -79,6 +79,7 @@ is what guarantees the per-block shapes are in context before you propose anythi
 | `pr-evaluator-static-checks` | evaluator static gate | command list |
 | `pr-evaluator-test-target` | evaluator test selection | prose config |
 | `pr-evaluator-escalation-labels` | evaluator escalation | label list (may be empty) |
+| `pr-evaluator-merge-policy` | evaluator merge gate | policy (`<pr-type>: ask\|auto`) |
 | `worktree-setup` | resolver per-worktree provisioning | command list (optional) |
 | `worktree-teardown` | evaluator per-worktree teardown | command list (optional) |
 
@@ -132,6 +133,13 @@ so there's no `github-ops` here.
 - The two **`*-test-target`** blocks are prose and project-specific (wrapper, per-target naming
   conventions, helper/broad-change fallbacks). Detection gets you the wrapper and target names;
   interview the user briefly for the naming convention and fallbacks rather than inventing them.
+- The **`pr-evaluator-merge-policy`** block isn't *detected* — it's a preference, not a repo fact.
+  Ask the user which PR types should require human approval at the evaluator's merge gate vs. merge
+  hands-free on a clean approval. **Propose `ask` for both `standard` and `story`** — that matches the
+  evaluator's default (an absent block resolves to `ask`) and is the safe, human-in-the-loop choice;
+  `auto` is opt-in per type. Epic-integration PRs are always gated and aren't part of this block.
+  Writing the block explicitly is worth it for discoverability of the `auto` knob, but skipping it is
+  harmless since the evaluator already defaults to `ask`.
 - If detection finds nothing for a block (e.g. no obvious static checks), don't fabricate commands —
   present the empty draft and ask, or offer to skip that block. A wrong command silently wired in is
   worse than an absent block the skill asks about at runtime.

@@ -30,7 +30,7 @@ The block is always present on a clean exit. Lines are omitted (not blanked, not
   - A story under an Epic (evaluator after a story PR merges, resolver working on a story) → `Story:` for the story plus an `Epic:` line for the parent's progress (e.g. `open (3 of 5 stories closed)`).
 - **`research:`** — the research-dossier marker, placed before `plan:` on the `Issue:` / `Story:` line. Present on the researcher's own clean exits (`✓` dossier posted, `✗` judged nothing-to-research) and carried forward on any later skill's handoff for an issue that has a dossier (e.g. the planner shows `research: ✓` once it has ingested one). **Omitted entirely** on issues that never went through the researcher — so the drafter's renderings, and the planner / resolver / evaluator renderings on dossier-less issues, are unchanged. When the marker carries a URL (the researcher's clean exit), append it in parentheses like `plan:` does.
 - **`PR:`** — omit entirely when no PR exists. Drafter clean exits and the planner's plan-comment-only clean exits skip this line. Resolver clean exits always have a PR. Evaluator clean exits always have a PR.
-- **`Cleanup:`** — evaluator-only, and only after the merge ran (§14's worktree teardown / removal / scratch purge sequence has executed). Omit on the evaluator's no-merge branches (soft-reject, DIRTY/BLOCKED-skip, user-declined merge) and on every other skill's clean exit.
+- **`Cleanup:`** — evaluator-only, and only after the merge ran (§14's worktree teardown / removal / scratch purge sequence has executed). Omit on the evaluator's no-merge branches (soft-reject, DIRTY/BLOCKED-skip, operator-deferred merge, operator Needs-Revision / Reject) and on every other skill's clean exit.
 - **Fenced next-action block** — replaced with the literal `(terminal — no follow-up skill)` for terminal endings (evaluator clean merge of a standard PR, evaluator clean merge of an Epic integration PR). The `Why:` line still appears and explains why the pipeline ends here.
 - **`Why:`** — always present, on both forward and backward routes. For forward routes, name what the next session will accomplish. For re-routes, name the specific finding (audit dimension, plan-decision quote, doc citation, file:line evidence) that triggered the regression — vague Whys aren't useful weeks later when the user picks the issue back up.
 
@@ -45,11 +45,13 @@ Use these exact words. Don't invent synonyms.
 | Issue `research` | `✓` (dossier posted), `✗` (none / judged not needed), `stale` (posted but superseded by an issue or source change) |
 | Issue `plan` | `✓` (posted), `✗` (none), `stale` (posted but superseded) |
 | PR `state` | `draft`, `open`, `merged`, `closed` |
-| PR `review` | `APPROVE`, `COMMENT (soft-reject)`, `not run` |
+| PR `review` | `APPROVE`, `COMMENT (soft-reject)`, `APPROVE (operator)`, `COMMENT (operator: needs-revision)`, `COMMENT (operator: reject)`, `not run` |
 | PR `health` | `✅ at <short-sha>`, `❌ at <short-sha>`, `not run` |
 | PR `merge` | `squash → <ref>@<short-sha>`, `merge → <ref>@<short-sha>`, `skipped (<reason>)`, `not run` |
 
 `<short-sha>` is a 7-character hex prefix. `<ref>` is the merge target (`main` for standard PRs and Epic integration PRs, `epic/<N>-<slug>` for story PRs). When the plan marker carries a URL (planner clean exit), append the URL in parentheses: `plan: ✓ (https://github.com/owner/repo/issues/N#issuecomment-...)`.
+
+The `(operator)` / `(operator: …)` `review` variants are evaluator-only: they record that a **human operator**, not the skill's automated evaluation, made the call at the evaluator's §12.0 merge-approval gate — `APPROVE (operator)` for an operator Approve, `COMMENT (operator: needs-revision)` / `COMMENT (operator: reject)` for the two soft-reject decisions. The attribution mirrors the `operator action <ISO-date>` form in [`dod-annotations.md`](dod-annotations.md). For the `merge` marker, `skipped (deferred)` is the reason when the operator approved but chose to merge manually later; `skipped (DIRTY)` / `skipped (BLOCKED)` name an unmergeable branch; `skipped (verdict)` names a soft-reject.
 
 ## Epic and Story variants
 
