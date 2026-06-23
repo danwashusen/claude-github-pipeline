@@ -3,6 +3,11 @@
 Objective gates run at step 6, after the adversarial loop converges. There is no build/test in
 this repo, so these greps are the validator. All three must pass before you propose the rewrite.
 
+**Calibrate against the original.** Every check compares the rewrite to the original and flags only
+what the rewrite *introduces* — A is a superset diff, B and C diff their matches against the
+original. This is what stops pre-existing house style (`&` in a terse bold label like
+`**Existing work & PRs**`, `+` joins, `→` arrows) and heading-convention quirks from false-positiving.
+
 Stage the candidate to a temp file first so you can grep it:
 
 ```bash
@@ -33,15 +38,20 @@ or a new one) are fine; only a decreased count is a drop — and a drop is a blo
 deliberately removed that capability and noted it in the changelog. Extend `$TOK` with any
 contract token specific to the section you're compressing.
 
-## B — No banned shorthand
+## B — No NEW banned shorthand
+
+Only shorthand the rewrite *introduces* counts. Diff the matches in the original against the rewrite:
 
 ```bash
-grep -nE '\bw/|[^-]-> | & ' /tmp/css-rewrite.md
+diff \
+  <(grep -hoE '\bw/|[^-]-> | & ' /tmp/css-original.md | sort) \
+  <(grep -hoE '\bw/|[^-]-> | & ' /tmp/css-rewrite.md  | sort)
 ```
 
-**Pass** = no output, OR every hit is a legitimate flow arrow in a list / a literal code token (a
-`&&` in a shell snippet, a real CLI flag) rather than word-substitution in prose. Review each hit;
-do not auto-accept.
+**Pass** = nothing new on the rewrite (`>`) side. Pre-existing house style cancels out — `&` in a
+terse bold label (`**Existing work & PRs**`), `+` joins (`Sonnet + medium`), `→` flow arrows, and
+literal code tokens (`&&` in a shell snippet) appear on both sides and don't flag. Review any
+rewrite-only hit; do not auto-accept.
 
 ## C — §-anchor integrity
 
@@ -70,7 +80,10 @@ comm -23 \
   <(grep -nE '^#+ .*§P?[0-9]' "$FILE" | grep -oE '§P?[0-9]+(\.[0-9]+)?' | sort -u)
 ```
 
-**Pass** = empty output. **Skip C2** for files that number steps as `## N.` and cross-ref them as
-`§N` (e.g. `github-pr-evaluator`, `agents/*.md`) — there the "defined-in-heading" set is empty by
-construction, so C2 is meaningless and C1 is the check that matters. The `§P-ID` branch is
-resolver-local; elsewhere it simply matches nothing.
+**Calibrate first:** run this `comm` on the **original** `$FILE` before judging. If it isn't already
+empty there, the file's heading convention doesn't fit C2 — e.g. the resolver cross-refs `§4.7` but
+its heading is `### 4.7`, not `### §4.7`, so *every* ref shows as "undefined". When C2 is noisy on
+the original, **skip it and rely on C1**; only an anchor C2 flags that it did *not* flag on the
+original is real. (Files like `github-pr-evaluator` and `agents/*.md` number steps `## N.` and
+cross-ref `§N`, so their defined-in-heading set is empty by construction — C2 is pure noise there.)
+The `§P-ID` branch is resolver-local; elsewhere it simply matches nothing.
