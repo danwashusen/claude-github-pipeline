@@ -32,7 +32,7 @@ Walk the thread oldest → newest. Separate stale early discussion from the late
 3. **Open questions** — anything the thread is still waiting on (a clarification, a design decision, a third-party action).
 4. **Who/what is blocked** — is the issue blocked on the user, on a maintainer review, on an upstream dependency, or ready to work?
 5. **Type** — classify from labels + body + thread, using the resolver's §4 working set (see Output format). The main loop maps this onto the narrower handoff `type` closed set at handoff time.
-6. **Effective plan** — when a plan is present, does the thread's latest accepted direction *confirm* or *refine* it? Lift the plan's locked-decision summary faithfully; do **not** re-judge the plan's correctness (that is the resolver's and the audit's job). If the thread *supersedes* a locked decision, raise the exception instead (see below).
+6. **Effective plan** — when a plan is present, does the thread's latest accepted direction *confirm* or *refine* it? Lift the plan's locked-decision summary **and its `## Doc grounding` citations** faithfully; do **not** re-judge the plan's correctness (that is the resolver's and the audit's job). The resolver consumes the lifted doc grounding at step 6 so its main loop never re-reads project docs — copy the citations verbatim, don't restate or evaluate them. If the thread *supersedes* a locked decision, raise the exception instead (see below).
 7. **Phases** — when the plan has a `## Phases` section, parse it into the structured list.
 
 ## Evidence is mandatory
@@ -56,6 +56,7 @@ Emit ONE of two shapes.
 plan: present | absent
 thread-vs-plan: confirms | refines        (omit when plan: absent)
 locked decisions: <faithful summary of the plan's ## Architecture decisions / ## Changes / ## Data model / ## Test plan>   (omit when plan: absent)
+doc grounding: <faithful copy of the plan's ## Doc grounding citations — e.g. [architecture.md §3.2], [precedent: <file>:<line>] — or `none` if the plan has no ## Doc grounding>   (omit when plan: absent)
 planned at: <sha the plan records, if any>   (omit when plan: absent)
 
 ## Classification

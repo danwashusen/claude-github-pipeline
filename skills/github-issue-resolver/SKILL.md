@@ -198,7 +198,7 @@ Determining "what to do now" means reading the issue body, its full comment thre
 **Dispatch.** Spawn with `subagent_type: "Explore"`, **no `model` override**, the prompt template at [`references/state-distiller-prompt.md`](references/state-distiller-prompt.md) (**force-`Read` it before the first dispatch** — this SKILL.md exceeds the default Read cap), placeholders filled from step 2's `GATHER_ISSUE` result (no re-fetch): `issue_number`, `repo_owner`/`repo_name`, `labels`, `integration_target_ref` (= §4.5's `audit_ref` derivation — `origin/main`, or the epic branch for an epic/story), and the **issue body, thread, and plan marker** — each passed as the scratch path github-ops spilled (large) **or** the inline content it returned (small), per that section's `*_mode`; the plan marker is `(absent)` when no plan exists. Like every sub-agent it runs **without** the conversation history — that isolation keeps the distilled direction objective.
 
 **Parse the return**, one of two shapes:
-- **Normal output** — `## Current state` + `## Effective plan` + `## Classification`. Display `## Current state` to the user as the §3 state summary so they can correct a misread (the §3 human-correction checkpoint). Carry `## Classification` into §4 (response type) and §4.7 (phase list), and `## Effective plan` into §4.6 (plan gate). The raw thread stays available — re-read it only if you need a detail the distiller didn't surface.
+- **Normal output** — `## Current state` + `## Effective plan` + `## Classification`. Display `## Current state` to the user as the §3 state summary so they can correct a misread (the §3 human-correction checkpoint). Carry `## Classification` into §4 (response type) and §4.7 (phase list), and `## Effective plan` into §4.6 (plan gate) and step 6 (its lifted doc grounding + decisions are the grounding statement, so step 6 never re-reads `docs/*`). The raw thread stays available — re-read it only if you need a detail the distiller didn't surface.
 - **`## Exception`** — a closed-set code (see [`../_shared/subagent-decision-signal.md`](../_shared/subagent-decision-signal.md)): `THREAD_SUPERSEDED_PLAN` → §4.6's re-route arm; `PHASES_MALFORMED` → the §4.7 re-route; `AMBIGUOUS` → re-read the raw thread in this loop (its scratch file, or the inline content), then proceed. The distiller cannot call `AskUserQuestion`; it surfaces these and writes nothing.
 
 `plan: absent` and a `Blocked on:` line are **normal output**, not exceptions — §4.6 decides whether a missing plan matters, and §4 decides whether to render the block as a question.
@@ -232,7 +232,7 @@ This is the most important step: separating the latest decisions from stale earl
 From its **normal output**:
 - **`## Current state`** — latest decision/direction, superseded / already-tried approaches (don't re-propose these), open questions, and who/what is blocked.
 - **`## Classification`** — issue type (bug / feature / question / refactor / blocked / duplicate / epic / story; determines what "resolved" means), the epic/story label signal, and the parsed plan `## Phases` (consumed at §4.7).
-- **`## Effective plan`** — whether a plan exists and whether the thread confirms/refines it (consumed at §4.6).
+- **`## Effective plan`** — whether a plan exists, whether the thread confirms/refines it, and the plan's lifted doc grounding + locked decisions (consumed at §4.6 and step 6).
 
 If it returns an **`## Exception`** instead, route per §P6: `THREAD_SUPERSEDED_PLAN` → §4.6's re-route arm, `PHASES_MALFORMED` → the §4.7 re-route, `AMBIGUOUS` → re-read the raw thread here (its scratch file, or the inline content), then continue.
 
@@ -396,7 +396,7 @@ The approach for a non-trivial issue should be worked out and verified *before* 
 
 **The plan is already fetched and parsed.** Step 2's `GATHER_ISSUE` pulled the `<!-- implementation-plan:v1 -->` comment (as `marker_comment_path` when spilled, or inline `marker_comment_body`), and the state-distiller (§P6) parsed it into `## Effective plan`. Consume that — don't re-fetch.
 
-**If a plan is present.** The plan's `## Doc grounding` and `## Architecture decisions` are the design authority for this issue and **supersede** step 6's re-derivation — lift the grounding statement from the plan instead of re-deriving it (step 6 becomes "confirm and cite the plan's grounding," not "plan from scratch"). The plan's `## Architecture decisions`, `## Changes`, `## Data model / schema impact`, and `## Test plan` are the **locked decisions** you implement against. Record in the state summary: `Plan: present (<plan-comment-url>), planned at <sha>`.
+**If a plan is present.** The plan's `## Doc grounding` and `## Architecture decisions` are the design authority for this issue and **supersede** step 6's re-derivation — lift the grounding statement from the plan instead of re-deriving it (step 6's plan-present path restates and cites the plan's grounding from the state-distiller's `## Effective plan`, never from a fresh `docs/*` read). The plan's `## Architecture decisions`, `## Changes`, `## Data model / schema impact`, and `## Test plan` are the **locked decisions** you implement against. Record in the state summary: `Plan: present (<plan-comment-url>), planned at <sha>`.
 
 Two staleness checks gate trusting it, each owned by a sub-agent so this loop never does the reads:
 
@@ -592,7 +592,7 @@ gh issue list --repo <owner/repo> --label epic --state all \
 
 - **No parent epic found** → proceed as a regular feature/bug (PR base is `main`). Note this in the state summary so the user can decide whether to retroactively add this story to an epic.
 - **Multiple matches** → ask via `AskUserQuestion` (header "Parent epic") which epic applies, one option per candidate epic (label = `#<N>`, description = the epic title), before continuing.
-- **Parent epic found** → read its `## Goal` and `## Background` sections. These provide the strategic grounding for why this story exists — use them alongside step 6's PRD/Architecture/CLAUDE.md docs. Cite the parent epic in the PR body's `## Doc grounding` section (e.g. `Parent epic #22 — Goal: …`).
+- **Parent epic found** → read its `## Goal` and `## Background` sections. These provide the strategic grounding for why this story exists — use them alongside the grounding statement step 6 produces (lifted from the plan when one is present, re-derived from the docs otherwise). Cite the parent epic in the PR body's `## Doc grounding` section (e.g. `Parent epic #22 — Goal: …`).
 
 **Determine the PR base.** Resolve `<branch>` per "Resolving the epic branch name" in the Epic section (discover by prefix; if multiple matches, stop and ask). The story flow never computes a fresh slug — that path lives only in the epic-as-target bootstrap. Treat the discovery result as one of three outcomes:
 
@@ -717,9 +717,11 @@ Every comment the skill posts becomes part of the thread on future runs. Step 2 
 
 **When this step applies.** Any code change beyond a one-line fix — features, refactors, and non-trivial bug fixes. Skip for: comment-only responses (questions, blocked issues, duplicates), one-line bug fixes, and pure doc/typo changes.
 
-**If a plan was consumed at step 4.6, lift the grounding from it.** A finalized `github-issue-planner` plan already did this research and verified it — its `## Doc grounding` and `## Architecture decisions` are the grounding statement. Restate (and cite) them as this step's output rather than re-deriving from scratch; you may still spot-check that the cited sections say what the plan claims. The rest of this step's full re-derivation applies only when step 4.6 ended in a `Plan override` (no plan to lift from) or the issue is trivial (gate didn't fire).
+The output of this step is a brief **grounding statement** — the specific PRD / Architecture / CLAUDE.md / constitution sections that constrain or shape the implementation. State it before writing any code so the user can correct the framing if it's wrong, and cite the same sections in the PR body (step 9). How you produce it depends on whether step 4.6 consumed a plan.
 
-**Check which docs are present:**
+**Plan-present path — lift, don't read.** When a plan was consumed at step 4.6, the finalized `github-issue-planner` plan already produced and verified this grounding. The state-distiller (§P6) surfaced its `## Doc grounding` citations and `## Architecture decisions` in `## Effective plan` — already in context. Restate and cite those as the grounding statement; the PR body's `## Plan` link is their provenance. (If `## Effective plan` reports `doc grounding: none`, the plan grounded against no docs — omit the PR's `## Doc grounding` section per step 9 rather than inventing one.) **Do not run `ls`, read `docs/*`, or spot-check the cited sections in this loop** — plan-vs-doc coherence was verified by the planner's isolated reviewer at plan time, and issue-vs-doc coherence by the §4.5 audit (dimension 1) at run time, so a main-loop re-read is redundant and reintroduces the context cost the planner→resolver split exists to avoid. Skip the rest of this step.
+
+**No-plan path — re-derive from the docs.** Only when step 4.6 ended in a `Plan override` (no plan to lift from) or the issue is trivial (the gate didn't fire). Check which docs are present:
 
 ```bash
 ls docs/prd.md docs/architecture.md CLAUDE.md 2>/dev/null
@@ -727,11 +729,9 @@ ls docs/prd.md docs/architecture.md CLAUDE.md 2>/dev/null
 
 Read each one that exists. `CLAUDE.md` often `@`-references additional docs (e.g., `@docs/constitution.md`); follow those references and read the linked files too.
 
-**Cite what informed the approach.** Identify the specific sections of the PRD / Architecture / CLAUDE.md / any referenced constitution that constrain or shape the implementation. Write a brief grounding statement before step 8 — for example:
+Identify the specific sections of the PRD / Architecture / CLAUDE.md / any referenced constitution that constrain or shape the implementation, and write the grounding statement — for example:
 
 > PRD §3 defines natural-language entry as the only input method. Architecture §2 layer rules require the data layer to import only the persistence framework, services, and models. Constitution §4 forbids ad-hoc local key-value storage — all settings must live on the user-profile model. Therefore the approach is …
-
-This grounding statement is the output of this step. State it before writing any code so the user can correct the framing if it's wrong. The PR body MUST cite these sections (see step 9).
 
 **Surface tensions before proceeding.** Three patterns to watch for:
 
