@@ -25,4 +25,6 @@ force it into options.
 Any gate that arises during sub-agent work must be surfaced by the sub-agent
 returning a structured "decision needed" signal to this main loop, which asks the
 user and re-dispatches with the answer. Never tell a sub-agent to call
-`AskUserQuestion` itself.
+`AskUserQuestion` itself. The schema and closed-set vocabulary for that signal live
+in [`subagent-decision-signal.md`](subagent-decision-signal.md) — the single source
+of truth for the typed-exception codes and the main-loop action each maps to.
