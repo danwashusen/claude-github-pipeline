@@ -39,11 +39,16 @@ single-symbol lookups, use `Grep`/`Glob` directly.
 
 **What does *not* delegate to `github-ops`:** the `git worktree` lifecycle and all
 local `git` work (add/commit/push, diffs, branch resolution) — that is cwd-stateful
-and belongs to this skill's main loop. And the existing judgment sub-agents — the
-issue **audit**, the **test-selection** `Explore` agent, the
+and belongs to this skill's main loop. And the judgment sub-agents — the
+**state-distiller** (§P6, current-state + effective-plan reasoning over the issue's
+thread and plan text), the issue **fitness audit** (§4.5, code/doc reasoning plus
+plan-vs-code currency), the **test-selection** `Explore` agent, the
 `apple-platform-build-tools:builder` delegation, and the drafter-proxy for
-follow-ups — stay exactly as they are; `github-ops` is only for the mechanical
-GitHub-API work this section enumerates.
+follow-ups — are judgment work the calling skill owns; `github-ops` is only for the
+mechanical GitHub-API work this section enumerates. The state-distiller and the
+fitness audit split the context-heavy reading along a **read-type seam** — the
+distiller reasons over the thread/plan *text* (never code), the audit reasons over
+*code and docs* at a git ref — so neither holds the other's input.
 
 Like the other sub-agents, `github-ops` cannot call `AskUserQuestion`; on any
 ambiguity it returns `DECISION_NEEDED: <…>` and writes nothing — surface it here.
@@ -184,6 +189,20 @@ Follow-up items surface at four moments — §7 baseline detours, the retry-ladd
 
 **See [`references/follow-up-tracking.md`](references/follow-up-tracking.md) for the full registry schema, filing-vs-capturing rule, hybrid timing table, end-of-§10 checkpoint, and the drafter-proxy sub-agent prompt.**
 
+### §P6 Distill current state & effective plan
+
+Determining "what to do now" means reading the issue body, its full comment thread, and (when present) the implementation-plan comment — a high-volume, mostly-superseded read that doesn't belong in this expensive main loop. Delegate it to the read-only **state-distiller** `Explore` sub-agent, which absorbs that text and returns only the conclusion. This is the **thread-reasoning** half of the read seam; the fitness audit (§4.5) is the **code-reasoning** half — the distiller never reads code, so it never straddles the audit.
+
+**Invoked from §3** (current-state determination) and **re-invoked** after a §4.5 audit routes a body fix through the drafter (the refreshed body may carry a new direction).
+
+**Dispatch.** Spawn with `subagent_type: "Explore"`, **no `model` override**, the prompt template at [`references/state-distiller-prompt.md`](references/state-distiller-prompt.md) (**force-`Read` it before the first dispatch** — this SKILL.md exceeds the default Read cap), placeholders filled from step 2's `GATHER_ISSUE` result (no re-fetch): `issue_number`, `repo_owner`/`repo_name`, `labels`, `integration_target_ref` (= §4.5's `audit_ref` derivation — `origin/main`, or the epic branch for an epic/story), and the **issue body, thread, and plan marker** — each passed as the scratch path github-ops spilled (large) **or** the inline content it returned (small), per that section's `*_mode`; the plan marker is `(absent)` when no plan exists. Like every sub-agent it runs **without** the conversation history — that isolation keeps the distilled direction objective.
+
+**Parse the return**, one of two shapes:
+- **Normal output** — `## Current state` + `## Effective plan` + `## Classification`. Display `## Current state` to the user as the §3 state summary so they can correct a misread (the §3 human-correction checkpoint). Carry `## Classification` into §4 (response type) and §4.7 (phase list), and `## Effective plan` into §4.6 (plan gate). The raw thread stays available — re-read it only if you need a detail the distiller didn't surface.
+- **`## Exception`** — a closed-set code (see [`../_shared/subagent-decision-signal.md`](../_shared/subagent-decision-signal.md)): `THREAD_SUPERSEDED_PLAN` → §4.6's re-route arm; `PHASES_MALFORMED` → the §4.7 re-route; `AMBIGUOUS` → re-read the raw thread in this loop (its scratch file, or the inline content), then proceed. The distiller cannot call `AskUserQuestion`; it surfaces these and writes nothing.
+
+`plan: absent` and a `Blocked on:` line are **normal output**, not exceptions — §4.6 decides whether a missing plan matters, and §4 decides whether to render the block as a question.
+
 ## Workflow
 
 ### 1. Identify the issue
@@ -200,28 +219,29 @@ Delegate the fetch to `github-ops` so you pull the issue, all comments, the link
 
 > `GATHER_ISSUE(issue=<number>, repo=<owner/repo>, marker_prefix="<!-- implementation-plan:v1 -->", extra_json="closedByPullRequestsReferences,projectItems", scratch_dir=/tmp/gh-resolver-<number>/)`
 
-`scratch_dir` is the per-run dir convention from commit 567e829 — routing the body / thread / plan-marker through it is what keeps large issues (epics, long-marker stories) from burning minutes in spill-and-reread on the github-ops side. The `## RESULT` envelope carries scalars + path references — `issue_body_path`, `thread_path`, `marker_comment_path` (when a plan marker exists) — plus `closingIssuesReferences`, the open-PR list, and any `extra_json` fields. **Read the body and the thread from the returned paths** when you need their content; github-ops doesn't echo them inline.
+`scratch_dir` is the per-run dir convention from commit 567e829 — routing the body / thread / plan-marker through it is what keeps large issues (epics, long-marker stories) from burning minutes in spill-and-reread on the github-ops side. The `## RESULT` envelope carries scalars + path references — `issue_body_path`, `thread_path`, `marker_comment_path` (when a plan marker exists) — plus `closingIssuesReferences`, the open-PR list, and any `extra_json` fields. Each section is **inline when small or a path when spilled** (per its `*_mode`), and §3 hands all three to the **state-distiller** (§P6) — it does the body/thread/plan reading, not this loop. Touch them directly only for a targeted spot-check (e.g. §4.7's DoD reconciliation reads the body — `issue_body_path` when spilled, else the inline `issue_body`); github-ops doesn't echo large content inline.
 
-The marker_prefix lookup matters here too: the plan comment is the canonical source for the implementation approach. Read it (via `marker_comment_path`) before forming any opinion on what "resolving" the issue means. The explicit open-PR search matters because `closedByPullRequestsReferences` only covers PRs that *would close* the issue (and only when the linkage syntax was used) — open/in-progress PRs by other contributors often won't appear there, so `github-ops` runs the `gh pr list … "<number> in:body"` search alongside it.
+The marker_prefix lookup matters here too: the plan comment is the canonical source for the implementation approach — `marker_comment_path` is passed to the state-distiller, which folds it into `## Effective plan` (§4.6 consumes that). The explicit open-PR search matters because `closedByPullRequestsReferences` only covers PRs that *would close* the issue (and only when the linkage syntax was used) — open/in-progress PRs by other contributors often won't appear there, so `github-ops` runs the `gh pr list … "<number> in:body"` search alongside it.
 
-Read everything before forming an opinion. Long threads matter — the original post is often outdated by the time someone asks you to work on it.
+The state-distiller reads everything before any opinion forms — long threads matter, because the original post is often outdated by the time someone asks you to work on it. That reading is §3's job (via §P6), not this fetch step's.
 
 ### 3. Determine the current state
 
-This is the most important step. After reading the thread, explicitly identify:
+This is the most important step: separating the latest decisions from stale early discussion so the rest of the run acts on where the issue actually is. **Dispatch the state-distiller per §P6** to do this reading — it absorbs the body + full thread + plan marker (paths from step 2) and returns the distilled state, so the long thread never enters this loop.
 
-- **Latest decision or direction** — what's the most recent substantive comment that shifts the plan? Treat earlier proposals as superseded if a maintainer or the OP has agreed to a different approach.
-- **Open questions** — anything the thread is waiting on (clarification, design decision, third-party action).
-- **Already-tried approaches** — work that's been attempted and rejected. Don't re-propose these.
-- **Who's blocked on what** — is the issue blocked on the user, on a maintainer review, on an upstream dependency, or ready to be worked?
-- **Issue type** — bug / feature / question / refactor / discussion / duplicate / **epic** / **story**. This determines what "resolved" means.
-- **Epic / Story detection.** Check the issue's `labels` array:
-  - Label includes `epic` (case-insensitive) → or title starts with `Epic:` → treat as an Epic; run step 4.5 (audit) first, then skip to the "If the issue is an Epic" section.
-  - Label includes `story` → treat as a Story; run step 4.5 (audit) first, then skip to the "If the issue is a Story" section.
-  - Neither → continue with the standard workflow.
-- **Early branch discovery.** §4.5's audit sub-agent reads code and docs from a specific git ref (see "Audit ref derivation" in §4.5), and that ref needs to be known *before* the audit fires. The discovery calls that historically lived inside the Epic / Story sections — `git ls-remote --heads origin "epic/<N>-*"` for Epic-as-target, and the parent-epic search (`gh issue list --label epic --state all --search "#<N> in:body"`) followed by `git ls-remote` for Story under-an-open-Epic — run here, at issue-type determination time, so §4.5 has the branch name in hand. The downstream "If the issue is an Epic" / "If the issue is a Story" sections continue to reference the discovery rules ("Resolving the epic branch name", parent-epic search) — when discovery has already run here, those become no-ops that reuse the recorded name. Multi-match clarification prompts and zero-match handling stay exactly where they're documented in those sections; the only change is *when* discovery executes.
+From its **normal output**:
+- **`## Current state`** — latest decision/direction, superseded / already-tried approaches (don't re-propose these), open questions, and who/what is blocked.
+- **`## Classification`** — issue type (bug / feature / question / refactor / blocked / duplicate / epic / story; determines what "resolved" means), the epic/story label signal, and the parsed plan `## Phases` (consumed at §4.7).
+- **`## Effective plan`** — whether a plan exists and whether the thread confirms/refines it (consumed at §4.6).
 
-Write this state summary out loud (briefly) before doing any work. It anchors the rest of the response and lets the user correct you if you've misread the thread.
+If it returns an **`## Exception`** instead, route per §P6: `THREAD_SUPERSEDED_PLAN` → §4.6's re-route arm, `PHASES_MALFORMED` → the §4.7 re-route, `AMBIGUOUS` → re-read the raw thread here (its scratch file, or the inline content), then continue.
+
+**Display the `## Current state` to the user before doing any work** — briefly, in your own voice. It anchors the rest of the response and lets the user correct you if the distiller misread the thread.
+
+Two determinations stay in this main loop because they need cwd-stateful `git`, which the distiller doesn't do:
+
+- **Epic / Story detection drives the flow.** Take the `## Classification` epic/story signal, cross-checked against the issue's `labels`: label includes `epic` (case-insensitive) or title starts with `Epic:` → treat as an Epic; run step 4.5 (audit) first, then skip to "If the issue is an Epic". Label includes `story` → treat as a Story; run step 4.5 first, then skip to "If the issue is a Story". Neither → standard workflow.
+- **Early branch discovery.** §4.5's audit reads from a specific git ref (see "Audit ref derivation" in §4.5) that must be known *before* the audit fires. Run the discovery here, at issue-type-determination time, so §4.5 has the branch name in hand — `git ls-remote --heads origin "epic/<N>-*"` for Epic-as-target, and the parent-epic search (`gh issue list --label epic --state all --search "#<N> in:body"`) followed by `git ls-remote` for a Story under an open Epic. The downstream "If the issue is an Epic" / "If the issue is a Story" sections reuse the recorded name (their discovery rules become no-ops); multi-match clarification prompts and zero-match handling stay exactly where those sections document them.
 
 ### 4. Choose the right kind of response
 
@@ -287,13 +307,14 @@ Agent({
   description: "Audit issue fitness-to-implement before code work",
   prompt: <contents of references/issue-audit-prompt.md
            with placeholders filled: issue_number, issue_type, repo_owner,
-           repo_name, repo_root, dimensions, related_issues, audit_ref>
+           repo_name, repo_root, dimensions, related_issues, audit_ref,
+           plan_sha>
 })
 ```
 
 The sub-agent runs **without** the conversation history, the user's task description, or the state summary from step 3 — same isolation rule the drafter uses, same justification: if the sub-agent can't tell whether the issue is implementable using only the body + docs + codebase + sibling-issue content, neither can a developer picking it up cold. Leaking conversation context into the audit defeats the gate's purpose.
 
-**Dimensions to pass.** Six are defined in the prompt; pass the subset that applies to the issue type:
+**Dimensions to pass.** Seven are defined in the prompt; pass the subset that applies to the issue type:
 
 | Type | Dimensions passed |
 |---|---|
@@ -305,6 +326,8 @@ The sub-agent runs **without** the conversation history, the user's task descrip
 
 Dimension 5 (cross-issue contract drift) only fires when sibling content is passed in — it's the dimension the drafter's reviewer doesn't carry, because at draft time siblings don't exist yet. Dimension 6 (implementation readiness) flags vague placeholders, undefined field shapes, undefined enum cases, and missing layer-boundary assignments — the bar is *implementable*, not just *file-able*.
 
+**Append dimension 7 (plan-vs-code currency) when the state-distiller reported `plan: present`** (§P6's `## Effective plan`). Pass `plan_sha` (from the distiller's `planned at`) alongside the dimension list; the audit fetches the plan comment itself, the same way it self-fetches the issue and siblings. Dimension 7 folds in the plan-currency check that §4.6 previously ran inline, so the audit's single code-reading pass at `audit_ref` now also verifies the plan's `## Changes` surfaces still exist with the assumed shape. **The resulting finding is consumed at §4.6, not by the §4.5 BLOCKER gate above** — plan-vs-code drift routes to the planner, not the drafter. Omit 7 when no plan exists.
+
 **Loop control.** Same shape as the drafter's review loop:
 
 ```
@@ -312,35 +335,39 @@ prev_findings = []
 for pass in 1..3:
   findings = audit_sub_agent.run(issue_number, type, dimensions, related_issues)
   drop_findings_without_evidence(findings)
-  if findings is empty:
+  # Dimension 7 (plan-vs-code currency) is NOT part of this loop's clean/route
+  # decision — record it and carry it to §4.6 (→ planner). Only dims 1–6 iterate.
+  carry_currency_finding_to_4.6(findings where dimension == 7)
+  body_findings = findings where dimension in 1..6
+  if body_findings is empty:
     exit_clean()
     break
-  if same_finding_repeated_with_no_progress(findings, prev_findings):
-    exit_circular(findings)
+  if same_finding_repeated_with_no_progress(body_findings, prev_findings):
+    exit_circular(body_findings)
     break
   # Unlike the drafter, the resolver does NOT apply findings itself.
   # Surface them to the user and route to the drafter (see "Surfacing findings").
-  remediation_result = route_to_user(findings)
+  remediation_result = route_to_user(body_findings)
   if remediation_result == "drafter_completed":
     # Drafter has filed gh issue edit; refetch and re-audit
-    prev_findings = findings
+    prev_findings = body_findings
     continue
   else:
     break  # user overrode, aborted, or chose "proceed with these findings"
 else:
-  exit_cap_reached(findings)
+  exit_cap_reached(body_findings)
 ```
 
-The cap and circular guard exist for the same reason as in the drafter: don't iterate forever on a finding that's either wrong, unactionable, or needs human judgment.
+The cap and circular guard exist for the same reason as in the drafter: don't iterate forever on a finding that's either wrong, unactionable, or needs human judgment. **Dimension 7 sits outside the loop on purpose** — its remediation is a planner re-route (§4.6), not a drafter body-edit, and since the drafter only edits the issue body, re-running dim 7 on later passes can't change its verdict; carry the first pass's currency finding forward.
 
 **Surfacing findings.** Classify the audit run before deciding what to do:
 
 - **Gated off** — the §4.5 pre-audit gate decided not to fire (continuing your own PR, competing PR by another author, or comment-only response type). The state-summary line was already recorded by the gate. Continue to the original fork (step 5 / Epic flow / Story flow) without prompting the user about the audit.
 - **Clean** — audit fired and returned zero findings after evidence-filtering. Print one line in the state summary: `Audit: clean (N pass(es))`. Continue to the original fork (step 5 / Epic flow / Story flow).
 - **Suggestions / nits only** — print the findings inline (severity, dimension, evidence, recommended remediation) but continue without stopping. The user can interrupt the run if any look load-bearing on second read.
-- **One or more BLOCKERs** — **stop**. Print every finding with severity, dimension, the affected issue number (for Epic / Story modes, dimension 5 findings name the sibling issue where the conflict lives), evidence, and recommended remediation. Then ask via `AskUserQuestion` (header "Audit"; present the default option first): **Revise via drafter** / **Override with reason** / **Abort** — each detailed in the options that follow:
+- **One or more BLOCKERs in dimensions 1–6** (issue-body fitness) — **stop**. Print every finding with severity, dimension, the affected issue number (for Epic / Story modes, dimension 5 findings name the sibling issue where the conflict lives), evidence, and recommended remediation. A **dimension-7** plan-vs-code BLOCKER does *not* trigger this gate — the issue body isn't what's stale, the plan is, so it is surfaced at §4.6 and routes to the planner, not the drafter here. Then ask via `AskUserQuestion` (header "Audit"; present the default option first): **Revise via drafter** / **Override with reason** / **Abort** — each detailed in the options that follow:
 
-  1. **Revise via drafter** *(default)*. Invoke the sister skill `github-issue-drafter` via the `Skill` tool with arguments shaped like `revise #N — apply these audit findings: <evidence block>`. The drafter runs its own review loop on the proposed revision, shows the user a diff, files `gh issue edit` on approval, and returns. Then refetch the issue (`gh issue view <N> --comments --json …`) and run the audit again from pass 1. If the audit was on an Epic and dimension 5 found drift across multiple sibling Stories, route the drafter sequentially per affected issue — Epic body first if its contract is the source of truth, then each affected Story — so each drafter handoff is one issue at a time (mirrors how the user-led workshop session for Epic #119 proceeded: one `gh issue edit` per issue, in topological order). After all handoffs land, refetch every affected issue and re-audit.
+  1. **Revise via drafter** *(default)*. Invoke the sister skill `github-issue-drafter` via the `Skill` tool with arguments shaped like `revise #N — apply these audit findings: <evidence block>`. The drafter runs its own review loop on the proposed revision, shows the user a diff, files `gh issue edit` on approval, and returns. Then refetch the issue (`gh issue view <N> --comments --json …`) and run the audit again from pass 1. If the audit was on an Epic and dimension 5 found drift across multiple sibling Stories, route the drafter sequentially per affected issue — Epic body first if its contract is the source of truth, then each affected Story — so each drafter handoff is one issue at a time (mirrors how the user-led workshop session for Epic #119 proceeded: one `gh issue edit` per issue, in topological order). After all handoffs land, refetch every affected issue and re-audit. The edited body may carry a new direction, so **re-dispatch the state-distiller per §P6** on the refreshed body before trusting the earlier `## Current state` / `## Effective plan` / `## Classification`.
 
   2. **Override and proceed.** The user states a one-sentence reason. Record the override in the state summary as `Audit override: <reason>`. Append the same line to the eventual PR body in step 9 under an `## Audit override` section so the override is visible to reviewers in the PR. Blockers don't disappear with this option — they become documented technical debt routed through PR review.
 
@@ -367,20 +394,16 @@ The approach for a non-trivial issue should be worked out and verified *before* 
 | Comment-only response (question, blocked, duplicate) | **No** — nothing to plan |
 | Trivial change (one-line fix, typo, pure doc edit) | **No** — these legitimately need no plan |
 
-**Fetch the plan comment** by its marker:
+**The plan is already fetched and parsed.** Step 2's `GATHER_ISSUE` pulled the `<!-- implementation-plan:v1 -->` comment (as `marker_comment_path` when spilled, or inline `marker_comment_body`), and the state-distiller (§P6) parsed it into `## Effective plan`. Consume that — don't re-fetch.
 
-```bash
-gh api "repos/<owner>/<repo>/issues/<N>/comments" \
-  --jq '.[] | select(.body | startswith("<!-- implementation-plan:v1 -->")) | {id: .id, url: .html_url, body: .body}'
-```
+**If a plan is present.** The plan's `## Doc grounding` and `## Architecture decisions` are the design authority for this issue and **supersede** step 6's re-derivation — lift the grounding statement from the plan instead of re-deriving it (step 6 becomes "confirm and cite the plan's grounding," not "plan from scratch"). The plan's `## Architecture decisions`, `## Changes`, `## Data model / schema impact`, and `## Test plan` are the **locked decisions** you implement against. Record in the state summary: `Plan: present (<plan-comment-url>), planned at <sha>`.
 
-**If a plan is present.** Parse it. The plan's `## Doc grounding` and `## Architecture decisions` are the design authority for this issue and **supersede** step 6's re-derivation — lift the grounding statement from the plan instead of re-deriving it (step 6 becomes "confirm and cite the plan's grounding," not "plan from scratch"). The plan's `## Architecture decisions`, `## Changes`, `## Data model / schema impact`, and `## Test plan` are the **locked decisions** you implement against. Record in the state summary: `Plan: present (<plan-comment-url>), planned at <sha>`.
+Two staleness checks gate trusting it, each owned by a sub-agent so this loop never does the reads:
 
-Then run a **plan-currency check** before trusting it. The plan records the SHA it was built against; the code may have moved since:
-- Compare the plan's recorded SHA to the current integration-target HEAD (`main`, or the epic branch for a story).
-- Spot-check that the files/symbols the plan's `## Changes` names still exist and still have the shape the plan assumes (`git grep`/`git show` against the integration target).
+- **Plan vs. thread** (state-distiller, §P6). When `## Effective plan` reports `thread-vs-plan: confirms | refines`, proceed. When the distiller raised the **`THREAD_SUPERSEDED_PLAN`** exception, the thread's latest accepted direction contradicts a locked decision — **don't silently proceed.** Surface it to the user; if they confirm it's material, the run's outcome is a **re-route to `github-issue-planner` in revise mode**: emit the Step 12 re-route handoff (command `re-plan #N — thread superseded the plan: <evidence>`).
+- **Plan vs. code** (fitness audit dimension 7, §4.5). The audit already read the integration target; its dimension-7 finding is the currency check (SHA drift plus whether the plan's `## Changes` surfaces still exist with the assumed shape at `audit_ref`). A dimension-7 **BLOCKER** means the code drifted out from under the plan — surface it; on user-confirmed material drift, **re-route to `github-issue-planner` in revise mode**: emit the Step 12 re-route handoff (command `re-plan #N — the codebase/issue moved since the plan: <evidence>`).
 
-If the plan is materially stale (the code it depends on has drifted, or the issue body has been revised in a way the plan predates), **don't silently proceed** — surface the drift to the user. If they confirm it's material, the run's outcome is a **re-route to `github-issue-planner` in revise mode**: emit the Step 12 re-route handoff (whose command is `re-plan #N — the codebase/issue moved since the plan: <evidence>`), and **do not** call the `Skill` tool or re-fetch the plan in-session — re-routes never cross the session boundary (§12's Re-route rule). The user runs that command in a fresh session, then re-runs the resolver, where this currency check re-fires clean. A clean (or user-waved-through) currency check → proceed to step 5.
+For either re-route, **do not** call the `Skill` tool or re-fetch the plan in-session — re-routes never cross the session boundary (§12's Re-route rule). The user runs the command in a fresh session, then re-runs the resolver, where both checks re-fire clean. Clean (or user-waved-through) checks → proceed to step 5.
 
 **If a plan is missing on a non-trivial issue.** Stop. Tell the user:
 
@@ -397,12 +420,12 @@ Some non-trivial issues split into a sequence of phases that share one issue and
 
 **When this gate fires.** Same plan-presence shape as §4.6: it runs only when a plan was consumed (skipped on `Plan override`, trivial flows, comment-only responses, continuations of an existing PR — the plan was already classified when that PR's first phase opened).
 
-**Detection.** Read the plan's `## Phases` section (the structured-bullet shape defined by `github-issue-planner` Step 7's schema):
+**Detection.** Consume the state-distiller's parsed phases from §P6's `## Classification` — it already read the plan's `## Phases` section (the structured-bullet shape defined by `github-issue-planner` Step 7's schema):
 
 - **`## Phases` is absent** → single-phase issue. Continue with the standard flow; nothing in §5/§8/§9/§11/§12 changes for this run.
 - **`## Phases` is present and contains a single phase** → also single-phase. The planner emitted the section but the work doesn't actually fan out. Continue with the standard flow.
 - **`## Phases` is present with two or more phases, of which at least two are `kind: code-shipping`** → **multi-phase issue.** Parse the section into the in-memory phase list described under "Phase list captured" and proceed; the multi-phase branches in §5/§8/§9/§11/§12 fire from here on.
-- **`## Phases` is present but malformed** (missing required keys, free-form prose under the header instead of structured bullets, `closes-dod` references that don't resolve to issue-body DoD bullets) → stop and route back to `github-issue-planner` in revise mode, the same way §4.6 routes plan-currency drift. The resolver depends on the structured shape to route phases; hand-waving past a malformed `## Phases` re-introduces exactly the silent-misrouting failure mode this gate exists to prevent.
+- **`## Phases` is present but malformed** — the state-distiller raises the **`PHASES_MALFORMED`** exception (missing required keys, free-form prose under the header instead of structured bullets, `closes-dod` references that don't resolve to issue-body DoD bullets) → stop and route back to `github-issue-planner` in revise mode, the same way §4.6 routes plan drift. The resolver depends on the structured shape to route phases; hand-waving past a malformed `## Phases` re-introduces exactly the silent-misrouting failure mode this gate exists to prevent.
 
 **Phase list captured.** When the gate identifies a multi-phase issue, capture the parsed list once and carry it through the rest of the run. Each entry holds: `number` (1-based), `title`, `kind` (closed enum: `code-shipping` | `operator` | `decision-only`), `ships`, `closes-dod` (list of DoD-bullet indexes), `deliverable`, `depends-on`. Record the multi-phase mode in the state summary: `Multi-phase: <N> phases (<code-count> code-shipping, <op-count> operator/decision)` and name which phase this run will execute (the lowest-numbered phase whose `depends-on` is satisfied and whose deliverable hasn't shipped — read the existing PR's `## Phase tracker` if a draft PR exists from a prior phase).
 
@@ -412,7 +435,7 @@ Some non-trivial issues split into a sequence of phases that share one issue and
 
 1. Enumerate ticked phases from the PR's `## Phase tracker` (already cached from step 2's open-PR check). For each `- [x]` row, record its phase number and either its commit SHA (code-shipping) or its operator-action date (operator/decision-only).
 2. Compute the expected DoD-bullet set: union of `closes-dod` indexes across every ticked code-shipping or operator phase. When the plan has no `## Phases` (single-phase) or a single entry that already shipped, the expected set is **every** top-level DoD bullet (single-phase fallback).
-3. Read the issue body's `## Definition of done` from `GATHER_ISSUE`'s `issue_body_path`. Parse top-level checkbox bullets (1-based; sub-bullets are detail, not DoD items). For each expected bullet currently `- [ ]` **and** not carrying an evaluator-rejection annotation `(resolver claimed phase <N>, ...; evaluator rejected: ...)`, this is reconcilable drift — the prior phase's projection failed to land.
+3. Read the issue body's `## Definition of done` from `GATHER_ISSUE` — the `issue_body_path` file when the body spilled, or the inline `issue_body` when it came back small (per its `issue_body_mode`). Parse top-level checkbox bullets (1-based; sub-bullets are detail, not DoD items). For each expected bullet currently `- [ ]` **and** not carrying an evaluator-rejection annotation `(resolver claimed phase <N>, ...; evaluator rejected: ...)`, this is reconcilable drift — the prior phase's projection failed to land.
 4. If any drift exists, write the projected body to `/tmp/gh-resolver-<N>/issue-body-projected.md` and apply via `gh issue edit <N> --repo <owner/repo> --body-file /tmp/gh-resolver-<N>/issue-body-projected.md`. Record in the state summary: `DoD reconciliation: applied <K> missing tick(s) from prior phase(s)`.
 5. If no drift, record `DoD reconciliation: in sync`. **Never un-tick.** Bullets that are `- [x]` but not in the expected set are left alone (likely a human edit or plan-revision residue) and flagged as `DoD reconciliation: unexpected tick on bullet <N> (<text excerpt>) — left as-is`.
 
@@ -838,7 +861,7 @@ For code changes (all `git push` and `gh pr create` commands run from inside the
 
 - **If you're continuing an existing PR** (per step 5): just push the new commits to that branch. The PR updates automatically. Don't open a new one. **If this is a multi-phase issue and the push just shipped a phase** (per §4.7), also tick that phase off the PR body's `## Phase tracker` via `gh pr edit <PR#> --body-file <updated-body>` — write the updated body to `/tmp/gh-resolver-<issue-number>/pr-body.md`, flipping only the just-shipped phase's `- [ ]` to `- [x] (commit <sha>)` and leaving the rest as-is. The tracker is the evaluator's input on its final DoD check and a human-readable map of progress; an unticked tracker on a pushed phase will read as in-flight work to the next reader.
 
-  **Then project the phase's `closes-dod` onto the issue body's `## Definition of done`.** Read the current issue body (re-`Read` `/tmp/gh-resolver-<issue-number>/issue-<N>-body.md` from §2's `GATHER_ISSUE`, or refresh via `gh issue view <N> --json body -q .body > /tmp/gh-resolver-<issue-number>/issue-<N>-body.md` if it's stale). Apply the "DoD projection rule" to compute the projection diff (which bullets should flip `- [ ]` → `- [x]` with what annotation), stage the projected body to `/tmp/gh-resolver-<issue-number>/issue-body-projected.md`, and apply via `gh issue edit <N> --repo <owner/repo> --body-file /tmp/gh-resolver-<issue-number>/issue-body-projected.md`. **Do not abort the resolver run on projection failure** — commits and Phase tracker ticks are preserved; the next re-entrant run's §4.7 reconciliation re-derives the missing ticks from `Phase tracker × closes-dod` and re-applies them. Surface the failure in the §11 summary so the user can see what didn't land.
+  **Then project the phase's `closes-dod` onto the issue body's `## Definition of done`.** Read the current issue body (re-`Read` `/tmp/gh-resolver-<issue-number>/issue-<N>-body.md` from §2's `GATHER_ISSUE` if the body spilled there; if that file is absent — the body came back inline — or is stale, materialize it via `gh issue view <N> --json body -q .body > /tmp/gh-resolver-<issue-number>/issue-<N>-body.md`). Apply the "DoD projection rule" to compute the projection diff (which bullets should flip `- [ ]` → `- [x]` with what annotation), stage the projected body to `/tmp/gh-resolver-<issue-number>/issue-body-projected.md`, and apply via `gh issue edit <N> --repo <owner/repo> --body-file /tmp/gh-resolver-<issue-number>/issue-body-projected.md`. **Do not abort the resolver run on projection failure** — commits and Phase tracker ticks are preserved; the next re-entrant run's §4.7 reconciliation re-derives the missing ticks from `Phase tracker × closes-dod` and re-applies them. Surface the failure in the §11 summary so the user can see what didn't land.
 - **If this is a fresh PR**: push the branch and open a PR.
 
   **Fresh-PR branch detection on re-entry (predecessor PR).** Before computing the branch name, check whether a closed PR exists on this issue from a prior HARD-path "Start fresh" revise (see `github-issue-planner`'s "Re-plan reconciliation"). Detect via:
@@ -997,7 +1020,7 @@ Classify the run's outcome before writing the summary; it determines which Step 
 | Triage / classification only (relabel, retitle, link to a duplicate; no PR) | **Terminal.** Same shape as comment-only. |
 | Abandoned / declined / stale-issue close (user opted out of opening a PR) | **Terminal.** Same shape — name the close reason in the `Why:` line. |
 | §4.5 fitness audit blocked the run (issue body fails fitness-to-implement) | **Re-route → `github-issue-drafter` (revise).** The handoff names the failing audit dimension and the specific evidence so the drafter's revise loop can act without re-investigating. |
-| §4.6 plan-currency drift or §8 plan-invalidation surfaced mid-work | **Re-route → `github-issue-planner` (revise).** The handoff quotes the locked decision verbatim and cites the `file:line` where the contradiction surfaced. |
+| §4.6 plan drift (code-currency or thread-superseded-plan) or §8 plan-invalidation surfaced mid-work | **Re-route → `github-issue-planner` (revise).** The handoff quotes the locked decision verbatim and cites the `file:line` (code drift / plan-invalidation) or the superseding comment (thread drift). |
 | §4.7 malformed `## Phases` blocked the run (planner emitted unparseable phase shape) | **Re-route → `github-issue-planner` (revise).** The handoff quotes the specific malformation (missing key, unresolved `closes-dod` reference, etc.). |
 | §6 doc-conflict that can't be reconciled in-skill | **Re-route → `github-issue-drafter` (revise).** The handoff names the doc citation and the body claim that contradicts it. |
 
@@ -1033,9 +1056,9 @@ If the resolved issue was a **story** under an open epic, include two additional
 
 Every clean run of the resolver ends with a single `## Handoff` block — the schema, omission rules, and state-marker vocabulary live in [`../_shared/handoff-format.md`](../_shared/handoff-format.md). The handoff is the only bridge between this session and the next: the user copies the fenced command into a fresh Claude Code session.
 
-**Re-route rule.** When the outcome is a re-route (§4.5 fitness audit, §4.6 plan-currency, §6 doc-conflict, §8 plan-invalidation), the handoff is the **only** form of next-step communication. **Do not** invoke the prior skill via the `Skill` tool — that would cross a session boundary silently and defeat the session-per-skill design. The handoff names the revise command; the user runs it in a fresh session.
+**Re-route rule.** When the outcome is a re-route (§4.5 fitness audit, §4.6 plan-currency or thread-superseded-plan, §4.7 malformed phases, §6 doc-conflict, §8 plan-invalidation), the handoff is the **only** form of next-step communication. **Do not** invoke the prior skill via the `Skill` tool — that would cross a session boundary silently and defeat the session-per-skill design. The handoff names the revise command; the user runs it in a fresh session.
 
-Pull the snapshot from data already in hand: the issue/plan state from §2's `GATHER_ISSUE` (plus any re-fetch from §4.6's currency check), the PR number/URL/state from §9's `gh pr create` / §10's continuation, the review-loop state from §10's last iteration (`iteration_test_status` already feeds §11's summary), and the originating epic data when the resolver ran in story or epic mode. The `Why:` line is judgment — for forward routes, describe what the next session will do; for re-routes, quote the specific finding (locked decision, doc citation, audit dimension + evidence) so the prior skill's revise loop can ground in it without re-investigating.
+Pull the snapshot from data already in hand: the issue/plan state from §2's `GATHER_ISSUE`, the PR number/URL/state from §9's `gh pr create` / §10's continuation, the review-loop state from §10's last iteration (`iteration_test_status` already feeds §11's summary), and the originating epic data when the resolver ran in story or epic mode. The `Why:` line is judgment — for forward routes, describe what the next session will do; for re-routes, quote the specific finding (locked decision, doc citation, audit dimension + evidence) so the prior skill's revise loop can ground in it without re-investigating.
 
 #### Renderings
 

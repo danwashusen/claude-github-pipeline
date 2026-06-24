@@ -2,7 +2,7 @@
 
 This is the prompt template the resolver orchestrator inlines when invoking the `Explore`-type audit sub-agent at step 4.5 of the workflow. The orchestrator fills the `<<...>>` placeholders before sending. **Do not include the user's task description, the resolver's state summary, or any prior conversation turns** — the isolation property is what makes this audit meaningful.
 
-This prompt is structurally similar to the sister skill's `github-issue-drafter/references/issue-reviewer-prompt.md` and reuses its Severity, Evidence, and Output-format conventions verbatim. It differs in two ways: this prompt is always `revise` mode (the issue is already filed), and it adds two dimensions the drafter doesn't carry — cross-issue contract drift (dimension 5) and implementation readiness (dimension 6).
+This prompt is structurally similar to the sister skill's `github-issue-drafter/references/issue-reviewer-prompt.md` and reuses its Severity, Evidence, and Output-format conventions verbatim. It differs in two ways: this prompt is always `revise` mode (the issue is already filed), and it adds three dimensions the drafter doesn't carry — cross-issue contract drift (dimension 5), implementation readiness (dimension 6), and plan-vs-code currency (dimension 7, plan-gated). This is the **code-reasoning** half of the resolver's read seam; its sibling, the **state-distiller** (`state-distiller-prompt.md`), reasons over the issue's thread and plan text and never reads code.
 
 ---
 
@@ -22,7 +22,17 @@ If you cannot tell from these inputs alone whether the issue is ready to be impl
 - **Type**: `<<issue_type>>` — one of `bug | feature | refactor | epic | story`. The orchestrator has already classified this from labels and body shape; you can trust it.
 - **Repo root**: `<<repo_root>>` — absolute path to the orchestrator's git repository. Use this as the `git -C <<repo_root>>` working directory for every git plumbing call below. **Do not** `Read`, `grep`, or `find` the working tree under `<<repo_root>>` for project source or documentation — the working tree may be on a different branch than the audit is meant to evaluate (this is the failure mode the `<<audit_ref>>` input fixes). The single exception is files the audit knows are branch-stable for this run (e.g. tool output captured to a temp path).
 - **Audit ref**: `<<audit_ref>>` — the fully-qualified git ref whose tree you must evaluate against (for example `origin/main`, or `origin/epic/154-horizontal-day-paging-with-disabled-tomorrow-card`). The orchestrator chose this ref by mapping the issue to its integration target (regular issues → `origin/main`; Epic-as-target → the discovered `origin/epic/<N>-<slug>`; Story under an open Epic → the parent epic's `origin/epic/<N>-<slug>`) and fetched it before dispatching you. The ref is your sole source of truth for code and docs. Always read via `git -C <<repo_root>> show <<audit_ref>>:<path>` and search via `git -C <<repo_root>> grep <pattern> <<audit_ref>> -- <pathspec>`. Project docs (`docs/prd.md`, `docs/architecture.md`, `docs/constitution.md`, `CLAUDE.md`, and anything they `@`-include) can also differ between branches — read those through `git show <<audit_ref>>:` too, never via a plain `Read` of the working tree.
-- **Dimensions to check**: `<<dimensions>>` — a subset of {1, 2, 3, 4, 5, 6}. Run only the listed dimensions. Don't fabricate findings outside the list.
+- **Plan** *(dimension 7 only)*: `<<plan_sha>>` — the integration-target SHA the plan records it was built against, or `(none)`. **Fetch the plan comment yourself**, the same self-fetch you use for the issue:
+
+  ```
+  gh api --paginate repos/<<repo_owner>>/<<repo_name>>/issues/<<issue_number>>/comments \
+    --jq '.[] | select(.body | startswith("<!-- implementation-plan:v1 -->")) | .body'
+  ```
+
+  (`--paginate` so a plan comment past the first page of a long thread is still found — matching `gh-gather.sh`.)
+
+  If that returns nothing, **no plan exists — skip dimension 7 entirely** even if it's listed. The plan's `## Changes` / `## Architecture decisions` / `## Data model / schema impact` sections name the code surfaces dimension 7 checks against `<<audit_ref>>`; if `<<plan_sha>>` is `(none)`, extract the recorded SHA from the plan body.
+- **Dimensions to check**: `<<dimensions>>` — a subset of {1, 2, 3, 4, 5, 6, 7}. Run only the listed dimensions. Don't fabricate findings outside the list.
 - **Related issues**: `<<related_issues>>` — for an Epic, the list of child Story issue numbers extracted from `## Stories`. For a Story under an open Epic, the parent Epic number plus the list of sibling Story numbers. Empty for issues with no Epic/Story relationship. When this list is non-empty and dimension 5 is in scope, fetch each entry's body before reasoning across them:
 
   ```
@@ -74,6 +84,12 @@ Run only the dimensions named in the inputs.
    - Missing test guidance for behaviors the project's testing rules would require coverage on (e.g., a project whose constitution mandates full-method service coverage on a new service, but the body has no test plan for it).
 
    The bar is not "every possible detail spelled out" — over-specifying is its own failure mode. The bar is: a developer reading the body cold can identify each significant decision the implementation will have to make, and the body either makes that decision or marks it as out-of-scope deferred.
+
+7. **Plan-vs-code currency** *(fires only when the issue has an implementation-plan comment — see the Plan input; skip silently when none exists)*. The resolver executes a stored implementation plan, but the code may have moved since the planner wrote it. Verify the plan's assumptions about existing code still hold at `<<audit_ref>>`:
+   - **SHA drift.** Compare `<<plan_sha>>` to `<<audit_ref>>` HEAD (`git -C <<repo_root>> rev-parse <<audit_ref>>`). A difference is not itself a finding — code moves constantly — but it tells you how hard to scrutinize the rest.
+   - **Locked-surface existence + shape.** For every file, type, function, or symbol the plan's `## Changes` (plus `## Architecture decisions` / `## Data model / schema impact`) names as the thing it will modify or build on, verify it still exists at `<<audit_ref>>` with the shape the plan assumes — using the same `git grep` / `git show`-at-ref reads as dimension 2. Flag as a **BLOCKER** any locked surface the plan depends on that has been removed, renamed, or changed shape such that the plan's stated approach no longer applies (e.g. the plan says "extend `FooService.sync(_:)`" but that method's signature changed or it's gone; or, in a Rails plan, "add a column to `proposals`" but the table was since dropped).
+
+   This is **currency**, not adherence: you check that the plan's *assumptions about existing code* still hold, not that any diff matches the plan — no PR exists yet. Evidence is the plan quote (the locked surface) plus the `file:line` at `<<audit_ref>>` showing the drift. A clean dimension-7 pass means the resolver can execute the plan as written.
 
 ## Severity
 

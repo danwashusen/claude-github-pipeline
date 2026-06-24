@@ -76,6 +76,15 @@ searches (those stay with the caller, which uses `Explore`/`Grep`/`Glob`). When 
 ambiguous it returns a `DECISION_NEEDED:` block and writes nothing — it cannot call
 `AskUserQuestion`.
 
+The caller's own **judgment** reading is itself delegated to isolated `Explore` sub-agents. The
+resolver splits its context-heavy reading along a **read-type seam**: the **state-distiller**
+(`skills/github-issue-resolver/references/state-distiller-prompt.md`, §P6) reasons over the issue's
+thread + plan *text* and returns the current-state / effective-plan brief; the **fitness audit**
+(`references/issue-audit-prompt.md`, §4.5) reasons over *code and docs* at a git ref and folds in
+the plan-vs-code currency check (dimension 7). Both are context-blind and, like `github-ops`, cannot
+call `AskUserQuestion` — they return the typed decision signal defined in
+`skills/_shared/subagent-decision-signal.md` instead.
+
 Two invariants in that agent are load-bearing and easy to break when editing:
 
 - **Rule 7 — use the bundled scripts, never roll your own `gh`.** Every op with a script MUST go
@@ -129,9 +138,15 @@ through the **calling skill's main loop** instead (the worktree lifecycle is cwd
   status-line strings, and the ownership split). The **resolver** creates worktrees and runs setup
   (§P1/§P2, never removes); the **evaluator** runs teardown and removes (§5.5.0, §14). Both cite
   this file and call `scripts/worktree-hooks.sh` rather than restating the mechanics inline.
+- `subagent-decision-signal.md` — the closed-set typed-exception vocabulary an `Agent`-spawned
+  judgment sub-agent returns to its caller's main loop in lieu of `AskUserQuestion` (which sub-agents
+  can't call). Names each code (`THREAD_SUPERSEDED_PLAN`, `PHASES_MALFORMED`, `AMBIGUOUS`,
+  `PLAN_MISSING`, `BLOCKED_ON_USER`) and the main-loop action it maps to. Currently produced by the
+  resolver's **state-distiller** (§P6); referenced by `asking-the-user.md`.
 
-When changing behavior that touches handoffs, DoD annotations, or the worktree lifecycle, edit the
-`_shared` file (the single source of truth) and keep the per-skill renderings consistent with it.
+When changing behavior that touches handoffs, DoD annotations, the worktree lifecycle, or the
+sub-agent decision signal, edit the `_shared` file (the single source of truth) and keep the
+per-skill renderings consistent with it.
 
 ### Coupling to a consuming repo is convention-driven
 

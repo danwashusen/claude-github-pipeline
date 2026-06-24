@@ -99,7 +99,7 @@ Story PR clean merges are **not** terminal — they hand off to the resolver on 
 
 A re-route is a handoff whose `Next:` points at a prior skill — typically:
 
-- resolver → planner (the plan's locked decisions don't survive contact with the code; refresh the plan)
+- resolver → planner (the plan's locked decisions don't survive contact with the code, or the issue thread has moved past the plan; refresh the plan)
 - resolver → drafter (the issue body fails the resolver's fitness-to-implement audit, or contradicts a doc the resolver can't reconcile)
 - planner → researcher (the plan needs current external truth the model can't reliably recall — a dependency/API/version at or past the training cutoff; gather and verify the research first, then re-run the planner)
 

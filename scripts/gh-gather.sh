@@ -1,9 +1,11 @@
 #!/usr/bin/env bash
 #
-# gh-gather.sh — the fixed three-call issue fetch envelope used by the
-# github-* skills, collapsed into one deterministic JSON object so github-ops
-# spends one round-trip instead of three. Pure mechanism: no judgment, no
-# summarization. Bodies and threads come back verbatim from `gh`.
+# gh-gather.sh — the fixed issue fetch envelope used by the github-* skills,
+# collapsed into one deterministic JSON object so github-ops spends one
+# delegation instead of several. Pure mechanism: no judgment, no summarization.
+# The body comes back verbatim from `gh`; the comment thread is fetched COMPLETE
+# via the paginated REST comments endpoint (`gh issue view --json comments` caps
+# at ~100 and does not paginate) and normalized to the issue-view comment shape.
 #
 # Usage: gh-gather.sh <issue-number> <owner/repo> [marker-prefix] [scratch-dir]
 #
@@ -43,15 +45,30 @@ REPO="$2"
 MARKER="${3:-}"
 SCRATCH_DIR="${4:-}"
 
-issue_json="$(gh issue view "$ISSUE" --repo "$REPO" --comments \
-  --json number,title,body,state,labels,author,createdAt,updatedAt,comments,assignees,milestone,url)"
+issue_json="$(gh issue view "$ISSUE" --repo "$REPO" \
+  --json number,title,body,state,labels,author,createdAt,updatedAt,assignees,milestone,url)"
 
 open_prs_json="$(gh pr list --repo "$REPO" --state open --search "$ISSUE in:body" \
   --json number,title,author,isDraft,headRefName,url,updatedAt)"
 
+# The conversation thread, fetched COMPLETE. `gh issue view --json comments` caps
+# at ~100 comments and does not paginate, silently truncating a long thread — so
+# pull comments from the REST endpoint with --paginate (the per-page --jq streams
+# each object; `jq -s` slurps them into one array across all pages), then normalize
+# each to the `gh issue view` comment shape callers expect.
+comments_raw="$(gh api --paginate "repos/$REPO/issues/$ISSUE/comments" --jq '.[]' | jq -s '.')"
+thread_json="$(printf '%s' "$comments_raw" | jq '
+  [.[] | {id: .node_id, author: {login: .user.login}, authorAssociation: .author_association,
+          body: .body, createdAt: .created_at, url: .html_url}]')"
+# Fold the complete thread into the issue object so both the threshold envelope's
+# `thread` and the legacy envelope's `issue.comments` carry the full set.
+issue_json="$(printf '%s' "$issue_json" | jq --argjson c "$thread_json" '.comments = $c')"
+
+# Marker (plan) comments come from the SAME complete fetch — no second round-trip —
+# filtered with a jq arg so a marker containing quotes can't break the expression.
 if [[ -n "$MARKER" ]]; then
-  comments_json="$(gh api "repos/$REPO/issues/$ISSUE/comments" \
-    --jq "[.[] | select(.body | startswith(\"$MARKER\")) | {id: .id, url: .html_url, body: .body}]")"
+  comments_json="$(printf '%s' "$comments_raw" | jq --arg m "$MARKER" \
+    '[.[] | select(.body | startswith($m)) | {id: .id, url: .html_url, body: .body}]')"
 else
   comments_json="[]"
 fi
