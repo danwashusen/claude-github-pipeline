@@ -65,7 +65,7 @@ Staging-then-passing-the-path (not re-inlining the body on a command line) is th
 
 ### The blocks you configure
 
-Nine blocks across two consumer skills, plus the worktree-lifecycle pair. **Before drafting any of
+Seven blocks across two consumer skills, plus the worktree-lifecycle pair. **Before drafting any of
 them, `Read` [`references/block-authoring.md`](references/block-authoring.md)** — it is the
 authoring spec (exact shape, what belongs in each, detection heuristics for inferring the contents
 from the repo, and the legacy-migration mapping). It is progressively disclosed, so the forced Read
@@ -128,7 +128,7 @@ CI workflows (`.github/workflows/*.yml`), and project-type signals (`Package.swi
 `pyproject.toml`, etc.). Use `Explore`/`Grep`/`Glob` for this; it's local discovery, not GitHub I/O,
 so there's no `github-ops` here.
 
-- The **command-list** blocks (`*-fast-checks`, `*-static-checks`, `worktree-*`) can usually be
+- The **command-list** blocks (`*-fast-checks`, `*-static-checks`) can usually be
   drafted straight from detection — propose them filled in.
 - The two **`*-test-target`** blocks are prose and project-specific (wrapper, per-target naming
   conventions, helper/broad-change fallbacks). Detection gets you the wrapper and target names;
@@ -144,9 +144,20 @@ so there's no `github-ops` here.
   present the empty draft and ask, or offer to skip that block. A wrong command silently wired in is
   worse than an absent block the skill asks about at runtime.
 
-Skip the optional `worktree-*` blocks unless the project clearly needs per-worktree resources (an
-iOS simulator, a scratch DB, a bound port) — most repos don't, and the resolver no-ops silently when
-they're absent.
+The optional **`worktree-*`** blocks are authored by *research-and-propose*, not detection — there's
+no heuristic that infers per-worktree provisioning. Default to skipping both unless the repo shows a
+shared stateful test dependency the worktree must isolate (a DB or dev server, an iOS simulator, a
+bound port, a branch-keyed cache) — most repos don't, and the resolver no-ops silently when they're
+absent. When such a signal *is* present, don't freehand or fabricate commands: research the
+best-practice per-worktree provisioning for the detected stack — draft from what you know of the
+stack, run a lightweight web check that the approach is still current, and escalate to fuller web
+research for an unfamiliar stack or an uncertain draft — then propose `worktree-setup` and
+`worktree-teardown` **as a pair** for the operator to confirm. Setup that allocates a resource must
+ship with the teardown that releases it. The commands must be **idempotent by construction** — setup
+re-runs on every worktree entry and teardown runs best-effort on possibly-half-provisioned state, so
+prefer guard-then-create / create-if-absent over assume-clean-state, and state that contract to the
+operator when you propose. See [`references/block-authoring.md`](references/block-authoring.md) and
+[`../_shared/worktree-lifecycle.md`](../_shared/worktree-lifecycle.md) for the full contract.
 
 ### 4. Propose and confirm
 
@@ -178,6 +189,17 @@ once to catch typos and missing scripts immediately, while the user is still her
 `test-target` full suite, which can be many minutes and may have side effects. Run each from the repo
 root, in declared order, and report pass/fail per command. A failure here means the block references a
 command that doesn't work yet — show it and let the user fix the command or the block.
+
+For any `worktree-*` blocks written, also run a **parse-only** validation of the final form — this one
+executes nothing, so always run it. Call
+`${CLAUDE_PLUGIN_ROOT}/scripts/worktree-hooks.sh lint setup <repo-root>` (and `lint teardown
+<repo-root>`): `lint` discovers and parses the block and lists `would_run` without a worktree and
+without running anything. Confirm `would_run` lists
+exactly the commands the operator approved. A command missing or truncated from `would_run` means the
+parser dropped it — it's multi-line or contains an embedded backtick (see the parser constraint in
+`references/block-authoring.md`); surface it and have the operator fix the block. A non-zero `lint`
+exit (with `MALFORMED_BLOCK` on stderr and no `would_run`) means the block is duplicated or
+unterminated — surface that and fix it too.
 
 ### 7. Summary
 

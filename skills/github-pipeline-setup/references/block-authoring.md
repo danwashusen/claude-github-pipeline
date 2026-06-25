@@ -196,6 +196,17 @@ covers the authoring shape.
 <!-- /worktree-teardown -->
 ```
 
+**Authored by research-and-propose, not detection** (setup §3): no heuristic infers per-worktree
+provisioning, so setup researches the best-practice approach for the detected stack and proposes the
+commands for confirmation. Propose the two blocks **as a pair** — setup that allocates a resource must
+ship with the teardown that releases it — and prefer commands that are idempotent by construction
+(guard-then-create / create-if-absent), per the idempotency contract above.
+
+**Parser constraint.** The runtime executor (`worktree-hooks.sh`) extracts the *first* backtick-quoted
+span of each `- ` item, so every command must be a single backtick-quoted span on one line with no
+embedded backticks — a multi-line or backtick-containing command is silently dropped. Chain a compound
+command with `&&` on one line, or wrap it in a checked-in script and reference that script.
+
 ## Detection heuristics
 
 Propose drafts from what the repo already declares, then confirm. Sources, roughly in order of

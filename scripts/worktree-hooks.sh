@@ -14,6 +14,7 @@
 # Usage:
 #   worktree-hooks.sh setup    <worktree_path> <repo_root> [--reused] [--dry-run]
 #   worktree-hooks.sh teardown <worktree_path> <repo_root>            [--dry-run]
+#   worktree-hooks.sh lint     <setup|teardown> <repo_root>
 #
 # Discovery: scans <repo_root>/COMMANDS.md and <repo_root>/CLAUDE.md, plus any
 # file @-included (one level) from either, for the phase's marker block:
@@ -31,6 +32,13 @@
 # declaration order. On a command failure the last 50 lines of its combined
 # stdout+stderr are captured as the output tail.
 #
+# lint is parse-only: it discovers and parses the phase's block and lists the
+# commands it would run, WITHOUT a worktree and WITHOUT running anything (no cd,
+# no eval, no side effects). `github-pipeline-setup` uses it after writing a block
+# to verify the final form parses to exactly the commands the operator approved —
+# a command missing or truncated from `would_run` is the parser constraint biting
+# (single backtick span per line, no embedded backticks).
+#
 # Human-readable progress (the status-line announcements) streams to stderr; the
 # machine-readable result is a single JSON object on stdout:
 #   { "op": "setup|teardown",
@@ -43,11 +51,17 @@
 #     "failures": [ { "step", "command", "output_tail" }, … ], # teardown, may be []
 #     "would_run": [ "<cmd>", … ]     # only with --dry-run
 #   }
+# lint emits a distinct shape:
+#   { "op": "lint",
+#     "phase": "setup|teardown",
+#     "phase_present": true|false,
+#     "command_count": <int>,
+#     "would_run": [ "<cmd>", … ] }
 #
 # Exit codes:
-#   0  success (setup: all commands passed or no block; teardown: always)
+#   0  success (setup: all commands passed or no block; teardown: always; lint: always)
 #   1  setup: a command exited non-zero (first_failure populated)
-#   2  usage error / worktree or repo-root path not found
+#   2  usage error / worktree or repo-root path not found / malformed marker block
 #
 # The script is a dumb deterministic executor. Idempotency of the commands
 # themselves is the consuming repo's responsibility (see
@@ -60,37 +74,9 @@ die_usage() {
   echo "usage:" >&2
   echo "  worktree-hooks.sh setup    <worktree_path> <repo_root> [--reused] [--dry-run]" >&2
   echo "  worktree-hooks.sh teardown <worktree_path> <repo_root>            [--dry-run]" >&2
+  echo "  worktree-hooks.sh lint     <setup|teardown> <repo_root>" >&2
   exit 2
 }
-
-[[ $# -lt 3 ]] && die_usage
-OP="$1"; shift
-case "$OP" in
-  setup|teardown) ;;
-  *) die_usage ;;
-esac
-
-WORKTREE_PATH="$1"; shift
-REPO_ROOT="$1"; shift
-
-DRY_RUN="false"
-REUSED="false"
-while [[ $# -gt 0 ]]; do
-  case "$1" in
-    --dry-run) DRY_RUN="true"; shift ;;
-    --reused)  [[ "$OP" == "setup" ]] || die_usage; REUSED="true"; shift ;;
-    *) die_usage ;;
-  esac
-done
-
-MARKER="worktree-$OP"
-SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-CONFIG_BLOCK="$SCRIPT_DIR/config-block.sh"
-
-[[ -d "$WORKTREE_PATH" ]] || { echo "WORKTREE_NOT_FOUND: $WORKTREE_PATH" >&2; exit 2; }
-[[ -d "$REPO_ROOT" ]]     || { echo "REPO_ROOT_NOT_FOUND: $REPO_ROOT" >&2; exit 2; }
-
-# ---- discovery ----
 
 # Print @-included paths (one level) found in a file. Matches an @-prefixed token
 # that looks like a file path (has a slash or a dotted extension), which skips
@@ -104,130 +90,194 @@ find_includes() {
     | grep -E '(/|\.[A-Za-z0-9]+$)' || true
 }
 
-# Ordered candidate list: the two root config files, then any file they @-include.
-CANDIDATES=("$REPO_ROOT/COMMANDS.md" "$REPO_ROOT/CLAUDE.md")
-for root_file in "$REPO_ROOT/COMMANDS.md" "$REPO_ROOT/CLAUDE.md"; do
-  while IFS= read -r inc; do
-    [[ -z "$inc" ]] && continue
-    case "$inc" in
-      /*) CANDIDATES+=("$inc") ;;
-      *)  CANDIDATES+=("$REPO_ROOT/$inc") ;;
-    esac
-  done < <(find_includes "$root_file")
-done
+# discover_and_parse <marker> <repo_root>
+# Sets two globals for the caller: PHASE_PRESENT ("true"/"false") and the COMMANDS
+# array (one backtick-quoted command per element). A malformed block exits 2.
+# Per-file block extraction is delegated to config-block.sh (the pipeline's
+# canonical marker reader) so the delimiter semantics match the rest of the
+# pipeline — exact-line delimiters, and a duplicate/unterminated block is surfaced
+# rather than silently skipped. The first candidate with a non-empty block wins.
+discover_and_parse() {
+  local marker="$1" repo_root="$2"
+  local script_dir config_block
+  script_dir="$(cd "$(dirname "$0")" && pwd)"
+  config_block="$script_dir/config-block.sh"
 
-# First candidate that declares the block wins. Per-file block extraction is
-# delegated to config-block.sh (the pipeline's canonical marker reader) so the
-# delimiter semantics match the rest of the pipeline — exact-line delimiters,
-# and a duplicate/unterminated block is surfaced rather than silently skipped.
-BLOCK=""
-PHASE_PRESENT="false"
-for f in "${CANDIDATES[@]}"; do
-  [[ -f "$f" ]] || continue
-  rc=0
-  out="$("$CONFIG_BLOCK" read "$f" "$MARKER" 2>/dev/null)" || rc=$?
-  case "$rc" in
-    0) BLOCK="$out"; PHASE_PRESENT="true"; break ;;
-    3) ;;  # marker absent in this file — try the next candidate
-    *) echo "MALFORMED_BLOCK: <!-- $MARKER --> in $f (config-block.sh read exit $rc)" >&2; exit 2 ;;
-  esac
-done
-
-# Parse list items → one command per array element (the backtick-quoted span).
-COMMANDS=()
-# shellcheck disable=SC2016  # \1 is a sed backreference; single quotes are intentional.
-while IFS= read -r cmdline; do
-  [[ -n "$cmdline" ]] && COMMANDS+=("$cmdline")
-done < <(printf '%s\n' "$BLOCK" | sed -n 's/^[[:space:]]*-[[:space:]]*`\([^`]*\)`.*/\1/p')
-
-N="${#COMMANDS[@]}"
-
-# ---- run ----
-
-SUCCEEDED="true"
-FIRST_FAILURE_JSON=""
-FAILURES_JSON="[]"
-COMMANDS_RUN=0
-
-if [[ "$DRY_RUN" != "true" && "$N" -gt 0 ]]; then
-  if [[ "$OP" == "setup" ]]; then
-    if [[ "$REUSED" == "true" ]]; then
-      echo "Running worktree setup ($N command(s))… (worktree reused; setup is idempotent)" >&2
-    else
-      echo "Running worktree setup ($N command(s))…" >&2
-    fi
-  else
-    echo "Running worktree teardown ($N command(s))…" >&2
-  fi
-
-  i=0
-  for cmd in "${COMMANDS[@]}"; do
-    i=$((i + 1))
-    rc=0
-    logf="$(mktemp)"
-    ( cd "$WORKTREE_PATH" || exit 97; eval "$cmd" ) >"$logf" 2>&1 || rc=$?
-    COMMANDS_RUN=$((COMMANDS_RUN + 1))
-    if [[ "$rc" -ne 0 ]]; then
-      tail50="$(tail -n 50 "$logf")"
-      rm -f "$logf"
-      if [[ "$OP" == "setup" ]]; then
-        echo "Worktree setup failed at step $i: $cmd" >&2
-        printf '%s\n' "$tail50" >&2
-        SUCCEEDED="false"
-        FIRST_FAILURE_JSON="$(jq -n \
-          --argjson step "$i" --arg command "$cmd" --arg output_tail "$tail50" \
-          '{step: $step, command: $command, output_tail: $output_tail}')"
-        break
-      else
-        echo "Worktree teardown step $i failed: $cmd" >&2
-        FAILURES_JSON="$(printf '%s' "$FAILURES_JSON" | jq \
-          --argjson step "$i" --arg command "$cmd" --arg output_tail "$tail50" \
-          '. + [{step: $step, command: $command, output_tail: $output_tail}]')"
-      fi
-    else
-      rm -f "$logf"
-    fi
+  # Ordered candidate list: the two root config files, then any file they @-include.
+  local candidates=("$repo_root/COMMANDS.md" "$repo_root/CLAUDE.md")
+  local root_file inc
+  for root_file in "$repo_root/COMMANDS.md" "$repo_root/CLAUDE.md"; do
+    while IFS= read -r inc; do
+      [[ -z "$inc" ]] && continue
+      case "$inc" in
+        /*) candidates+=("$inc") ;;
+        *)  candidates+=("$repo_root/$inc") ;;
+      esac
+    done < <(find_includes "$root_file")
   done
 
-  if [[ "$OP" == "setup" && "$SUCCEEDED" == "true" ]]; then
-    echo "Worktree setup complete." >&2
-  elif [[ "$OP" == "teardown" ]]; then
-    echo "Worktree teardown complete." >&2
-  fi
-fi
+  local block="" f rc out
+  PHASE_PRESENT="false"
+  for f in "${candidates[@]}"; do
+    [[ -f "$f" ]] || continue
+    rc=0
+    out="$("$config_block" read "$f" "$marker" 2>/dev/null)" || rc=$?
+    case "$rc" in
+      0) block="$out"; PHASE_PRESENT="true"; break ;;
+      3) ;;  # marker absent in this file — try the next candidate
+      *) echo "MALFORMED_BLOCK: <!-- $marker --> in $f (config-block.sh read exit $rc)" >&2; exit 2 ;;
+    esac
+  done
 
-# ---- emit ----
+  # Parse list items → one command per array element (the backtick-quoted span).
+  COMMANDS=()
+  local cmdline
+  # shellcheck disable=SC2016  # \1 is a sed backreference; single quotes are intentional.
+  while IFS= read -r cmdline; do
+    [[ -n "$cmdline" ]] && COMMANDS+=("$cmdline")
+  done < <(printf '%s\n' "$block" | sed -n 's/^[[:space:]]*-[[:space:]]*`\([^`]*\)`.*/\1/p')
+}
 
-WOULD_RUN_JSON=""
-if [[ "$DRY_RUN" == "true" ]]; then
-  if [[ "$N" -eq 0 ]]; then
-    WOULD_RUN_JSON='[]'
+# would_run_json <count> — emit the COMMANDS array as a JSON array (or [] if empty).
+would_run_json() {
+  local n="$1"
+  if [[ "$n" -eq 0 ]]; then
+    printf '[]'
   else
-    WOULD_RUN_JSON="$(printf '%s\n' "${COMMANDS[@]}" | jq -R . | jq -s .)"
+    printf '%s\n' "${COMMANDS[@]}" | jq -R . | jq -s .
   fi
-fi
+}
 
-jq -n \
-  --arg op "$OP" \
-  --argjson phase_present "$PHASE_PRESENT" \
-  --argjson commands_run "$COMMANDS_RUN" \
-  --argjson succeeded "$SUCCEEDED" \
-  --argjson dry_run "$DRY_RUN" \
-  --argjson reused "$REUSED" \
-  --argjson failures "$FAILURES_JSON" \
-  --arg first_failure "$FIRST_FAILURE_JSON" \
-  --arg would_run "$WOULD_RUN_JSON" \
-  '
-  { op: $op, phase_present: $phase_present, commands_run: $commands_run,
-    succeeded: $succeeded, dry_run: $dry_run }
-  + (if $op == "setup" then { reused: $reused } else {} end)
-  + (if $op == "setup"
-     then (if $first_failure == "" then {} else { first_failure: ($first_failure | fromjson) } end)
-     else { failures: $failures } end)
-  + (if $would_run == "" then {} else { would_run: ($would_run | fromjson) } end)
-  '
+run_phase() {
+  local op="$1"; shift
+  [[ $# -lt 2 ]] && die_usage
+  local worktree_path="$1"; shift
+  local repo_root="$1"; shift
+  local dry_run="false" reused="false"
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+      --dry-run) dry_run="true"; shift ;;
+      --reused)  [[ "$op" == "setup" ]] || die_usage; reused="true"; shift ;;
+      *) die_usage ;;
+    esac
+  done
 
-if [[ "$OP" == "setup" && "$SUCCEEDED" != "true" ]]; then
-  exit 1
-fi
-exit 0
+  [[ -d "$worktree_path" ]] || { echo "WORKTREE_NOT_FOUND: $worktree_path" >&2; exit 2; }
+  [[ -d "$repo_root" ]]     || { echo "REPO_ROOT_NOT_FOUND: $repo_root" >&2; exit 2; }
+
+  discover_and_parse "worktree-$op" "$repo_root"
+  local n="${#COMMANDS[@]}"
+
+  # ---- run ----
+  local succeeded="true" first_failure_json="" failures_json="[]" commands_run=0
+  local i rc logf tail50 cmd
+  if [[ "$dry_run" != "true" && "$n" -gt 0 ]]; then
+    if [[ "$op" == "setup" ]]; then
+      if [[ "$reused" == "true" ]]; then
+        echo "Running worktree setup ($n command(s))… (worktree reused; setup is idempotent)" >&2
+      else
+        echo "Running worktree setup ($n command(s))…" >&2
+      fi
+    else
+      echo "Running worktree teardown ($n command(s))…" >&2
+    fi
+
+    i=0
+    for cmd in "${COMMANDS[@]}"; do
+      i=$((i + 1))
+      rc=0
+      logf="$(mktemp)"
+      ( cd "$worktree_path" || exit 97; eval "$cmd" ) >"$logf" 2>&1 || rc=$?
+      commands_run=$((commands_run + 1))
+      if [[ "$rc" -ne 0 ]]; then
+        tail50="$(tail -n 50 "$logf")"
+        rm -f "$logf"
+        if [[ "$op" == "setup" ]]; then
+          echo "Worktree setup failed at step $i: $cmd" >&2
+          printf '%s\n' "$tail50" >&2
+          succeeded="false"
+          first_failure_json="$(jq -n \
+            --argjson step "$i" --arg command "$cmd" --arg output_tail "$tail50" \
+            '{step: $step, command: $command, output_tail: $output_tail}')"
+          break
+        else
+          echo "Worktree teardown step $i failed: $cmd" >&2
+          failures_json="$(printf '%s' "$failures_json" | jq \
+            --argjson step "$i" --arg command "$cmd" --arg output_tail "$tail50" \
+            '. + [{step: $step, command: $command, output_tail: $output_tail}]')"
+        fi
+      else
+        rm -f "$logf"
+      fi
+    done
+
+    if [[ "$op" == "setup" && "$succeeded" == "true" ]]; then
+      echo "Worktree setup complete." >&2
+    elif [[ "$op" == "teardown" ]]; then
+      echo "Worktree teardown complete." >&2
+    fi
+  fi
+
+  # ---- emit ----
+  local would_run=""
+  if [[ "$dry_run" == "true" ]]; then
+    would_run="$(would_run_json "$n")"
+  fi
+
+  jq -n \
+    --arg op "$op" \
+    --argjson phase_present "$PHASE_PRESENT" \
+    --argjson commands_run "$commands_run" \
+    --argjson succeeded "$succeeded" \
+    --argjson dry_run "$dry_run" \
+    --argjson reused "$reused" \
+    --argjson failures "$failures_json" \
+    --arg first_failure "$first_failure_json" \
+    --arg would_run "$would_run" \
+    '
+    { op: $op, phase_present: $phase_present, commands_run: $commands_run,
+      succeeded: $succeeded, dry_run: $dry_run }
+    + (if $op == "setup" then { reused: $reused } else {} end)
+    + (if $op == "setup"
+       then (if $first_failure == "" then {} else { first_failure: ($first_failure | fromjson) } end)
+       else { failures: $failures } end)
+    + (if $would_run == "" then {} else { would_run: ($would_run | fromjson) } end)
+    '
+
+  if [[ "$op" == "setup" && "$succeeded" != "true" ]]; then
+    exit 1
+  fi
+  exit 0
+}
+
+run_lint() {
+  [[ $# -lt 2 ]] && die_usage
+  local phase="$1"; shift
+  case "$phase" in setup|teardown) ;; *) die_usage ;; esac
+  local repo_root="$1"; shift
+  [[ $# -eq 0 ]] || die_usage   # lint takes no flags
+
+  [[ -d "$repo_root" ]] || { echo "REPO_ROOT_NOT_FOUND: $repo_root" >&2; exit 2; }
+
+  discover_and_parse "worktree-$phase" "$repo_root"
+  local n="${#COMMANDS[@]}"
+
+  jq -n \
+    --arg phase "$phase" \
+    --argjson phase_present "$PHASE_PRESENT" \
+    --argjson command_count "$n" \
+    --argjson would_run "$(would_run_json "$n")" \
+    '{ op: "lint", phase: $phase, phase_present: $phase_present,
+       command_count: $command_count, would_run: $would_run }'
+  exit 0
+}
+
+# ---- dispatch ----
+
+[[ $# -lt 1 ]] && die_usage
+SUB="$1"; shift
+case "$SUB" in
+  setup|teardown) run_phase "$SUB" "$@" ;;
+  lint)           run_lint "$@" ;;
+  *) die_usage ;;
+esac

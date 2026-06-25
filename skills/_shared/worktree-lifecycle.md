@@ -108,18 +108,21 @@ ${CLAUDE_PLUGIN_ROOT}/scripts/worktree-hooks.sh setup    <worktree_path> <repo_r
 ${CLAUDE_PLUGIN_ROOT}/scripts/worktree-hooks.sh teardown <worktree_path> <repo_root>            [--dry-run]
 ```
 
-- **Discovery & parsing** (scan `COMMANDS.md`/`CLAUDE.md` + their `@`-includes for the phase's block,
-  extract the backtick commands, first non-empty block wins) is handled by the script.
+- **Discovery & parsing** (scan `COMMANDS.md` then `CLAUDE.md`, then any file either `@`-includes, for
+  the phase's block; extract the backtick commands; the first file with a non-empty block wins) is
+  handled by the script. Commands run via `eval` inside the worktree — the trust boundary is
+  `github-pipeline-setup`'s confirm-before-write gate; the executor does not re-validate them.
 - **Result on stdout** is a single JSON object: `op`, `phase_present`, `commands_run`, `succeeded`,
   `dry_run`, plus `reused` (setup), `first_failure {step, command, output_tail}` (setup, on failure),
   `failures [...]` (teardown), and `would_run [...]` (dry-run). Human-readable progress (the status
   lines below) streams to **stderr**.
 - **Exit codes**: `0` success or no block; `1` a setup command failed (`first_failure` populated);
-  `2` usage / path-not-found.
+  `2` usage / path-not-found / malformed block (`MALFORMED_BLOCK` on stderr, no JSON emitted).
 
 **How the skill uses it.** Setup: run the script at each create/reuse site; if it exits non-zero,
-surface `first_failure.command` and `output_tail` and **stop** — the worktree exists but isn't ready
-for tests, and proceeding would run against a missing resource. Teardown: run the script, then run
+**stop** — the worktree exists but isn't ready for tests, and proceeding would run against a missing
+resource. On exit 1 surface `first_failure.command` and `output_tail`; on exit 2 there is no JSON, so
+surface the stderr line (e.g. `MALFORMED_BLOCK`) instead. Teardown: run the script, then run
 `git worktree remove`; a non-empty `failures` array is logged but never blocks removal.
 
 The script is a dumb deterministic executor. The fail-fast (setup) / best-effort (teardown) policies
@@ -143,7 +146,11 @@ on-disk marker. If the user manually re-runs setup to recover a lost resource, t
 - **`github-issue-resolver`** creates worktrees (off `main` for a standard issue, off the epic branch
   for a story) and runs **setup** on every create/reuse. It **never** runs `git worktree remove` — a
   worktree may hold unpushed commits or in-flight edits, so silent teardown would lose work. Its
-  manual-cleanup reminder names the teardown + removal sequence for the user.
+  manual-cleanup reminder names the teardown + removal sequence for the user. Because teardown and
+  removal happen only on the evaluator's post-merge path, a PR that's abandoned or closed without
+  merging leaves its worktree — and any scarce resource its setup allocated (a license-limited
+  simulator, a bound port, a scratch DB) — until that manual cleanup runs; a repo provisioning a
+  scarce per-worktree resource should expect to reclaim it by hand on abandoned PRs.
 - **`github-pr-evaluator`** runs **teardown** then **removes** the worktree after a merge — the only
   place removal happens automatically.
 
