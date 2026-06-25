@@ -401,7 +401,7 @@ The approach for a non-trivial issue should be worked out and verified *before* 
 Two staleness checks gate trusting it, each owned by a sub-agent so this loop never does the reads:
 
 - **Plan vs. thread** (state-distiller, §P6). When `## Effective plan` reports `thread-vs-plan: confirms | refines`, proceed. When the distiller raised the **`THREAD_SUPERSEDED_PLAN`** exception, the thread's latest accepted direction contradicts a locked decision — **don't silently proceed.** Surface it to the user; if they confirm it's material, the run's outcome is a **re-route to `github-issue-planner` in revise mode**: emit the Step 12 re-route handoff (command `re-plan #N — thread superseded the plan: <evidence>`).
-- **Plan vs. code** (fitness audit dimension 7, §4.5). The audit already read the integration target; its dimension-7 finding is the currency check (SHA drift plus whether the plan's `## Changes` surfaces still exist with the assumed shape at `audit_ref`). A dimension-7 **BLOCKER** means the code drifted out from under the plan — surface it; on user-confirmed material drift, **re-route to `github-issue-planner` in revise mode**: emit the Step 12 re-route handoff (command `re-plan #N — the codebase/issue moved since the plan: <evidence>`).
+- **Plan vs. code** (fitness audit dimension 7, §4.5). The audit already read the integration target; its dimension-7 finding is the currency check (SHA drift plus whether the plan's `## Changes` surfaces still exist with the assumed shape at `audit_ref`). A dimension-7 **BLOCKER** means the code drifted out from under the plan — surface it; on user-confirmed material drift, **re-route to `github-issue-planner` in revise mode**: emit the Step 12 re-route handoff (command `re-plan #N — the codebase/issue moved since the plan: <evidence>`). For a Story under an open Epic whose plan was authored just-in-time, this rarely fires — the plan's `plan_ref` is the epic branch HEAD captured immediately before this resolve, so there's no predecessor-merge drift to catch; it stays the backstop for when the epic branch moved between the just-in-time plan and this run.
 
 For either re-route, **do not** call the `Skill` tool or re-fetch the plan in-session — re-routes never cross the session boundary (§12's Re-route rule). The user runs the command in a fresh session, then re-runs the resolver, where both checks re-fire clean. Clean (or user-waved-through) checks → proceed to step 5.
 
@@ -411,6 +411,8 @@ For either re-route, **do not** call the `Skill` tool or re-fetch the plan in-se
 
 - **User runs the planner** → re-fetch the plan comment and continue.
 - **User overrides** (`proceed without a plan`) → record `Plan override: <reason>` in the state summary and carry it into the PR body under a `## Plan override` section in step 9 (mirrors the §4.5 audit-override mechanic), so the missing-plan decision is visible to reviewers. Then fall through to step 6's full doc-grounding re-derivation, since there's no plan to lift it from.
+
+**For a Story under an open Epic, a missing plan is the normal just-in-time cadence, not an error.** The epic plan pins the cross-story contracts; each story's full plan is authored just-in-time, right before it's resolved, against current epic HEAD — so "no story plan yet" means "plan this story now," not "the pipeline skipped a step." Frame the stop as a clean **forward** route to the planner (its "Just-in-time story planning" mode reads the epic plan and grounds this story fresh) and emit the Step 12 forward handoff (`/github-pipeline:github-issue-planner #<story>`), not the revise re-route shape. The `proceed without a plan` override still applies.
 
 Don't apply this gate to comment-only flows or trivial fixes — there's nothing to plan, and a forced gate there is pure friction.
 
@@ -572,7 +574,7 @@ List each unticked DoD item alongside what evidence would satisfy it (code path,
 
 **Stories incomplete → "in progress"**
 
-Report progress (e.g. `5 of 8 stories closed, 2 open, 1 not started`), sync any stale body checkboxes (offer a body edit diff if drift was found), report epic-branch drift vs `main`, and identify the next unblocked story candidate (the first open story with no open dependencies in the body order). **Stop there** — do not start implementation work on a child story unless the user explicitly redirects to it.
+Report progress (e.g. `5 of 8 stories closed, 2 open, 1 not started`), sync any stale body checkboxes (offer a body edit diff if drift was found), report epic-branch drift vs `main`, and identify the next unblocked story candidate (the first open story with no open dependencies in the body order — the epic plan's `## Story breakdown` order is the source of truth). **Stop there** — do not start implementation work on a child story unless the user explicitly redirects to it. The recommended next step for that candidate is to **plan it just-in-time** (`/github-pipeline:github-issue-planner #<next-story>`, which grounds the story against current epic HEAD and checks it against the epic plan's `## Story contracts`), then resolve it — point the handoff there.
 
 **Body references issues that don't exist or aren't labeled `story`** — flag the inconsistency before doing anything else.
 

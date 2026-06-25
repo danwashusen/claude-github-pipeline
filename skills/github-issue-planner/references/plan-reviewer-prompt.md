@@ -28,9 +28,10 @@ If you cannot tell from the plan + issue + docs + codebase alone whether the pla
 
 - **Repo root**: `<<repo_root>>` — absolute path. Use it as the `git -C <<repo_root>>` working directory for every git call.
 - **Plan ref**: `<<plan_ref>>` — the fully-qualified git ref the plan was built against (e.g. `origin/main`, or `origin/epic/<N>-<slug>` for a story under an open epic). This is your sole source of truth for code and docs. **Read code via `git -C <<repo_root>> show <<plan_ref>>:<path>` and search via `git -C <<repo_root>> grep <pattern> <<plan_ref>> -- <pathspec>` — never a plain `Read`/`grep` of the working tree**, which may sit on an unrelated branch and produce false findings. Project docs (`docs/prd.md`, `docs/architecture.md`, `docs/architecture-notes.md`, `docs/ui-design.md`, `docs/constitution.md`, `CLAUDE.md`, and anything they `@`-include) can also differ between branches — read those through `git show <<plan_ref>>:` too.
-- **Dimensions to check**: `<<dimensions>>` — a subset of {1, 2, 3, 4, 5, 6, 7}. Run only the listed dimensions. Don't fabricate findings outside the list.
+- **Dimensions to check**: `<<dimensions>>` — a subset of {1, 2, 3, 4, 5, 6, 7, 8}. Run only the listed dimensions. Don't fabricate findings outside the list.
 - **External sources**: `<<external_sources>>` — URLs or file paths the planner was told to treat as authoritative for specific technology (may be empty). When a plan decision cites one of these, judge the decision against the source's content, not against your own (possibly stale) training knowledge. If a source is a URL you can reach, fetch it; if you cannot, say so in the finding rather than guessing.
-- **Sibling plans**: `<<sibling_plans>>` — for an epic, the title + plan body of each sibling story so you can reason across them for dimension 5. Empty unless this is an epic-level review.
+- **Epic plan**: `<<epic_plan>>` — for a story under an epic, the parent epic's plan body (its `## Story contracts` and `## Story breakdown`) so you can check this story against the epic's cross-story contracts for dimension 8. Empty unless this is a story-under-epic review.
+- **Epic delivery log**: `<<epic_delivery_log>>` — for a story under an epic, the parent epic's `<!-- epic-delivery-log:v1 -->` comment listing what each predecessor story actually delivered (or `(none yet)` if no story has merged). Dimension 8's "consumes only what's shipped" check reads this. Empty unless this is a story-under-epic review.
 
 ## Dimensions
 
@@ -66,11 +67,11 @@ Run only the dimensions named in the inputs.
 
    The bar in one sentence: *a developer reading the plan cold should be able to start writing code immediately, with every design decision already pinned in the plan and every line-level detail safely left to their judgment.*
 
-5. **Sequencing** *(epic mode only; requires `<<sibling_plans>>` non-empty)*. Build a dependency graph across the sibling story plans: for each story, infer what it consumes (types, services, files it modifies) vs. what it delivers. Compare a topological order to the epic plan's `## Story breakdown` order (top-to-bottom). If the listed order makes a story unimplementable until a later story ships, flag it with both orders and a proposed swap. Required evidence: quote the consuming claim from one story's plan and the delivering claim from another. (Multi-phase single-issue sequencing — phase order within one issue's PR — is covered by Dimension 7, not this dimension.)
+5. **Sequencing** *(epic-level plan only; reads the plan's own `## Story contracts`)*. Build a dependency graph from the epic plan's `## Story contracts`: each entry names what its story `delivers` and `consumes`. Compute a topological order and compare it to the `## Story breakdown` order (top-to-bottom). If the listed order makes a story consume a contract no earlier story has delivered yet, flag it with both orders and a proposed swap. A `consumes` reference to a contract that no story `delivers` is a BLOCKER (dangling dependency). Required evidence: quote the `consumes` clause of one story's contract and the `delivers` clause (or its absence) of another. (Cross-story executability of an individual story against these contracts is Dimension 8; multi-phase single-issue phase order is Dimension 7 — neither is this dimension.)
 
 6. **Precedent grounding.** Every entry in `## Architecture decisions` and `## UI decisions` must carry a citation that is either (a) a real codebase location (`[precedent: path/to/file:NN]`), (b) a real doc section (`architecture.md §X`, `architecture-notes §Y`, `ui-design §Z`), (c) a `DEVIATION (agreed <date>)` marker pointing at `## Deviations from project docs`, or (d) a `[user decision <date>]` marker (produced by the step-6.5 Decision gate when no sibling precedent could pick between two equally-grounded approaches). Flag any decision with no citation (under-grounded — SUGGESTION unless it's a load-bearing architectural choice, then BLOCKER) or a citation that fails dimension-2 verification (fabricated — BLOCKER). For UI decisions, the citation should point at `ui-design.md` precedent, a named existing component, or a `[user decision <date>]` marker.
 
-7. **Phase coherence** *(multi-phase and epic only; fires when the plan has a `## Phases` section)*. The `## Phases` section is the resolver's and the evaluator's contract for multi-phase work — its structured bullets drive routing and DoD mapping respectively. Read each phase's bullets and check:
+7. **Phase coherence** *(multi-phase only; fires when the plan has a `## Phases` section — an epic has no `## Phases`, it uses `## Story contracts` with Dimensions 5/8)*. The `## Phases` section is the resolver's and the evaluator's contract for multi-phase work — its structured bullets drive routing and DoD mapping respectively. Read each phase's bullets and check:
 
    - **All required keys present** per phase: `kind` (closed enum: `code-shipping` | `operator` | `decision-only`), `ships`, `closes-dod`, `deliverable`, `depends-on`. A missing key is a BLOCKER — the resolver depends on each one and an absent key forces it to either guess or stop.
    - **DoD coverage is exact.** Read the issue body's Definition-of-Done checklist (each `- [ ]` / `- [x]` bullet), index them 1-based, and compute the union of every phase's `closes-dod` references. Every DoD index must appear exactly once across the union. A DoD bullet with no phase claiming it is a BLOCKER (work is unaccounted for; the evaluator will surface it on the final PR). A DoD bullet claimed by two phases is a SUGGESTION unless both phases are `kind: code-shipping` and their `ships` field implies overlapping diffs, in which case BLOCKER.
@@ -80,6 +81,14 @@ Run only the dimensions named in the inputs.
    - **`closes-dod` names the phase whose deliverable satisfies the DoD bullet, not the phase whose code enables it.** A substrate phase that lists a measurement DoD bullet in its `closes-dod` (on the grounds that "my code is what makes the measurement possible") is a BLOCKER — the evaluator will mark that DoD bullet satisfied at the substrate phase's merge, before any measurement has actually run.
 
    Evidence for dimension-7 findings is the relevant phase number, the offending key (or its absence), and a quote of the relevant DoD bullet from the issue body when the finding is about DoD coverage.
+
+8. **Epic-story coherence** *(story under an epic only; requires `<<epic_plan>>`)*. The story plan is one slice of an epic whose cross-story seams are pinned in the epic plan. Read the story plan's `## Epic contract` against the parent epic plan (`<<epic_plan>>`) and check:
+
+   - **Delivers what the epic assigns it.** Every contract the epic plan's `## Story contracts` lists this story as delivering must appear in the story's `## Epic contract` `Delivers:` line with a matching shape (same type / service / API / signature). A missing or shape-mismatched delivery is a BLOCKER — a later story consumes it.
+   - **Consumes only what's available, with a matching shape.** A `Consumes: (none)` line is always fine — skip this check (a leaf or head story consumes nothing). Otherwise every contract the story's `Consumes:` line names must (a) already be recorded in the epic's `<!-- epic-delivery-log:v1 -->` comment (`<<epic_delivery_log>>`) — the log is the single source of truth, so don't accept a consume on `## Story contracts` order alone — and (b) match the **shape the log records as actually delivered**, not just the epic plan's *pinned* shape. Consuming a contract not yet in the delivery log is an out-of-sequence BLOCKER; consuming a shape that differs from the delivered shape is a stale-contract BLOCKER (the epic plan's `## Story contracts` drifted from what shipped — flag it so the planner re-plans the epic).
+   - **Honors the epic approach.** The story plan's `## Architecture decisions` / `## Changes` must not contradict the epic plan's `## Approach` (e.g. introduce a competing abstraction for a seam the epic already pinned). A contradiction is a BLOCKER.
+
+   Evidence for a dimension-8 finding is the relevant `## Story contracts` line from `<<epic_plan>>` plus the story plan's `## Epic contract` (or `## Changes`) claim. Remediation is either fixing the story plan, or — when the epic plan's pinned contract is itself wrong — flagging it so the planner revises the epic plan (the epic-plan feedback edge) before the story proceeds.
 
 ## Severity
 
@@ -91,7 +100,7 @@ Run only the dimensions named in the inputs.
 
 Every finding must cite at least one of:
 
-- A specific line or quoted phrase from the plan (or a sibling plan, for dimension 5).
+- A specific line or quoted phrase from the plan (or, for dimension 8, from the parent epic plan in `<<epic_plan>>`).
 - A specific file path + line range or section heading in the docs/codebase (read via `git show <<plan_ref>>:`).
 - A specific comment by author + date in the issue thread (revise mode, dimension governing latest direction).
 

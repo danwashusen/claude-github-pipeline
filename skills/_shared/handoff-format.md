@@ -26,7 +26,7 @@ The block is always present on a clean exit. Lines are omitted (not blanked, not
 
 - **`Issue:` / `Epic:` / `Story:`** — exactly one is always present. Which one depends on the work shape:
   - Single non-Epic issue → `Issue:`.
-  - Epic in any role (drafter Epic batch, planner Epic fan-out, evaluator on an Epic integration PR) → `Epic:`. Add a `Stories:` line listing the child stories with their state markers.
+  - Epic in any role (drafter Epic batch, planner Epic plan, evaluator on an Epic integration PR) → `Epic:`. Add a `Stories:` line listing the child stories with their state markers.
   - A story under an Epic (evaluator after a story PR merges, resolver working on a story) → `Story:` for the story plus an `Epic:` line for the parent's progress (e.g. `open (3 of 5 stories closed)`).
 - **`research:`** — the research-dossier marker, placed before `plan:` on the `Issue:` / `Story:` line. Present on the researcher's own clean exits (`✓` dossier posted, `✗` judged nothing-to-research) and carried forward on any later skill's handoff for an issue that has a dossier (e.g. the planner shows `research: ✓` once it has ingested one). **Omitted entirely** on issues that never went through the researcher — so the drafter's renderings, and the planner / resolver / evaluator renderings on dossier-less issues, are unchanged. When the marker carries a URL (the researcher's clean exit), append it in parentheses like `plan:` does.
 - **`PR:`** — omit entirely when no PR exists. Drafter clean exits and the planner's plan-comment-only clean exits skip this line. Resolver clean exits always have a PR. Evaluator clean exits always have a PR.
@@ -61,10 +61,10 @@ When the work shape involves an Epic, the heading line and supporting state expa
 
   ```
   **Epic:** #150 — Chat & session UX polish · open · epic · plan: ✓
-  **Stories:** #151, #152, #153, #154, #155 (5 filed, dependency-ordered)
+  **Stories:** #151, #152, #153, #154, #155 (5 filed, dependency-ordered, contracts pinned · plans authored just-in-time)
   ```
 
-  After child stories start closing, switch the `Stories:` line to a progress count and (optionally) flag the next story:
+  An epic's `plan: ✓` means the epic-level plan — its `## Story contracts` and sequencing — is posted; each child story is planned just-in-time as it becomes the next to build (not fanned out up front). After child stories start closing, switch the `Stories:` line to a progress count and (optionally) flag the next story:
 
   ```
   **Stories:** 3 of 5 closed · next: #154
@@ -93,7 +93,7 @@ Terminal endings exist today on the evaluator only:
 - standard PR clean merge,
 - Epic integration PR clean merge.
 
-Story PR clean merges are **not** terminal — they hand off to the resolver on the next story (or to the resolver in Epic-integration mode if every child story is now closed).
+Story PR clean merges are **not** terminal — they hand off to the **planner** to plan the next story just-in-time (or to the resolver in Epic-integration mode if every child story is now closed). See "Forward re-entry of the planner" under Re-routes.
 
 ## Re-routes
 
@@ -104,6 +104,8 @@ A re-route is a handoff whose `Next:` points at a prior skill — typically:
 - planner → researcher (the plan needs current external truth the model can't reliably recall — a dependency/API/version at or past the training cutoff; gather and verify the research first, then re-run the planner)
 
 (The reverse, researcher → planner, is the *forward* route this pipeline normally takes — research is the planner's input — and follows the standard schema, not these re-route rules.)
+
+**Forward re-entry of the planner (not a re-route).** Under an epic, the planner is *also* re-entered going forward — once per story, to author that story's just-in-time plan against current epic HEAD. The trigger is the evaluator's "next story" handoff after a sibling story PR merges, or the resolver's epic/story plan gate when a story has no plan yet. This points at the planner (a "prior" skill) but is the **normal epic cadence, not a regression**: it follows the standard schema, and its `Why:` names the next story to plan. Distinguish it from the resolver → planner *revise* re-route above, whose `Why:` quotes the locked decision that broke.
 
 The schema does not change. The `Why:` line is the load-bearing piece — it must name the specific evidence so the user (and the prior skill, when re-run) can act without re-investigating:
 

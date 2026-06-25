@@ -7,7 +7,7 @@ Every clean run of the evaluator ends with a single `## Handoff` block. The sche
 | Outcome | Step 15 rendering |
 |---|---|
 | Standard PR merged — §12a `auto`, or §12.0 operator **Approve** | **Terminal.** Issue line, PR line with `merge: squash → main@<sha>`, Cleanup line. `review:` is `APPROVE` (auto path) or `APPROVE (operator)` (gate path). |
-| Story PR merged, more sibling stories pending | **Forward → `github-issue-resolver`** on the next story in dependency order. Story / Epic / PR / Cleanup lines; Epic progress is e.g. `open (2 of 5 stories closed)`. `review:` is `APPROVE` or `APPROVE (operator)`. |
+| Story PR merged, more sibling stories pending | **Forward → `github-issue-planner`** to plan the next story in dependency order just-in-time (it has no plan yet — the planner grounds it against the now-current epic HEAD, then the resolver implements it). Story / Epic / PR / Cleanup lines; Epic progress is e.g. `open (2 of 5 stories closed)`. `review:` is `APPROVE` or `APPROVE (operator)`. |
 | Story PR merged, *last* sibling story | **Forward → `github-issue-resolver`** on the Epic, in Epic-integration mode. Story / Epic / PR / Cleanup lines; Epic progress is `open (5 of 5 stories closed)`. |
 | Epic integration PR merged — §12.0 operator **Approve (merge commit / squash)** → §12b | **Terminal.** Epic line, PR line with `merge: merge → main@<sha>` (or `squash → main@<sha>`), Cleanup line. `review:` is `APPROVE (operator)` (epic is always gated). |
 | Any PR, COMMENT verdict (soft-reject) — §7's `comment` action driven by a real COMMENT verdict | **Re-route → `github-issue-resolver continue #<N>`.** Issue / PR lines; PR line carries `state: draft` (§11 flipped it back), `review: COMMENT (soft-reject)`, and `merge: skipped (verdict)`. No Cleanup line. |
@@ -35,7 +35,7 @@ Self-authored PRs (the §2 self-approval pre-check that downgraded `--approve` t
 
 The `review: APPROVE` above is the `auto`-policy (§12a) shape. Under the default `ask` policy the operator approved at the §12.0 gate, so the same terminal shape carries `review: APPROVE (operator)` and the `Why:` may note the operator's sign-off. The merge / Cleanup / terminal lines are identical either way.
 
-**Story PR merged — more stories pending.** The Epic stays open; the resolver picks up the next story in dependency order. Read the Epic body's `## Stories` list (re-fetched in §13) to pick the next-in-sequence; if the Epic's `## Sequencing` section pins an order, follow it.
+**Story PR merged — more stories pending.** The Epic stays open; the next story is planned just-in-time before it's implemented. Read the Epic body's `## Stories` list (re-fetched in §13) to pick the next-in-sequence; the epic plan's `## Story breakdown` order is the source of truth.
 
 ```
 ## Handoff
@@ -43,13 +43,13 @@ The `review: APPROVE` above is the `auto`-policy (§12a) shape. Under the defaul
 **Story:** #151 — Add export service · closed · story · plan: ✓
 **Epic:** #150 — Chat & session UX polish · open (1 of 5 stories closed)
 **PR:** #287 — Add export service (#151) · merged · base epic/150-chat-ux · review: APPROVE · health: ✅ at abc1234 · merge: squash → epic/150-chat-ux@def5678
-**Cleanup:** worktree removed; epic checkbox ticked; story issue closed
+**Cleanup:** worktree removed; epic checkbox ticked; delivery log updated; story issue closed
 
-**Next:** start the next story in dependency order in a fresh session.
+**Next:** plan the next story in dependency order, just-in-time, in a fresh session.
 
-    /github-pipeline:github-issue-resolver #152
+    /github-pipeline:github-issue-planner #152
 
-**Why:** story #151 merged into the epic branch; the Epic checkbox is ticked. Story #152 (next in sequence) has its plan posted and is ready for implementation.
+**Why:** story #151 merged into the epic branch; the Epic checkbox is ticked and the epic delivery log now records what #151 delivered. Story #152 (next in `## Story breakdown` order) has no plan yet — the planner authors it just-in-time against the now-current epic HEAD (which includes #151's merge) and checks it against the epic plan's `## Story contracts` and the delivery log, then the resolver implements it.
 ```
 
 **Story PR merged — last sibling, Epic integration ready.** Every child story is now closed. The next step is the resolver in Epic-integration mode (it opens the integration PR against `main`).
@@ -60,7 +60,7 @@ The `review: APPROVE` above is the `auto`-policy (§12a) shape. Under the defaul
 **Story:** #155 — Final polish · closed · story · plan: ✓
 **Epic:** #150 — Chat & session UX polish · open (5 of 5 stories closed)
 **PR:** #295 — Final polish (#155) · merged · base epic/150-chat-ux · review: APPROVE · health: ✅ at fed4321 · merge: squash → epic/150-chat-ux@9876abc
-**Cleanup:** worktree removed; epic checkbox ticked; story issue closed
+**Cleanup:** worktree removed; epic checkbox ticked; delivery log updated; story issue closed
 
 **Next:** open the Epic integration PR in a fresh session.
 

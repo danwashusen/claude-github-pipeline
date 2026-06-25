@@ -649,13 +649,13 @@ When `MERGE_POLICY` = `ask` (or the PR is epic integration), the §12.0 operator
 
 Temp files from steps 11–12 are cleaned up after use (or left in place for the 12a-fail / 12c paths so a retry can reuse them).
 
-### 13. Close the story issue and tick the epic checkbox (story PRs only)
+### 13. Close the story issue, tick the epic checkbox, and record the delivery (story PRs only)
 
-Story PRs merge into `epic/<N>-<slug>`, not `main`. GitHub's auto-close-on-merge only fires when a PR merges into the default branch, so `Fixes #<story-number>` in the PR body is never triggered. Both actions below are needed to reflect reality in the issue tracker.
+Story PRs merge into `epic/<N>-<slug>`, not `main`. GitHub's auto-close-on-merge only fires when a PR merges into the default branch, so `Fixes #<story-number>` in the PR body is never triggered. All three actions below are needed to reflect reality in the issue tracker and to feed the planner's just-in-time planning of later stories.
 
-Skip this entire step if the merge didn't run (see §14's "merge did not run" branch — operator deferred/rejected, DIRTY/BLOCKED skip, or COMMENT verdict). Neither action should fire before the branch has actually landed.
+Skip this entire step if the merge didn't run (see §14's "merge did not run" branch — operator deferred/rejected, DIRTY/BLOCKED skip, or COMMENT verdict). None of the three actions should fire before the branch has actually landed.
 
-The merge already ran — the operator approved it (§12.0) or it auto-merged (§12a, `auto` policy) — so run both cleanup actions immediately without asking again.
+The merge already ran — the operator approved it (§12.0) or it auto-merged (§12a, `auto` policy) — so run all three cleanup actions immediately without asking again.
 
 **First: close the story issue.** Re-fetch its current state in case another tool already closed it:
 
@@ -689,6 +689,24 @@ gh issue edit <epic-N> --repo <owner/repo> --body-file /tmp/gh-pr-eval-<N>/epic-
 
 Clean up temp files after. If the checkbox is already `[x]` (another tool beat us to it), note it and skip the edit.
 
+**Third: append to the epic delivery log.** Record what this story actually delivered so the planner's just-in-time planning of later stories (and its Dimension 8) can ground on what shipped. The artifact is a single `<!-- epic-delivery-log:v1 -->` comment on the epic issue; this skill is its **sole writer**, and recording every story here — including the last — is what keeps the log complete. **Its format and the writer/reader contract live in [`../_shared/epic-delivery-log.md`](../_shared/epic-delivery-log.md)** — follow it.
+
+Derive the delivered contract shape from the merged diff: the public surface this story added or changed (the new/changed type, service, or API signature). The story's implementation plan is already in hand from §3's `GATHER_ISSUE` (at `marker_comment_path`) — cross-check the shape against that plan's `## Epic contract` `Delivers:` line. Record **what actually merged**: if the diff diverged from the declared contract, record the actual shape (that divergence is what the planner's feedback edge catches on the next story). If the story shipped under a `Plan override` (no plan), record the shape from the diff alone.
+
+Fetch the existing log comment (it may not exist yet):
+
+```bash
+gh issue view <epic-N> --repo <owner/repo> --json comments \
+  --jq 'first(.[] | select(.body | startswith("<!-- epic-delivery-log:v1 -->")) | {id, body})' \
+  > /tmp/gh-pr-eval-<N>/delivery-log.json
+```
+
+Stage the full updated body to `/tmp/gh-pr-eval-<N>/delivery-log.md` — the `<!-- epic-delivery-log:v1 -->` marker line **first**, then the `**Epic delivery log** — #<epic-N> <title>` header, then one `- #<story> — delivered: <actual shape> @ \`<commit-sha>\` (PR #<pr-number>, merged <ISO-date>)` line per shipped story. Start from the fetched body when the comment exists; start from scratch (marker + header + this story's line) when absent. Idempotent: if a `#<story>` line already exists (a re-run), update it in place rather than duplicating. Then post through the single write path — never hand-roll `gh`:
+
+> `PERSIST_COMMENT(target=issue, id=<epic-N>, repo=<owner/repo>, body_path=/tmp/gh-pr-eval-<N>/delivery-log.md, delete_marker_id=<the fetched comment id, if it existed>)`
+
+A plain create when absent; a delete-and-repost (via `delete_marker_id`) when it existed — the same mechanic §5.6 uses for the health-cache comment. Skip on the "merge did not run" branch, like the two actions above.
+
 ### 14. Clean up and summarise
 
 "Merge ran" here covers both the §12a auto-merge path and the §12b confirmed-merge path — the cleanup logic is shared. The §12a-failure path, the §12c skip path, the §12.0 operator **Needs Revision** / **Reject** decisions, and the §12.0 "Other" deferred-merge choice all fall into the "merge did not run" branch below.
@@ -712,7 +730,7 @@ Clean up temp files after. If the checkbox is already `[x]` (another tool beat u
 
 3. **Delete the per-run scratch directory**: `rm -rf "/tmp/gh-pr-eval-<N>"` (it holds the squash body, the epic-body working copies, and the health logs). (The review-body and health-cache temp files are written and removed inside `github-ops`, not here.)
 
-Then end the run with the Step 15 Handoff block (next section) — the handoff is the closing structured summary, replacing the bullet-list summary previously emitted here. The handoff's `Cleanup:` line carries the substantive subset (worktree teardown outcome, removal, scratch-dir status); the URLs of the review, the merge commit, the closed story issue, and the ticked epic checkbox flow into earlier output as they're produced (§11, §12, §13) and don't repeat in the handoff.
+Then end the run with the Step 15 Handoff block (next section) — the handoff is the closing structured summary, replacing the bullet-list summary previously emitted here. The handoff's `Cleanup:` line carries the substantive subset (worktree teardown outcome, removal, scratch-dir status); the URLs of the review, the merge commit, the closed story issue, the ticked epic checkbox, and the updated epic delivery log flow into earlier output as they're produced (§11, §12, §13) and don't repeat in the handoff.
 
 **If the merge did not run** (the §12.0 operator chose Needs Revision / Reject or the "Other" deferred-merge option, or §12c skipped on DIRTY/BLOCKED, or §7 produced a COMMENT verdict, or the §12.0 step-1 refresh found the PR already merged/closed externally), still end the run with the Step 15 Handoff. The handoff's `Cleanup:` line is **omitted** (the worktree stayed in place); the `Next:` action shifts per the §15 rubric — for §12c skips and operator-deferred merges the handoff carries the manual `gh pr merge` command for the user to run after the blocker resolves; for soft-rejections and operator Needs-Revision / Reject the handoff re-routes to `github-issue-resolver continue #<N>`.
 

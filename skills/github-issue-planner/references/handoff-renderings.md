@@ -18,19 +18,34 @@ Every clean run of the planner ends with a single `## Handoff` block. The schema
 **Why:** the plan locks architecture, file-level changes, layer assignments, and test strategy. The resolver executes against it and opens the PR; if implementation reveals a locked decision is wrong, it will re-route back here in revise mode.
 ```
 
-**Epic plan + all child story plans posted.** Forward to the resolver on the first story in dependency order. The Epic's `## Story breakdown` section names the order (top-to-bottom); pick the head of it.
+**Epic plan posted (contracts + sequencing pinned); stories planned just-in-time.** Forward to the **planner** on the first story in dependency order — each story's full plan is authored just-in-time against current epic HEAD, not up front. The Epic's `## Story breakdown` names the order (top-to-bottom); pick the head of it.
 
 ```
 ## Handoff
 
 **Epic:** #150 — Chat & session UX polish · open · epic · plan: ✓
-**Stories:** #151 ✓, #152 ✓, #153 ✓, #154 ✓, #155 ✓ (5 plans posted, sequenced)
+**Stories:** #151, #152, #153, #154, #155 (5 filed, dependency-ordered, contracts pinned · plans authored just-in-time)
 
-**Next:** start the first story in dependency order in a fresh session.
+**Next:** plan the first story in dependency order, just-in-time, in a fresh session.
+
+    /github-pipeline:github-issue-planner #151
+
+**Why:** the epic plan pins the cross-story contracts and sequencing; each story is planned just-in-time against the epic branch HEAD as it becomes the next to build, so it never grounds on code a predecessor has since moved. #151 is the head of `## Story breakdown` — planning it produces its story plan, then the resolver implements it against `epic/150-chat-ux`.
+```
+
+**Just-in-time story plan posted.** A story under an open epic was planned against current epic HEAD. Forward to the resolver on that story.
+
+```
+## Handoff
+
+**Story:** #151 — Add export service · open · story · plan: ✓ (https://github.com/owner/repo/issues/151#issuecomment-XXXXX)
+**Epic:** #150 — Chat & session UX polish · open (0 of 5 stories closed)
+
+**Next:** implement the story in a fresh session.
 
     /github-pipeline:github-issue-resolver #151
 
-**Why:** stories build on each other in the order planned (#151 → #152 → #153 → #154 → #155). The resolver will open a PR targeting the `epic/150-chat-ux` integration branch.
+**Why:** #151's plan was authored just-in-time against `epic/150-chat-ux` HEAD and checked against the epic's `## Story contracts` (Dimension 8). The resolver opens a PR targeting the epic branch; when it merges, the evaluator hands off to plan the next story just-in-time.
 ```
 
 If the Epic ran but the child stories weren't filed yet (Step 11's "stop after the epic-level plan" branch), the next step is the drafter — that's a forward route to file the stories, then the user re-runs the planner on the Epic:
@@ -45,7 +60,7 @@ If the Epic ran but the child stories weren't filed yet (Step 11's "stop after t
 
     /github-pipeline:github-issue-drafter
 
-**Why:** the planner doesn't file issues — that's the drafter's job. Once the stories are filed (each with the `**Epic:** #150` backlink), re-run `/github-pipeline:github-issue-planner #150` and Step 11 will fan out and plan each story.
+**Why:** the planner doesn't file issues — that's the drafter's job. Once the stories are filed (each with the `**Epic:** #150` backlink), re-run `/github-pipeline:github-issue-planner #150` to refresh the epic plan, then plan each story just-in-time (`/github-pipeline:github-issue-planner #<story>`) as you build it.
 ```
 
 **Trivial change — planner declined to author a plan.** Forward straight to the resolver.

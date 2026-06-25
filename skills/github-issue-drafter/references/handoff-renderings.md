@@ -18,7 +18,7 @@ Every clean run of the drafter ends with a single `## Handoff` block. The schema
 **Why:** the planner will research the approach, ground it in docs + codebase precedent, post a verified `<!-- implementation-plan:v1 -->` comment, and lock the decisions the resolver needs.
 ```
 
-**Epic batch filed.** Forward to the planner on the Epic — the planner's own fan-out plans each child story under its `## Stories` list and sequences them.
+**Epic batch filed.** Forward to the planner on the Epic — the planner posts the high-level epic plan (cross-story contracts + sequencing); each child story is then planned just-in-time as it's built.
 
 ```
 ## Handoff
@@ -26,11 +26,11 @@ Every clean run of the drafter ends with a single `## Handoff` block. The schema
 **Epic:** #150 — Chat & session UX polish · open · epic · plan: ✗
 **Stories:** #151, #152, #153, #154, #155 (5 filed, dependency-ordered)
 
-**Next:** plan the Epic in a fresh session — the planner will fan out and plan each child story.
+**Next:** plan the Epic in a fresh session — the planner posts the epic plan; stories are planned just-in-time.
 
     /github-pipeline:github-issue-planner #150
 
-**Why:** the planner posts the Epic-level plan first, then plans each child story and sequences them. Don't run the resolver on any story until its plan is posted.
+**Why:** the planner posts the epic-level plan (pinning cross-story contracts and sequencing), then each child story is planned just-in-time against current epic HEAD as it's built. Don't run the resolver on any story until its plan is posted.
 ```
 
 **Revise mode (single issue or Epic).** What's next depends on whether a plan already exists for this issue and whether the revise materially changed scope, acceptance criteria, or the contracts the plan was built against (Step R6 already flags this — re-use that judgment for the handoff):

@@ -143,10 +143,15 @@ through the **calling skill's main loop** instead (the worktree lifecycle is cwd
   can't call). Names each code (`THREAD_SUPERSEDED_PLAN`, `PHASES_MALFORMED`, `AMBIGUOUS`,
   `PLAN_MISSING`, `BLOCKED_ON_USER`) and the main-loop action it maps to. Currently produced by the
   resolver's **state-distiller** (§P6); referenced by `asking-the-user.md`.
+- `epic-delivery-log.md` — the `<!-- epic-delivery-log:v1 -->` comment contract: its format and the
+  writer/reader ownership split. The **evaluator** is the sole writer (appends one entry per story at
+  merge, §13); the **planner** reads it (Just-in-time story planning + Dimension 8's "consumes only
+  what's shipped" check). It is a *separate* comment from the verified `<!-- implementation-plan:v1 -->`
+  epic plan precisely because it changes on every merge while the plan stays immutable.
 
-When changing behavior that touches handoffs, DoD annotations, the worktree lifecycle, or the
-sub-agent decision signal, edit the `_shared` file (the single source of truth) and keep the
-per-skill renderings consistent with it.
+When changing behavior that touches handoffs, DoD annotations, the worktree lifecycle, the
+sub-agent decision signal, or the epic delivery log, edit the `_shared` file (the single source of
+truth) and keep the per-skill renderings consistent with it.
 
 ### Coupling to a consuming repo is convention-driven
 
@@ -163,7 +168,14 @@ but key behaviors are driven by markers the *consuming* repo provides — not by
 - **Epic integration branches** named `epic/<N>-<slug>` — the resolver/evaluator discover and
   classify Epic vs story PRs by this pattern.
 - **Durable marker comments** the skills post/read: `<!-- implementation-plan:v1 -->` (planner),
-  `<!-- issue-research:v1 -->` (researcher).
+  `<!-- issue-research:v1 -->` (researcher), `<!-- epic-delivery-log:v1 -->` (evaluator-written,
+  planner-read). For an **epic**, the planner's `<!-- implementation-plan:v1 -->` comment pins the
+  cross-story contracts (`## Story contracts`) and sequencing up front and stays verified/immutable;
+  per-story plans are authored **just-in-time** against current epic HEAD (planner "Just-in-time story
+  planning"), not fanned out, so a later story never grounds on code a predecessor has since moved. What
+  each story *actually* delivered is tracked separately in the `<!-- epic-delivery-log:v1 -->` comment —
+  the evaluator appends to it on each story merge, and the planner reads it when planning the next story
+  (kept out of the verified plan comment on purpose, since it changes on every merge).
 - **Optional grounding docs** read if present: `docs/prd.md`, `docs/architecture.md`,
   `docs/constitution.md`, `CLAUDE.md`.
 - **Setup-authored operating guidance** (distinct from the machine-parsed config blocks above):
