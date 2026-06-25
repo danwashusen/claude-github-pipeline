@@ -166,6 +166,13 @@ but key behaviors are driven by markers the *consuming* repo provides — not by
   `<!-- issue-research:v1 -->` (researcher).
 - **Optional grounding docs** read if present: `docs/prd.md`, `docs/architecture.md`,
   `docs/constitution.md`, `CLAUDE.md`.
+- **Setup-authored operating guidance** (distinct from the machine-parsed config blocks above):
+  `github-pipeline-setup` proposes a `<!-- claude-code-stack-profile -->` block in the consuming
+  repo's `CLAUDE.md` — concise, currency-checked guidance on running that stack efficiently in a
+  Claude Code session (background slow commands, log verbose output instead of flooding context). No
+  skill parses it; *every* session consumes it via the CLAUDE.md auto-load, which is why it lives in
+  `CLAUDE.md`, not `COMMANDS.md`. The resolver's §P3.4 defers to it rather than assuming non-Apple
+  test output is compact.
 
 ## Editing conventions for this repo
 

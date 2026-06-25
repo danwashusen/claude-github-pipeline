@@ -7,7 +7,8 @@ declaration. Read this before drafting anything in §3 of the skill.
 The source of truth for *how each block is consumed* lives in the skills that read them —
 `github-issue-resolver` §P3.1 / §P2 and `github-pr-evaluator` "Repo health-check declaration".
 This file mirrors those formats for the *authoring* side; if they ever disagree, the consuming
-skill wins.
+skill wins. The one exception is `claude-code-stack-profile`, which no skill reads — it is
+model-consumed via the CLAUDE.md auto-load, so it has no consuming-skill source of truth.
 
 ## Contents
 
@@ -21,6 +22,7 @@ skill wins.
   - [pr-evaluator-escalation-labels](#pr-evaluator-escalation-labels)
   - [pr-evaluator-merge-policy](#pr-evaluator-merge-policy)
   - [worktree-setup / worktree-teardown](#worktree-setup--worktree-teardown)
+  - [claude-code-stack-profile](#claude-code-stack-profile)
 - [Detection heuristics](#detection-heuristics)
 - [Legacy migration: health-checks → static-checks + test-target](#legacy-migration)
 - [Two worked examples — Swift and Rails](#worked-examples)
@@ -206,6 +208,84 @@ ship with the teardown that releases it — and prefer commands that are idempot
 span of each `- ` item, so every command must be a single backtick-quoted span on one line with no
 embedded backticks — a multi-line or backtick-containing command is silently dropped. Chain a compound
 command with `&&` on one line, or wrap it in a checked-in script and reference that script.
+
+### claude-code-stack-profile
+
+**Optional but broadly useful**, and the only block here not read by a pipeline skill at a defined
+step. It's general operating guidance written into the consuming repo's
+**CLAUDE.md** so Claude Code auto-loads it into *every* session in that repo — the resolver, the
+evaluator, and any ad-hoc session (someone running only the drafter, or just hand-coding). It
+answers one question: **how do you run this stack's commands inside a Claude Code session without
+drowning the context window?**
+
+Because the value is the auto-load, this block always lives in **CLAUDE.md** (or a file CLAUDE.md
+`@`-includes), regardless of where the pipeline config blocks live — the one deliberate exception
+to the "config defaults to `COMMANDS.md`" rule. The interior is free prose under a human-facing
+heading; `config-block.sh` copies it verbatim and reconciles it idempotently like any other block.
+
+```markdown
+<!-- claude-code-stack-profile -->
+## Running this stack with Claude Code
+
+<concise operating guidance — see scope and constraints below>
+<!-- /claude-code-stack-profile -->
+```
+
+**No parser constraint.** Nothing parses this block at runtime — it's model-read via the CLAUDE.md
+auto-load, not extracted by a script. So unlike `worktree-*`, the one-backtick-span-per-line rule
+does **not** apply: multi-line prose, lists, and several code spans on a line are all fine.
+
+**Scope — the operating/efficiency layer only.** What belongs:
+- which commands are slow enough to run backgrounded (`run_in_background: true`) and waited on;
+- when to redirect output to a log and read back the tail / `grep` the failures, vs. let a terse
+  command stream inline;
+- the stack's terse/machine-readable output formatter, and its fast-subset / re-run-only-failures
+  invocation syntax;
+- parallelism knobs and any per-worker resource (e.g. a test database per worker) a session should
+  know about.
+
+What does **not** belong: coding conventions, architecture, or style (those are the human's
+CLAUDE.md), and a plain command list (that's what `/init` produces — complement it, don't
+duplicate). Keeping it narrow is what keeps it concise enough to justify the always-loaded weight.
+
+**Surface the signal, never suppress it.** Guidance is always *redirect-then-read-back* (`… | tee
+<log>`, then `grep`/tail), never "hide output" — the reader still has to see pass/fail and the
+failures, or it's blinded.
+
+**Authored by research-and-propose with a default-on currency check** (setup §3): draft from stack
+knowledge, run a lightweight web check that the idioms are still current — currency is this block's
+whole point — and escalate to fuller research for an unfamiliar stack. Never fabricate; if the
+stack is unrecognized, ask or skip.
+
+**Two worked examples.** State the generic principle first — *name the slow/noisy commands and how
+to run them cheaply; leave the fast ones alone* — then fill it in. Same shape, two stacks.
+
+*Rails:*
+
+```markdown
+<!-- claude-code-stack-profile -->
+## Running this stack with Claude Code
+
+- Unit/integration tests are terse — run them inline and targeted: `bin/rails test test/models/book_test.rb` (append `:LINE` for one test).
+- System tests and the full suite (`bin/rails test:system`, or `bin/rails test:all` for everything) are slow and noisy (headless browser, server logs, screenshots under `tmp/screenshots/`). Background them, log the output, read only the summary: `bin/rails test:system 2>&1 | tee tmp/test.log`, then `grep -E 'runs|failures|errors|Failure|Error' tmp/test.log`.
+- Re-run only what failed; keep iterating on the named test rather than the whole suite.
+- Tests parallelize above ~50 examples, one test DB per worker (auto-created, suffixed by worker number) — don't assume a single shared DB; pair with `worktree-setup` when isolating per worktree.
+- One-time slow setup (`bundle install`, `bin/rails db:prepare`, `assets:precompile`) — run backgrounded and wait, don't poll the output.
+<!-- /claude-code-stack-profile -->
+```
+
+*Node / TS:*
+
+```markdown
+<!-- claude-code-stack-profile -->
+## Running this stack with Claude Code
+
+- Unit tests are fast — run targeted: `npm test -- path/to/foo.test.ts`.
+- The full suite, e2e runs, and coverage are slow/noisy — background and log: `npm run test:e2e > /tmp/e2e.log 2>&1`, then read the tail / `grep` failures. Prefer the reporter's terse mode (`--reporter=dot`) over the verbose default.
+- Re-run only failures (`vitest --changed`, `jest --onlyFailures`) instead of the full run.
+- One-time slow steps (`npm ci`, a cold production build) — background and wait.
+<!-- /claude-code-stack-profile -->
+```
 
 ## Detection heuristics
 

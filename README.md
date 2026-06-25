@@ -17,7 +17,7 @@ that starts the next one, so context stays clean across the pipeline.
 
 | Component | What it does |
 |---|---|
-| `/github-pipeline:github-pipeline-setup` | **Run this first.** Detects your project's lint/test/build commands and writes the marker blocks the resolver/evaluator read from `COMMANDS.md`/`CLAUDE.md`. Idempotent — safe to re-run to re-configure; migrates legacy blocks. Not a pipeline stage. |
+| `/github-pipeline:github-pipeline-setup` | **Run this first.** Detects your project's lint/test/build commands and writes the marker blocks the resolver/evaluator read from `COMMANDS.md`/`CLAUDE.md`, plus a concise stack operating-profile for `CLAUDE.md` (how to run your stack efficiently in a Claude Code session). Idempotent — safe to re-run to re-configure; migrates legacy blocks. Not a pipeline stage. |
 | `/github-pipeline:github-issue-drafter` | Turns informal feedback into a well-structured issue (or Epic + stories) and files it. |
 | `/github-pipeline:github-issue-researcher` | Web-researches version/API/migration questions and posts a dated, cited dossier on the issue. |
 | `/github-pipeline:github-issue-planner` | Designs the implementation approach, grounded in repo precedent + project docs, and posts a verified `<!-- implementation-plan:v1 -->` comment. |
@@ -63,6 +63,10 @@ provides:
   You don't have to write these by hand — run **`/github-pipeline:github-pipeline-setup`** and it
   detects your project's commands, proposes drafts, and writes the blocks idempotently (and offers to
   migrate the legacy `health-checks` block).
+- **A stack operating-profile** (optional, setup-authored) — setup also proposes a
+  `<!-- claude-code-stack-profile -->` block in `CLAUDE.md`: concise guidance on running your stack
+  efficiently in a Claude Code session (backgrounding slow commands, logging verbose output instead
+  of flooding context), auto-loaded into every session.
 - **Optional grounding docs** read if present: `docs/prd.md`, `docs/architecture.md`,
   `docs/constitution.md`, and `CLAUDE.md`. The planner and resolver use them to align designs and
   audit implementations; missing docs are simply skipped.

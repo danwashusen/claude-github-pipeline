@@ -2,7 +2,7 @@
 name: github-pipeline-setup
 model: opus
 effort: medium
-description: Configure (or re-configure) a repository so the github-pipeline skills — resolver, evaluator, planner — actually work in it, by writing the marker-delimited command blocks they read from COMMANDS.md / CLAUDE.md. Use this skill right after installing the plugin, or any time the pipeline can't find how to test/check a repo: phrases like "set up the pipeline", "configure the pipeline for this repo", "onboard this repo to github-pipeline", "the resolver doesn't know how to run my tests", "configure the fast-checks / static-checks", "set up the COMMANDS.md markers", "how do I tell the evaluator which suite to run", "migrate my health-checks block", or "re-run setup" all qualify. Trigger this even when the user doesn't name a specific marker — if they're wiring this plugin into a project, or a pipeline skill reported a missing `<!-- … -->` block, this is the skill. Detects the project's existing lint/test/build commands and proposes drafts; is safe to run repeatedly (idempotent — reconciles in place, never duplicates); offers to migrate legacy single-block declarations and to dry-run the commands it writes. Does NOT itself draft, plan, or resolve issues — it only configures the conventions the other skills depend on.
+description: Configure (or re-configure) a repository so the github-pipeline skills — resolver, evaluator, planner — actually work in it, by writing the marker-delimited command blocks they read from COMMANDS.md / CLAUDE.md. Use this skill right after installing the plugin, or any time the pipeline can't find how to test/check a repo: phrases like "set up the pipeline", "configure the pipeline for this repo", "onboard this repo to github-pipeline", "the resolver doesn't know how to run my tests", "configure the fast-checks / static-checks", "set up the COMMANDS.md markers", "how do I tell the evaluator which suite to run", "migrate my health-checks block", or "re-run setup" all qualify. Trigger this even when the user doesn't name a specific marker — if they're wiring this plugin into a project, or a pipeline skill reported a missing `<!-- … -->` block, this is the skill. Detects the project's existing lint/test/build commands and proposes drafts; is safe to run repeatedly (idempotent — reconciles in place, never duplicates); offers to migrate legacy single-block declarations and to dry-run the commands it writes. Also proposes a concise, up-to-date `claude-code-stack-profile` block for CLAUDE.md — general guidance on running the repo's tech stack efficiently in a Claude Code session (background slow commands, log verbose output instead of flooding context). Does NOT itself draft, plan, or resolve issues — it only configures the conventions the other skills depend on, plus that one general operating-guidance block.
 ---
 
 # GitHub Pipeline Setup
@@ -65,7 +65,8 @@ Staging-then-passing-the-path (not re-inlining the body on a command line) is th
 
 ### The blocks you configure
 
-Seven blocks across two consumer skills, plus the worktree-lifecycle pair. **Before drafting any of
+Seven blocks across two consumer skills, the worktree-lifecycle pair, and one general
+operating-guidance block (`claude-code-stack-profile`). **Before drafting any of
 them, `Read` [`references/block-authoring.md`](references/block-authoring.md)** — it is the
 authoring spec (exact shape, what belongs in each, detection heuristics for inferring the contents
 from the repo, and the legacy-migration mapping). It is progressively disclosed, so the forced Read
@@ -82,6 +83,7 @@ is what guarantees the per-block shapes are in context before you propose anythi
 | `pr-evaluator-merge-policy` | evaluator merge gate | policy (`<pr-type>: ask\|auto`) |
 | `worktree-setup` | resolver per-worktree provisioning | command list (optional) |
 | `worktree-teardown` | evaluator per-worktree teardown | command list (optional) |
+| `claude-code-stack-profile` | any session (CLAUDE.md auto-load — not a skill) | prose guidance (optional) |
 
 Leave the *runtime* markers the skills post themselves alone — `implementation-plan:v1`,
 `issue-research:v1`, `pr-evaluator-health-cache:v1`. Those are emitted by the pipeline at use-time;
@@ -117,6 +119,10 @@ Locate the target files and see what's already declared, so you reconcile rather
   config across two). If neither file exists, default to creating `COMMANDS.md` — it's the preferred
   home and keeps the pipeline config out of the human-facing `CLAUDE.md`. Confirm the target with the
   user before writing.
+- **Exception — `claude-code-stack-profile` always targets `CLAUDE.md`** (or a file CLAUDE.md
+  `@`-includes), regardless of where the pipeline config blocks live. Its whole value is being
+  auto-loaded into every session, which only `CLAUDE.md` guarantees. If `CLAUDE.md` is absent, offer
+  to create it.
 
 Tell the user the inventory in one compact view: what's set, what's legacy, what's missing.
 
@@ -158,6 +164,21 @@ re-runs on every worktree entry and teardown runs best-effort on possibly-half-p
 prefer guard-then-create / create-if-absent over assume-clean-state, and state that contract to the
 operator when you propose. See [`references/block-authoring.md`](references/block-authoring.md) and
 [`../_shared/worktree-lifecycle.md`](../_shared/worktree-lifecycle.md) for the full contract.
+
+The **`claude-code-stack-profile`** block is also authored by *research-and-propose*, but unlike the
+worktree pair it's **proposed by default** for any recognized stack — it's broadly useful, not a
+rare-signal opt-in. It is general operating guidance for running the stack efficiently inside a
+Claude Code session: which commands to background, when to log verbose output and read back the tail
+instead of streaming it into context, the terse formatter and fast-subset syntax, parallelism and
+per-worker resources. It is written into **CLAUDE.md** so every session auto-loads it. Draft from
+stack knowledge and **run a lightweight web check that the idioms are still current** — currency is
+this block's whole value, so the check is default-on here (the opposite of the worktree lane),
+escalating to fuller research for an unfamiliar stack. Keep it to the operating/efficiency layer —
+not coding conventions, not a command list (`/init`'s job) — and keep the guidance
+*surface-don't-suppress* (redirect-then-read-back, never hide output, so the reader still sees
+pass/fail and failures). Never fabricate: if the stack is unrecognized, ask or skip. See
+[`references/block-authoring.md`](references/block-authoring.md) for the shape, scope, and two worked
+examples.
 
 ### 4. Propose and confirm
 
@@ -201,11 +222,18 @@ parser dropped it — it's multi-line or contains an embedded backtick (see the 
 exit (with `MALFORMED_BLOCK` on stderr and no `would_run`) means the block is duplicated or
 unterminated — surface that and fix it too.
 
+The **`claude-code-stack-profile`** block needs no validation step — it's advisory prose, and
+nothing executes or parses it (`config-block.sh` copies it verbatim; the model reads it via the
+CLAUDE.md auto-load). Its only gate is the §4 confirm-diff; once the operator approves the bytes,
+it's done.
+
 ### 7. Summary
 
 Close with a compact summary (not a `## Handoff` — setup isn't a pipeline stage):
 
-- **Target file** written, and per block: written / reconciled / already-correct / skipped.
+- **Target file(s)** written — the pipeline config file, plus `CLAUDE.md` if the
+  `claude-code-stack-profile` block went there — and per block: written / reconciled /
+  already-correct / skipped.
 - **Preflight ✗s** still outstanding, if any, with the one-line fix for each.
 - **Next step** — a copy-pasteable suggestion to start actually using the pipeline, e.g.
   *"Configured. Run `/github-pipeline:github-issue-drafter` on your first piece of feedback, or
