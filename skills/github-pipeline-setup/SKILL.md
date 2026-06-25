@@ -14,10 +14,12 @@ none of those blocks degrades to "ask the user / fall back to the full suite" on
 a repo with them gets fast, targeted, predictable behaviour. This skill writes and reconciles
 those blocks.
 
-It is deliberately the *only* blessed place to write them. The resolver and evaluator both
-refuse to write the blocks silently — they say "always ask the user before modifying project
-files" — precisely because that write belongs here, behind a confirmation, where the user can
-see exactly what's going in.
+For the **pipeline config blocks** it is deliberately the *only* blessed place to write them. The
+resolver and evaluator both refuse to write those blocks silently — they say "always ask the user
+before modifying project files" — precisely because that write belongs here, behind a confirmation,
+where the user can see exactly what's going in. The lone exception is `claude-code-stack-profile`:
+setup **seeds and refreshes** it but does **not** own it — it is user-editable prose nothing parses
+(see "The blocks you configure").
 
 **This is not a pipeline stage.** Unlike draft → research → plan → resolve → evaluate, setup
 has no cross-session handoff and no GitHub state — it edits local Markdown. So it does not emit
@@ -85,6 +87,13 @@ is what guarantees the per-block shapes are in context before you propose anythi
 | `worktree-teardown` | evaluator per-worktree teardown | command list (optional) |
 | `claude-code-stack-profile` | any session (CLAUDE.md auto-load — not a skill) | prose guidance (optional) |
 
+**Ownership.** The nine machine-parsed blocks are **plugin-owned**: setup is their single write path
+and reconciles each to its canonical form, because a resolver / evaluator / `worktree-hooks.sh`
+parser reads it. `claude-code-stack-profile` is **user-owned** — advisory prose nothing parses,
+living in the human-facing `CLAUDE.md`. Setup *seeds* it when absent and *re-ingests* the existing
+content as the base when present; external edits are expected and preserved, never overwritten.
+Currency, not canonical shape, is its only value.
+
 Leave the *runtime* markers the skills post themselves alone — `implementation-plan:v1`,
 `issue-research:v1`, `pr-evaluator-health-cache:v1`. Those are emitted by the pipeline at use-time;
 they are not configuration and this skill never touches them.
@@ -122,7 +131,8 @@ Locate the target files and see what's already declared, so you reconcile rather
 - **Exception — `claude-code-stack-profile` always targets `CLAUDE.md`** (or a file CLAUDE.md
   `@`-includes), regardless of where the pipeline config blocks live. Its whole value is being
   auto-loaded into every session, which only `CLAUDE.md` guarantees. If `CLAUDE.md` is absent, offer
-  to create it.
+  to create it. When it is already present, `config-block.sh read` its interior now and carry that
+  content into §3 — it is the user-owned base to re-ingest, not a presence flag to re-draft over.
 
 Tell the user the inventory in one compact view: what's set, what's legacy, what's missing.
 
@@ -170,10 +180,14 @@ worktree pair it's **proposed by default** for any recognized stack — it's bro
 rare-signal opt-in. It is general operating guidance for running the stack efficiently inside a
 Claude Code session: which commands to background, when to log verbose output and read back the tail
 instead of streaming it into context, the terse formatter and fast-subset syntax, parallelism and
-per-worker resources. It is written into **CLAUDE.md** so every session auto-loads it. Draft from
-stack knowledge and **run a lightweight web check that the idioms are still current** — currency is
-this block's whole value, so the check is default-on here (the opposite of the worktree lane),
-escalating to fuller research for an unfamiliar stack. Keep it to the operating/efficiency layer —
+per-worker resources. It is written into **CLAUDE.md** so every session auto-loads it. This block is
+**user-owned**: when it is **absent**, draft fresh from stack knowledge; when it is **present**,
+re-ingest the existing interior (read in §2) as the authoritative base and keep the user's prose by
+default — never wholesale-replace it. Either way **run a lightweight web check that the idioms are
+still current** — currency is this block's whole value, so the check is default-on here (the opposite
+of the worktree lane), escalating to fuller research for an unfamiliar stack; on a present block,
+propose only refinements for genuinely stale idioms, layered on the user's content. Keep it to the
+operating/efficiency layer —
 not coding conventions, not a command list (`/init`'s job) — and keep the guidance
 *surface-don't-suppress* (redirect-then-read-back, never hide output, so the reader still sees
 pass/fail and failures). Never fabricate: if the stack is unrecognized, ask or skip. See
@@ -185,6 +199,10 @@ examples.
 Show each drafted block as a **diff against what's there now** (use `config-block.sh read` to get the
 current interior for blocks that exist). The user is approving exact bytes that will go into their
 repo — make it easy to see the change, not just the result.
+
+For the user-owned `claude-code-stack-profile`, frame its diff as *your content + proposed currency
+updates*, with the default proposal = keep the existing block; a present block should never show its
+user-written lines as wholesale deletions.
 
 Gate the write with `AskUserQuestion`: per-block confirm, or one "write all N as shown / let me edit
 / cancel" card when the drafts are clean. Honour edits inline before writing.
@@ -233,7 +251,9 @@ Close with a compact summary (not a `## Handoff` — setup isn't a pipeline stag
 
 - **Target file(s)** written — the pipeline config file, plus `CLAUDE.md` if the
   `claude-code-stack-profile` block went there — and per block: written / reconciled /
-  already-correct / skipped.
+  already-correct / skipped. Report the user-owned `claude-code-stack-profile` in its own terms —
+  seeded / refreshed (your edits preserved) / already-current — not the plugin-owned
+  written/reconciled vocabulary.
 - **Preflight ✗s** still outstanding, if any, with the one-line fix for each.
 - **Next step** — a copy-pasteable suggestion to start actually using the pipeline, e.g.
   *"Configured. Run `/github-pipeline:github-issue-drafter` on your first piece of feedback, or

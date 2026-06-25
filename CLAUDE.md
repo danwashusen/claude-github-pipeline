@@ -171,8 +171,10 @@ but key behaviors are driven by markers the *consuming* repo provides — not by
   repo's `CLAUDE.md` — concise, currency-checked guidance on running that stack efficiently in a
   Claude Code session (background slow commands, log verbose output instead of flooding context). No
   skill parses it; *every* session consumes it via the CLAUDE.md auto-load, which is why it lives in
-  `CLAUDE.md`, not `COMMANDS.md`. The resolver's §P3.4 defers to it rather than assuming non-Apple
-  test output is compact.
+  `CLAUDE.md`, not `COMMANDS.md`. Because nothing parses it, it is **user-owned**, not plugin-owned:
+  setup seeds it when absent and re-ingests the user's edits as the base on re-run — proposing only
+  currency refinements, never overwriting — unlike the machine-parsed blocks it reconciles to
+  canonical. The resolver's §P3.4 defers to it rather than assuming non-Apple test output is compact.
 
 ## Editing conventions for this repo
 

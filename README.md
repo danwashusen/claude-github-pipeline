@@ -66,7 +66,8 @@ provides:
 - **A stack operating-profile** (optional, setup-authored) — setup also proposes a
   `<!-- claude-code-stack-profile -->` block in `CLAUDE.md`: concise guidance on running your stack
   efficiently in a Claude Code session (backgrounding slow commands, logging verbose output instead
-  of flooding context), auto-loaded into every session.
+  of flooding context), auto-loaded into every session. It's yours to edit — re-running setup
+  re-ingests your edits rather than overwriting them.
 - **Optional grounding docs** read if present: `docs/prd.md`, `docs/architecture.md`,
   `docs/constitution.md`, and `CLAUDE.md`. The planner and resolver use them to align designs and
   audit implementations; missing docs are simply skipped.

@@ -221,7 +221,13 @@ drowning the context window?**
 Because the value is the auto-load, this block always lives in **CLAUDE.md** (or a file CLAUDE.md
 `@`-includes), regardless of where the pipeline config blocks live — the one deliberate exception
 to the "config defaults to `COMMANDS.md`" rule. The interior is free prose under a human-facing
-heading; `config-block.sh` copies it verbatim and reconciles it idempotently like any other block.
+heading; `config-block.sh` copies it verbatim.
+
+**Ownership — user-owned, not plugin-owned.** Unlike the machine-parsed config blocks, this one is
+**user-owned**: external edits are allowed and expected. Setup *seeds* it when absent; on re-run it
+**re-ingests** the existing interior as the authoritative base and proposes only currency
+refinements on top — it does **not** reconcile-to-canonical the way the plugin-owned blocks do, and
+never overwrites the user's prose.
 
 ```markdown
 <!-- claude-code-stack-profile -->
@@ -252,10 +258,11 @@ duplicate). Keeping it narrow is what keeps it concise enough to justify the alw
 <log>`, then `grep`/tail), never "hide output" — the reader still has to see pass/fail and the
 failures, or it's blinded.
 
-**Authored by research-and-propose with a default-on currency check** (setup §3): draft from stack
-knowledge, run a lightweight web check that the idioms are still current — currency is this block's
-whole point — and escalate to fuller research for an unfamiliar stack. Never fabricate; if the
-stack is unrecognized, ask or skip.
+**Authored by research-and-propose with a default-on currency check** (setup §3): when the block is
+absent, draft from stack knowledge; when present, the existing prose is the base. Either way run a
+lightweight web check that the idioms are still current — currency is this block's whole point — and
+escalate to fuller research for an unfamiliar stack. Never fabricate; if the stack is unrecognized,
+ask or skip.
 
 **Two worked examples.** State the generic principle first — *name the slow/noisy commands and how
 to run them cheaply; leave the fast ones alone* — then fill it in. Same shape, two stacks.
