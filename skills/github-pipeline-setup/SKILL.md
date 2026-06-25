@@ -144,11 +144,23 @@ CI workflows (`.github/workflows/*.yml`), and project-type signals (`Package.swi
 `pyproject.toml`, etc.). Use `Explore`/`Grep`/`Glob` for this; it's local discovery, not GitHub I/O,
 so there's no `github-ops` here.
 
+**Ground every detected command against the repo before drafting it**, whatever its source — verify
+the script or target it invokes exists and, for a test command, that real test files back it (the
+"Ground every candidate" rule in `references/block-authoring.md`). Exclude any candidate you can't
+ground and note the exclusion to the user; be conservative — drop only on positive evidence of
+absence. The common trap is a *green* CI job naming a suite the tree doesn't contain — a scaffold
+default whose tests were never written.
+
 - The **command-list** blocks (`*-fast-checks`, `*-static-checks`) can usually be
   drafted straight from detection — propose them filled in.
 - The two **`*-test-target`** blocks are prose and project-specific (wrapper, per-target naming
   conventions, helper/broad-change fallbacks). Detection gets you the wrapper and target names;
   interview the user briefly for the naming convention and fallbacks rather than inventing them.
+- The **`issue-resolver-canonical-suite`** block derives from the same test-wrapper detection as the
+  test-target blocks (it's the full suite, not a story-gate selection), so draft and **ground** it
+  the same way; its three labels (`full-suite` / `build-once` / `retry-without-rebuild`) collapse to
+  one command on stacks that can't separate compile from run (see `references/block-authoring.md`).
+  Skip it on a project with no epic flow.
 - The **`pr-evaluator-merge-policy`** block isn't *detected* — it's a preference, not a repo fact.
   Ask the user which PR types should require human approval at the evaluator's merge gate vs. merge
   hands-free on a clean approval. **Propose `ask` for both `standard` and `story`** — that matches the
@@ -223,7 +235,10 @@ test-target prose is a judgement call worth a look.
 ### 6. Offer to validate
 
 After writing, offer (don't force — it executes project commands) to dry-run the fast static commands
-once to catch typos and missing scripts immediately, while the user is still here. Run only the
+once to catch typos and missing scripts immediately, while the user is still here. This is the
+post-write companion to §3's pre-write grounding: grounding drops a command whose target is *absent*
+before it's written; this dry-run catches a *present-but-broken* one (a typo, a flag the tool
+rejects, a script that runs but errors) that grounding can't see. Run only the
 `*-fast-checks` / `*-static-checks` lists — they're the fast, side-effect-light ones; never auto-run a
 `test-target` full suite, which can be many minutes and may have side effects. Run each from the repo
 root, in declared order, and report pass/fail per command. A failure here means the block references a
@@ -278,7 +293,10 @@ Close with a compact summary (not a `## Handoff` — setup isn't a pipeline stag
   drift-on-re-run problems the script exists to prevent. Route every write through `config-block.sh`.
 - **Fabricating commands.** An invented `npm test` that cold-rebuilds, or a static check that doesn't
   exist, is worse than an absent block — the pipeline skill would at least *ask* about an absent one.
-  Detect, then confirm; never confidently wire in something you didn't verify.
+  Detect, **ground** (verify the command is viable against the tree — §3, and the "Ground every
+  candidate" rule in `references/block-authoring.md`), then confirm; never confidently wire in
+  something you didn't verify. A source naming the command — even a green CI job — isn't verification
+  that it runs.
 - **Touching runtime markers.** `implementation-plan:v1`, `issue-research:v1`, and the health-cache
   marker are written by the pipeline at use-time. They are not configuration; leave them be.
 - **Scattering config across both files.** If the skills find the same marker in `COMMANDS.md` and

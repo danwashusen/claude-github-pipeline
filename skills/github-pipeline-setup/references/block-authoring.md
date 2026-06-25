@@ -299,10 +299,14 @@ to run them cheaply; leave the fast ones alone* — then fill it in. Same shape,
 Propose drafts from what the repo already declares, then confirm. Sources, roughly in order of
 signal strength:
 
-1. **CI workflows** (`.github/workflows/*.yml`) — the commands CI runs are the strongest signal for
-   what the static and test commands *should* be, because they're already the project's source of
-   truth for "is this green". Map CI's lint/typecheck steps → static checks; its test step → the
-   test wrapper / full-suite-command.
+1. **CI workflows** (`.github/workflows/*.yml`) — the strongest signal for the *shape* of the static
+   and test commands (wrapper, flags, ordering), because CI is already the project's source of truth
+   for "is this green". Map CI's lint/typecheck steps → static checks; its test step → the test
+   wrapper / full-suite-command. But a *green* CI job is not proof the suite it names exists —
+   scaffold generators ship test scaffolding for suites that may have no tests (`rails new` even adds
+   a CI workflow with a `system-test` job; an Xcode template adds empty `<App>UITests` stubs) — so
+   treat a CI-derived command as a **candidate** and ground it against the tree (see "Ground every
+   candidate" below) before writing it.
 2. **Task runner manifests:**
    - **Node / TS** — `package.json` `scripts`: `lint`, `typecheck`/`tsc`, `build` → static checks;
      `test`, `test:unit`, `test:e2e` → test wrapper (`npm run <script>` / `pnpm <script>`). Test
@@ -328,12 +332,29 @@ signal strength:
    project maintains.
 
 Rules of thumb:
+- **Ground every candidate — verify viability before writing.** Detection from *any* source (CI, a
+  task-runner manifest, `scripts/*.sh`, a project-type signal) yields *candidates*, not facts; a
+  source naming a command isn't proof it runs. Before drafting a command into any block, verify it's
+  viable against the working tree:
+  - *static / fast checks* — the script or target it invokes exists (a `package.json` `scripts`
+    entry, a `Makefile` target, a `scripts/*.sh` file, or a tool on `PATH`);
+  - *test targets / suites* — real test files back the target (`Glob` / `find` / `git ls-tree`);
+  - *canonical / full suite* — the suites it chains actually exist.
+  Exclude — and tell the user you did — any candidate you can't ground. Be **conservative**: drop one
+  only on positive evidence of absence; when you can't tell, keep it and flag it for the setup §6
+  dry-run or a user confirm, rather than over-pruning. For example, include a Rails `test/system`
+  target / `bin/rails test:system` only if `test/system/**/*_test.rb` (or `spec/system/**/*_spec.rb`)
+  exists, and a Swift/Apple `<App>UITests` target only if the UITest bundle holds test files; a `package.json` script CI names
+  but `scripts` doesn't define is dropped whatever the stack. Same verify-it's-in-the-tree discipline
+  the resolver's audit applies to an issue body.
 - **Prefer the project's own wrapper** over a raw tool invocation — it's what's maintained and what
   CI uses.
 - **Static lists exclude tests.** If detection surfaces a single "test everything" command, that's
   the test-target wrapper / full-suite-command, not a static check.
-- **Never fabricate.** If a source yields nothing for a block, present it empty and ask — a wrong
-  command wired in silently is worse than an absent block the pipeline skill asks about at runtime.
+- **Never fabricate.** Two distinct failures, each worse than an absent block the pipeline skill asks
+  about at runtime: a source that yields *nothing* for a block (present it empty and ask — don't
+  invent a command), and a source that yields a *non-viable* one (a command the viability rule above
+  can't ground — exclude it and surface why). Never confidently wire in something you didn't verify.
 
 ## Legacy migration
 
@@ -384,6 +405,9 @@ stack. That's the contract working as intended; nothing here is stack-specific b
 <!-- /pr-evaluator-escalation-labels -->
 ```
 
+The `FoodJournalUITests` target appears because `food-journal` ships UI tests; per "Ground every
+candidate", omit it on a project whose UITest bundle holds no test files.
+
 The resolver side mirrors this — same `wrapper`, target names, naming, and fallbacks — minus the
 `full-suite-command` line, plus the `issue-resolver-canonical-suite` block for the epic flow. Swift
 builds and runs tests in separate steps, so the canonical-suite's three labels are distinct:
@@ -422,6 +446,10 @@ builds and runs tests in separate steps, so the canonical-suite's three labels a
 - `full-suite-required` — bypass targeted selection
 <!-- /pr-evaluator-escalation-labels -->
 ```
+
+The `test/system` target and the `test:system` half of `full-suite-command` appear because
+`books-api` has tests under `test/system/`; per "Ground every candidate", omit both on a repo whose
+`test/system/` holds no `*_test.rb` (e.g. a fresh `rails new`).
 
 Rails runs tests directly — there's no separate compile step — so the canonical-suite's three
 labels collapse to the single test command (the all-three-identical degenerate case the
