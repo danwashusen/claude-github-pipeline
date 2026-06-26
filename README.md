@@ -22,7 +22,7 @@ that starts the next one, so context stays clean across the pipeline.
 | `/github-pipeline:github-issue-researcher` | Web-researches version/API/migration questions and posts a dated, cited dossier on the issue. |
 | `/github-pipeline:github-issue-planner` | Designs the implementation approach, grounded in repo precedent + project docs, and posts a verified `<!-- implementation-plan:v1 -->` comment. |
 | `/github-pipeline:github-issue-resolver` | Implements the issue end-to-end, opens/continues a PR, and loops with `review` until approved. Understands Epics and stories. |
-| `/github-pipeline:github-pr-evaluator` | Evaluates a PR against its origin issue, posts a formal approval/soft-reject review, and recommends a merge strategy. |
+| `/github-pipeline:github-pr-evaluator` | Evaluates a PR against its origin issue, posts a formal approval/soft-reject review, and recommends a merge strategy. Gates on branch health first — short-circuiting on green CI, **waiting for in-flight CI to finish** before deciding, and falling back to your declared local checks when CI is absent or red (flagging any CI-vs-local disagreement for you). |
 | `github-pipeline:github-ops` (agent) | Internal executor. The skills delegate all mechanical `gh`/`git` fetch + persist I/O to it (runs on Sonnet) so the expensive model isn't spent on round-trips. Not for direct use. |
 
 The `_shared/` skill folder holds the cross-skill handoff schema and Definition-of-Done annotation
