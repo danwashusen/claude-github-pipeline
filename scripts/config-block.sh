@@ -19,8 +19,12 @@
 # Usage:
 #   config-block.sh read   <file> <marker-name>                 # interior to stdout
 #   config-block.sh list   <file>                               # `<status> <name>` lines
-#   config-block.sh upsert <file> <marker-name> <body-path>  [--dry-run]
+#   config-block.sh upsert <file> <marker-name> <body-path>  [--dry-run] [--prepend]
 #   config-block.sh remove <file> <marker-name>              [--dry-run]
+#
+# `--prepend` (upsert only) places a *newly created* block at the top of the file
+# instead of appending it; when the block already exists it is a no-op (the block
+# is replaced in place, position unchanged), so re-running stays idempotent.
 #
 # <marker-name> is the bare name without the comment syntax — e.g.
 #   `issue-resolver-fast-checks`, not `<!-- issue-resolver-fast-checks -->`.
@@ -60,7 +64,7 @@ die_usage() {
   echo "usage:" >&2
   echo "  config-block.sh read   <file> <marker-name>" >&2
   echo "  config-block.sh list   <file>" >&2
-  echo "  config-block.sh upsert <file> <marker-name> <body-path> [--dry-run]" >&2
+  echo "  config-block.sh upsert <file> <marker-name> <body-path> [--dry-run] [--prepend]" >&2
   echo "  config-block.sh remove <file> <marker-name>             [--dry-run]" >&2
   exit 2
 }
@@ -165,10 +169,11 @@ finish_write() {
 run_upsert() {
   [[ $# -lt 3 ]] && die_usage
   local file="$1" name="$2" body_path="$3"; shift 3
-  local dry_run="false"
+  local dry_run="false" prepend="false"
   while [[ $# -gt 0 ]]; do
     case "$1" in
       --dry-run) dry_run="true"; shift ;;
+      --prepend) prepend="true"; shift ;;
       *) die_usage ;;
     esac
   done
@@ -184,7 +189,7 @@ run_upsert() {
 
   local tmp; tmp="$(mktemp)"
   local rc=0
-  awk -v name="$name" -v bodyfile="$body_path" "$AWK_SCAN$AWK_EMIT_BODY"'
+  awk -v name="$name" -v bodyfile="$body_path" -v prepend="$prepend" "$AWK_SCAN$AWK_EMIT_BODY"'
     END{
       if(oc>1 || cc>1) exit 4
       if(oc!=cc) exit 5
@@ -193,6 +198,12 @@ run_upsert() {
         for(i=1;i<=oi;i++) print lines[i]   # up to and including the open delimiter
         emit_body()
         for(i=ci;i<=n;i++) print lines[i]    # the close delimiter onward
+      } else if(prepend=="true"){
+        print openm                              # new block at the top of the file
+        emit_body()
+        print closem
+        if(n>0 && trim(lines[1])!="") print ""   # one blank line before existing content
+        for(i=1;i<=n;i++) print lines[i]
       } else {
         for(i=1;i<=n;i++) print lines[i]
         if(n>0 && trim(lines[n])!="") print ""   # one blank line before a new block

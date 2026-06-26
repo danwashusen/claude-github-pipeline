@@ -14,12 +14,16 @@ none of those blocks degrades to "ask the user / fall back to the full suite" on
 a repo with them gets fast, targeted, predictable behaviour. This skill writes and reconciles
 those blocks.
 
-For the **pipeline config blocks** it is deliberately the *only* blessed place to write them. The
-resolver and evaluator both refuse to write those blocks silently — they say "always ask the user
+For the **pipeline config blocks** setup is deliberately the *only* place the **plugin** writes them:
+the resolver and evaluator both refuse to write those blocks silently — they say "always ask the user
 before modifying project files" — precisely because that write belongs here, behind a confirmation,
-where the user can see exactly what's going in. The lone exception is `claude-code-stack-profile`:
-setup **seeds and refreshes** it but does **not** own it — it is user-editable prose nothing parses
-(see "The blocks you configure").
+where the user can see exactly what's going in. That discipline governs the plugin's *automated*
+writes, **not** the human — a user **may** hand-edit these blocks, and a hand-edit that keeps the
+`<!-- … -->` markers intact is fine; a re-run just reconciles them idempotently. The
+`github-pipeline-config` header setup writes atop `COMMANDS.md` must carry exactly that message —
+never "edit only via setup / not by hand". The lone exception to plugin-ownership is
+`claude-code-stack-profile`: setup **seeds and refreshes** it but does **not** own it — it is
+user-editable prose nothing parses (see "The blocks you configure").
 
 **This is not a pipeline stage.** Unlike draft → research → plan → resolve → evaluate, setup
 has no cross-session handoff and no GitHub state — it edits local Markdown. So it does not emit
@@ -67,8 +71,9 @@ Staging-then-passing-the-path (not re-inlining the body on a command line) is th
 
 ### The blocks you configure
 
-Seven blocks across two consumer skills, the worktree-lifecycle pair, and one general
-operating-guidance block (`claude-code-stack-profile`). **Before drafting any of
+Seven blocks across two consumer skills, the worktree-lifecycle pair, one general
+operating-guidance block (`claude-code-stack-profile`), and the `github-pipeline-config` file
+header. **Before drafting any of
 them, `Read` [`references/block-authoring.md`](references/block-authoring.md)** — it is the
 authoring spec (exact shape, what belongs in each, detection heuristics for inferring the contents
 from the repo, and the legacy-migration mapping). It is progressively disclosed, so the forced Read
@@ -86,10 +91,15 @@ is what guarantees the per-block shapes are in context before you propose anythi
 | `worktree-setup` | resolver per-worktree provisioning | command list (optional) |
 | `worktree-teardown` | evaluator per-worktree teardown | command list (optional) |
 | `claude-code-stack-profile` | any session (CLAUDE.md auto-load — not a skill) | prose guidance (optional) |
+| `github-pipeline-config` | any human reading the file (no skill parses it) | prose header (COMMANDS.md only) |
 
 **Ownership.** The nine machine-parsed blocks are **plugin-owned**: setup is their single write path
 and reconciles each to its canonical form, because a resolver / evaluator / `worktree-hooks.sh`
-parser reads it. `claude-code-stack-profile` is **user-owned** — advisory prose nothing parses,
+parser reads it. The `github-pipeline-config` header is also **plugin-owned and reconciled to
+canonical** — a re-run restores its exact wording, and that self-heal is the point — but **nothing
+parses it**: it's a human-facing notice, so it lives **only in `COMMANDS.md`** (never atop a
+human-facing `CLAUDE.md`) and carries no parser contract. `claude-code-stack-profile` is
+**user-owned** — advisory prose nothing parses,
 living in the human-facing `CLAUDE.md`. Setup *seeds* it when absent and *re-ingests* the existing
 content as the base when present; external edits are expected and preserved, never overwritten.
 Currency, not canonical shape, is its only value.
@@ -122,6 +132,11 @@ Locate the target files and see what's already declared, so you reconcile rather
 - Classify every known marker as **present** (already `ok`), **legacy** (a
   `pr-evaluator-health-checks` block — the pre-split single block), **malformed** (`dup`/`open`), or
   **missing**.
+- **`github-pipeline-config` header.** Classify it present/missing like any other block. Also watch
+  for a *legacy freeform preamble* — top-of-file prose **above** the first marker block describing
+  the pipeline (e.g. the old "Edit them only via `github-pipeline-setup` … rather than by hand"
+  notice, or a bare `# COMMANDS.md` title). It predates the managed header; plan to replace it —
+  remove those freeform lines, then write the `github-pipeline-config` block via §5's `--prepend`.
 - **Same marker in both files** is an ambiguity the pipeline skills would also hit (they scan both).
   Flag it and ask which file is canonical; plan to `remove` the duplicate from the other.
 - Decide the **target file**: if blocks already live in one file, keep writing there (don't scatter
@@ -206,6 +221,14 @@ pass/fail and failures). Never fabricate: if the stack is unrecognized, ask or s
 [`references/block-authoring.md`](references/block-authoring.md) for the shape, scope, and two worked
 examples.
 
+The **`github-pipeline-config`** header is **not detected** and not drafted per-repo — it's a fixed
+canonical notice (verbatim body in [`references/block-authoring.md`](references/block-authoring.md)).
+Propose it (so §4 shows it in the diff) **only when the pipeline-config target file is `COMMANDS.md`**
+— it heads that dedicated config file; skip it when the blocks live in an existing human-facing
+`CLAUDE.md`, so you don't shove a header atop the user's doc. Never substitute an "edit only via setup
+/ not by hand" message: hand-edits are allowed — the only ask is that the `<!-- … -->` markers stay
+intact.
+
 ### 4. Propose and confirm
 
 Show each drafted block as a **diff against what's there now** (use `config-block.sh read` to get the
@@ -216,6 +239,9 @@ For the user-owned `claude-code-stack-profile`, frame its diff as *your content 
 updates*, with the default proposal = keep the existing block; a present block should never show its
 user-written lines as wholesale deletions.
 
+When replacing a legacy freeform preamble with the `github-pipeline-config` header, show the removed
+top-of-file lines alongside the new block — the user is approving the swap, not just an addition.
+
 Gate the write with `AskUserQuestion`: per-block confirm, or one "write all N as shown / let me edit
 / cancel" card when the drafts are clean. Honour edits inline before writing.
 
@@ -224,6 +250,12 @@ Gate the write with `AskUserQuestion`: per-block confirm, or one "write all N as
 For each approved block: `Write` the body to `/tmp/gh-setup-<repo>/<marker>.md`, then
 `config-block.sh upsert <target-file> <marker> <that-path>`. Read back the `changed` field — report
 `changed: false` blocks as "already correct" so the user sees the idempotency working.
+
+**The `github-pipeline-config` header** writes the same way, with `--prepend` so it heads the file:
+`config-block.sh upsert <COMMANDS.md> github-pipeline-config <that-path> --prepend`. If §2 found a
+legacy freeform preamble, first remove those top-of-file lines with a direct `Edit` — freeform prose
+is **not** a marker block, so this isn't a hand-rolled block write — then upsert the header
+(`--prepend` lands it at the top once the stale prose is gone).
 
 **Legacy migration.** When inventory found a `pr-evaluator-health-checks` block and the user opted in
 (§3 / its own gate): `read` the legacy block, split its static commands into `pr-evaluator-static-checks`
@@ -255,10 +287,10 @@ parser dropped it — it's multi-line or contains an embedded backtick (see the 
 exit (with `MALFORMED_BLOCK` on stderr and no `would_run`) means the block is duplicated or
 unterminated — surface that and fix it too.
 
-The **`claude-code-stack-profile`** block needs no validation step — it's advisory prose, and
-nothing executes or parses it (`config-block.sh` copies it verbatim; the model reads it via the
-CLAUDE.md auto-load). Its only gate is the §4 confirm-diff; once the operator approves the bytes,
-it's done.
+The **`claude-code-stack-profile`** and **`github-pipeline-config`** blocks need no validation step —
+both are advisory prose nothing executes or parses (`config-block.sh` copies them verbatim;
+stack-profile is read via the CLAUDE.md auto-load, the header by whoever opens `COMMANDS.md`). Their
+only gate is the §4 confirm-diff; once the operator approves the bytes, they're done.
 
 ### 7. Summary
 
@@ -266,9 +298,10 @@ Close with a compact summary (not a `## Handoff` — setup isn't a pipeline stag
 
 - **Target file(s)** written — the pipeline config file, plus `CLAUDE.md` if the
   `claude-code-stack-profile` block went there — and per block: written / reconciled /
-  already-correct / skipped. Report the user-owned `claude-code-stack-profile` in its own terms —
-  seeded / refreshed (your edits preserved) / already-current — not the plugin-owned
-  written/reconciled vocabulary.
+  already-correct / skipped. The `github-pipeline-config` header uses this same plugin-owned
+  vocabulary; note when a legacy freeform preamble was replaced. Report the user-owned
+  `claude-code-stack-profile` in its own terms — seeded / refreshed (your edits preserved) /
+  already-current — not the plugin-owned written/reconciled vocabulary.
 - **Preflight ✗s** still outstanding, if any, with the one-line fix for each.
 - **Next step** — a copy-pasteable suggestion to start actually using the pipeline, e.g.
   *"Configured. Run `/github-pipeline:github-issue-drafter` on your first piece of feedback, or

@@ -23,6 +23,7 @@ model-consumed via the CLAUDE.md auto-load, so it has no consuming-skill source 
   - [pr-evaluator-merge-policy](#pr-evaluator-merge-policy)
   - [worktree-setup / worktree-teardown](#worktree-setup--worktree-teardown)
   - [claude-code-stack-profile](#claude-code-stack-profile)
+  - [github-pipeline-config (file header)](#github-pipeline-config-file-header)
 - [Detection heuristics](#detection-heuristics)
 - [Legacy migration: health-checks → static-checks + test-target](#legacy-migration)
 - [Two worked examples — Swift and Rails](#worked-examples)
@@ -293,6 +294,31 @@ to run them cheaply; leave the fast ones alone* — then fill it in. Same shape,
 - One-time slow steps (`npm ci`, a cold production build) — background and wait.
 <!-- /claude-code-stack-profile -->
 ```
+
+### github-pipeline-config (file header)
+
+The human-facing header at the top of `COMMANDS.md`. It is **not a pipeline config block** — no
+skill parses it — but it is **plugin-owned and reconciled to canonical** (a re-run restores the exact
+wording; that self-heal is its point). It exists to tell anyone opening the file that these blocks
+are pipeline config and that **hand-edits are fine as long as the `<!-- … -->` markers stay intact**.
+
+**Lives only in `COMMANDS.md`** (the dedicated config file), never atop a human-facing `CLAUDE.md` —
+skip it when the pipeline config blocks live in `CLAUDE.md`.
+
+Write it via `config-block.sh upsert <COMMANDS.md> github-pipeline-config <body-path> --prepend` —
+`--prepend` places a newly created block at the top of the file (a no-op once the block exists, so
+re-runs stay idempotent). The verbatim body:
+
+```markdown
+<!-- github-pipeline-config -->
+Pipeline configuration for the `github-pipeline` skills (resolver / evaluator / planner), read at use-time. You can edit these blocks by hand — just keep each block's `<!-- … -->` marker pair intact so the skills can find it. Re-run `github-pipeline-setup` to reconcile them (idempotent).
+<!-- /github-pipeline-config -->
+```
+
+The illustrative `<!-- … -->` in the prose uses an ellipsis and sits inline with other words, so it
+never matches `config-block.sh`'s whole-line marker scan — keep it that way (don't put a bare
+look-alike marker on its own line). **Never** write an "edit only via setup / not by hand" notice in
+its place: hand-edits are allowed; the only ask is that the markers are maintained.
 
 ## Detection heuristics
 
