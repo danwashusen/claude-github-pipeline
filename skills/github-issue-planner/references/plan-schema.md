@@ -31,6 +31,14 @@ constrain this, with §refs — the citations, not a restatement of the approach
 - Unit: <suites to add/extend, per constitution §5 coverage targets>
 - UI / integration: <integration-test flows, identifiers/selectors, mock/fixture expectations>
 
+## Coverage gap                   (bug fixes only — omit for feature/incomplete/epic/story)
+- Escape: <existing test(s) that should have caught this — file path + suite/section — and the
+  path/state/input the root cause exercises that they don't reach, grounded at the plan ref>
+- Closed by: <the regression test in ## Test plan that exercises that path — name + assertion
+  intent; it must fail against the pre-fix code at the plan ref and pass after the fix>
+  (or `(none)` with a reason: a pure dependency bump with no reachable new behaviour, a surface
+  with no test harness, or a defect not reproducible in an automated test — matching Dimension 9)
+
 ## Phases                         (multi-phase issues only — omit for single-phase; epics use the dedicated ## Story breakdown / ## Integration strategy sections)
 1. **Phase 1 — <short title>**
    - kind: code-shipping | operator | decision-only

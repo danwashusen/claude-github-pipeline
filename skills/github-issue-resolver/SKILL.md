@@ -249,7 +249,7 @@ Match the work to the issue type:
 
 | Issue type | What "resolving" looks like |
 |---|---|
-| **Bug report** | Reproduce locally if possible, find root cause, fix it, add a regression test |
+| **Bug report** | Test-first: reproduce the defect in a failing test, find the root cause, fix until the test passes — if the defect can't be reproduced in a test, fix it and add a regression test |
 | **Feature request** | Confirm scope from thread, design, implement, add tests + docs |
 | **Question / discussion** | Research the answer (code, docs, history), draft a clear response |
 | **Refactoring / cleanup** | Make the change, verify tests pass, keep behaviour identical |

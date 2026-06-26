@@ -77,6 +77,8 @@ Classify the issue the same way the drafter does — bug, incomplete feature, fe
 
 > "Body proposes X; @maintainer on 2026-05-10 settled on approach W — I'll plan toward W. Correct?"
 
+**If the issue is a bug, the plan must also close the coverage gap that let it escape.** Beyond fixing the defect, identify which existing test(s) *should* have caught it and why they didn't — the path/state/input the root cause exercises that no current test reaches, established by reading the existing tests at `plan_ref` (Step 5) — and lock a regression test that fails against the pre-fix code. The analysis goes in `## Coverage gap`; the test goes in `## Test plan`. Dimension 9 (Step 8) verifies both. This is what makes the bug *covered going forward*, not merely fixed.
+
 **Also classify whether the work is multi-phase.** Beyond the drafter's bug/feature/etc. axis, decide whether the implementation will fan out across **two or more phases that share one issue and one PR**. The canonical case is a measurement spike (substrate → harness → operator measurement → decision write-up), but any feature whose DoD reads as "first land X, then run Y, then post Z, then maybe ship code Q" is multi-phase. The rule of thumb that distinguishes it from an Epic:
 
 - **Multi-phase issue** — one issue, one branch, one accumulating PR; phases live as ticked entries in the PR body's `## Phase tracker`. The plan describes the phases via the `## Phases` section in Step 7's schema. The resolver opens the PR in draft and re-enters once per phase.
@@ -92,7 +94,7 @@ When in doubt: if the phases produce distinct trackable user-facing deliverables
 **Scale to the work.** Planning has a cost, and over-planning a trivial change is its own failure mode. Judge honestly:
 
 - **One-line bug fix / typo / pure doc edit** → no plan needed. Say so and route the user straight to the resolver. Don't manufacture a plan just to have one.
-- **Small, well-understood bug** → a short plan (Approach + Changes + Test plan) is enough; skip the sections that would be empty.
+- **Small, well-understood bug** → a short plan (Approach + Changes + Test plan + Coverage gap) is enough; skip the sections that would be empty. The `## Coverage gap` analysis (Dimension 9) is not optional for a bug — even a small fix must say what test gap let it ship.
 - **Feature, incomplete feature, standalone story, multi-phase issue** → the full machinery below. (An epic uses Step 11; a story under an open epic uses Just-in-time story planning — see "Route by shape" above.) These are where a captured, verified plan earns its keep.
 
 ## Step 4: Ingest research (the dossier) and external sources
@@ -184,7 +186,7 @@ Use this schema verbatim — the resolver and pr-evaluator parse these section h
 
 `<plan-ref>@<short-sha>` records the integration target the plan was built against, giving the resolver's step-4.6 currency check both the branch and the commit: `origin/main` for a regular issue, or the **full, un-truncated** `epic/<N>-<slug>` branch for an epic or a story under an epic. Don't elide the branch to `epic/<N>-…` — it is also the resolver's PR base.
 
-**See [`references/plan-schema.md`](references/plan-schema.md) for the verbatim `<!-- implementation-plan:v1 -->` schema** — the ordered section headings the resolver and pr-evaluator parse (`## Approach`, `## Doc grounding`, `## Architecture decisions`, `## UI decisions`, `## Changes`, `## Data model / schema impact`, `## Test plan`, `## Phases`, `## External sources consulted`, `## Deviations from project docs`, `## Risks & watchpoints`) and the closing provenance footer. Use it verbatim; omit optional sections when empty, never pad. The `## Phases` per-key semantics (`kind` / `ships` / `closes-dod` / `deliverable` / `depends-on`) are detailed below.
+**See [`references/plan-schema.md`](references/plan-schema.md) for the verbatim `<!-- implementation-plan:v1 -->` schema** — the ordered section headings the resolver and pr-evaluator parse (`## Approach`, `## Doc grounding`, `## Architecture decisions`, `## UI decisions`, `## Changes`, `## Data model / schema impact`, `## Test plan`, `## Coverage gap`, `## Phases`, `## External sources consulted`, `## Deviations from project docs`, `## Risks & watchpoints`) and the closing provenance footer. Use it verbatim; omit optional sections when empty, never pad. The `## Phases` per-key semantics (`kind` / `ships` / `closes-dod` / `deliverable` / `depends-on`) are detailed below.
 
 For a **multi-phase issue** (Step 3's classification), the `## Phases` section above is **load-bearing for the resolver and the evaluator** — its structured bullets are how both consumers route work without re-parsing prose. Required keys per phase:
 
@@ -228,6 +230,7 @@ Everything else gets pinned in the plan:
 - the **choice between competing implementation patterns** when more than one is plausible — name the rejected alternatives and why, so a future reader doesn't re-open the question
 - the file path of every new test file; the suite/`// MARK: -` section for every new test added to an existing file
 - the **assertion intent** of each new test (what it asserts, not its exact code)
+- for a **bug fix**, the regression test that closes the coverage gap — its assertion must target the path the root cause exercises (named in `## Coverage gap`) and must be one the pre-fix code fails; a test that only asserts the fixed behavior in isolation is not a regression test
 - control-flow at every non-obvious branch point (e.g. *"on `.sessionCompleteIntent`, the switch arm is `case .sessionCompleteIntent: break`"*) — not the surrounding code, but the decision the branch encodes
 
 The test for whether something belongs in the plan: *would a competent implementer reading the plan cold have to pause and decide?* If yes, the plan decides it first. The earlier *"would re-litigation in review"* bar is too lax — by the time review fires, the round-trip cost is already paid.
@@ -265,16 +268,17 @@ Before showing the plan to the user, hand it to an isolated review sub-agent —
 
 **Invocation.** Spawn an `Explore` sub-agent with the prompt template at `references/plan-reviewer-prompt.md`, filling the `<<placeholders>>`: the plan body, `mode` (`draft` or `revise <N>`), `issue_number`, `repo_owner`/`repo_name`, `repo_root`, `plan_ref` (the git ref the plan was built against — `origin/main`, or the epic branch HEAD for a story under an open epic), `dimensions`, `external_sources`, `epic_plan` (for a just-in-time story-under-epic review, the parent epic's plan body — for Dimension 8; empty otherwise), and `epic_delivery_log` (that review's parent-epic `<!-- epic-delivery-log:v1 -->` comment, or `(none yet)`). The sub-agent runs **without** the conversation history — that isolation is what makes the review meaningful.
 
-**Dimensions.** Eight, defined in the prompt. Pass the subset that applies:
+**Dimensions.** Nine, defined in the prompt. Pass the subset that applies:
 
 | Type | Dimensions passed |
 |---|---|
-| Bug / feature / incomplete / standalone story (single-phase) | 1, 2, 3, 4, 6 |
+| Bug (single-phase) | 1, 2, 3, 4, 6, 9 |
+| Feature / incomplete / standalone story (single-phase) | 1, 2, 3, 4, 6 |
 | Story under an epic (just-in-time plan) | 1, 2, 3, 4, 6, 8 |
 | Multi-phase issue (Step 3 classification) | 1, 2, 3, 4, 6, 7 |
 | Epic-level plan | 1, 2, 3, 5, 6 |
 
-Dimensions: 1 doc/constitution coherence, 2 codebase coherence, 3 goal coherence (the changes + tests actually satisfy the issue's acceptance criteria / DoD), 4 implementation readiness, 5 **sequencing** (epic-level plan only — reads the epic plan's own `## Story contracts` to topologically check the `## Story breakdown` order; no longer needs every story planned), 6 precedent grounding, 7 **phase coherence** (multi-phase only — see below), 8 **epic-story coherence** (a just-in-time story plan checked against the parent epic plan's contracts — see below).
+Dimensions: 1 doc/constitution coherence, 2 codebase coherence, 3 goal coherence (the changes + tests actually satisfy the issue's acceptance criteria / DoD), 4 implementation readiness, 5 **sequencing** (epic-level plan only — reads the epic plan's own `## Story contracts` to topologically check the `## Story breakdown` order; no longer needs every story planned), 6 precedent grounding, 7 **phase coherence** (multi-phase only — see below), 8 **epic-story coherence** (a just-in-time story plan checked against the parent epic plan's contracts — see below), 9 **coverage-gap closure** (bug fixes only — see below).
 
 **Dimension 7 — phase coherence.** Fires when the plan has a `## Phases` section (multi-phase issues only — an epic uses `## Story contracts` with Dimensions 5/8 instead). The reviewer checks:
 
@@ -286,7 +290,9 @@ Dimensions: 1 doc/constitution coherence, 2 codebase coherence, 3 goal coherence
 
 **Dimension 8 — epic-story coherence.** Fires on a just-in-time story-under-epic review (the parent epic plan is passed as `<<epic_plan>>`, its delivery log as `<<epic_delivery_log>>`). The reviewer checks the story plan's `## Epic contract`: it delivers every contract the epic's `## Story contracts` assigns it (matching shape — BLOCKER on a miss); it consumes only contracts already recorded in the epic's `<!-- epic-delivery-log:v1 -->` comment **and with a shape matching what the log records as delivered** (out-of-sequence consumption, or a consumed shape that doesn't match the delivered shape, is a BLOCKER; a `Consumes: (none)` is always fine); and it doesn't contradict the epic `## Approach`. A Dimension-8 BLOCKER that traces to a wrong *epic* contract is remediated by the epic-plan **feedback edge** — stop and re-route to the planner on the epic in revise mode (don't reshape the story to fit a wrong contract, and don't run the epic revise inline mid-story-session); see "Just-in-time story planning".
 
-Pass the dimensions list to the reviewer prompt as the `<<dimensions>>` placeholder; its `Dimensions to check` line accepts `{1..8}`. For an epic-level review, pass the epic plan as `<<plan_body>>` (Dimension 5 reads its `## Story contracts`); for a just-in-time story-under-epic review, also fill `<<epic_plan>>` with the parent epic plan and `<<epic_delivery_log>>` with its `<!-- epic-delivery-log:v1 -->` comment so Dimension 8 can check the story's `## Epic contract` against the epic's `## Story contracts` and the delivery log.
+**Dimension 9 — coverage-gap closure.** Fires on a bug fix (the `Bug (single-phase)` row). The reviewer reads the plan's `## Coverage gap` against the root cause, the existing tests, and the regression test in `## Test plan`, all at `plan_ref`, and BLOCKs when: the named escape isn't real (a cited test already covers the path, or the escape is vague); the `Closed by:` regression test wouldn't have caught the bug (its assertion already holds against the pre-fix code, or it only asserts the fix in isolation); or an `Escape:` entry has no matching `Closed by:` (a named regression test, or a sanctioned `Closed by: (none)`). The full check is in `references/plan-reviewer-prompt.md`.
+
+Pass the dimensions list to the reviewer prompt as the `<<dimensions>>` placeholder; its `Dimensions to check` line accepts `{1..9}`. For an epic-level review, pass the epic plan as `<<plan_body>>` (Dimension 5 reads its `## Story contracts`); for a just-in-time story-under-epic review, also fill `<<epic_plan>>` with the parent epic plan and `<<epic_delivery_log>>` with its `<!-- epic-delivery-log:v1 -->` comment so Dimension 8 can check the story's `## Epic contract` against the epic's `## Story contracts` and the delivery log.
 
 **Loop control** — same shape as the drafter/resolver loops:
 
@@ -422,6 +428,7 @@ When the issue already has work in flight (a draft PR with shipped phases on its
 
 - **Don't plan an issue that isn't filed.** This skill plans existing issues. If the work isn't filed yet, route to `github-issue-drafter` first.
 - **Don't manufacture a plan for a trivial change.** A one-line fix doesn't need a plan; saying "this is trivial, go straight to the resolver" is the right answer, not a thin plan posted for form's sake.
+- **Don't fix a bug without closing the test gap that let it ship.** Repairing the defect and stopping leaves the same blind spot that hid it — the next regression on that path is just as invisible. For every bug, `## Coverage gap` must name which existing test should have caught it and why it didn't, and `## Test plan` must lock a regression test that fails against the pre-fix code (or, when the defect can't be reproduced in an automated test, `Closed by: (none)` naming that reason). "Add a regression test" deferred to the resolver with no gap analysis is the failure mode this prevents; Dimension 9 enforces it.
 - **Don't over-specify.** Lock decisions, not lines. A plan that transcribes the diff is brittle and wastes the resolver's judgment. Bind what would send implementation down the wrong path; leave the rest.
 - **Don't punt design decisions to the implementer.** Phrasings like "Resolver picks the shape", "either approach is acceptable", "we could go with X or Y", "TBD", "recommend X" leak into the plan when the planner is unsure but doesn't want to dig. The cost is a full plan round-trip: the resolver's audit catches the hedge as a dimension-4 BLOCKER, the user routes back to the planner, and the planner resolves the decision anyway — by reading the same code at the same ref it could have read the first time. Step 7.5's sweep exists to prevent exactly this. Either resolve the decision from precedent (read the file, cite the pattern), or surface it as a Decision gate (step 6.5). Never both leave it open and post.
 - **Don't deviate silently.** Any departure from architecture / architecture-notes / ui-design / precedent goes through the step-6 user gate and is recorded in `## Deviations`. A constitution violation isn't a deviation — reshape the plan or surface that the issue can't be built as written.

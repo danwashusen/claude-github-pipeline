@@ -87,15 +87,34 @@ pipeline actively enforces**:
 - the evaluator soft-rejects a PR whose diff violates the rule or ships failing/skipped tests.
 
 So putting a **thorough automated-testing mandate** in the constitution is how you make testing
-non-optional everywhere downstream. Make it specific enough to check, e.g. (Rails 8.1):
+non-optional everywhere downstream.
 
-> **§5 Testing.** Every behavior change ships with automated tests. Service / domain objects:
-> cover every public method, success and failure paths. User-facing flows: a Minitest system
-> test. CI runs the full suite on every push; a PR with a failing or skipped test does not merge.
+Frame it as a **discipline, not just a coverage number.** The core discipline is **TDD**, applied
+as a practical middle ground:
 
-State the *bar* (what coverage, which layers, the no-skip / no-merge-on-red rule) in one block —
-not how to write tests. The test *framework and fixture style* are a default and live in
-`architecture.md §10`; the **non-negotiable bar** lives here.
+- **Test-first** for **core domain/business logic** (the layer §1 names) and **every bug fix** —
+  for a bug, a test that **reproduces the defect** (fails before the fix, passes after).
+- **Test-after is fine** for exploratory spikes and thin glue code. This is not a deviation: the
+  universal bar — every behavior change ships with tests, no merge on red/skip — still covers all
+  of it; test-first is simply the *scope* where it's mandatory, the same way "raw SQL only inside
+  `app/queries/`" is a scoped rule, not a deviable preference.
+
+**State the rule as the checkable artifact, not the unobservable order.** A diff can't show a test
+was written *first*, so don't make "write the test first" the rule — a reviewer can't gate on it
+(see Anti-patterns). Name test-first as the discipline, and gate on what *is* visible in the diff:
+a bug fix carries a reproducing test; a core-logic change carries success- and failure-path tests.
+Make it specific enough to check, e.g. (Rails 8.1):
+
+> **§5 Testing.** Core domain/business logic and bug fixes are developed test-first; a bug fix
+> ships a test that reproduces the defect (fails without the fix). Every behavior change ships with
+> automated tests; service/domain objects cover every public method on success and failure paths;
+> user-facing flows get a system test; exploratory/glue code may be tested after. CI runs the full
+> suite on every push; a PR with a failing or skipped test does not merge.
+
+State the *bar* — the discipline and the artifact it must leave behind (what coverage, which
+layers, the test-first scope, the no-skip / no-merge-on-red rule) — in one block; not how to write
+the tests. The test *framework and fixture style* are a default and live in `architecture.md §10`;
+the **non-negotiable bar** lives here.
 
 ## What belongs here vs. the sibling docs
 
@@ -118,7 +137,8 @@ for *your* project; do not copy the whole list. Common categories (one line each
 - **Layers / dependencies** — what may depend on what (cited as `§2` by the planner).
 - **Persistence** — migration discipline, encryption of sensitive fields, where raw queries may live.
 - **Secrets** — never in source, logs, or plaintext storage.
-- **Testing** — the coverage bar and the no-merge-on-red rule (see above).
+- **Testing** — the test-first discipline (core logic + bug fixes), the coverage bar, and the
+  no-merge-on-red rule (see above).
 - **Logging / observability** — no PII in logs; use the structured logger.
 - **Background work** — idempotency / retry-safety expectations.
 - **Authorization** — default-deny; every entry point authorizes.
@@ -141,9 +161,11 @@ Non-negotiable rules. A change that violates one is rejected, not negotiated. Ra
 §3  Secrets. No credential, key, or token in source, logs, or the database in plaintext —
     use `Rails.application.credentials`.
 §4  Authorization. Every controller action authorizes the current user; default-deny.
-§5  Testing. Every behavior change ships with automated tests. Service/domain methods cover
-    success and failure paths; user-facing flows have a system test. CI runs the full suite on
-    every push; a PR with a failing or skipped test does not merge.
+§5  Testing. Core domain logic and bug fixes are developed test-first; a bug fix ships a test
+    that reproduces the defect. Every behavior change ships with automated tests; service/domain
+    methods cover every public method on success and failure paths; user-facing flows have a
+    system test (glue/exploratory may be tested after). CI runs the full suite on every push; a
+    PR with a failing or skipped test does not merge.
 §6  Logging. No PII in logs; use the structured logger, never `puts`/`p` in app code.
 §7  Background work. Jobs are idempotent and retry-safe; none assumes exactly-once delivery.
 ```
@@ -157,7 +179,8 @@ That's the whole file. Anything you're tempted to add past this is probably a *d
 - [ ] The whole file fits on roughly one screen.
 - [ ] Every rule is prescriptive and checkable against a diff.
 - [ ] Rules are numbered; the numbering is stable.
-- [ ] A **thorough automated-testing rule** is present (coverage bar + no-merge-on-red).
+- [ ] A **thorough automated-testing rule** is present: the test-first discipline (core logic +
+      bug fixes, reproducing test for bugs), the coverage bar, and no-merge-on-red.
 - [ ] No rationale prose (it's in `architecture-notes.md`); no version-specific defaults (they're
       in `architecture.md`); no build/test commands (they're in `CLAUDE.md` marker blocks).
 
@@ -178,3 +201,6 @@ comply — the planner stopping rather than offering a deviation. A planner that
 - **Aspirational, uncheckable rules** ("code should be clean") → can't gate a diff against them.
 - **Omitting the testing bar** → the pipeline has nothing to enforce, and test coverage becomes
   optional everywhere downstream.
+- **Mandating test-first as an unverifiable process** ("the test must be written first") → a diff
+  can't show ordering; state the checkable artifact instead (a bug fix carries a reproducing test;
+  core-logic changes carry success- and failure-path tests).
