@@ -128,16 +128,29 @@ The §3 `GATHER_PR` already fetched the health-cache marker (its `marker_comment
 
 If a cache comment was found, parse the `SHA:` line from its body and compare to `HEAD_SHA`:
 
-- **SHA matches `HEAD_SHA`** → the branch hasn't changed since the last check. Parse `HEALTH_OK` from the body (true if the first line contains "all green ✅", false if "failed ❌"). Parse the `TIER:` line if present (`targeted` or `full`); a comment without a `TIER:` line is from a pre-targeting cache and is interpreted as `full`. Set `HEALTH_BODY` to "Health check: re-using cached result at `<short-sha>` (tier: `<tier>`)." Skip directly to step 6. (Note: if the cached tier is `targeted` and the user has explicitly asked for the full canonical suite this run — e.g., "re-evaluate PR #X with full" — treat the cache as a miss instead. This is rare and only triggered by explicit user direction; ordinary re-evaluations honour the cache as-is.)
+- **SHA matches `HEAD_SHA`** → the branch hasn't changed since the last check. Parse `HEALTH_OK` from the body's first-line state: `true` if it contains "all green ✅" **or** "local-green over red CI ⚠️" (the operator-override outcome from §5.6's discrepancy gate); `false` if "failed ❌". Parse the `TIER:` line if present (`targeted` or `full`); a comment without a `TIER:` line is from a pre-targeting cache and is interpreted as `full`. Set `HEALTH_BODY` to "Health check: re-using cached result at `<short-sha>` (tier: `<tier>`)." — but on the "local-green over red CI ⚠️" token use "Health check: ⚠️ re-using cached result at `<short-sha>` — local gate green over red CI; operator approved (tier: `<tier>`)." so the §7 verdict still surfaces the discrepancy. Skip directly to step 6. (Note: if the cached tier is `targeted` and the user has explicitly asked for the full canonical suite this run — e.g., "re-evaluate PR #X with full" — treat the cache as a miss instead. This is rare and only triggered by explicit user direction; ordinary re-evaluations honour the cache as-is.)
 - **SHA differs (stale)** → record `OLD_CACHE_ID` from the comment. You'll delete the stale comment in step 5.6 before posting the new one. Continue to 5.3.
 
 If no cache comment exists, continue to 5.3.
 
-#### 5.3 GitHub CI shortcut
+#### 5.3 GitHub CI gate
 
-Check `statusCheckRollup` from the step 3 fetch. If it is a non-empty array and every entry's `conclusion` (or `state`) is `SUCCESS`, the branch has already been verified by CI at this SHA. Set `HEALTH_OK=true`, source as "GitHub statusCheckRollup", and jump to 5.6 to write the cache comment.
+`statusCheckRollup` from the step 3 fetch is the CI state at `HEAD_SHA`. A non-empty rollup means the project has CI configured for this branch. Classify it:
 
-If the rollup is empty or contains any non-success entry (pending, failure, neutral, cancelled), continue to 5.4. Repos with no GitHub Actions always have an empty rollup and always fall through here.
+- **Empty rollup** → no CI registered for this SHA. Continue to 5.4 and let the local gate decide. Repos with no GitHub Actions always have an empty rollup; a run that hasn't registered yet is indistinguishable from no-CI in this snapshot and is treated the same way — that's why empty means "local gate", never "wait for CI".
+- **Non-empty with at least one entry still running** (check-run `status` `QUEUED`/`IN_PROGRESS` — i.e. not `COMPLETED` — or status-context `state` `PENDING`, or a null `conclusion`) → **CI is configured and hasn't finished. Wait for it to finish before deciding** — run the "Wait for pending CI" procedure — then re-classify on the settled rollup.
+- **Non-empty, every entry terminal and success-equivalent** — each entry's `conclusion` is `SUCCESS`, `SKIPPED`, or `NEUTRAL` (or its status-context `state` is `SUCCESS`) → CI has verified the branch at this SHA. `SKIPPED`/`NEUTRAL` are non-blocking for branch protection (a path-filtered or conditional job that no-ops is normal), so they don't count against green. Set `HEALTH_OK=true`, source as "GitHub statusCheckRollup", and jump to 5.6 to write the cache comment.
+- **Non-empty, all terminal, at least one entry failing** (`conclusion`/`state` of `FAILURE`, `ERROR`, `CANCELLED`, `TIMED_OUT`, `ACTION_REQUIRED`, `STARTUP_FAILURE`, or `STALE`) → CI is **red** at this SHA. Set `CI_RED=true` and record the failing check name(s) as `CI_FAIL_CHECKS`, then continue to 5.4 — the local gate independently recomputes branch health rather than the evaluator approving (or hard-failing) on the CI result alone, and §5.6's discrepancy gate reconciles the two before the verdict.
+
+**Wait for pending CI.** Tell the user the verdict is held until CI settles (status line: `Waiting for CI to finish at \`<short-sha>\` — <n> check(s) pending…`). Then block on CI from the **main loop** — a direct `gh` read, like the §8 `gh api` merge-config call. Do **not** route this through `github-ops`: the cheap Sonnet executor must not be held open for a long blocking watch. Route the watch's redraw output to a scratch log so its polling cycles don't flood context:
+
+```bash
+mkdir -p "/tmp/gh-pr-eval-<N>"
+gh pr checks <PR-number> --repo <owner/repo> --watch --interval 30 \
+  > "/tmp/gh-pr-eval-<N>/ci-watch.log" 2>&1
+```
+
+`--watch` returns once **every** check reaches a terminal state. The wait is **unbounded**: if the harness interrupts the command before it returns (a CI run longer than the Bash tool timeout), re-invoke it to resume — keep re-invoking until it returns. When it returns, re-read the rollup once — `gh pr view <PR-number> --repo <owner/repo> --json statusCheckRollup` — and re-apply this §5.3 classification to the fresh value (now no entry is pending). If the PR head advanced during the wait (a new push), re-resolve `HEAD_SHA` (§5.1) and re-enter §5.2 first, so the cache and gate key on the SHA actually under test.
 
 #### 5.4 Discover this repo's health-check blocks
 
@@ -179,7 +192,7 @@ Read all three blocks once and remember them for the rest of this step.
 - **Skip for now** — set `HEALTH_OK=null` and proceed without running a local gate.
 - **I'll specify commands** — use the auto-appended "Other" free-text choice to type the exact commands to run for this branch.
 
-If the user supplies commands (via the "Other" free-text answer), use them for this run as a flat command list (skip the sub-agent step). After a green result, offer to add the static-checks block — but do not write to it without explicit confirmation. If the user opts to skip, set `HEALTH_OK=null`, `HEALTH_BODY="Health check: skipped — no static-checks block found."`, and jump to step 6.
+If the user supplies commands (via the "Other" free-text answer), use them for this run as a flat command list (skip the sub-agent step). After a green result, offer to add the static-checks block — but do not write to it without explicit confirmation. If the user opts to skip: when §5.3 set `CI_RED=true`, the branch already has a known-red CI and no local gate to clear it — set `HEALTH_OK=false` and `HEALTH_BODY="Health check: ❌ CI red at \`<short-sha>\` (\`<CI_FAIL_CHECKS>\`); local gate skipped."` so §7 hard-blocks the red branch. Otherwise set `HEALTH_OK=null`, `HEALTH_BODY="Health check: skipped — no static-checks block found."`. Jump to step 6 either way.
 
 #### 5.5 Run the gate
 
@@ -276,11 +289,16 @@ On non-zero exit: set `HEALTH_OK=false`. Capture the last 50 lines as `FAIL_TAIL
 
 #### 5.6 Write the cache comment
 
+**CI / local discrepancy gate.** Runs first, only when §5.3 set `CI_RED=true` and a local gate actually ran. (The §5.4 skip fallback handles `CI_RED` inline — known-red CI with no local gate to clear it → `HEALTH_OK=false` — and jumps to step 6 without reaching here.) Both §5.5 outcomes converge here; `HEALTH_OK` is `true` or `false` (never `null`) on these paths:
+
+- **Local gate also red** (`HEALTH_OK==false`) → CI and the local gate agree; no operator gate. The first-line state stays "failed ❌"; record in the cache comment and `HEALTH_BODY` that CI was red too (`CI_FAIL_CHECKS`).
+- **Local gate green** (`HEALTH_OK==true`) → CI and the local gate **disagree**. Highlight it and confirm with the operator before finalizing health, per [`../_shared/asking-the-user.md`](../_shared/asking-the-user.md): `AskUserQuestion` (`header: "CI vs local"`; question names the failing CI checks and the green local result, e.g. "CI is red at `<short-sha>` (`<CI_FAIL_CHECKS>`) but the local gate passed. How should I treat branch health?") with options **Trust local gate** (keep `HEALTH_OK=true`; proceed to issue-fit — stamp the cache comment's first-line state as "local-green over red CI ⚠️" so §5.2 re-derives `HEALTH_OK=true` with the warning on re-evaluation, and record in the review body that CI was red and the operator approved on the local result) / **Treat as red** (set `HEALTH_OK=false`, first-line state "failed ❌"; §7 hard-blocks approval, citing the failing CI checks). Record the chosen outcome in `HEALTH_BODY` and the cache comment so the §7 verdict and the human reviewer see the reconciliation.
+
 Compose the comment body:
 
 ```
 <!-- pr-evaluator-health-cache:v1 -->
-**Health checks** at `<short-sha>` — <all green ✅ | N failed ❌> — <ISO-8601 UTC timestamp>
+**Health checks** at `<short-sha>` — <all green ✅ | N failed ❌ | local-green over red CI ⚠️> — <ISO-8601 UTC timestamp>
 
 SHA: <full-sha>
 TIER: <targeted | full>
@@ -319,6 +337,8 @@ Capture the resulting comment URL for use in `HEALTH_BODY`. That URL confirms th
 Set `HEALTH_BODY`:
 - All green: `"Health check: ✅ all green at \`<short-sha>\` (<source>)"`
 - Any failure: `"Health check: ❌ failed at \`<short-sha>\` — \`<failing-command>\` ([see cache comment](<comment-url>))"`
+- CI red, operator trusted local gate (discrepancy gate, **Trust local gate**): `"Health check: ⚠️ local gate green but CI red at \`<short-sha>\` (\`<CI_FAIL_CHECKS>\`) — operator approved on the local result ([see cache comment](<comment-url>))"`
+- CI red and local gate also red: `"Health check: ❌ failed at \`<short-sha>\` — local \`<failing-command>\` and CI (\`<CI_FAIL_CHECKS>\`) ([see cache comment](<comment-url>))"`
 
 Do not post a cache comment when the user opted to skip (5.4 fallback).
 
