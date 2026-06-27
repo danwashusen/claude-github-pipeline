@@ -64,8 +64,9 @@ provided in Inputs as an absolute path):
   classification rubric) and §10.6 (the pre-push verification gate)
 - `<RESOLVER_DIR>/references/retry-ladder.md` for
   the retry-ladder section
-- `<RESOLVER_DIR>/references/follow-up-tracking.md`
-  for the follow-up filing protocol
+- `<RESOLVER_DIR>/references/follow-up-tracking.md` for the follow-up
+  registry / timing, and `<RESOLVER_DIR>/../_shared/follow-up-filing.md`
+  for the drafter-proxy filing protocol it cites
 
 Apply them as written.
 
@@ -84,6 +85,13 @@ Steps (one pass — no inner loop):
 3. If a Decision-required item is present, trip the `architectural` guard
    rail immediately — return without making changes; the main loop asks
    the user and re-dispatches you with the answer in `prior_decisions`.
+   Likewise, if a Grounding-violation (in-scope) item is present that is
+   **not** addressable on this PR, trip the `grounding_violation` guard
+   rail the same way. When a finding matches **both** Decision-required and
+   Grounding-violation, trip `grounding_violation` — a hard block outranks
+   a soft approval gate (§10.4). (A Grounding-violation item that *is*
+   addressable on this PR was reclassified Addressable in step 2 and is
+   fixed in step 5; it is never filed as a follow-up.)
 4. Deadlock check. If any item in the current verdict matches a summary
    in the `prior_addressed_items` input (same file, same surface, same
    suggested change with no acknowledgement of your prior fix), trip the
@@ -91,7 +99,10 @@ Steps (one pass — no inner loop):
 5. Address every Addressable and Cheap-fix-override item. File every
    Explicitly-deferred item via the "Follow-up issue tracking" sub-agent
    protocol (urgency `file-now`, type per the reviewer's framing) and
-   capture the returned URLs for the return summary.
+   capture the returned URLs for the return summary. Never file a
+   Grounding-violation item — by step 3 it is either reclassified
+   Addressable (fixed here) or already returned via the
+   `grounding_violation` guard rail.
 6. If steps 5 produced no edits (zero Addressable items, zero
    Cheap-fix-override items), skip steps 7–9 and return immediately with
    `status: "iteration_complete"` and empty `items_addressed`. The main
@@ -134,6 +145,18 @@ without re-hitting the same gate and without re-running `review`.
   still red. Return a decision_request — `kind: "verification_failure"`,
   `header: "Tests red"`, options: "Push with reds" / "Defer the tests" /
   "Restructure" per the retry-ladder Escalation section.
+- Grounding violation (in-scope), not addressable here. A finding cites a
+  diff that violates a documented constraint the issue/epic kept in-scope
+  (§10.4's Grounding-violation bucket), and the fix can't ship on this PR
+  (an integration PR of already-merged code, or it needs a plan/story).
+  Don't file it — this is a hard block. Return a decision_request —
+  `kind: "grounding_violation"`, `header: "Grounding"`, with options
+  generated from the routes available (no defer/ship option — the
+  violation must not reach the integration target): "Re-plan" (route to
+  `github-issue-planner` to revise the plan — for an epic the planner
+  scopes the missing in-scope work as a story) and "Abort". Each
+  `description` carries the violated doc citation and the in-scope
+  evidence.
 
 Note: the 5-iteration cap is no longer a sub-agent guard rail. The main
 loop tracks iterations and asks the user when the cap fires.
@@ -143,7 +166,8 @@ Return ONLY this JSON (no prose around it):
 {
   "status": "iteration_complete" | "needs_decision" | "aborted",
   "decision_request":
-    {"kind": "deadlock" | "architectural" | "verification_failure",
+    {"kind": "deadlock" | "architectural" | "verification_failure"
+       | "grounding_violation",
      "question": "the full question text the user will see",
      "header": "<=12-char header per the guard rail / escalation>",
      "options": [
@@ -171,7 +195,8 @@ Return ONLY this JSON (no prose around it):
     {"summary": "one-line note for the resolver to capture in §11"}
   ],
   "user_decisions": [
-    {"trigger": "deadlock" | "architectural" | "verification-failure",
+    {"trigger": "deadlock" | "architectural" | "verification-failure"
+       | "grounding-violation",
      "prompt": "the question text the user saw",
      "answer": "the user's selected option / free-text"}
   ]
