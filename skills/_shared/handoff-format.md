@@ -10,6 +10,7 @@ This file is the single source of truth for the schema, the omission rules, and 
 ## Handoff
 
 **Issue:** #N — <title> · <state> · <type> · research: <✓ | ✗ | stale> · plan: <✓ | ✗ | stale>
+**Grounding:** read at <plan-ref>@<short-sha> · <docs the plan was built on, with §refs> · external: <sources> · full detail in the plan's ## Doc grounding
 **PR:** #M — <title> · <state> · base <ref> · review: <verdict | not run> · health: <✅/❌ at <short-sha> | not run> · merge: <strategy → <ref>@<short-sha> | skipped (<reason>) | not run>
 **Cleanup:** <one-line worktree / branch / scratch summary>
 
@@ -29,6 +30,7 @@ The block is always present on a clean exit. Lines are omitted (not blanked, not
   - Epic in any role (drafter Epic batch, planner Epic plan, evaluator on an Epic integration PR) → `Epic:`. Add a `Stories:` line listing the child stories with their state markers.
   - A story under an Epic (evaluator after a story PR merges, resolver working on a story) → `Story:` for the story plus an `Epic:` line for the parent's progress (e.g. `open (3 of 5 stories closed)`).
 - **`research:`** — the research-dossier marker, placed before `plan:` on the `Issue:` / `Story:` line. Present on the researcher's own clean exits (`✓` dossier posted, `✗` judged nothing-to-research) and carried forward on any later skill's handoff for an issue that has a dossier (e.g. the planner shows `research: ✓` once it has ingested one). **Omitted entirely** on issues that never went through the researcher — so the drafter's renderings, and the planner / resolver / evaluator renderings on dossier-less issues, are unchanged. When the marker carries a URL (the researcher's clean exit), append it in parentheses like `plan:` does.
+- **`Grounding:`** — planner-only, and only on clean exits that **posted a plan**. Opens with `read at <plan-ref>@<short-sha>` — the integration ref the docs were read at (the same `<plan-ref>@<short-sha>` the plan footer records), so the reader knows *which branch's* version of those docs grounded the plan (the same section can differ between `main`, an epic branch, and a PR head). Then lists the project docs (with §refs) the plan was grounded on, summarized from the plan's `## Doc grounding`, plus — when present — the external sources from `## External sources consulted` as a `· external: <sources>` segment, and a pointer to the plan's `## Doc grounding` for the full reasoning. Omitted when no plan was posted (the planner's trivial-change and knowledge-gap re-route exits, both `plan: ✗`) and when the plan grounded against no docs (no `## Doc grounding` section). It is **free-form text, not a state marker** — so it has no entry in the closed-set state-marker vocabulary table.
 - **`PR:`** — omit entirely when no PR exists. Drafter clean exits and the planner's plan-comment-only clean exits skip this line. Resolver clean exits always have a PR. Evaluator clean exits always have a PR.
 - **`Cleanup:`** — evaluator-only, and only after the merge ran (§14's worktree teardown / removal / scratch purge sequence has executed). Omit on the evaluator's no-merge branches (soft-reject, DIRTY/BLOCKED-skip, operator-deferred merge, operator Needs-Revision / Reject) and on every other skill's clean exit.
 - **Fenced next-action block** — replaced with the literal `(terminal — no follow-up skill)` for terminal endings (evaluator clean merge of a standard PR, evaluator clean merge of an Epic integration PR). The `Why:` line still appears and explains why the pipeline ends here.
@@ -77,7 +79,7 @@ When the work shape involves an Epic, the heading line and supporting state expa
   **Epic:** #150 — Chat & session UX polish · open (1 of 5 stories closed)
   ```
 
-The PR / Cleanup / Next / Why lines follow the standard rules.
+The Grounding / PR / Cleanup / Next / Why lines follow the standard rules. When the planner posts an Epic plan, `Grounding:` follows the `Stories:` line; for a story plan, it follows the parent `Epic:` line.
 
 ## Terminal endings
 

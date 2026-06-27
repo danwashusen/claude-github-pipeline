@@ -10,6 +10,7 @@ Every clean run of the planner ends with a single `## Handoff` block. The schema
 ## Handoff
 
 **Issue:** #142 — Add CSV export · open · feature · plan: ✓ (https://github.com/owner/repo/issues/142#issuecomment-XXXXX)
+**Grounding:** read at origin/main@a1b2c3d · docs/architecture.md §3 (service layer), §7 (export pipeline); docs/constitution.md §6 (logging) · external: RFC 4180 CSV spec (fetched 2026-06-20) · full detail in the plan's ## Doc grounding
 
 **Next:** implement the plan in a fresh session.
 
@@ -18,13 +19,14 @@ Every clean run of the planner ends with a single `## Handoff` block. The schema
 **Why:** the plan locks architecture, file-level changes, layer assignments, and test strategy. The resolver executes against it and opens the PR; if implementation reveals a locked decision is wrong, it will re-route back here in revise mode.
 ```
 
-**Epic plan posted (contracts + sequencing pinned); stories planned just-in-time.** Forward to the **planner** on the first story in dependency order — each story's full plan is authored just-in-time against current epic HEAD, not up front. The Epic's `## Story breakdown` names the order (top-to-bottom); pick the head of it.
+**Epic plan posted (contracts + sequencing pinned); stories planned just-in-time.** Forward to the **planner** on the first story in dependency order — each story's full plan is authored just-in-time against current epic HEAD, not up front. The Epic's `## Story breakdown` names the order (top-to-bottom); pick the head of it. The `Grounding:` ref is `origin/main` here — the bootstrap case, before the `epic/<N>-<slug>` branch exists (it's created when the first story is implemented); a later epic *re-plan*, once the branch exists, grounds at `epic/<N>-<slug>@<sha>` instead.
 
 ```
 ## Handoff
 
 **Epic:** #150 — Chat & session UX polish · open · epic · plan: ✓
 **Stories:** #151, #152, #153, #154, #155 (5 filed, dependency-ordered, contracts pinned · plans authored just-in-time)
+**Grounding:** read at origin/main@b2c3d4e · docs/architecture.md §2 (layer rules), §5 (session model); docs/ui-design.md §4 (chat-size model); docs/constitution.md §2 (layering) · full detail in the plan's ## Doc grounding
 
 **Next:** plan the first story in dependency order, just-in-time, in a fresh session.
 
@@ -40,6 +42,7 @@ Every clean run of the planner ends with a single `## Handoff` block. The schema
 
 **Story:** #151 — Add export service · open · story · plan: ✓ (https://github.com/owner/repo/issues/151#issuecomment-XXXXX)
 **Epic:** #150 — Chat & session UX polish · open (0 of 5 stories closed)
+**Grounding:** read at epic/150-chat-ux@c3d4e5f · docs/architecture.md §3 (service layer); docs/constitution.md §8 (schema/migrations) · full detail in the plan's ## Doc grounding
 
 **Next:** implement the story in a fresh session.
 
@@ -48,13 +51,14 @@ Every clean run of the planner ends with a single `## Handoff` block. The schema
 **Why:** #151's plan was authored just-in-time against `epic/150-chat-ux` HEAD and checked against the epic's `## Story contracts` (Dimension 8). The resolver opens a PR targeting the epic branch; when it merges, the evaluator hands off to plan the next story just-in-time.
 ```
 
-If the Epic ran but the child stories weren't filed yet (Step 11's "stop after the epic-level plan" branch), the next step is the drafter — that's a forward route to file the stories, then the user re-runs the planner on the Epic:
+If the Epic ran but the child stories weren't filed yet (Step 11's "stop after the epic-level plan" branch), the next step is the drafter — that's a forward route to file the stories, then the user re-runs the planner on the Epic. As with the epic-plan rendering, `Grounding:` reads at `origin/main` — bootstrap, before the epic branch exists:
 
 ```
 ## Handoff
 
 **Epic:** #150 — Chat & session UX polish · open · epic · plan: ✓ (https://github.com/owner/repo/issues/150#issuecomment-XXXXX)
 **Stories:** plain bullets (not yet filed as issues)
+**Grounding:** read at origin/main@d4e5f6a · docs/architecture.md §2 (layer rules), §5 (session model); docs/ui-design.md §4 (chat-size model) · full detail in the plan's ## Doc grounding
 
 **Next:** file the child stories in a fresh session, then re-run the planner on the Epic.
 
@@ -97,6 +101,7 @@ If the Epic ran but the child stories weren't filed yet (Step 11's "stop after t
 ## Handoff
 
 **Issue:** #142 — Add CSV export · open · feature · plan: ✓ (https://github.com/owner/repo/issues/142#issuecomment-YYYYY)
+**Grounding:** read at issue-142-add-csv-export@e5f6a7b · docs/architecture.md §3 (service layer), §7 (export pipeline); docs/constitution.md §6 (logging) · full detail in the plan's ## Doc grounding
 
 **Next:** resume implementation in a fresh session.
 
