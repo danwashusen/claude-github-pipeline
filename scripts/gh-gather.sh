@@ -13,6 +13,9 @@
 #   { "issue": <gh issue view json>,
 #     "marker_comment": { "id", "url", "body" } | null,
 #     "marker_comment_count": <int>,        # >1 means the caller must disambiguate
+#     "deps_available": <bool>,             # false = native deps unavailable (gh/repo); degrade to prose
+#     "blocked_by": [ <gh dep node> ],      # native "blocked by" issues ([] when none/unavailable)
+#     "blocking":   [ <gh dep node> ],      # native "blocking" issues
 #     "open_prs": [ ... ] }
 #
 # When [scratch-dir] is provided, the issue body + full comment thread + marker
@@ -26,6 +29,7 @@
 #     marker_comment_present, marker_comment_id?, marker_comment_url?,
 #     marker_comment_path?, marker_comment_bytes?,
 #     marker_comment_count,
+#     deps_available, blocked_by, blocking,
 #     open_prs }
 # Marker bodies can be very large (planner-authored implementation plans can
 # exceed 25 KB), so they get the same write-through treatment as the issue body.
@@ -45,8 +49,33 @@ REPO="$2"
 MARKER="${3:-}"
 SCRATCH_DIR="${4:-}"
 
-issue_json="$(gh issue view "$ISSUE" --repo "$REPO" \
-  --json number,title,body,state,labels,author,createdAt,updatedAt,assignees,milestone,url)"
+# Base fields are always available. The native issue-dependency fields
+# (blockedBy, blocking) need gh >= 2.95 AND the repo to have the dependencies
+# feature enabled, so capability-gate: try with them, fall back without on older
+# gh / unsupported repos. deps_available records which path ran so callers can
+# degrade to prose linking (Related to #N / Blocked by #N in the body) when the
+# native relationships aren't retrievable.
+BASE_FIELDS="number,title,body,state,labels,author,createdAt,updatedAt,assignees,milestone,url"
+deps_errfile="$(mktemp)"
+if issue_json="$(gh issue view "$ISSUE" --repo "$REPO" --json "$BASE_FIELDS,blockedBy,blocking" 2>"$deps_errfile")"; then
+  deps_available="true"
+  rm -f "$deps_errfile"
+elif grep -qiE 'unknown (json )?field' "$deps_errfile"; then
+  # Feature genuinely absent — old gh, or a repo without the issue-dependencies
+  # feature — so gh rejects the field. Degrade to the base field set and tell
+  # callers (via deps_available) to fall back to prose linking.
+  rm -f "$deps_errfile"
+  issue_json="$(gh issue view "$ISSUE" --repo "$REPO" --json "$BASE_FIELDS")"
+  deps_available="false"
+else
+  # Any OTHER failure (network blip, auth, rate-limit, bad issue/repo) MUST surface.
+  # Silently degrading here would set deps_available=false on a supported repo and
+  # drop a real native blocker — defeating the resolver/evaluator hard-gate on
+  # blocked_by. Fail loudly instead of returning a clean-but-wrong envelope.
+  cat "$deps_errfile" >&2
+  rm -f "$deps_errfile"
+  exit 1
+fi
 
 open_prs_json="$(gh pr list --repo "$REPO" --state open --search "$ISSUE in:body" \
   --json number,title,author,isDraft,headRefName,url,updatedAt)"
@@ -73,6 +102,12 @@ else
   comments_json="[]"
 fi
 
+# Native dependency relationships, surfaced at top level for callers that
+# don't want to dig into the raw issue object. Empty arrays when deps_available
+# is false (the fields aren't on issue_json) or when there are none.
+blocked_by_json="$(printf '%s' "$issue_json" | jq -c '(.blockedBy.nodes // [])')"
+blocking_json="$(printf '%s' "$issue_json" | jq -c '(.blocking.nodes // [])')"
+
 if [[ -z "$SCRATCH_DIR" ]]; then
   # Legacy inline envelope — fully backward compatible with callers that
   # don't yet pass scratch_dir.
@@ -80,10 +115,16 @@ if [[ -z "$SCRATCH_DIR" ]]; then
     --argjson issue "$issue_json" \
     --argjson open_prs "$open_prs_json" \
     --argjson markers "$comments_json" \
+    --argjson deps_available "$deps_available" \
+    --argjson blocked_by "$blocked_by_json" \
+    --argjson blocking "$blocking_json" \
     '{
        issue: $issue,
        marker_comment: ($markers | if length > 0 then .[0] else null end),
        marker_comment_count: ($markers | length),
+       deps_available: $deps_available,
+       blocked_by: $blocked_by,
+       blocking: $blocking,
        open_prs: $open_prs
      }'
   exit 0
@@ -169,6 +210,9 @@ jq -n \
   --arg marker_url "$marker_url" \
   --argjson marker_bytes "$marker_bytes" \
   --arg marker_mode "$marker_mode" \
+  --argjson deps_available "$deps_available" \
+  --argjson blocked_by "$blocked_by_json" \
+  --argjson blocking "$blocking_json" \
   '{
      number: $issue.number,
      title: $issue.title,
@@ -187,7 +231,10 @@ jq -n \
      thread_comment_count: $thread_comment_count,
      thread_mode: $thread_mode,
      marker_comment_present: ($marker_count > 0),
-     marker_comment_count: $marker_count
+     marker_comment_count: $marker_count,
+     deps_available: $deps_available,
+     blocked_by: $blocked_by,
+     blocking: $blocking
    }
    + (if $body_mode == "inline"
       then { issue_body: $body_str }

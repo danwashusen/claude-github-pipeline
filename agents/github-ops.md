@@ -84,7 +84,8 @@ improvising.
    - `gh-gather.sh` for `GATHER_ISSUE`
    - `gh-pr-gather.sh` for `GATHER_PR`
    - `gh-persist.sh` for every `PERSIST_*` write (`PERSIST_CREATE`,
-     `PERSIST_BODY` in both `replace` and `pointer` modes,
+     `PERSIST_BODY` in both `replace` and `pointer` modes, `PERSIST_LINK`
+     for native issue-dependency changes, and
      `PERSIST_COMMENT` for all three targets — `issue`, `pr`,
      `pr-review`)
 
@@ -192,8 +193,15 @@ timestamps, URL, `inline_threshold_bytes`, then per-section
 `<section>_bytes`/`_mode` and the inline-vs-path key; plus
 `marker_comment_present`, `marker_comment_count`,
 `marker_comment_id`/`url`/`bytes`/`mode` when the marker exists; plus
+`deps_available`, `blocked_by`, `blocking`; plus
 `open_prs`. `marker_comment_count > 1` is still a `DECISION_NEEDED` for any
 operation that will delete the marker.
+
+`blocked_by` / `blocking` are GitHub's **native issue dependencies** (the
+lists of issues this one is blocked by / blocking). The script capability-gates
+the fetch: on a gh/repo without the feature, `deps_available` is `false` and
+both lists are `[]` — surface that verbatim so the caller degrades to prose
+linking. Report these faithfully; **never** infer or invent a dependency.
 
 If the caller passes `extra_json=<fields>` (e.g.
 `closedByPullRequestsReferences,projectItems`), run a supplementary
@@ -444,7 +452,7 @@ Return a `## RESULT` block with the issue URL, the `body_sha256` /
 `body_bytes` from the script envelope when a body change applied, and a
 brief note of what changed (body / title / labels).
 
-### `PERSIST_CREATE(repo, title, body_path, labels?)`
+### `PERSIST_CREATE(repo, title, body_path, labels?, blocked_by?, blocking?)`
 Mechanical issue creation once the caller has an approved title + body +
 labels. The caller stages the verbatim body to its own scratch dir before
 dispatching and passes the absolute path as `body_path`. Per rule 7, the
@@ -452,8 +460,17 @@ only execution path is the bundled script:
 
 ```bash
 ${CLAUDE_PLUGIN_ROOT}/scripts/gh-persist.sh create <repo> <body_path> \
-  --title "<title>" [--label <L>] [--label <L>] ...
+  --title "<title>" [--label <L>] [--label <L>] ... \
+  [--blocked-by <nums/urls>] [--blocking <nums/urls>]
 ```
+
+- **`blocked_by` / `blocking`** (optional): comma-separated issue numbers/URLs
+  the new issue is natively **blocked by** / **blocking** (GitHub's issue
+  dependencies). Pass them verbatim to `--blocked-by`/`--blocking`. The script
+  capability-gates: on a gh/repo without the feature it drops the flag and
+  prints `DEPS_UNSUPPORTED:` on stderr rather than failing the create — surface
+  that notice so the caller knows the relationship exists only in prose. You
+  set the relationships the caller names; you never decide what blocks what.
 
 The script's leading `test -s "$body_path"` is the empty-body gate. On a
 missing or zero-byte file it exits 2 with `EMPTY_BODY_FILE: <path>` on
@@ -478,6 +495,26 @@ On success the script prints the JSON envelope (`url`, `body_bytes`,
 `body_sha256`, `op: "create"`). Surface `url`, `body_bytes`, and
 `body_sha256` as scalars in `## RESULT`, plus the new issue `#NN`
 parsed from the URL.
+
+### `PERSIST_LINK(repo, issue, add_blocked_by?, remove_blocked_by?, add_blocking?, remove_blocking?)`
+Relationship-only change to an existing issue's native dependencies — no body
+write, so no empty-body gate. Per rule 7, the only execution path is the
+bundled script:
+
+```bash
+${CLAUDE_PLUGIN_ROOT}/scripts/gh-persist.sh link <repo> <issue> \
+  [--add-blocked-by N]… [--remove-blocked-by N]… [--add-blocking N]… [--remove-blocking N]…
+```
+
+Use this (not `PERSIST_BODY`) whenever the caller only changes a dependency —
+e.g. the drafter adding a `blocked by` after both issues exist, or the drafter/
+planner removing a `blocked by` in revise mode once the blocking question is
+answered. If gh rejects the relationship change because the feature is unavailable (old gh
+or the repo hasn't enabled dependencies), it's dropped with a `DEPS_UNSUPPORTED:`
+notice and the op returns a no-op success (`changed: false`, `deps_unsupported:
+true`); any other failure surfaces. Surface the JSON envelope (`op: "link"`,
+`changed`, `deps_unsupported`, `url?`) in `## RESULT` — `deps_unsupported` is
+always present.
 
 ## Output shape
 

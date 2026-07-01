@@ -355,6 +355,10 @@ For each issue in `closingIssuesReferences`, evaluate five dimensions. Write you
 
 In either path, the bullet text itself is the authoritative requirement — annotations are attribution metadata, not part of the requirement.
 
+An issue's `## Open questions` section (marker `<!-- open-question-links:v1 -->`, see [`../_shared/open-question-links.md`](../_shared/open-question-links.md)) is **not** a DoD checklist: don't read its bullets as acceptance criteria, and don't treat a `scoped-out` open question as a gap — scoped-out scope lives in `## Out of scope`, never the DoD. (A `provisional-default` part that shipped and contradicts a grounding doc still trips this dimension's in-scope hard-block — that's the doc-grounding check below, not an open-question exception.)
+
+**Native `blocked by` holds the merge.** Read the issue's native `blocked_by` (from §3's `GATHER_ISSUE` — the `blocked_by` list, empty when none or `deps_available` false). If any blocker is **open** — an `in-scope (blocked)` open question that hasn't been answered — the PR **must not merge**: **soft-reject** (`--comment`), citing the open blocker (`#N`) and that the in-scope work it gates can't be verified complete until the question is answered. This mirrors the resolver's hard-gate on the same relationship; GitHub may also surface it as `mergeStateStatus == BLOCKED`. (Scope-out issues carry no native block, so this fires only on the honest `in-scope (blocked)` choice.)
+
 **Per-phase verification mechanics.** When projection annotations are present, the PR's `## Phase tracker` is the canonical phase → commit mapping. Each tracker entry carries the head-of-phase commit SHA (`- [x] Phase N — title (commit <sha>)`); fixup commits that landed between Phase N's tracker SHA and Phase N+1's tracker SHA belong to Phase N too. Run these inside the §5.5.0 worktree at `.worktrees/<branch>` (already on the PR head):
 
 ```bash

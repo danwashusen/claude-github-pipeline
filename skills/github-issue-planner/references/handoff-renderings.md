@@ -95,6 +95,34 @@ If the Epic ran but the child stories weren't filed yet (Step 11's "stop after t
 **Why:** the plan turns on <dependency> v<X> behaviour that postdates my training cutoff — planning on recall would lock a guess. The researcher posts a cited dossier; re-run `/github-pipeline:github-issue-planner #142` afterward and Step 4 ingests it.
 ```
 
+**Plan posted with planned-around open questions.** The issue depended on open questions but had plannable scope; the plan planned around them and recorded each in its `## Open questions`. Forward to the resolver as usual (`plan: ✓`), with a free-form `**Open questions:**` line (per handoff-format.md — not a state marker).
+
+```
+## Handoff
+
+**Issue:** #142 — Build patient dashboard · open · feature · plan: ✓ (https://github.com/owner/repo/issues/142#issuecomment-XXXXX)
+**Grounding:** read at origin/main@a1b2c3d · docs/ui-design.md §7 (portal shell); docs/constitution.md §2 (layering) · full detail in the plan's ## Doc grounding
+**Open questions:** #211 (audience:business) planned-around, #212 (audience:clinical) recorded-blocked — see the plan's ## Open questions
+
+**Next:** implement the decided scope in a fresh session.
+
+    /github-pipeline:github-issue-resolver #142
+
+**Why:** the plan builds the dashboard shell and tiles that are decided; the modality copy (`OQ-08`, #212) is recorded-blocked and the issue is natively blocked-by #212, so the resolver builds around it. Answer #211/#212 in their threads, then the deferred scope is re-filed / unblocked.
+```
+
+**Open question blocks the whole plan — re-route to answer it.** Every plannable part is gated by an unanswered open question the planner must not resolve (Step 7's re-route-if-total). Terminal-style: no follow-up skill (a human answers), with a re-run breadcrumb. `plan: ✗`.
+
+```
+## Handoff
+
+**Issue:** #142 — Choose and wire the consult modality · open · feature · plan: ✗
+
+**Next:** (terminal — answer the open question, then re-plan)
+
+**Why:** every part of #142 is gated by `OQ-08` (phone vs video), tracked in question #212 (audience:clinical, audience:business). Planning now would lock a guess. Answer #212 in its thread, then re-run `/github-pipeline:github-issue-planner #142`. (If no companion question existed, this would instead point at `/github-pipeline:github-issue-drafter` to file one first.)
+```
+
 **Revise mode — plan refreshed.** Same forward shape; the plan URL in the `Issue:` line is the *new* comment URL captured at Step 10 (the stale one was deleted via `delete_marker_id`).
 
 ```

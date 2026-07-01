@@ -1,0 +1,23 @@
+[
+  {"query": "the CSV export throws a 500 when the date range crosses a year boundary — capture this so we don't lose track of it", "should_trigger": true, "_why": "bug + explicit capture verb"},
+  {"query": "we should add a way for users to bulk-archive old projects, let's get it written up as an issue", "should_trigger": true, "_why": "feature + capture verb"},
+  {"query": "the dashboard empty state never got built — only the populated view works. file that please", "should_trigger": true, "_why": "incomplete + file verb"},
+  {"query": "I want to track a big multi-part onboarding revamp: signup, email verification, and a first-run tutorial", "should_trigger": true, "_why": "epic + track verb"},
+  {"query": "revise #142 to match the new auth approach we landed on in the thread", "should_trigger": true, "_why": "revise mode"},
+  {"query": "I need an answer for PRD-OQ-06b before we build the consult flow — open a question issue for the business to decide phone vs video", "should_trigger": true, "_why": "question, explicit 'open a question issue' verb + audience"},
+  {"query": "file a question for the architect: should the event bus be Kafka or SQS? they need to make the call", "should_trigger": true, "_why": "question, 'file a question' verb + named audience"},
+  {"query": "log an open question to track that legal still needs to sign off on the 7-year retention policy", "should_trigger": true, "_why": "question, 'log an open question to track' verb"},
+  {"query": "capture this as a question for the UX team — keep the multi-step wizard or move to a single scrolling form?", "should_trigger": true, "_why": "question, 'capture this as a question' verb + audience"},
+  {"query": "track PRD-OQ-12 as a github issue so the clinical lead can weigh in", "should_trigger": true, "_why": "question, 'track ... as a github issue' verb + tracked id"},
+
+  {"query": "should we use phone or video for the consult flow? what do you think is better?", "should_trigger": false, "_why": "bare decision-question, wants Claude's answer, no capture verb"},
+  {"query": "honestly the business should really weigh in on whether PayPal is worth supporting", "should_trigger": false, "_why": "audience mention only, no file/track/log verb"},
+  {"query": "what's the difference between Stripe and Adyen for recurring subscription billing?", "should_trigger": false, "_why": "info request"},
+  {"query": "i have a question about how the resolver decides which tests to run — can you explain?", "should_trigger": false, "_why": "asking Claude a question about the codebase"},
+  {"query": "work on #45 and get the fix up as a PR", "should_trigger": false, "_why": "resolver territory, not drafting an issue"},
+  {"query": "research the current AHPRA telehealth guidance and summarize what changed", "should_trigger": false, "_why": "researcher territory"},
+  {"query": "quick q — does GitHub auto-close an issue if the PR body says 'closes #12'?", "should_trigger": false, "_why": "just answer the question"},
+  {"query": "let's plan out how we'd actually build the export feature, step by step", "should_trigger": false, "_why": "planning discussion, planner territory"},
+  {"query": "i'm torn between a monorepo and split repos for this project, talk me through the tradeoffs", "should_trigger": false, "_why": "open decision discussion, wants advice not a filed question"},
+  {"query": "help me write the Open Questions section of the PRD in docs/prd.md", "should_trigger": false, "_why": "doc-writing near-miss; mentions 'open questions' but wants prose help, not an issue"}
+]

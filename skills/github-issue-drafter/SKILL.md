@@ -2,7 +2,7 @@
 name: github-issue-drafter
 model: opus
 effort: high
-description: Drafts well-structured GitHub issues from informal developer feedback and files them via the `gh` CLI. Use this skill whenever the user describes a bug they hit, an incomplete or half-built feature they noticed, or a new feature idea — and wants it captured as a GitHub issue. Trigger this even when the user does not explicitly say "make an issue" — phrases like "I should track this," "let's file this," "we need to remember to fix X," "log this for later," or simply describing a problem in a repo context all qualify. Also use this skill to **revise an existing issue** when the user references one by number/URL with revision intent — phrases like "revise #N," "update issue #N," "improve #N," "does #N still match the docs?", or "rewrite the description of #N." Works best when the user is inside a git repository directory. Uses repo issue templates and labels if they exist, otherwise applies a consistent built-in format. Reads the project PRD (if one exists at `docs/prd.md` or similar) to ground feature framing and surface tensions between feedback and spec. Every drafted or revised issue is automatically validated by an isolated review sub-agent that checks the issue against the project's PRD, architecture, constitution, and current codebase before the user sees the final draft.
+description: Drafts well-structured GitHub issues from informal developer feedback and files them via the `gh` CLI. Use this skill whenever the user describes a bug they hit, an incomplete or half-built feature they noticed, or a new feature idea — and wants it captured as a GitHub issue. Trigger this even when the user does not explicitly say "make an issue" — phrases like "I should track this," "let's file this," "we need to remember to fix X," "log this for later," or simply describing a problem in a repo context all qualify. Also use this skill to **revise an existing issue** when the user references one by number/URL with revision intent — phrases like "revise #N," "update issue #N," "improve #N," "does #N still match the docs?", or "rewrite the description of #N." Also use it to **file or track an open question / decision request** for one or more named audiences (business, architect, developer, UX, …) as a `question`-type issue labeled by audience — but only on an explicit capture verb: "file/open/log/track a question," "capture this decision for the architect," "raise an issue to ask the business," or "track `PRD-OQ-06b` as an issue." A bare decision-question with no capture intent ("should we use phone or video?") is asking for *your* answer and is **not** a trigger; naming an audience alone ("the business should weigh in on this") isn't one either without a file/track/log verb. Works best when the user is inside a git repository directory. Uses repo issue templates and labels if they exist, otherwise applies a consistent built-in format. Reads the project PRD (if one exists at `docs/prd.md` or similar) to ground feature framing and surface tensions between feedback and spec. Every drafted or revised issue is automatically validated by an isolated review sub-agent that checks the issue against the project's PRD, architecture, constitution, and current codebase before the user sees the final draft.
 ---
 
 # GitHub Issue Drafter
@@ -41,7 +41,7 @@ body review for the Epic one-shot batch (see "One-shot filing flow"); either way
 
 ## The core loop
 
-1. **Classify** the feedback: bug, incomplete feature, or new feature.
+1. **Classify** the feedback: bug, incomplete feature, new feature, Epic, or question.
 2. **Check the repo** for existing conventions (templates, labels) — use them if present.
 3. **Gather missing context** by asking the user, but only what's actually needed.
 4. **Draft** the issue (title + body + labels + priority).
@@ -87,7 +87,9 @@ This anchors the rest of the response and lets the user adjust if you've misread
 
 ### Step R4: Run the review loop on the existing body
 
-Same loop as for drafts (see "Sub-agent review loop" below). Feed the sub-agent the existing title + body + labels + the type (bug | incomplete | feature | epic | story). Mode is `revise <N>` — the sub-agent fetches the live state for itself and walks the comment thread under the latest-decisions dimension.
+Same loop as for drafts (see "Sub-agent review loop" below). Feed the sub-agent the existing title + body + labels + the type (bug | incomplete | feature | epic | story | question). Mode is `revise <N>` — the sub-agent fetches the live state for itself and walks the comment thread under the latest-decisions dimension.
+
+**Reconcile open questions.** Re-run Step 2's open-question detection against the current source and the issue's existing `## Open questions` section. Add entries for newly-opened OQs (offer companion questions per Step 3.5, de-duping first). For an OQ the register now marks resolved (`Decided`/`Applied`), surface it in the R5 diff — "OQ-05 is resolved upstream; its scoped-out part can be re-filed as a follow-up, and any native `blocked by` on it can be removed (`PERSIST_LINK(remove_blocked_by=#N)`) — want me to?" — rather than silently deleting the entry. The drafter reconciles the section; it never resolves the OQ itself.
 
 ### Step R5: Show a diff-style draft
 
@@ -142,6 +144,7 @@ The three types map to very different structures, so getting this right matters.
 - **Incomplete feature** — Something half-built that the user noticed while working on it. Cues: "I never finished," "this only works for X but not Y," "the empty state isn't handled," "TODO," "we stubbed this out."
 - **New feature / enhancement** — A capability that doesn't exist yet. Cues: "users should be able to," "it would be nice if," "we need a way to," "I want to add."
 - **Epic** — A multi-capability initiative too big to ship as a single PR; it decomposes into several Story issues. Cues: user lists multiple distinct capabilities in one breath ("we should do X, then Y, then Z"), scope crosses layers (UI + data + service), explicit phrasing like "this is going to be a big one," "multi-phase," "initiative," or the word "epic" itself. Heuristic: if the acceptance criteria the user has in their head won't fit in one shippable PR, it's likely an Epic.
+- **Question** — A request for a decision or an answer from a human, not a unit of work to build. Cues: "I need an answer for X," "open question," "we need to decide," "should we …," "who can confirm …," or a reference to a tracked-questions id (e.g. `PRD-OQ-06b`). The tell is that *no code follows from filing it* — someone has to answer first. A question is categorically different from the other types: it doesn't enter the research/plan/build pipeline and its handoff is terminal (see the "After filing a question" subsection in Step 7 and the question rendering in Step 8). When feedback bundles a question with work ("should we cache this, and if so add a cache layer"), file the question first and let its answer drive whether the work issue gets filed.
 
 **Feature vs. Epic — ask, don't promote.** Scope is the user's call. When detection signals fire, confirm rather than silently upgrading — ask via `AskUserQuestion` (header "Issue size"): **One feature** — file it as a single feature issue; **Epic + child stories** — open an Epic and break the work into child stories. Filing a feature when the user wanted an Epic (or vice versa) is annoying to undo.
 
@@ -172,6 +175,18 @@ ls docs/prd.md docs/PRD.md PRD.md prd.md 2>/dev/null
 **If a PRD exists:** Read it. Treat it as authoritative for what the product is supposed to do, but understand that PRDs evolve — so this skill's job is to surface tensions, not enforce the PRD as immutable. See "Using the PRD" below.
 
 **If neither templates nor labels exist:** Use the built-in templates below. Suggest creating standard labels at the end (don't auto-create them — that's a repo-level decision).
+
+### Detecting open questions in the source
+
+When drafting a **build** issue (bug/feature/incomplete/epic/story) from a source doc — a PRD section, a UI/design spec, an architecture note — that source may still carry **unresolved open questions** (OQs): decisions the team hasn't made yet, tracked in a doc register (`docs/prd.md` open-questions register, a design register) and often surfaced inline as `PROVISIONAL — <oq-id>` / `TBD` markers on the very parts you're about to spec. Building on an undecided OQ silently freezes a decision that isn't yours to make — so detect them before drafting.
+
+Two detection paths (this stays tech-stack-agnostic — the marker syntax is the *repo's*, not baked in here):
+
+- **Config block (preferred).** Read the consuming repo's `<!-- drafter-open-question-markers -->` block from `CLAUDE.md` — inline, the same way this step already runs `gh label list` (via `${CLAUDE_PLUGIN_ROOT}/scripts/config-block.sh read CLAUDE.md drafter-open-question-markers`, or a plain read). It declares this repo's register location, the inline-marker pattern, and how the register marks an entry still open. Use it to find every OQ that the source you're drafting from references AND that is still open.
+- **Heuristic fallback (no block).** Scan the cited source doc(s) for stack-neutral cues: `PROVISIONAL`, `TBD`, "open question", "to be decided", or a heading matching `open[- ]questions?`. These are illustrative English/markdown patterns — don't hard-code one repo's id syntax as *the* format. Example id shapes across stacks: a Rails/healthcare repo's `PRD-OQ-05`; a Swift repo's `OQ-12` or `DESIGN-Q-3`.
+- **Neither hits →** behave exactly as before: no open-question handling, no `## Open questions` section. An absent-config repo is unaffected.
+
+When ≥1 open OQ gates the issue, resolve them at **Step 3.5** and record them per the shared contract [`../_shared/open-question-links.md`](../_shared/open-question-links.md) (the single source of truth for the `## Open questions` section schema, the disposition set, and the native-dependency rule — don't restate it here).
 
 ## Using the PRD
 
@@ -241,6 +256,8 @@ This is cheap and prevents the skill from misframing the relationship — e.g., 
 
 If there are no references, omit the section entirely. Don't fabricate relationships.
 
+**A `Blocked by #N` relationship also sets a native dependency.** When you render `Blocked by #N`, additionally set GitHub's native `blocked by` relationship so the block is structured (visible in the UI, and gated on by the resolver/evaluator), not just prose — pass `blocked_by=#N` on the `PERSIST_CREATE` at file time (or `PERSIST_LINK(add_blocked_by=#N)` when the reference surfaces after the issue exists). This is **capability-gated**: `github-ops` drops it with a `DEPS_UNSUPPORTED:` notice on a repo/gh without native dependencies, and the prose `Blocked by #N.` line is the always-present fallback — so keep the prose line regardless. (The other relationships stay prose-only; only `Blocked by` maps to a native dependency.)
+
 **One nuance worth surfacing to the user:** if the user said "this may be resolved by #21," that's a hint they're unsure whether to file at all. It's worth a quick "I'll file this with a note that #21 might already cover it — or do you want to wait and check #21 first?" Most users will say file it anyway (cheap to close as duplicate later), but giving them the choice respects their time.
 
 ## Epics and child stories
@@ -297,7 +314,23 @@ Ask only what's needed. Be surgical — the user is mid-flow on something else, 
 
 **For new features, you need:** the user/persona, the goal, and the underlying motivation (the "so that" in a user story). Acceptance criteria are great but can be a stretch goal — better to file a thinner issue than to badger the user.
 
+**For questions, you need:** the question itself, the target audience(s), and enough context that the audience can answer it cold — plus the references (docs, code, epics, issues) that ground it, and what the answer unblocks. Surface any **hard external constraints** that bound the answer — regulation, legal/compliance, insurance, contracts/SLAs, third-party-platform limits — each paired with the force that fixes it, so the audience sees what's already off the table and *why* rather than inferring it from the references (the Question template's `## Constraints` section). If the question came from a tracked-questions list, get its external id (e.g. `PRD-OQ-06b`). When more than one audience is named, confirm what each audience is being asked — a business stakeholder and an architect usually need the same question framed differently, not two unrelated questions.
+
 **Critical:** Never invent reproduction steps, error messages, or behavior the user didn't describe. If you don't know, say "[to be filled in]" or ask. A vague-but-honest issue is better than a confidently-wrong one.
+
+## Step 3.5: Resolve open questions detected in the source
+
+Runs only when Step 2's "Detecting open questions" found ≥1 open OQ that gates this **build** issue. For each gating OQ, get the user's disposition — one `AskUserQuestion` card per OQ (per [`../_shared/asking-the-user.md`](../_shared/asking-the-user.md); `header` e.g. `"OQ <id>"`), with the prose `question` field naming what the OQ gates and the consequence of each option. The three dispositions are the closed set in [`../_shared/open-question-links.md`](../_shared/open-question-links.md):
+
+- **Scope it out** *(default — list first)* — build only the decided scope; the gated part goes to `## Out of scope` (naming the OQ) and is re-filed as a follow-up once the question is answered. Nothing undecided lands in this issue's Definition of done.
+- **Keep in-scope (blocked)** — keep the gated part in the DoD; the build issue is set natively `blocked by` the companion question, which **holds the resolver and evaluator** until it's answered (warn the user of that).
+- **Build on a provisional default** — build now on a named provisional choice; record `default:` + `retires-when:` so the decision stays visible and the planner carries it as a watchpoint.
+
+**Then offer to file a companion `question` issue** for each OQ (opt-in — a second card, or `multiSelect`). A companion is a normal `question`-type draft: it reuses the whole question flow unchanged — the Step 4 audience-label logic, the Question template, the Step 5 review, the Step 6 gate, the paste-ready snippet, and the terminal handoff. Its `## Why this matters` names the build issue's gated scope; its `## Tracked in` gets both the source-doc register location and the build issue `#` (filled in the two-phase create, Step 7). **De-dup before filing:** `gh issue list --repo <owner/repo> --search "<oq-id> in:title label:question"` — if a matching question already exists, link it instead of filing a duplicate.
+
+**`in-scope (blocked)` requires a target to block on.** A native `blocked by` can't point at a question that doesn't exist, so this disposition needs a companion question — a freshly filed one or a de-dup'd existing one. If the user picks `in-scope (blocked)` but declines to file (and none exists), don't leave a dangling block: either fall back to **scoped-out** (the default — the honest "not decided, so out of this issue" choice) or keep it in-scope as a **prose-only** blocker (`question: (not filed)`, no native `blocked by`) and tell the user the resolver/evaluator won't hard-gate it until a question exists. Never emit `blocked_by=` with no `#N`.
+
+Record every disposition in the build issue's `## Open questions` section at Step 4.
 
 ## Step 4: Draft the issue
 
@@ -310,18 +343,23 @@ Titles should be specific and action-oriented. They show up in lists where conte
 - Feature: `<verb> <object>` — e.g., `Add CSV export for user data`
 - Epic: `Epic: <theme>` — e.g., `Epic: Chat & session UX polish`
 - Story: `<verb> <object>` — same convention as Feature; the `story` label conveys type, no prefix needed.
+- Question: `<tracker-id> — <question topic>` when a tracker id exists — e.g. `PRD-OQ-06b — Which billing model for v1?`; otherwise just the question topic phrased as a question. The id in the title makes the issue findable by the tracker reference both ways.
 
-Drop the `[Bug]`/`[Incomplete]` prefix if the repo uses labels for type (most do). Prefixes are a fallback for repos without good labeling.
+Drop the `[Bug]`/`[Incomplete]`/`[Question]` prefix if the repo uses labels for type (most do). Prefixes are a fallback for repos without good labeling.
 
 ### Built-in templates (use only if repo has no template)
 
-These are a fallback — prefer the repo's own issue template when one exists (Step 2). **See [`references/issue-templates.md`](references/issue-templates.md)** for the built-in Bug, Incomplete-feature, New-feature (user-story), Epic, and Story body templates, plus the rule for when to include an `## Out of scope` section (omit by default; only on an explicit user exclusion or a genuine scope ambiguity).
+These are a fallback — prefer the repo's own issue template when one exists (Step 2). **See [`references/issue-templates.md`](references/issue-templates.md)** for the built-in Bug, Incomplete-feature, New-feature (user-story), Epic, Story, and Question body templates, plus the rule for when to include an `## Out of scope` section (omit by default; only on an explicit user exclusion, a genuine scope ambiguity, or an open-question `scoped-out` disposition).
+
+### Recording open questions (when Step 3.5 produced dispositions)
+
+Write the build issue's `## Open questions` section per the schema in [`../_shared/open-question-links.md`](../_shared/open-question-links.md) — one entry per gating OQ with its disposition, companion `question: #N` (or `(not filed)`), and audience. Then, per disposition: for each **scoped-out** OQ, also write the matching `## Out of scope` line naming the OQ (that keeps the gated part out of the DoD); for each **in-scope (blocked)** OQ **with a filed companion**, keep the gated criterion in the DoD and set the native `blocked by` to the companion question (via `PERSIST_CREATE blocked_by=` at file time — Step 7) — an in-scope-blocked OQ recorded `question: (not filed)` is prose-only: keep the criterion but set **no** native block (never a `blocked_by=` with no `#N`); for each **provisional-default** OQ, build the decided-plus-provisional scope into the DoD and record `default:` + `retires-when:` in the entry. **For every filed companion `question: #N`, also add a `Related to #N` line to `## Related issues`** — the human/GitHub cross-link, and the always-present fallback that carries the relationship when native dependencies aren't available (per the contract's capability-degradation rule). Don't invent OQs the source didn't mark — the same anti-fabrication bar the rest of the skill applies.
 
 ### Labels and priority
 
 Apply labels in this order of preference:
 
-1. **Type label** — `bug`, `enhancement`, `incomplete`, `epic`, `story` (or repo equivalents like `kind/bug`). In repos that don't already have `epic` and `story` labels, suggest creating them at the end rather than inventing ad-hoc labels.
+1. **Type label** — `bug`, `enhancement`, `incomplete`, `epic`, `story`, `question` (or repo equivalents like `kind/bug`). In repos that don't already have `epic`, `story`, or `question` labels, suggest creating them at the end rather than inventing ad-hoc labels.
 2. **Priority** — based on user's tone and impact. If unclear, ask or default to medium.
    - `priority:high` / `P1` — blocks the user, affects many users, data loss/corruption, security
    - `priority:medium` / `P2` — noticeable but workable
@@ -329,6 +367,20 @@ Apply labels in this order of preference:
 3. **Component/area** — only if the repo uses these and you can confidently pick one
 
 Don't over-label. Three labels max unless the user asks for more.
+
+### Audience labels (questions only)
+
+A question routes to the people who can answer it, so its target audience(s) become labels — one per audience, namespaced: `audience:business`, `audience:architect`, `audience:developer`, `audience:ux`, and so on. The namespace keeps them filterable (`label:audience:*`) and stops them colliding with an existing repo label that happens to share the name. Apply one per audience the user named — and you may add a label for an audience the question *clearly implicates* even if unnamed (a "is this worth building?" call also wants a developer's effort read; a data-retention question also wants legal). Surface any audience you inferred so the user can drop it. **Audience labels don't count against the three-label cap** — they're functional routing, not noise, so a question can carry `question` + `audience:business` + `audience:architect` without trimming.
+
+**Priority on a question is not default.** Unlike buildable work, a question waiting on a human answer doesn't carry default-medium triage — and minting a `priority:*` label for every question is noise. Omit priority unless the user signals the question is **blocking or urgent**; when they do, apply it per the priority scale above.
+
+These labels rarely pre-exist, and `gh issue create --label audience:business` fails if the label is absent — so unlike the type/priority labels above (which the skill only ever *suggests* creating), the skill **offers to create a missing audience label as part of filing**. When you present the draft at Step 6, flag any audience label that doesn't exist yet (`audience:business (will be created)`); approving "File it" approves the create. Create each missing one in the main loop right before filing — same place Step 2 already runs `gh label list` inline, not through `github-ops`:
+
+```bash
+gh label create "audience:business" --description "Question for business stakeholders" --color BFD4F2 2>/dev/null || true
+```
+
+The label is the whole point of an audience question — a question filed without it can't be found by the people meant to answer it — which is why creation is offered rather than merely suggested. If the user declines the create at the gate, file without the audience label and tell them the question won't surface in an audience filter until they add it.
 
 ## Step 5: Sub-agent review loop
 
@@ -350,15 +402,16 @@ Agent({
   description: "Review GitHub issue draft for coherence",
   prompt: <contents of references/issue-reviewer-prompt.md
            with placeholders filled: draft, mode, repo_root,
-           dimensions, related_drafts>
+           open_question_markers, dimensions, related_drafts>
 })
 ```
 
 The sub-agent receives:
 
-- **Draft** — title, body, labels, priority, type (`bug` | `incomplete` | `feature` | `epic` | `story`).
+- **Draft** — title, body, labels, priority, type (`bug` | `incomplete` | `feature` | `epic` | `story` | `question`).
 - **Mode** — `draft` (no number yet), `revise <N>` (existing filed issue — sub-agent fetches the live state via `gh issue view` and walks the comment thread itself), or `split` (Epic split loop — no story bodies yet; sub-agent runs dimensions 5 and 7 adversarially over the scope-level split and greps to ground every claim).
 - **Repo root** — absolute path so the sub-agent can read `docs/`, `CLAUDE.md`, and grep the source tree.
+- **Open-question markers** — the `<!-- drafter-open-question-markers -->` block contents (or the heuristic-cue instruction, or empty) from Step 2's detection, so the dimension-1 frozen-undecided check can tell an open decision from a settled one.
 - **Dimensions** — the explicit list of checks to run (see below). Pass only the dimensions that apply for the current type/mode.
 - **Related drafts** — for an Epic, pass the sibling stories so the sub-agent can reason across them for dimensions 5 and 7. In `split` mode pass each story's title + one-line scope (files / layer / test surface); for the Step E2 body re-confirm pass each story's title + full body.
 
@@ -370,15 +423,15 @@ Six dimensions. Each yields zero or more findings, each finding carries severity
 
 | # | Dimension | Checks | Example finding |
 |---|---|---|---|
-| 1 | **Doc coherence** | Cross-reference body against `docs/prd.md`, `docs/architecture.md`, `docs/constitution.md`, `CLAUDE.md`. Same three patterns the existing skill already uses for the PRD: contradicts / extends / gap. | `Body proposes 'allow editing submitted entries' — PRD §4 says entries are immutable after submit. Either body or PRD must move. Recommend adding a 'PRD impact' note flagging the contradiction.` |
+| 1 | **Doc coherence** | Cross-reference body against `docs/prd.md`, `docs/architecture.md`, `docs/constitution.md`, `CLAUDE.md`. Four patterns: contradicts / extends / gap, plus **frozen-undecided** (build types only) — the body states as decided something the source register still marks open, with no `## Open questions` entry dispositioning it. | `Body proposes 'allow editing submitted entries' — PRD §4 says entries are immutable after submit. Either body or PRD must move. Recommend adding a 'PRD impact' note flagging the contradiction.` |
 | 2 | **Codebase coherence** | grep/find every API, file, type, component, behavior named in the body. Confirm presence in current code. | `Body references 'OldService.foo()'; no such symbol in current codebase (closest match: NewService.foo at app/services/new_service.rb:42). Likely renamed during refactor — update reference or describe the renamed surface.` |
-| 3 | **Internal coherence** | Title matches body claim; acceptance criteria support the stated goal; "what's missing" is actually missing per the code; Story Epic backlink is correctly formatted; Out-of-scope doesn't contradict in-scope. | `Acceptance criterion #3 ('exports as PDF') doesn't appear in the user story or background — looks orphaned. Either justify in body or drop.` |
+| 3 | **Internal coherence** | Title matches body claim; acceptance criteria support the stated goal; "what's missing" is actually missing per the code; Story Epic backlink is correctly formatted; Out-of-scope doesn't contradict in-scope; `## Open questions` entries are consistent (scoped-out ↔ `## Out of scope`; provisional-default carries default+retires-when; `question: #N` resolves). | `Acceptance criterion #3 ('exports as PDF') doesn't appear in the user story or background — looks orphaned. Either justify in body or drop.` |
 | 4 | **Latest-decisions** *(revise mode only)* | Walk the comment thread; identify the most recent substantive direction-setting comment; compare body to that direction. | `Comment by @maintainer on 2026-04-12 settles on 'approach B' but body still describes approach A. Revise body toward B; cite the comment.` |
 | 5 | **Story ordering** *(Epic mode — split scopes or filed bodies)* | Build a dependency graph: for each story, infer dependencies from the files/APIs/types it references and what it claims to deliver. Compare topological order to the Epic's `## Stories` listed order. | `Story 3 'Add export-to-CSV button' depends on the export service introduced by Story 5 'Build export service'. Listed order has 3 before 5; topological order is 5 → 3. Recommend swapping.` |
 | 6 | **Completeness** *(primarily draft mode)* | Required template sections present? User story for features? Definition of done for stories? Reproduction for bugs? | `Bug template requires 'Steps to reproduce'; section is empty. Either fill in (ask the user) or include a [to be filled in] placeholder so the gap is visible at triage.` |
 | 7 | **Story sizing / over-split** *(Epic mode — adversarial)* | Apply the three coalescing signals across the proposed split: shared verification surface, sequential-with-no-standalone-value, same-files/layer+thin. Flag slices that should **merge** — and, via the guardrail, slices wrongly **merged** that should split. Ground every surface-overlap claim by grepping the codebase. | `Story 2 'Add pill view' and Story 3 'Add history view' have no inter-dependency, are both mounted only by Story 4, and share one snapshot suite (`…/Snapshots/Floating*`) — same verification surface, signal 1. Recommend merging into one 'Add the two floating views' story.` |
 
-Pass the relevant dimensions per type/mode. Bugs run 1, 2, 3, 6 (and 4 if revising). Features run 1, 2, 3, 6 (and 4 if revising). For an Epic, the split loop (Step E1) runs **5 and 7 only** on the scope-level split *before* bodies exist; the per-Story body review (Step E2) then runs 1, 2, 3, 6 on each body and **re-confirms 5 and 7** across the set. Stories run 1, 2, 3, 6 (and 4 if revising); sizing and ordering (5, 7) apply to the parent Epic's split, not the individual Story. In revise mode, an Epic re-audit can also re-run 5 and 7 against the current story set.
+Pass the relevant dimensions per type/mode. Bugs run 1, 2, 3, 6 (and 4 if revising). Features run 1, 2, 3, 6 (and 4 if revising). Questions run **1, 3, 6** — and **2 only if the body cites code, APIs, or file paths** (most business questions cite none, so passing 2 there only invites empty findings); dimension 3 carries the question's quality bar (answerable + phrased for the labeled audience), and 5/7 never apply. For an Epic, the split loop (Step E1) runs **5 and 7 only** on the scope-level split *before* bodies exist; the per-Story body review (Step E2) then runs 1, 2, 3, 6 on each body and **re-confirms 5 and 7** across the set. Stories run 1, 2, 3, 6 (and 4 if revising); sizing and ordering (5, 7) apply to the parent Epic's split, not the individual Story. In revise mode, an Epic re-audit can also re-run 5 and 7 against the current story set.
 
 ### Severity and evidence
 
@@ -465,6 +518,26 @@ Once the user has approved at step 6, hand the create to `github-ops` by passing
 
 It returns the new issue URL, the `#NN`, plus `body_bytes` and `body_sha256` for the bytes that posted. Share the URL with the user. You can cross-check `body_sha256` against `shasum -a 256 <draft_path>` if you want a byte-for-byte loop close; the script computes the same hash on the file the caller wrote, so a mismatch points at a corrupted scratch dir, not at github-ops. If `gh` errors out (auth, label doesn't exist, etc.), `github-ops` reports the exact error rather than retrying with different flags; relay it and adjust.
 
+### Filing a build issue that has open questions (two-phase)
+
+When Step 3.5 produced companion questions and/or an `in-scope (blocked)` disposition, file in this order so no dispatch forward-references an issue that doesn't exist yet (mirrors the Epic "file, then patch" pattern below):
+
+1. **File the companion `question` issues first**, collecting each `#N`. Each is a normal question create (its own staged body, audience labels, snippet, terminal handoff).
+2. **File the build issue**, with its `## Open questions` section already naming those `#N`, and pass native `blocked by` for each `in-scope (blocked)` OQ **that has a filed companion** plus any user-stated `Blocked by #N`:
+   > `PERSIST_CREATE(repo=<owner/repo>, title=<title>, body_path=<draft_path>, labels=[…], blocked_by=[<companion #N for each in-scope-blocked OQ with a filed companion>, <any user-stated blocker>])`
+   `github-ops` capability-gates the native deps — on a repo/gh without the feature it returns a `DEPS_UNSUPPORTED:` notice and files without them; the prose `## Open questions` / `## Related issues` links remain, so the dependency is still recorded. `scoped-out`, `provisional-default`, and prose-only `in-scope (blocked)` (`question: (not filed)`) OQs set **no** native block (only a filed-companion in-scope-blocked OQ contributes a `#N` — never a `blocked_by` element with no number).
+3. **Patch each companion's `## Tracked in`** to add the now-known build issue `#` — stage the updated companion body and `PERSIST_BODY(mode=replace, …)` per companion (same staged-file discipline). A dep-only change (never a body change) uses `PERSIST_LINK` instead.
+
+### After filing a question
+
+A question exists to be referenced from wherever it was raised (a PRD's Open Questions list, a design doc, a meeting note), so make the `#NN` easy to wire back in. Call out the bare `#NN` and the URL, then emit a **paste-ready snippet** for the source doc — the skill prints it, the user pastes it (it does not edit the doc):
+
+```
+- PRD-OQ-06b: Which billing model for v1? — tracked in #210
+```
+
+Match the snippet's shape to the doc's existing list style when you've read the doc; if no tracker id exists, drop the `PRD-OQ-06b:` prefix. This is the only post-file output for a question — then go straight to the terminal handoff (Step 8).
+
 ### Filing an Epic with child stories
 
 The Epic flow files the whole set in one batch once Steps E1 and E2 come back clean (see "One-shot filing flow") — there's no per-story confirmation gate; a clean pass through the split loop and the body review is the go-ahead. Each write still goes through `github-ops`, and the same staged-file discipline from Step 7 applies to every body: at the end of Step E2, stage the Epic body to `/tmp/gh-drafter-<epic-slug>/epic.md` and each Story body to `/tmp/gh-drafter-<epic-slug>/story-<NN-or-index>.md` before any `PERSIST_CREATE` fires. Pass each staged path into `body_path=` on the dispatch; `github-ops` reads those bytes through `gh-persist.sh` and posts them directly. An Epic batch crosses the sub-agent boundary once per story plus once for the Epic itself; with `body_path=` each of those dispatches carries only the path, so the body bytes never get a chance to be dropped, abbreviated, or substituted under context pressure. (The two empty-body issues on the #512 batch — #626 and #627 — happened under the old inline-body contract; this is the surface the path-based contract closes.)
@@ -485,6 +558,10 @@ If any `PERSIST_CREATE` fails mid-batch, stop and report exactly which issues we
 Every clean run of this skill ends with a single `## Handoff` block — the schema, omission rules, and state-marker vocabulary live in [`../_shared/handoff-format.md`](../_shared/handoff-format.md). The handoff is the only bridge between this session and the next: the user will copy the fenced command into a fresh Claude Code session to continue. Don't skip it on a clean exit; don't add anything after it.
 
 Pull the snapshot from data you already have — the `PERSIST_CREATE` result(s) carry the issue/Epic/story numbers and titles; `plan: ✗` is correct because the drafter never authors plans. The `Why:` line is yours to write — describe what the next session will do (don't repeat the schema).
+
+For a **question**, the handoff is **terminal** (it's answered by a human, not a downstream skill): omit the `research:`/`plan:` markers — they don't apply — add an `**Audience:**` line listing the `audience:*` labels, and replace the fenced command with `(terminal — no follow-up skill)`. The `Why:` explains it awaits a human answer and what to do once it lands. See the question rendering in `references/handoff-renderings.md`.
+
+For a **build issue drafted with open questions**, add a free-form `**Open questions:**` line (not a state marker — see handoff-format.md) listing the companion `question` issues and a short disposition tally covering every OQ (e.g. `2 scoped out, 1 blocked-by, 1 provisional` — include a prose-only in-scope-blocked OQ in the count even though it set no native block), and note in the `Why:` that the planner plans only the decided scope. See the "Single issue filed with open questions" rendering in `references/handoff-renderings.md`.
 
 **Before composing the handoff, `Read references/handoff-renderings.md`** — it holds the worked `## Handoff` shapes the drafter emits: single issue filed (forward to the planner), Epic batch filed (forward to the planner), and revise-mode (forward to author a plan, stale-refresh, or terminal — per whether a plan exists and whether the revise was material). It's a progressively-disclosed reference — not auto-loaded with this skill — so the forced Read is what guarantees the shapes are in your working context before you emit; without it the handoff may be written from memory and drift from the closed-set shapes. Each carries the closed-set state-marker vocabulary from [`../_shared/handoff-format.md`](../_shared/handoff-format.md); fill the snapshot from the data Step 8 lists above.
 

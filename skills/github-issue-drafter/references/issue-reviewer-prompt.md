@@ -17,7 +17,7 @@ If you cannot make sense of the issue using only the body + project docs + codeb
 
   Labels: <<draft_labels>>
   Priority: <<draft_priority>>
-  Type: <<draft_type>>   # bug | incomplete | feature | epic | story
+  Type: <<draft_type>>   # bug | incomplete | feature | epic | story | question
 
   Body:
   ----
@@ -30,6 +30,7 @@ If you cannot make sense of the issue using only the body + project docs + codeb
   - `revise <N>` — issue #N is already filed; fetch the live state with `gh issue view <N> --comments --json ...` and walk the thread.
   - `split` — Epic *split loop*: no story bodies exist yet. The proposed split (each story's title + a one-line scope naming the files, layer, and test surface it will touch) is in `<<related_drafts>>`, and the Epic body is in **Draft**. Run **dimensions 5 and 7 only**, adversarially, and ground every claim by grepping the codebase — you're reasoning from scopes, not bodies, so a claim you can't grep is a dropped finding.
 - **Repo root**: `<<repo_root>>` — absolute path. Read `docs/prd.md`, `docs/architecture.md`, `docs/constitution.md`, `CLAUDE.md` if they exist; grep the source tree from this root.
+- **Open-question markers**: `<<open_question_markers>>` — how this repo marks unresolved open questions (the `<!-- drafter-open-question-markers -->` block's register location + inline-marker pattern + open-status rule, or the heuristic-cue instruction when no block exists). Empty when neither applies. Used by the dimension-1 frozen-undecided check to tell an *open* decision from a settled one. Read the named register/source when this is non-empty.
 - **Dimensions to check**: `<<dimensions>>` — a subset of {1, 2, 3, 4, 5, 6, 7}. Only run the listed dimensions. Don't fabricate findings outside the list.
 - **Related drafts**: `<<related_drafts>>` — for an Epic, this contains the sibling stories so you can reason across them for dimensions 5 and 7. In `split` mode it carries each story's **title + one-line scope** (files / layer / test surface). In `draft`/`revise` body re-confirm it carries each story's **title + full body**. Empty unless type is `epic`.
 
@@ -37,20 +38,21 @@ If you cannot make sense of the issue using only the body + project docs + codeb
 
 Run only the dimensions named in the inputs.
 
-1. **Doc coherence.** Cross-reference the body against the project docs. Three patterns to flag:
+1. **Doc coherence.** Cross-reference the body against the project docs. Four patterns to flag:
    - **Contradicts** — the body proposes something a doc explicitly forbids or counters. Cite the doc section.
    - **Extends** — the body extends product/architecture into territory the docs don't cover. Note for follow-up rather than block.
    - **Gap** — the body describes a gap between what's built and what a doc specifies. Cite both the body claim and the doc section.
+   - **Frozen-undecided** *(build types only — bug/feature/incomplete/epic/story, never `question`)* — the body states as **decided** (in the Definition of done / acceptance criteria, or as a definite design claim) something the source register still marks **open** per `<<open_question_markers>>`. This is the failure the open-question flow exists to prevent: an undecided call frozen into buildable scope. BLOCKER when an open OQ's subject appears as a hard acceptance criterion with **no** `## Open questions` entry dispositioning it; SUGGESTION when it's mentioned but under-dispositioned. Evidence = quote the body criterion **and** cite the register row/marker (e.g. `docs/prd.md §12 PRD-OQ-05 Status: Open`). Skip entirely when `<<open_question_markers>>` is empty.
 
 2. **Codebase coherence.** For every API, file path, type, component, function, or behavior named in the body, verify it exists in the current code. Use `grep`/`find`/`Read`. If it doesn't exist, look for a closest-match (recent rename) and cite that as a hint. If a referenced behavior is described as currently working, sanity-check that it actually works in the current code.
 
-3. **Internal coherence.** Read the body as one piece. Does the title support the body's central claim? Do the acceptance criteria support the stated goal? Is "what's missing" actually missing per the codebase? For Stories: does the `**Epic:** #<epic-#>` backlink format correctly? Does an "Out of scope" line contradict an in-scope claim?
+3. **Internal coherence.** Read the body as one piece. Does the title support the body's central claim? Do the acceptance criteria support the stated goal? Is "what's missing" actually missing per the codebase? For Stories: does the `**Epic:** #<epic-#>` backlink format correctly? Does an "Out of scope" line contradict an in-scope claim? For a **question** (its quality bar): is it actually *answerable*, and phrased so the labeled audience can answer it from the body alone? Flag a question that demands knowledge the body never supplies, that's pitched at the wrong register for its `audience:*` label — a schema-level decision labeled `audience:business`, a pricing-strategy call labeled `audience:developers`, or framing and stated audience that disagree — or that treats something as fixed / non-negotiable without stating that constraint and its external rationale inline (forcing the audience to infer "why must I" from the references). A binding constraint named in passing belongs in `## Constraints` with its source. For a build issue with an `## Open questions` section: each `disposition: scoped-out` entry MUST have a matching `## Out of scope` line naming the same OQ (and each OQ-driven `## Out of scope` line a matching entry); each `provisional-default` entry MUST carry `default:` + `retires-when:`; each `question: #N` should point at a real question issue (dimension 2 verifies it exists when refs are present). Flag a mismatch with the specific entry quoted.
 
 4. **Latest-decisions** *(revise mode only)*. Fetch the comment thread. Identify the most recent substantive direction-setting comment — earlier proposals are superseded if a maintainer or the original author has agreed to a different approach. Compare the issue body to that direction. If the body still describes a superseded approach, flag it.
 
 5. **Story ordering** *(only when type is `epic` and `<<related_drafts>>` contains sibling stories — split scopes in `split` mode, full bodies otherwise)*. Build a dependency graph: for each story, infer dependencies from the files/APIs/types it claims to consume vs. what other stories claim to deliver. Compare a topological order of that graph to the Epic's `## Stories` listed order. If the listed order makes a story unimplementable until a later story ships, flag the violation with both orders and a proposed swap.
 
-6. **Completeness.** For drafts especially: are the required template sections present? User story for features. Definition of done for stories. Steps to reproduce + expected vs. actual for bugs. Goal + Background + Stories for Epics. If a section is missing, flag it; if a section exists but is empty or a placeholder, flag that too.
+6. **Completeness.** For drafts especially: are the required template sections present? User story for features. Definition of done for stories. Steps to reproduce + expected vs. actual for bugs. Goal + Background + Stories for Epics. Question + Audience + Context for questions (a question with no Context, or whose References cite nothing a reader could follow, is incomplete). If a section is missing, flag it; if a section exists but is empty or a placeholder, flag that too.
 
 7. **Story sizing / over-split** *(only when type is `epic` and `<<related_drafts>>` contains sibling stories; adversarial)*. Your job is to attack the proposed split — find the strongest case it is *wrong*, in **either** direction. Splitting an Epic has a fixed cost the bodies never show: each story pays for its own worktree (and any per-worktree resources — simulator, test DB, port), baseline, cold build or app boot, targeted test run, and review-loop round-trip, so a slice that's too thin spends more on overhead than on work.
 
@@ -87,7 +89,7 @@ Emit a single Markdown block with this exact shape, so the orchestrator can pars
 ```
 ## Review summary
 Mode: <draft | revise N | split>
-Type: <bug | incomplete | feature | epic | story>
+Type: <bug | incomplete | feature | epic | story | question>
 Dimensions checked: <comma-separated list of dimension numbers>
 Findings: <BLOCKER count> blocker, <SUGGESTION count> suggestion, <NIT count> nit
 

@@ -70,7 +70,7 @@ omission rules, and the **closed-set state-marker vocabulary** (don't invent syn
 GitHub/git I/O** to (`subagent_type: "github-pipeline:github-ops"`, spawned with **no `model`
 override**). The point is to keep the expensive Opus skills from spending context on `gh`/`git`
 round-trips. It runs named operations (`GATHER_ISSUE`, `GATHER_PR`, `GATHER_EPIC`, `LIST_OPEN`,
-`STATUS`, `PERSIST_CREATE`, `PERSIST_BODY`, `PERSIST_COMMENT`) and returns faithful structured
+`STATUS`, `PERSIST_CREATE`, `PERSIST_BODY`, `PERSIST_LINK`, `PERSIST_COMMENT`) and returns faithful structured
 results. It never plans, classifies, drafts prose, makes merge decisions, or runs codebase
 searches (those stay with the caller, which uses `Explore`/`Grep`/`Glob`). When blocked or
 ambiguous it returns a `DECISION_NEEDED:` block and writes nothing — it cannot call
@@ -103,14 +103,21 @@ through the **calling skill's main loop** instead (the worktree lifecycle is cwd
 `github-ops` boundary above).
 
 - `scripts/gh-gather.sh` — the fixed issue-fetch envelope (`GATHER_ISSUE`): one round-trip instead
-  of three, with threshold routing.
+  of three, with threshold routing. Also surfaces GitHub's **native issue dependencies**
+  (`blocked_by` / `blocking` + a `deps_available` flag), capability-gated: on a gh/repo without the
+  feature it returns empty lists + `deps_available: false` so callers degrade to prose linking.
 - `scripts/gh-pr-gather.sh` — the PR-fetch envelope (`GATHER_PR`), with optional `--with-diff` /
   `--with-line-comments` (always spilled to disk).
-- `scripts/gh-persist.sh` — the single write path (`create`/`edit-body`/`comment`). Its leading
+- `scripts/gh-persist.sh` — the single write path (`create`/`edit-body`/`link`/`comment`). Its leading
   `test -s <body_path>` is the **empty-body gate**: the caller stages the verbatim body to its own
   scratch dir and passes the path, so nothing re-serializes the body across the prompt boundary.
   An empty/missing file exits 2 with `EMPTY_BODY_FILE:` and forces a `DECISION_NEEDED`. Supports
-  `--dry-run` and returns a `body_sha256` so callers can verify byte-for-byte. Keep these `gh-*`
+  `--dry-run` and returns a `body_sha256` so callers can verify byte-for-byte. The `create`
+  (`--blocked-by`/`--blocking`) and `link` (`--add/remove-blocked-by/blocking`, relationship-only,
+  no body) paths set **native issue dependencies**, capability-gated by attempting the write and
+  classifying failures: an unsupported gh **or** a repo without the feature drops the
+  flag with a `DEPS_UNSUPPORTED:` notice rather than failing, and the caller's prose link is the
+  fallback. Keep these `gh-*`
   scripts as the single execution path for all four caller skills — that is what makes the contract
   self-consistent. If a real op doesn't fit a script, extend the script; don't bypass it.
 - `scripts/worktree-hooks.sh` — the worktree setup/teardown executor (`setup`/`teardown`
@@ -148,10 +155,18 @@ through the **calling skill's main loop** instead (the worktree lifecycle is cwd
   merge, §13); the **planner** reads it (Just-in-time story planning + Dimension 8's "consumes only
   what's shipped" check). It is a *separate* comment from the verified `<!-- implementation-plan:v1 -->`
   epic plan precisely because it changes on every merge while the plan stays immutable.
+- `open-question-links.md` — the `## Open questions` body section (marker `<!-- open-question-links:v1 -->`)
+  a **build** issue carries when drafted from a source with unresolved open questions: its per-entry
+  schema, the closed disposition set (`scoped-out` / `in-scope (blocked)` / `provisional-default`), and
+  the rule that `in-scope (blocked)` also sets a native `blocked by` dependency. Ownership: the
+  **drafter** writes it (and sets the native dep); the **planner** reads/extends it (into the plan's own
+  `## Open questions`, never resolving an OQ); the **resolver** + **evaluator** read the native
+  `blocked_by` and hard-gate the in-scope-blocked case, treating the section as a tracked-dependency
+  registry, not buildable/DoD scope.
 
 When changing behavior that touches handoffs, DoD annotations, the worktree lifecycle, the
-sub-agent decision signal, or the epic delivery log, edit the `_shared` file (the single source of
-truth) and keep the per-skill renderings consistent with it.
+sub-agent decision signal, the epic delivery log, or the open-question links, edit the `_shared` file
+(the single source of truth) and keep the per-skill renderings consistent with it.
 
 ### Coupling to a consuming repo is convention-driven
 
@@ -164,12 +179,16 @@ but key behaviors are driven by markers the *consuming* repo provides — not by
   `<!-- pr-evaluator-health-checks -->`, `<!-- pr-evaluator-static-checks -->`,
   `<!-- pr-evaluator-test-target -->`, `<!-- pr-evaluator-escalation-labels -->`. The evaluator also
   reads `<!-- pr-evaluator-merge-policy -->` (per-PR-type `ask | auto`) to decide whether its merge
-  step gates on a human operator — **default `ask`** when the block is absent.
+  step gates on a human operator — **default `ask`** when the block is absent. The **drafter** (and
+  the planner, for in-scope provisional markers) reads `<!-- drafter-open-question-markers -->` to
+  learn how this repo marks unresolved open questions (register location + inline-marker pattern +
+  open-status rule); it **degrades gracefully** to built-in heuristic cues when the block is absent.
 - **Epic integration branches** named `epic/<N>-<slug>` — the resolver/evaluator discover and
   classify Epic vs story PRs by this pattern.
 - **Durable marker comments** the skills post/read: `<!-- implementation-plan:v1 -->` (planner),
   `<!-- issue-research:v1 -->` (researcher), `<!-- epic-delivery-log:v1 -->` (evaluator-written,
-  planner-read). For an **epic**, the planner's `<!-- implementation-plan:v1 -->` comment pins the
+  planner-read), and the `<!-- open-question-links:v1 -->` build-issue body section (drafter-written,
+  planner/resolver/evaluator-read). For an **epic**, the planner's `<!-- implementation-plan:v1 -->` comment pins the
   cross-story contracts (`## Story contracts`) and sequencing up front and stays verified/immutable;
   per-story plans are authored **just-in-time** against current epic HEAD (planner "Just-in-time story
   planning"), not fanned out, so a later story never grounds on code a predecessor has since moved. What

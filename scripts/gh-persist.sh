@@ -17,14 +17,29 @@
 # the prompt.
 #
 # Usage:
-#   gh-persist.sh create     <repo> <body_path> --title <title> [--label L]… [--dry-run]
+#   gh-persist.sh create     <repo> <body_path> --title <title> [--label L]…
+#                            [--blocked-by <nums/urls>] [--blocking <nums/urls>] [--dry-run]
 #   gh-persist.sh edit-body  <repo> <issue>     <body_path>                  [--dry-run]
+#   gh-persist.sh link       <repo> <issue>
+#                            [--add-blocked-by N]… [--remove-blocked-by N]…
+#                            [--add-blocking N]…   [--remove-blocking N]…     [--dry-run]
 #   gh-persist.sh comment    <repo> <target> <id> <body_path>
 #                            [--review-action approve|comment|request-changes]
 #                            [--delete-marker-id <id>]                        [--dry-run]
 #
 # <target> for `comment` is one of: issue | pr | pr-review.
 # --review-action is required when target=pr-review and forbidden otherwise.
+#
+# `create --blocked-by/--blocking` and `link` set GitHub's NATIVE issue
+# dependencies (gh >= 2.95 + the repo feature enabled). They are capability-gated
+# by ATTEMPTING the real write and classifying its stderr (see is_deps_error) —
+# not by a `--help` probe, which can't tell a repo with the feature disabled from
+# one that has it, nor a broken gh from an unsupported one. On a deps-capability
+# failure the dependency is dropped with a `DEPS_UNSUPPORTED:` stderr notice
+# (create retries without it — a failed create is atomic, so no double-file) and
+# the caller links via prose (`Blocked by #N` in the body) as the always-available
+# fallback. Any OTHER failure surfaces. `link` changes relationships only; it
+# writes no body, so it has no empty-body gate.
 #
 # Exit codes:
 #   0   success — JSON envelope on stdout
@@ -37,7 +52,7 @@
 #   { "url": "<resulting url>",       (omitted in --dry-run)
 #     "body_bytes": <int>,
 #     "body_sha256": "<hex>",
-#     "op": "create|edit-body|comment",
+#     "op": "create|edit-body|link|comment",
 #     "dry_run": true|false,
 #     "would_run": "<the gh command line>"  (only in --dry-run)
 #   }
@@ -51,8 +66,9 @@ set -euo pipefail
 
 die_usage() {
   echo "usage:" >&2
-  echo "  gh-persist.sh create    <repo> <body_path> --title <title> [--label L]... [--dry-run]" >&2
+  echo "  gh-persist.sh create    <repo> <body_path> --title <title> [--label L]... [--blocked-by N] [--blocking N] [--dry-run]" >&2
   echo "  gh-persist.sh edit-body <repo> <issue>     <body_path>                    [--dry-run]" >&2
+  echo "  gh-persist.sh link      <repo> <issue> [--add-blocked-by N]... [--remove-blocked-by N]... [--add-blocking N]... [--remove-blocking N]... [--dry-run]" >&2
   echo "  gh-persist.sh comment   <repo> <target> <id> <body_path>" >&2
   echo "                          [--review-action approve|comment|request-changes]" >&2
   echo "                          [--delete-marker-id <id>]                          [--dry-run]" >&2
@@ -115,18 +131,43 @@ quote_cmd() {
   printf '%s' "${q# }"
 }
 
+# Does a failed `gh` write look like a native-dependency *capability* failure — the
+# installed gh predates the `--blocked-by`/`--blocking`/`--add-*` flags, OR the
+# repo hasn't enabled the issue-dependencies feature? We ATTEMPT the real write and
+# classify its stderr here (mirroring gh-gather.sh's try-the-call-and-fall-back),
+# because a `--help` scrape can't tell a repo-with-the-feature-off from one with it,
+# nor "gh errored" from "unsupported".
+#
+# Match ONLY precise capability signatures — err toward SURFACING: a real error we
+# don't match fails loudly (safe, self-explanatory), whereas a non-deps error we
+# wrongly match would be silently swallowed as a benign "use prose" (dangerous —
+# a caller never learns the write failed). Two forms: the binary lacks the
+# flag/field ("unknown flag" / "unknown JSON field"), or the repo hasn't enabled
+# the feature ("issue dependencies …"). Deliberately does NOT match bare
+# "blocking"/"dependency"/"blocked-by" — those appear in unrelated
+# relationship-integrity (e.g. "#5 is already blocking this issue") and API errors
+# that MUST surface. A here-string (not a pipe) keeps `grep -q` clear of the
+# pipefail+SIGPIPE race.
+is_deps_error() {
+  grep -qiE 'unknown (flag|json field)|issue[ -]?dependenc' <<<"$1"
+}
+
 cmd_create() {
   [[ $# -lt 2 ]] && die_usage
   local repo="$1"; shift
   local body_path="$1"; shift
   local title=""
   local -a labels=()
+  local blocked_by=""
+  local blocking=""
   local dry_run="false"
   while [[ $# -gt 0 ]]; do
     case "$1" in
-      --title)    title="$2"; shift 2 ;;
-      --label)    labels+=("$2"); shift 2 ;;
-      --dry-run)  dry_run="true"; shift ;;
+      --title)       title="$2"; shift 2 ;;
+      --label)       labels+=("$2"); shift 2 ;;
+      --blocked-by)  blocked_by="$2"; shift 2 ;;
+      --blocking)    blocking="$2"; shift 2 ;;
+      --dry-run)     dry_run="true"; shift ;;
       *) die_usage ;;
     esac
   done
@@ -138,13 +179,44 @@ cmd_create() {
   for L in "${labels[@]+"${labels[@]}"}"; do
     cmd+=(--label "$L")
   done
+  local -a dep_flags=()
+  [[ -n "$blocked_by" ]] && dep_flags+=(--blocked-by "$blocked_by")
+  [[ -n "$blocking" ]] && dep_flags+=(--blocking "$blocking")
 
   if [[ "$dry_run" == "true" ]]; then
-    emit_envelope "create" "$body_path" true "" "$(quote_cmd "${cmd[@]}")"
+    local -a preview=("${cmd[@]}")
+    [[ ${#dep_flags[@]} -gt 0 ]] && preview+=("${dep_flags[@]}")
+    emit_envelope "create" "$body_path" true "" "$(quote_cmd "${preview[@]}")"
     return 0
   fi
+
   local url
-  url="$("${cmd[@]}")"
+  if [[ ${#dep_flags[@]} -eq 0 ]]; then
+    url="$("${cmd[@]}")"
+  else
+    # Attempt WITH native dependencies; on a deps-capability failure (old gh, or
+    # the repo hasn't enabled the feature) retry WITHOUT them and signal
+    # DEPS_UNSUPPORTED so the caller links via prose. A failed create is atomic
+    # (nothing is filed), so the retry can't double-file. A non-deps failure
+    # (bad label, auth) is surfaced, not masked.
+    local errfile; errfile="$(mktemp)"
+    if url="$("${cmd[@]}" "${dep_flags[@]}" 2>"$errfile")"; then
+      rm -f "$errfile"
+    else
+      local err; err="$(cat "$errfile")"; rm -f "$errfile"
+      if is_deps_error "$err"; then
+        # Retry without deps. If THIS fails (a new, non-deps reason), set -e
+        # surfaces its error and exits — so emit the DEPS_UNSUPPORTED notice only
+        # after the retry succeeds, never claiming "created without them" ahead of
+        # a create that didn't happen.
+        url="$("${cmd[@]}")"
+        echo "DEPS_UNSUPPORTED: native dependencies rejected (gh lacks the flags or the repo hasn't enabled the feature); created without them (link via prose)" >&2
+      else
+        printf '%s\n' "$err" >&2
+        exit 1
+      fi
+    fi
+  fi
   emit_envelope "create" "$body_path" false "$url" ""
 }
 
@@ -171,6 +243,59 @@ cmd_edit_body() {
   local url
   url="$("${cmd[@]}")"
   emit_envelope "edit-body" "$body_path" false "$url" ""
+}
+
+# Relationship-only change on an existing issue (no body write, so no empty-body
+# gate). Each supported add/remove flag is forwarded to `gh issue edit`; each
+# unsupported one is dropped with a DEPS_UNSUPPORTED notice. If nothing survives
+# (all unsupported, or none given), it's a no-op success so a caller that always
+# attempts a link on an unsupporting gh doesn't error.
+cmd_link() {
+  [[ $# -lt 2 ]] && die_usage
+  local repo="$1"; shift
+  local issue="$1"; shift
+  local dry_run="false"
+  local -a editflags=()
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+      --add-blocked-by|--remove-blocked-by|--add-blocking|--remove-blocking)
+        editflags+=("$1" "$2"); shift 2 ;;
+      --dry-run) dry_run="true"; shift ;;
+      *) die_usage ;;
+    esac
+  done
+  # A link with no relationship flags is a caller error (a dropped/empty flag
+  # list upstream) — fail loudly rather than return a silent no-op success that
+  # looks like the relationship was set.
+  [[ ${#editflags[@]} -eq 0 ]] && die_usage
+
+  local -a cmd=(gh issue edit "$issue" --repo "$repo" "${editflags[@]}")
+  if [[ "$dry_run" == "true" ]]; then
+    jq -n --arg issue "$issue" --arg would_run "$(quote_cmd "${cmd[@]}")" \
+      '{ op: "link", issue: $issue, dry_run: true, changed: true, deps_unsupported: false, would_run: $would_run }'
+    return 0
+  fi
+
+  # Attempt the relationship change; on a deps-capability failure (old gh / repo
+  # feature off) report a no-op with deps_unsupported=true so the caller links via
+  # prose, mirroring cmd_create. A non-deps failure is surfaced. `link` writes no
+  # body, so a rejected attempt changes nothing — nothing to roll back.
+  local url errfile; errfile="$(mktemp)"
+  if url="$("${cmd[@]}" 2>"$errfile")"; then
+    rm -f "$errfile"
+    jq -n --arg issue "$issue" --arg url "$url" \
+      '{ op: "link", issue: $issue, dry_run: false, changed: true, deps_unsupported: false, url: $url }'
+  else
+    local err; err="$(cat "$errfile")"; rm -f "$errfile"
+    if is_deps_error "$err"; then
+      echo "DEPS_UNSUPPORTED: native dependencies rejected (gh lacks the flags or the repo hasn't enabled the feature); relationship not set (link via prose)" >&2
+      jq -n --arg issue "$issue" \
+        '{ op: "link", issue: $issue, dry_run: false, changed: false, deps_unsupported: true }'
+    else
+      printf '%s\n' "$err" >&2
+      exit 1
+    fi
+  fi
 }
 
 cmd_comment() {
@@ -234,6 +359,7 @@ SUB="$1"; shift
 case "$SUB" in
   create)    cmd_create "$@" ;;
   edit-body) cmd_edit_body "$@" ;;
+  link)      cmd_link "$@" ;;
   comment)   cmd_comment "$@" ;;
   *) die_usage ;;
 esac

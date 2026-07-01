@@ -1,0 +1,53 @@
+{
+  "skill_name": "github-issue-drafter",
+  "notes": "Question-type augmentation. Runs DRAFT-ONLY against the real private repo HigeiaTechnologies/higeia (rich PRD with a PRD-OQ-## register). Subagents must NOT run `gh issue create` or `gh label create` \u2014 they produce the staged body, label set (flagging which would be created), paste-ready doc snippet, and the ## Handoff block, and save those artifacts. Baseline = pre-edit skill at git HEAD (no question type).",
+  "evals": [
+    {
+      "id": 0,
+      "name": "business-question-canonical",
+      "prompt": "I'm working on the PRD for this app (docs/prd.md). I need an answer for PRD-OQ-06b before we can build the consult flow. Capture it as a GitHub question issue aimed at the business stakeholder who'll decide the launch consult modality \u2014 phone, video, or patient-choice. Give them enough context that they can actually make the call without reading the whole PRD. I'll link the issue back into the PRD's Open Questions afterward.",
+      "expected_output": "A question-type draft: title carrying PRD-OQ-06b; labels question + audience:business (audience:business flagged as 'will be created'); body answerable by a business stakeholder, citing P-10 / the legacy phone-consult evidence / the AHPRA real-time constraint (PRD-OQ-20); a paste-ready snippet for the PRD Open Questions list; a terminal ## Handoff (no plan/research markers, Audience line). No gh issue/label writes.",
+      "files": [],
+      "assertions": [
+        "Classified as a `question` issue type (summary.md)",
+        "Title contains the tracker id 'PRD-OQ-06b'",
+        "Labels include the type label `question`",
+        "Labels include a NAMESPACED audience label `audience:business` (not bare `business`)",
+        "Missing audience label is flagged for creation ('(will be created)')",
+        "Body is answerable by a business stakeholder: grounds the phone-vs-video decision in PRD evidence (P-10 / legacy phone consult / AHPRA real-time constraint)",
+        "Body carries NO Definition of done / Acceptance criteria (a question isn't built)",
+        "A paste-ready PRD Open-Questions snippet was produced (not N/A) and references PRD-OQ-06b",
+        "Handoff is TERMINAL: contains '(terminal \u2014 no follow-up skill)' and no planner command",
+        "Handoff omits research:/plan: markers and includes an 'Audience:' line"
+      ]
+    },
+    {
+      "id": 1,
+      "name": "multi-audience-question",
+      "prompt": "We still haven't resolved PRD-OQ-05 (payment-method coverage). I need to ask two groups at once: the business \u2014 which payment methods do we actually commit to for launch (ZipPay? PayPal? Afterpay is already confirmed) \u2014 and a developer \u2014 whether ZipPay and PayPal can ride on Stripe the same way Afterpay does, or need separate integrations. File this as a question so both can weigh in.",
+      "expected_output": "One question issue with TWO namespaced audience labels (audience:business + audience:developer), each flagged for creation if missing; the body frames the question so each audience knows their part (a per-audience 'what we need from you'); references PRD-OQ-05 / OB-04..06 / B-01; terminal handoff with both audiences. No gh writes.",
+      "files": [],
+      "assertions": [
+        "Classified as a `question` issue type",
+        "Labels include the type label `question`",
+        "Labels include BOTH namespaced audiences: `audience:business` AND `audience:developer`",
+        "Body frames a distinct ask per audience (business: which methods to commit; developer: can ZipPay/PayPal ride on Stripe)",
+        "Body references PRD-OQ-05 and the payment items (Afterpay/Stripe/ZipPay/PayPal)",
+        "Handoff is terminal and lists both audiences"
+      ]
+    },
+    {
+      "id": 2,
+      "name": "casual-disambiguation",
+      "prompt": "should we even bother supporting PayPal at launch? honestly not sure it's worth the effort and someone on the business side really needs to weigh in before we build anything here",
+      "expected_output": "Triggers the drafter and classifies this as a QUESTION (not a feature to plan/build) \u2014 the tell is that no code follows until it's answered. audience:business label; body captures the open decision with context; terminal handoff (NOT a forward handoff to the planner). Should not draft acceptance criteria or a build plan. No gh writes.",
+      "files": [],
+      "assertions": [
+        "Classified as a `question`, NOT a feature/enhancement (the tell: no code follows until answered)",
+        "Labels include `question` and `audience:business`",
+        "Body is NOT framed as a buildable feature (no 'As a..I want' user story, no Acceptance criteria / Definition of done)",
+        "Handoff is terminal (does NOT forward to the planner)"
+      ]
+    }
+  ]
+}

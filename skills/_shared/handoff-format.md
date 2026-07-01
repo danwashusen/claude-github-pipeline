@@ -30,7 +30,9 @@ The block is always present on a clean exit. Lines are omitted (not blanked, not
   - Epic in any role (drafter Epic batch, planner Epic plan, evaluator on an Epic integration PR) → `Epic:`. Add a `Stories:` line listing the child stories with their state markers.
   - A story under an Epic (evaluator after a story PR merges, resolver working on a story) → `Story:` for the story plus an `Epic:` line for the parent's progress (e.g. `open (3 of 5 stories closed)`).
 - **`research:`** — the research-dossier marker, placed before `plan:` on the `Issue:` / `Story:` line. Present on the researcher's own clean exits (`✓` dossier posted, `✗` judged nothing-to-research) and carried forward on any later skill's handoff for an issue that has a dossier (e.g. the planner shows `research: ✓` once it has ingested one). **Omitted entirely** on issues that never went through the researcher — so the drafter's renderings, and the planner / resolver / evaluator renderings on dossier-less issues, are unchanged. When the marker carries a URL (the researcher's clean exit), append it in parentheses like `plan:` does.
+- **Question-type issue (drafter only)** — a `question` is answered by a human in the issue thread, not built by the pipeline, so it never enters research/plan. Its `Issue:` line is `#N — <title> · <state> · question` with the `research:` and `plan:` markers **omitted** (they don't apply), plus a question-only `**Audience:** <comma-separated audience:* labels>` line. Its clean exit is **terminal** (see Terminal endings).
 - **`Grounding:`** — planner-only, and only on clean exits that **posted a plan**. Opens with `read at <plan-ref>@<short-sha>` — the integration ref the docs were read at (the same `<plan-ref>@<short-sha>` the plan footer records), so the reader knows *which branch's* version of those docs grounded the plan (the same section can differ between `main`, an epic branch, and a PR head). Then lists the project docs (with §refs) the plan was grounded on, summarized from the plan's `## Doc grounding`, plus — when present — the external sources from `## External sources consulted` as a `· external: <sources>` segment, and a pointer to the plan's `## Doc grounding` for the full reasoning. Omitted when no plan was posted (the planner's trivial-change and knowledge-gap re-route exits, both `plan: ✗`) and when the plan grounded against no docs (no `## Doc grounding` section). It is **free-form text, not a state marker** — so it has no entry in the closed-set state-marker vocabulary table.
+- **`Open questions:`** — optional, drafter and planner. When a build issue was drafted from a source with unresolved open questions (see [`open-question-links.md`](open-question-links.md)), the handoff may carry a free-form `**Open questions:** #<N> (audience:…), … — <N scoped out / M blocked-by>` line listing the companion `question` issues and how many parts were scoped out vs natively blocked. Like `Grounding:`, it is **free-form text, not a state marker** — no closed-set entry. Omit when the issue gated no open questions.
 - **`PR:`** — omit entirely when no PR exists. Drafter clean exits and the planner's plan-comment-only clean exits skip this line. Resolver clean exits always have a PR. Evaluator clean exits always have a PR.
 - **`Cleanup:`** — evaluator-only, and only after the merge ran (§14's worktree teardown / removal / scratch purge sequence has executed). Omit on the evaluator's no-merge branches (soft-reject, DIRTY/BLOCKED-skip, operator-deferred merge, operator Needs-Revision / Reject) and on every other skill's clean exit.
 - **Fenced next-action block** — replaced with the literal `(terminal — no follow-up skill)` for terminal endings (evaluator clean merge of a standard PR, evaluator clean merge of an Epic integration PR). The `Why:` line still appears and explains why the pipeline ends here.
@@ -43,7 +45,7 @@ Use these exact words. Don't invent synonyms.
 | Field | Values |
 |---|---|
 | Issue `state` | `open`, `closed` |
-| Issue `type` | `bug`, `feature`, `incomplete`, `story`, `epic` |
+| Issue `type` | `bug`, `feature`, `incomplete`, `story`, `epic`, `question` |
 | Issue `research` | `✓` (dossier posted), `✗` (none / judged not needed), `stale` (posted but superseded by an issue or source change) |
 | Issue `plan` | `✓` (posted), `✗` (none), `stale` (posted but superseded) |
 | PR `state` | `draft`, `open`, `merged`, `closed` |
@@ -91,9 +93,9 @@ Some clean exits end the pipeline for this issue — there's no next skill to in
 **Why:** the PR satisfied every dimension cleanly and merged into main. The issue is closed by GitHub's auto-close; no follow-up skill is required for this issue.
 ```
 
-Terminal endings exist today on the evaluator only:
-- standard PR clean merge,
-- Epic integration PR clean merge.
+Terminal endings exist on:
+- the **drafter**, when it files or revises a `question`-type issue — answered by a human in the thread, not by a downstream skill (the example above is the evaluator's; a question's `Why:` instead explains it awaits a human answer);
+- the **evaluator**, on a standard PR clean merge and on an Epic integration PR clean merge.
 
 Story PR clean merges are **not** terminal — they hand off to the **planner** to plan the next story just-in-time (or to the resolver in Epic-integration mode if every child story is now closed). See "Forward re-entry of the planner" under Re-routes.
 
@@ -104,6 +106,7 @@ A re-route is a handoff whose `Next:` points at a prior skill — typically:
 - resolver → planner (the plan's locked decisions don't survive contact with the code, or the issue thread has moved past the plan; refresh the plan)
 - resolver → drafter (the issue body fails the resolver's fitness-to-implement audit, or contradicts a doc the resolver can't reconcile)
 - planner → researcher (the plan needs current external truth the model can't reliably recall — a dependency/API/version at or past the training cutoff; gather and verify the research first, then re-run the planner)
+- planner → (answer the open question) (every plannable part of the issue is gated by an unresolved open question the planner must not resolve itself; a human answers the companion `question` issue, then the planner re-runs). Terminal-style: the `Next:` names no follow-up skill — the decision is a human's — but carries a re-run breadcrumb. If no companion question is filed yet, point at the drafter to file it first.
 
 (The reverse, researcher → planner, is the *forward* route this pipeline normally takes — research is the planner's input — and follows the standard schema, not these re-route rules.)
 
@@ -114,6 +117,7 @@ The schema does not change. The `Why:` line is the load-bearing piece — it mus
 - Plan re-routes: quote the locked decision verbatim and cite the `file:line` where the contradiction surfaced.
 - Drafter re-routes: quote the body's claim verbatim, name the missing or contradictory symbol, and cite the closest-match `file:line`.
 - Researcher re-routes (planner → researcher): name the specific ungroundable fact verbatim (the dependency/API/version and what's unknown), so the researcher targets exactly that gap rather than re-researching the whole issue.
+- Open-question re-routes (planner → answer the question): name the blocking OQ id and the companion `question` issue `#N` (and its `audience:*`), so the reader knows exactly which decision unblocks the plan.
 
 The resolver does **not** invoke the prior skill via the `Skill` tool on a re-route. The handoff is the only signal; the user runs the revise command in a fresh session. This is intentional: session-per-skill is the architectural choice that lets each skill stay context-clean, and crossing session boundaries silently from inside a skill defeats it.
 

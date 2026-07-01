@@ -78,7 +78,17 @@ defer a choice ("Resolver picks", "either approach is acceptable",
 "consider", "evaluate during implementation", "implementer decides")
 do not belong here. They go in `## Architecture decisions` (pinned
 from precedent — see step 7.5) or surface to the user via the
-Decision gate at step 6.5 — never here.
+Decision gate at step 6.5 — never here. The one exception is a
+**human-owned open question already tracked** as a `question` issue or
+a doc open-questions register entry: that goes in `## Open questions`
+below (a tracked open question is not a hedge — step 7.5 carve-out),
+not resolved from precedent and not sent to the Decision gate.
+
+## Open questions              (omit if none — the issue's gated decisions the plan plans around)
+- OQ `<id>` (<source §/register>) — gates: <scope> — question: #<N> (audience: <audience:* labels>)
+  — treatment: planned-around | recorded-blocked
+  - planned-around: <how the unblocked scope is planned without resolving the OQ; what is deferred to the follow-up>
+  - recorded-blocked: <the in-scope part the plan cannot specify until #<N> answers — NOT in ## Changes / ## Test plan>
 
 _Authored by `github-issue-planner` and verified in <N> review pass(es). The resolver treats
 the decisions above as binding; a plan-invalidating discovery routes back here in revise mode.
