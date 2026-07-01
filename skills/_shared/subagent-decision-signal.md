@@ -24,7 +24,7 @@ Use these exact tokens — no synonyms. The closed-set discipline that governs t
 | `THREAD_SUPERSEDED_PLAN` | state-distiller (§P6) | Confirm materiality with the user, then emit the §12 re-route handoff `re-plan #N — thread superseded the plan: <evidence>` to `github-issue-planner` (revise). Never reconcile in-session. |
 | `PHASES_MALFORMED` | state-distiller (§P6) | Emit the §12 re-route handoff to `github-issue-planner` (revise), quoting the malformation (resolver §4.7). |
 | `BLOCKED_ON_USER` | main-loop-derived (from a sub-agent's `Blocked on:` report) | Render the blocking question via `AskUserQuestion`; the issue can't proceed until it's answered. |
-| `AMBIGUOUS` | state-distiller (§P6) | Surface the conflict; fall back to the main loop re-reading the raw artifact (e.g. `thread_path`) the sub-agent couldn't resolve. |
+| `AMBIGUOUS` | state-distiller (§P6); `open-questions` question-status reader | Surface the conflict; fall back to the main loop re-reading the raw artifact (e.g. `thread_path`) the sub-agent couldn't resolve. |
 
 **Sub-agent-raised vs main-loop-derived.** `THREAD_SUPERSEDED_PLAN`, `PHASES_MALFORMED`, and `AMBIGUOUS` are raised by the sub-agent as a mutually-exclusive `## Exception` block — they mean it cannot produce trustworthy normal output. `PLAN_MISSING` and `BLOCKED_ON_USER` are **not** sub-agent exceptions: the sub-agent reports a fact in its normal output (`plan: absent`, `Blocked on: …`) and the main loop maps it to the gate, because whether the fact is actionable (is the issue trivial? is the block real?) is a judgment the sub-agent deliberately doesn't make.
 

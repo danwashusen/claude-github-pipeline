@@ -64,13 +64,25 @@ omission rules, and the **closed-set state-marker vocabulary** (don't invent syn
 `open`/`closed`, `APPROVE`/`COMMENT`, `squash`/`merge`, etc.). Per-skill renderings live in each
 `SKILL.md`; the schema lives only in `_shared`.
 
+Four skills sit **outside** the pipeline conveyor: `github-pipeline-setup` (writes the consuming
+repo's config-block markers), `doc-reviewer` (guide-grounded review of a single doc), `open-questions`
+(a project-wide sweep that reconciles the docs' open questions against the `question`-issue tracker —
+the registry of record), and `question-resolver` (the assisted-closing path for one `question` issue —
+evaluate it against the docs, record the operator's decision as a `<!-- question-decision:v1 -->`
+comment, optionally close the issue, and *propose* the doc fold-back). These run standalone on explicit
+invocation (`doc-reviewer`, `open-questions`, and `question-resolver` are `disable-model-invocation:
+true`, report-then-apply/record), emit a plain summary rather than a pipeline `## Handoff`, and are not
+stages in draft→…→evaluate. The `open-questions` sweep owns the open-question registry and
+`question-resolver` closes its entries — the operator decides, the skill records; the drafter/planner
+are thin consumers of the registry (see the shared contracts below).
+
 ### `github-ops` is the mechanical executor
 
 `agents/github-ops.md` is a Sonnet sub-agent that all five skills delegate their **judgment-free
 GitHub/git I/O** to (`subagent_type: "github-pipeline:github-ops"`, spawned with **no `model`
 override**). The point is to keep the expensive Opus skills from spending context on `gh`/`git`
 round-trips. It runs named operations (`GATHER_ISSUE`, `GATHER_PR`, `GATHER_EPIC`, `LIST_OPEN`,
-`STATUS`, `PERSIST_CREATE`, `PERSIST_BODY`, `PERSIST_LINK`, `PERSIST_COMMENT`) and returns faithful structured
+`STATUS`, `PERSIST_CREATE`, `PERSIST_BODY`, `PERSIST_LINK`, `PERSIST_COMMENT`, `PERSIST_CLOSE`/`PERSIST_REOPEN`) and returns faithful structured
 results. It never plans, classifies, drafts prose, makes merge decisions, or runs codebase
 searches (those stay with the caller, which uses `Explore`/`Grep`/`Glob`). When blocked or
 ambiguous it returns a `DECISION_NEEDED:` block and writes nothing — it cannot call
@@ -108,7 +120,10 @@ through the **calling skill's main loop** instead (the worktree lifecycle is cwd
   feature it returns empty lists + `deps_available: false` so callers degrade to prose linking.
 - `scripts/gh-pr-gather.sh` — the PR-fetch envelope (`GATHER_PR`), with optional `--with-diff` /
   `--with-line-comments` (always spilled to disk).
-- `scripts/gh-persist.sh` — the single write path (`create`/`edit-body`/`link`/`comment`). Its leading
+- `scripts/gh-persist.sh` — the single write path (`create`/`edit-body`/`link`/`comment`/`close`/`reopen`).
+  The `close`/`reopen` subcommands are bodyless issue-state changes (`gh issue close [--reason …]` /
+  `gh issue reopen`) — no empty-body gate; `close` on an already-closed issue is a no-op (safe for a
+  reentrant caller like `question-resolver`). Its leading
   `test -s <body_path>` is the **empty-body gate**: the caller stages the verbatim body to its own
   scratch dir and passes the path, so nothing re-serializes the body across the prompt boundary.
   An empty/missing file exits 2 with `EMPTY_BODY_FILE:` and forces a `DECISION_NEEDED`. Supports
@@ -148,25 +163,44 @@ through the **calling skill's main loop** instead (the worktree lifecycle is cwd
 - `subagent-decision-signal.md` — the closed-set typed-exception vocabulary an `Agent`-spawned
   judgment sub-agent returns to its caller's main loop in lieu of `AskUserQuestion` (which sub-agents
   can't call). Names each code (`THREAD_SUPERSEDED_PLAN`, `PHASES_MALFORMED`, `AMBIGUOUS`,
-  `PLAN_MISSING`, `BLOCKED_ON_USER`) and the main-loop action it maps to. Currently produced by the
-  resolver's **state-distiller** (§P6); referenced by `asking-the-user.md`.
+  `PLAN_MISSING`, `BLOCKED_ON_USER`) and the main-loop action it maps to. Produced by the
+  resolver's **state-distiller** (§P6) and the `open-questions` skill's **question-status reader**
+  (`AMBIGUOUS`); referenced by `asking-the-user.md`.
 - `epic-delivery-log.md` — the `<!-- epic-delivery-log:v1 -->` comment contract: its format and the
   writer/reader ownership split. The **evaluator** is the sole writer (appends one entry per story at
   merge, §13); the **planner** reads it (Just-in-time story planning + Dimension 8's "consumes only
   what's shipped" check). It is a *separate* comment from the verified `<!-- implementation-plan:v1 -->`
   epic plan precisely because it changes on every merge while the plan stays immutable.
+- `open-question-detection.md` — how to **find** an OQ in any project doc (the
+  `<!-- drafter-open-question-markers -->` config-block hint + heuristic cues; OQs aren't centralized)
+  and **match** it to a tracker issue (the de-dup search — search before filing, `Read` to confirm).
+  Shared by the **`open-questions` sweep** (project-wide), the **drafter** (issue-scoped, thin), and
+  the **planner** (grounding).
+- `question-issue.md` — the `question`-issue body schema (`## Question` / `## Audience` /
+  `## Constraints` / `## Context` / `## References` / `## Why this matters` / `## Tracked in`), the
+  `audience:*` label rule, and the `## Tracked in` doc↔issue bridge. Shared by the **drafter** and the
+  **`open-questions` sweep**, which file identical question issues; each keeps its own orchestration
+  (review / gate / snippet / handoff).
 - `open-question-links.md` — the `## Open questions` body section (marker `<!-- open-question-links:v1 -->`)
   a **build** issue carries when drafted from a source with unresolved open questions: its per-entry
-  schema, the closed disposition set (`scoped-out` / `in-scope (blocked)` / `provisional-default`), and
-  the rule that `in-scope (blocked)` also sets a native `blocked by` dependency. Ownership: the
-  **drafter** writes it (and sets the native dep); the **planner** reads/extends it (into the plan's own
-  `## Open questions`, never resolving an OQ); the **resolver** + **evaluator** read the native
-  `blocked_by` and hard-gate the in-scope-blocked case, treating the section as a tracked-dependency
-  registry, not buildable/DoD scope.
+  schema, the closed disposition set (`scoped-out` / `in-scope (blocked)` / `provisional-default`), the
+  rule that `in-scope (blocked)` also sets a native `blocked by` dependency, and the **tiered status
+  read** (an OQ's resolution comes from the *tracker* — Tier 1 issue `state` **or** a
+  `<!-- question-decision:v1 -->` comment, Tier 2 the question-status reader — not a doc register
+  field). The **registry of record is the set of `question` issues**; docs are sources. Ownership: the
+  **`open-questions` sweep** owns the registry (detect across all docs, file/reconcile, maintain the
+  doc↔issue back-links); the **`question-resolver`** closes a registry entry (records the operator's
+  decision as the `<!-- question-decision:v1 -->` comment, optionally closes the issue, proposes the doc
+  fold-back — never deciding or applying doc edits); the **drafter** is a thin writer (writes a build
+  issue's entry + sets the native dep, never silently freezing an untracked OQ); the **planner**
+  reads/extends it (into the plan's own `## Open questions`, never resolving an OQ); the **resolver** +
+  **evaluator** read the native `blocked_by` and hard-gate the in-scope-blocked case, treating the
+  section as a tracked-dependency registry, not buildable/DoD scope.
 
 When changing behavior that touches handoffs, DoD annotations, the worktree lifecycle, the
-sub-agent decision signal, the epic delivery log, or the open-question links, edit the `_shared` file
-(the single source of truth) and keep the per-skill renderings consistent with it.
+sub-agent decision signal, the epic delivery log, or the open-question contracts (links / detection /
+question-issue), edit the `_shared` file (the single source of truth) and keep the per-skill
+renderings consistent with it.
 
 ### Coupling to a consuming repo is convention-driven
 
@@ -187,8 +221,10 @@ but key behaviors are driven by markers the *consuming* repo provides — not by
   classify Epic vs story PRs by this pattern.
 - **Durable marker comments** the skills post/read: `<!-- implementation-plan:v1 -->` (planner),
   `<!-- issue-research:v1 -->` (researcher), `<!-- epic-delivery-log:v1 -->` (evaluator-written,
-  planner-read), and the `<!-- open-question-links:v1 -->` build-issue body section (drafter-written,
-  planner/resolver/evaluator-read). For an **epic**, the planner's `<!-- implementation-plan:v1 -->` comment pins the
+  planner-read), `<!-- question-decision:v1 -->` (the recorded decision on a `question` issue —
+  `question-resolver`-written; read by the tiered status read's Tier 1, so the sweep/planner/drafter
+  treat a marked question as resolved deterministically), and the `<!-- open-question-links:v1 -->`
+  build-issue body section (drafter-written, planner/resolver/evaluator-read). For an **epic**, the planner's `<!-- implementation-plan:v1 -->` comment pins the
   cross-story contracts (`## Story contracts`) and sequencing up front and stays verified/immutable;
   per-story plans are authored **just-in-time** against current epic HEAD (planner "Just-in-time story
   planning"), not fanned out, so a later story never grounds on code a predecessor has since moved. What

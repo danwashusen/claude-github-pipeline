@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 #
 # gh-persist.sh — single bundled execution path for the github-ops PERSIST
-# operations (PERSIST_CREATE, PERSIST_BODY replace, PERSIST_COMMENT for all
-# three targets). Mirrors the rule-7 pattern already in use for GATHER
+# operations (PERSIST_CREATE, PERSIST_BODY replace, PERSIST_LINK, PERSIST_COMMENT
+# for all three targets, PERSIST_CLOSE). Mirrors the rule-7 pattern already in use for GATHER
 # (gh-gather.sh, gh-pr-gather.sh): the sub-agent does not roll its own
 # `mktemp + Write + test -s + gh …` ceremony; it shells out to this script
 # and trusts the leading test-s gate.
@@ -26,6 +26,8 @@
 #   gh-persist.sh comment    <repo> <target> <id> <body_path>
 #                            [--review-action approve|comment|request-changes]
 #                            [--delete-marker-id <id>]                        [--dry-run]
+#   gh-persist.sh close      <repo> <issue> [--reason completed|"not planned"] [--dry-run]
+#   gh-persist.sh reopen     <repo> <issue>                                    [--dry-run]
 #
 # <target> for `comment` is one of: issue | pr | pr-review.
 # --review-action is required when target=pr-review and forbidden otherwise.
@@ -48,14 +50,20 @@
 #         (stderr line `EMPTY_BODY_FILE: <path>` for the empty/missing case
 #          so github-ops can pattern-match it and return DECISION_NEEDED)
 #
-# JSON envelope (stdout, single line):
+# JSON envelope (stdout, single line). The BODY-BEARING ops (create / edit-body /
+# comment) carry the full shape:
 #   { "url": "<resulting url>",       (omitted in --dry-run)
 #     "body_bytes": <int>,
 #     "body_sha256": "<hex>",
-#     "op": "create|edit-body|link|comment",
+#     "op": "create|edit-body|comment",
 #     "dry_run": true|false,
 #     "would_run": "<the gh command line>"  (only in --dry-run)
 #   }
+# The bodyless ops omit body_bytes/body_sha256 and carry op-specific flags:
+#   link:   { "op":"link",   "issue", "changed", "deps_unsupported", "url"? }
+#   close:  { "op":"close",  "issue", "closed":true }
+#   reopen: { "op":"reopen", "issue", "reopened":true }
+# (each also carries "dry_run", and "would_run" in --dry-run).
 #
 # The body_sha256 lets the caller verify byte-for-byte that the bytes the
 # script saw match the bytes the caller staged — a stronger check than
@@ -72,6 +80,8 @@ die_usage() {
   echo "  gh-persist.sh comment   <repo> <target> <id> <body_path>" >&2
   echo "                          [--review-action approve|comment|request-changes]" >&2
   echo "                          [--delete-marker-id <id>]                          [--dry-run]" >&2
+  echo "  gh-persist.sh close     <repo> <issue> [--reason completed|\"not planned\"]   [--dry-run]" >&2
+  echo "  gh-persist.sh reopen    <repo> <issue>                                       [--dry-run]" >&2
   exit 2
 }
 
@@ -323,13 +333,6 @@ cmd_comment() {
     *) die_usage ;;
   esac
 
-  # Optional marker delete (PR comments are issue comments under the hood,
-  # so the issue-comments endpoint covers both).
-  if [[ -n "$delete_marker_id" && "$dry_run" != "true" ]]; then
-    local owner_name="$repo"
-    gh api -X DELETE "repos/$owner_name/issues/comments/$delete_marker_id" >/dev/null
-  fi
-
   local -a cmd
   case "$target" in
     issue)
@@ -347,9 +350,80 @@ cmd_comment() {
     emit_envelope "comment" "$body_path" true "" "$(quote_cmd "${cmd[@]}")"
     return 0
   fi
+
+  # POST the new comment first, THEN delete the old marker (post-then-delete).
+  # If the post fails (network / rate-limit / auth), set -e aborts here and the
+  # prior marker comment is left intact — a failed revise never destroys the
+  # existing decision/plan comment with no replacement. The delete is
+  # best-effort: if it fails after a successful post, the new comment still
+  # exists and the stale old one is caught as marker_comment_count>1 on the next
+  # gather (recoverable) — strictly safer than losing the record. (PR comments
+  # are issue comments under the hood, so the issue-comments endpoint covers both.)
   local url
   url="$("${cmd[@]}")"
+  if [[ -n "$delete_marker_id" ]]; then
+    gh api -X DELETE "repos/$repo/issues/comments/$delete_marker_id" >/dev/null \
+      || echo "WARN: posted new comment but could not delete prior marker comment $delete_marker_id (a stale duplicate may remain)" >&2
+  fi
   emit_envelope "comment" "$body_path" false "$url" ""
+}
+
+# Close an issue — a state change, no body (so no empty-body gate). `gh issue close`
+# accepts an optional --reason (completed | "not planned"). Kept independent of
+# `comment`: the caller posts the decision comment via cmd_comment, then closes here.
+# Idempotent enough for reentrancy: closing an already-closed issue is a gh no-op.
+cmd_close() {
+  [[ $# -lt 2 ]] && die_usage
+  local repo="$1"; shift
+  local issue="$1"; shift
+  local reason=""
+  local dry_run="false"
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+      --reason)  reason="$2"; shift 2 ;;
+      --dry-run) dry_run="true"; shift ;;
+      *) die_usage ;;
+    esac
+  done
+
+  local -a cmd=(gh issue close "$issue" --repo "$repo")
+  [[ -n "$reason" ]] && cmd+=(--reason "$reason")
+
+  if [[ "$dry_run" == "true" ]]; then
+    jq -n --arg issue "$issue" --arg would_run "$(quote_cmd "${cmd[@]}")" \
+      '{ op: "close", issue: $issue, dry_run: true, would_run: $would_run }'
+    return 0
+  fi
+  # gh issue close prints its "✓ Closed" confirmation to stderr (which flows
+  # through); a successful exit IS the confirmation, so we don't capture stdout.
+  "${cmd[@]}" >/dev/null
+  jq -n --arg issue "$issue" \
+    '{ op: "close", issue: $issue, dry_run: false, closed: true }'
+}
+
+# Reopen an issue (no --reason). Sibling of cmd_close for the reentrant case where a
+# prematurely-closed question must be reopened before its decision is revised.
+cmd_reopen() {
+  [[ $# -lt 2 ]] && die_usage
+  local repo="$1"; shift
+  local issue="$1"; shift
+  local dry_run="false"
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+      --dry-run) dry_run="true"; shift ;;
+      *) die_usage ;;
+    esac
+  done
+
+  local -a cmd=(gh issue reopen "$issue" --repo "$repo")
+  if [[ "$dry_run" == "true" ]]; then
+    jq -n --arg issue "$issue" --arg would_run "$(quote_cmd "${cmd[@]}")" \
+      '{ op: "reopen", issue: $issue, dry_run: true, would_run: $would_run }'
+    return 0
+  fi
+  "${cmd[@]}" >/dev/null
+  jq -n --arg issue "$issue" \
+    '{ op: "reopen", issue: $issue, dry_run: false, reopened: true }'
 }
 
 # ---- dispatch ----
@@ -361,5 +435,7 @@ case "$SUB" in
   edit-body) cmd_edit_body "$@" ;;
   link)      cmd_link "$@" ;;
   comment)   cmd_comment "$@" ;;
+  close)     cmd_close "$@" ;;
+  reopen)    cmd_reopen "$@" ;;
   *) die_usage ;;
 esac

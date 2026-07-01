@@ -85,9 +85,9 @@ improvising.
    - `gh-pr-gather.sh` for `GATHER_PR`
    - `gh-persist.sh` for every `PERSIST_*` write (`PERSIST_CREATE`,
      `PERSIST_BODY` in both `replace` and `pointer` modes, `PERSIST_LINK`
-     for native issue-dependency changes, and
+     for native issue-dependency changes,
      `PERSIST_COMMENT` for all three targets — `issue`, `pr`,
-     `pr-review`)
+     `pr-review` — and `PERSIST_CLOSE` / `PERSIST_REOPEN` for issue state)
 
    Rolling your own — issuing individual `gh issue view` / `gh pr view` /
    `gh api .../comments` calls when a GATHER script covers the op, or
@@ -379,11 +379,15 @@ ${CLAUDE_PLUGIN_ROOT}/scripts/gh-persist.sh comment <repo> <target> <id> <body_p
   [--delete-marker-id <id>]
 ```
 
-The script handles the `gh api -X DELETE` for `delete_marker_id` when
-present (PR comments are issue comments under the hood, so the
-issue-comments endpoint covers both), then shells out to the right `gh`
-sub-command per target — `gh issue comment`, `gh pr comment`, or
-`gh pr review --<review_action>`. For `target=pr-review` the caller
+The script shells out to the right `gh` sub-command per target —
+`gh issue comment`, `gh pr comment`, or `gh pr review --<review_action>` —
+and, when `delete_marker_id` is present, deletes the prior marker comment
+**after** the new one posts (post-then-delete via `gh api -X DELETE`, so a
+failed post never destroys the existing comment with no replacement; PR
+comments are issue comments under the hood, so the issue-comments endpoint
+covers both). A delete that fails after a successful post is best-effort —
+the new comment stands and the stale duplicate surfaces as
+`marker_comment_count > 1` on the next gather. For `target=pr-review` the caller
 supplies `review_action` — the verdict is the caller's decision; the
 script just executes it.
 
@@ -515,6 +519,24 @@ notice and the op returns a no-op success (`changed: false`, `deps_unsupported:
 true`); any other failure surfaces. Surface the JSON envelope (`op: "link"`,
 `changed`, `deps_unsupported`, `url?`) in `## RESULT` — `deps_unsupported` is
 always present.
+
+### `PERSIST_CLOSE(repo, issue, reason?)` · `PERSIST_REOPEN(repo, issue)`
+State-only change to an existing issue — no body write, no empty-body gate. Per
+rule 7, the only execution path is the bundled script:
+
+```bash
+${CLAUDE_PLUGIN_ROOT}/scripts/gh-persist.sh close  <repo> <issue> [--reason completed|"not planned"]
+${CLAUDE_PLUGIN_ROOT}/scripts/gh-persist.sh reopen <repo> <issue>
+```
+
+`close` runs `gh issue close` (optional `--reason`, gh defaults to `completed`);
+`reopen` runs `gh issue reopen`. Each emits a JSON envelope (`op: "close"|"reopen"`,
+`issue`, `closed`/`reopened: true`) — surface those scalars in `## RESULT`. gh prints
+its `✓ Closed`/`✓ Reopened` confirmation to stderr; a successful exit is the confirmation.
+Closing an already-closed issue is a gh no-op, so this is safe for a reentrant caller.
+You close/reopen the issue the caller names; you **never** decide *whether* to close it
+— that judgment (and its human gate) belongs to the caller. The normal flow posts the
+decision comment via `PERSIST_COMMENT` first, then closes as a separate op.
 
 ## Output shape
 

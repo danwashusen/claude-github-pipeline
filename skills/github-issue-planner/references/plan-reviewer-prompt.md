@@ -100,14 +100,14 @@ Run only the dimensions named in the inputs.
 
    Evidence for a dimension-9 finding: quote the plan's `## Coverage gap`, cite the root-cause location, and quote the regression test's assertion intent from `## Test plan` plus the existing-test `file:line` that fails to cover the path.
 
-10. **Open-question integrity** *(fires when the plan has an `## Open questions` section — see `<<dimensions>>` routing)*. The plan may depend on human-owned open questions it must **not** resolve itself. Read the plan's `## Open questions` against the issue body, the companion `question` issues, and the source register at `<<plan_ref>>`:
+10. **Open-question integrity** *(fires when the plan has an `## Open questions` section — see `<<dimensions>>` routing)*. The plan may depend on human-owned open questions it must **not** resolve itself. Read the plan's `## Open questions` against the issue body and the companion `question` issues (the registry of record — the tracker, not a doc register field):
 
    - **Every `question: #N` resolves to a real question.** `gh issue view <N> --json number,labels,state` must return an issue carrying a `question` (and/or `audience:*`) label. A dangling reference — no such issue, or not a question — is a BLOCKER.
-   - **The OQ is still open.** If the source register now marks the OQ `Decided`/`Applied` (resolved upstream at `<<plan_ref>>`), the plan must **build** the now-decided scope, not defer it — flag "OQ resolved upstream; plan must build it, not plan around it" as a BLOCKER.
+   - **The OQ is still open.** Check the companion `question: #N`'s state: if it's `closed`, or still `open` but its thread carries a direction-setting answer (read the thread and judge it, the way the question-status reader does), the OQ is **resolved** — the plan must **build** the now-decided scope, not defer it — flag "OQ resolved in tracker; plan must build it, not plan around it" as a BLOCKER. (The tracker is the status authority, not a doc register field.)
    - **The plan does not silently resolve the OQ.** No `## Architecture decisions` / `## Changes` entry may decide the gated subject without either a `[user decision <date>]` citation or an `## Open questions` `planned-around`/`recorded-blocked` treatment. Silently baking an answer to a human-owned question is a BLOCKER — the mirror of the drafter's frozen-undecided check, applied to the plan.
    - **Deferred scope stays out of the build.** A `planned-around` or `recorded-blocked` part must not also appear in `## Changes` / `## Test plan` as built scope (consistency with scope-out).
 
-   Evidence for a dimension-10 finding: quote the `## Open questions` entry and the conflicting `## Changes`/`## Architecture decisions` line or the register row, or name the dangling `question: #N`.
+   Evidence for a dimension-10 finding: quote the `## Open questions` entry and the conflicting `## Changes`/`## Architecture decisions` line, or the companion question's state/thread finding, or name the dangling `question: #N`.
 
 ## Severity
 

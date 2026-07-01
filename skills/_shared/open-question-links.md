@@ -2,9 +2,12 @@
 
 The **`## Open questions`** section is a body section a **build** issue (bug / feature / incomplete /
 epic / story) carries when it was drafted from a source that still has **unresolved open questions**
-(OQs) — decisions tracked in a doc register the consuming repo keeps, e.g. a `docs/prd.md` open-questions
-register (`PRD-OQ-##`) or a design register (`OQ-##` / `DESIGN-Q-#`), often surfaced inline in the
-source as `PROVISIONAL — <oq-id>` / `TBD` markers. It records, per OQ, *what scope the OQ gates* and
+(OQs). OQs aren't centralized — they surface inline in *any* project doc (often as
+`PROVISIONAL — <oq-id>` / `TBD` markers, e.g. a Rails/healthcare repo's `PRD-OQ-##` in `docs/prd.md` or
+a Swift repo's `OQ-##` / `DESIGN-Q-#` in a design doc); the **registry of record is the set of GitHub
+`question`-type issues** (the tracker), with docs as the *sources* that seed it. Detecting and matching
+an OQ is [`open-question-detection.md`](open-question-detection.md); the `question`-issue body schema is
+[`question-issue.md`](question-issue.md). This section records, per OQ, *what scope the OQ gates* and
 *how the build issue disposes of it*, and links to the `question`-type issue that routes the decision to
 a human. It turns a doc-internal OQ into a **tracker-visible dependency**.
 
@@ -24,7 +27,9 @@ split. Every consumer cites it rather than restating the schema.
 
 | Skill | Role |
 |---|---|
-| `github-issue-drafter` | **Sole writer.** Creates the section at draft time (one entry per gating OQ), sets the native `blocked by` for `in-scope (blocked)` entries, and reconciles both in revise mode (add newly-open OQs; on an OQ now resolved upstream, surface it and offer to re-file — don't silently delete). |
+| `open-questions` (sweep) | **Registry owner.** Detects OQs across all project docs, reconciles them against the tracker — files missing companion questions, flags stale docs, and maintains the doc↔issue back-links. Explicit-invocation only (a hygiene sweep, not a pipeline stage). |
+| `question-resolver` | **Assisted closer.** Evaluates a `question` issue against the docs, records the operator's decision as the `<!-- question-decision:v1 -->` comment, optionally closes the issue, and **proposes** (never applies) the doc fold-back. Never decides — the operator does. Explicit-invocation only. |
+| `github-issue-drafter` | **Thin writer.** On a build issue whose scope an OQ gates: writes this section's entry, sets the native `blocked by` for `in-scope (blocked)`, and links the companion question — reusing an existing one, or filing when untracked (safety net). Reconciles in revise mode via the tiered read (§Status). Does **not** own cross-doc detection, registry reconciliation, or doc back-linking — those are the sweep's. |
 | `github-issue-planner` | **Reader + extender.** Reads this section and the issue's native `blocked_by` to learn which scope is gated, copies the live entries into the *plan's* own `## Open questions` section, and **never silently resolves an OQ** (a tracked OQ is not a hedge — see the planner's §7.5 carve-out). Does not write this body section. |
 | `github-issue-resolver` | **Reads `blocked_by`; hard-gates.** If the issue is natively `blocked by` an **open** question, routes to its `blocked` classification (surface "can't build until #N answers") instead of building the gated criterion. Treats this section as a tracked-dependency registry — **not buildable scope, not a DoD source**. |
 | `github-pr-evaluator` | **Reads `blocked_by`; hard-gates.** Holds / soft-rejects the merge while an in-scope blocker (open question) is unresolved, citing it. Does **not** read this section's bullets as acceptance criteria or as DoD gaps. |
@@ -48,7 +53,9 @@ Omit the whole section when no OQ gates the issue. One bullet per gated OQ:
 ```
 
 `disposition` is a closed set of exactly three values. `question: #<N>` is the companion `question`-type
-issue that routes the decision (`(not filed)` when the user declined at the drafter's gate).
+issue that routes the decision — either one the drafter filed or an existing question it reused after a
+de-dup search (the drafter always searches for an existing companion before proposing to file a new one);
+`(not filed)` when the user declined at the drafter's gate and none existed.
 
 **Stack-neutral examples** (never present one repo's id syntax as canonical):
 ```
@@ -87,18 +94,65 @@ issue that routes the decision (`(not filed)` when the user declined at the draf
   choice later contradicts a grounding doc, the evaluator's in-scope hard-block correctly fires — the
   disposition is opt-in and the risk was accepted.
 
+## Status is the tracker's
+
+An OQ's resolution is read from the **tracker**, not a doc register field — a doc marker can lag a
+decision made in the question's thread. The read is **tiered** so `github-ops` stays judgment-free
+(`GATHER_ISSUE` returns the issue `state`, the full verbatim `thread`, and — when passed
+`marker_prefix=<!-- question-decision:v1 -->` — whether a recorded-decision comment exists):
+
+- **Tier 1 — deterministic (zero-cost).** The question is **resolved** if either the issue is `closed`
+  **or** it carries a `<!-- question-decision:v1 -->` comment (the durable decision `question-resolver`
+  records — that comment *is* the answer). `state` is always in the `GATHER_ISSUE` envelope; the marker
+  half needs the fetch to pass `marker_prefix=<!-- question-decision:v1 -->` so `marker_comment_present`
+  populates — a consumer that doesn't (checking a single companion by `state`) still gets the marker via
+  Tier 2's reader, which checks for it first. No sub-agent. This is the common, leanest path.
+- **Tier 2 — thread reading (judgment, only when `open` AND no decision marker).** Dispatch the
+  question-status reader `Explore` sub-agent (`${CLAUDE_PLUGIN_ROOT}/skills/open-questions/references/question-status-reader-prompt.md`),
+  sibling to the resolver's state-distiller. It reads the question's body + thread and returns a typed
+  reading — `resolved-in-thread` / `still-open`, with evidence (quote + author + date) and, when
+  resolved, a one-line answer summary; on a thread it can't read confidently it raises `AMBIGUOUS` per
+  [`subagent-decision-signal.md`](subagent-decision-signal.md). This catches the
+  **answered-in-thread-but-still-open** staleness case (a stakeholder answered; nobody recorded a
+  decision, closed the issue, or folded it to docs).
+
+Consumers: `question-resolver` (its own reentrancy) and the sweep (stale-doc reconciliation) realize
+the full Tier 1 by fetching with the decision `marker_prefix`; the planner (Dimension 10 / revise) and
+drafter (revise) check a single companion by `state` and fall through to Tier 2, whose reader catches
+the marker anyway. Escalate to Tier 2 only when a question is still `open` and no decision marker was
+found.
+
 ## The doc→tracker bridge
 
 The companion `question` issue's own `## Tracked in` section points at **both** the source-doc register
 location (`docs/prd.md → Open questions → PRD-OQ-05`) **and** the build issue `#` that depends on it, so
 the loop is closeable from either end.
 
+## Doc fold-back
+
+When a question resolves, the docs that raised it are updated to the **decided state** — framed as the
+state *now*, not a changelog (version control carries the history). Three moves, each where it applies:
+
+1. Rewrite the affected prose to the decided state.
+2. Remove the now-obsolete `PROVISIONAL` / open-question marker.
+3. If the repo keeps an open-questions register, flip its status (Open → Decided) and add the
+   `tracked in #<N>` back-link.
+
+`question-resolver` **proposes** these at decision time (never applies them); the `open-questions` sweep
+proposes them for a `stale-doc` question resolved elsewhere. Both cite this section rather than
+restating the moves.
+
 ## Closing protocol
 
 No skill auto-reopens work when a question is answered (consistent with session-per-skill and the
-no-auto-cross-boundary rule). The human answers the `question` issue in its thread (terminal). Then: a
-`scoped-out` follow-up is a fresh `github-issue-drafter` run (breadcrumbed by the question's
-`## Tracked in` build back-link); an `in-scope (blocked)` dependency is cleared by removing the native
-`blocked by` (`PERSIST_LINK --remove-blocked-by`) and folding the now-decided scope in via the drafter/
-planner revise flow; a `provisional-default` is confirmed or corrected the same way, retiring the
-watchpoint.
+no-auto-cross-boundary rule). The decision is the human's. The **assisted-closing path** is
+`/github-pipeline:question-resolver <issue>`: it evaluates the question against the docs, records the
+operator's decision as the `<!-- question-decision:v1 -->` comment (the machine-readable resolution
+Tier 1 reads), offers to close the issue, and **proposes** (never applies) the doc fold-back. It does
+not decide — the operator does; it does not run the downstream flows either.
+
+Then, per the build issue's disposition: a `scoped-out` follow-up is a fresh `github-issue-drafter` run
+(breadcrumbed by the question's `## Tracked in` build back-link); an `in-scope (blocked)` dependency is
+cleared by removing the native `blocked by` (`PERSIST_LINK --remove-blocked-by`) and folding the
+now-decided scope in via the drafter/planner revise flow; a `provisional-default` is confirmed or
+corrected the same way, retiring the watchpoint.
