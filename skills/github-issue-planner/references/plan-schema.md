@@ -71,6 +71,14 @@ constrain this, with §refs — the citations, not a restatement of the approach
   surfaced so the resolver doesn't second-guess it (e.g. "cross-day
   completion: no special handling needed because the Finalise button
   isn't surfaced on a past day anyway")>
+- <a **provisional-default** open question named in `## Open questions`,
+  with its retirement condition: the same choice that section's
+  `default:` field records and the same `retires-when: #<N> answered`
+  — surfaced here because the choice ships as real in-scope scope now,
+  not a hedge (e.g. "tags are stored lowercased for case-insensitive
+  matching (`§5.5`); `question: #51` may later decide case-preserving
+  display, which touches only the display layer, not the stored value
+  — retires-when: #51 answered")>
 
 **This section does not carry open design decisions.** Phrasings that
 defer a choice ("Resolver picks", "either approach is acceptable",
@@ -82,13 +90,19 @@ Decision gate at step 6.5 — never here. The one exception is a
 **human-owned open question already tracked** as a `question` issue or
 a doc open-questions register entry: that goes in `## Open questions`
 below (a tracked open question is not a hedge — step 7.5 carve-out),
-not resolved from precedent and not sent to the Decision gate.
+not resolved from precedent and not sent to the Decision gate. A
+**provisional-default** OQ is the one case that appears in both
+sections: the decision itself is built now (an ordinary entry in
+`## Architecture decisions` / `## Changes`, not a hedge) — the bullet
+here only records its retirement condition, it does not re-open the
+choice.
 
 ## Open questions              (omit if none — the issue's gated decisions the plan plans around)
-- OQ `<id>` (<source §/register>) — gates: <scope> — question: #<N> (audience: <audience:* labels>)
-  — treatment: planned-around | recorded-blocked
+- OQ `<id>` (<source §/register>) — gates: <scope> — question: #<N> | (not filed) (audience: <audience:* labels>)
+  — treatment: planned-around | recorded-blocked | provisional-default
   - planned-around: <how the unblocked scope is planned without resolving the OQ; what is deferred to the follow-up>
   - recorded-blocked: <the in-scope part the plan cannot specify until #<N> answers — NOT in ## Changes / ## Test plan>
+  - provisional-default: <the provisional choice, planned and built as a normal in-scope decision — not deferred> — default: <the provisional choice built on> — retires-when: <#<N> answered> — also add a matching `## Risks & watchpoints` entry
 
 _Authored by `github-issue-planner` and verified in <N> review pass(es). The resolver treats
 the decisions above as binding; a plan-invalidating discovery routes back here in revise mode.

@@ -2,6 +2,8 @@
 
 Every clean run of the planner ends with a single `## Handoff` block. The schema, omission rules, and closed-set state-marker vocabulary live in [`../../_shared/handoff-format.md`](../../_shared/handoff-format.md); this file holds the planner's worked rendering shapes. Match the run's outcome to a shape and fill the snapshot from the data Step 12 lists.
 
+These shapes compose along independent axes — the structural shape (single-issue, epic, or story) and whether the plan carries open questions — so a real run's handoff may combine two renderings (e.g. a story-under-epic shape with an `Open questions:` line) rather than picking exactly one worked example verbatim.
+
 ### Renderings
 
 **Single-issue plan posted.** Forward to the resolver.
@@ -49,6 +51,23 @@ Every clean run of the planner ends with a single `## Handoff` block. The schema
     /github-pipeline:github-issue-resolver #151
 
 **Why:** #151's plan was authored just-in-time against `epic/150-chat-ux` HEAD and checked against the epic's `## Story contracts` (Dimension 8). The resolver opens a PR targeting the epic branch; when it merges, the evaluator hands off to plan the next story just-in-time.
+```
+
+**Epic-plus-story hybrid, one session — the epic had no plan yet, so the planner bootstrapped it first.** "Just-in-time story planning" assumes the parent epic already has a posted plan (its step 1 fetches it); it doesn't say what to do when invoked on a story whose open parent epic has no plan yet. Bootstrapping the epic plan first (Step 11's mechanics, run inline) and then continuing in the same session to this story's just-in-time plan is a reasonable judgment call, not a documented default path — treat it the same way as any other gap the planner fills with judgment, not as a named branch to cite. Because the epic branch doesn't exist yet at this point (it's created only once the resolver implements the first story — see the epic-plan rendering above), grounding for **both** plans stays at the bootstrap ref, `origin/main`, not an epic branch. The emitted handoff is the **story**'s — it forwards to the resolver. When the story's plan also carries an `## Open questions` entry whose companion `question` hasn't been filed yet, the `Open questions:` line uses the planner's own treatment vocabulary (`planned-around` / `recorded-blocked` / `provisional-default` — not the drafter's `scoped-out` / `blocked-by`, see handoff-format.md) and `(not filed)` in place of `#<N>`.
+
+```
+## Handoff
+
+**Story:** #161 — Add digest frequency setting · open · story · plan: ✓ (https://github.com/owner/repo/issues/161#issuecomment-XXXXX)
+**Epic:** #160 — Notifications: email digests · open (0 of 2 stories closed)
+**Grounding:** read at origin/main@f6a7b8c · docs/prd.md §5 (digest frequency) · full detail in the plan's ## Doc grounding
+**Open questions:** (not filed) (audience:developer) provisional-default — see the plan's ## Open questions
+
+**Next:** implement the story in a fresh session.
+
+    /github-pipeline:github-issue-resolver #161
+
+**Why:** epic #160 had no plan when this session started (invoked on #161, its first story, per "Just-in-time story planning"). The planner authored the epic plan first — pinning the #161→#162 contract — then continued in this same session to plan #161 against it, checked against `## Story contracts` (Dimension 8); both grounded at `origin/main`, the bootstrap ref, since no epic branch exists yet. The digest-frequency default (`prd.md §5`) has no filed companion question yet: the plan builds the decided default as a provisional choice and flags the alternative in `## Risks & watchpoints`; it retires once a question is filed and answered.
 ```
 
 If the Epic ran but the child stories weren't filed yet (Step 11's "stop after the epic-level plan" branch), the next step is the drafter — that's a forward route to file the stories, then the user re-runs the planner on the Epic. As with the epic-plan rendering, `Grounding:` reads at `origin/main` — bootstrap, before the epic branch exists:
