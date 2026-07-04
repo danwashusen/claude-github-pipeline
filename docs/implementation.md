@@ -11,6 +11,15 @@ Each step is sized to be one issue and one PR.
   PR into this repo's `main`. This repo runs the same write-protected-`main` model the plugin
   assumes ([prd.md §8](prd.md)); nothing lands without a PR.
 - A step is done only when every DoD box is ticked; DoD is verified in PR review, not assumed.
+- **v2 is written from scratch, never edited down from v1.** v1 skill directories and scripts
+  are frozen once S1 captures them — read-only behavioral references until S20 deletes them (a
+  v1 hotfix, if ever needed, is its own PR and triggers an S1 spec refresh). A cutover step
+  authors `skills/<name>/` fresh from its S1 spec, the PRD, and
+  [architecture.md §9](architecture.md); copying v1 `SKILL.md` prose into the new directory and
+  whittling it down is the failure mode this plan exists to avoid. Only two classes of v1 text
+  are carried verbatim: the [prd.md §7](prd.md)-frozen artifact renderings (byte-compatible by
+  requirement) and the reference prompts a step explicitly marks as carried (e.g. S10's
+  sub-agent prompts, S16's web-research loop).
 - **Global DoD** (applies to every step, in addition to its own): `python3 -m compileall -q
   scripts/` succeeds; `python3 tests/run.py` green from S2 onward — for steps that touch
   scripts, on **both macOS and Linux** (container invocation documented in `tests/README.md`);

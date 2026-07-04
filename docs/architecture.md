@@ -282,7 +282,12 @@ section 4 is **Summary** per [prd.md §6](prd.md), not Handoff):
 4. **Handoff** — pointer to the shared schema + this skill's rendering reference.
 
 Size bar: a router fits comfortably in one default `Read` (≤ ~150 lines) — the v1 forced-read
-workaround and the resolver-local `§P-ID` scheme are both retired. Standalone tools keep
+workaround and the resolver-local `§P-ID` scheme are both retired.
+
+Authorship rule: a v2 router + playbook set is written **from scratch** against the skill's S1
+spec and this section — never derived by editing v1 `SKILL.md` prose down. Only two classes of
+v1 text are carried: the [prd.md §7](prd.md)-frozen artifact renderings (byte-compatible by
+requirement) and the judgment sub-agent prompts a cutover step explicitly marks as carried. Standalone tools keep
 `disable-model-invocation: true`. Scratch dirs are uniformly `/tmp/gh-<skill>-<N>/`. Skill and
 directory names are the [prd.md §2](prd.md) fixed names; nothing echoes the `github-pipeline`
 namespace.
