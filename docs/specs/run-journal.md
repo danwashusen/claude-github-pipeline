@@ -125,7 +125,7 @@ sandbox, or delete anything outside the working tree and the sandbox.
 
 ### S21 — GitHub executor ports — ACCEPTED (2026-07-04)
 
-- **Commit:** `<backfilled next commit>` (`S21: port the four gh executors to Python`).
+- **Commit:** `246b64c` (`S21: port the four gh executors to Python`).
 - **DoD:** all 4 boxes ticked, verified this session.
 - **Deliverables:** `scripts/{gh_gather,gh_pr_gather,gh_persist,config_block}.py` (Python ports under
   the §3 envelope, importing `pipelib`) + `tests/test_*.py` + fixtures. v1 `.sh` untouched +
@@ -157,6 +157,32 @@ sandbox, or delete anything outside the working tree and the sandbox.
   in-process fakes (the shim replays stdout only), which all three reviewers ruled **adequate** for
   S21 (the shim is frozen for S21). A future harness improvement, not required.
 - **Deferrals:** none of S21's own DoD.
+
+### S4 — `workspace.py` — ACCEPTED (2026-07-04)
+
+- **Commit:** `<backfilled next commit>` (`S4: workspace.py — worktree lifecycle owner`).
+- **DoD:** all 7 boxes ticked, verified this session.
+- **Deliverables:** `scripts/workspace.py` (`ensure --work`/`--read`, `remove --work`, `gc`,
+  `root-status`, `lint`; root-freshness `ROOT_NOT_ON_MAIN`/`ROOT_DIRTY`/`ROOT_DIVERGED`; `BRANCH_IN_USE`;
+  hook execution via `pipelib.hooks` composing `config_block.py` **in-process**; idempotent `.gitignore`
+  maintenance) + `tests/test_workspace.py` (63 git-sandbox tests) + the `.worktrees/` `.gitignore` entry.
+- **Design calls (reviewer-adjudicated in the implementor's favor):** dirty/unpushed `remove --work` →
+  `AMBIGUOUS` (a closed-set code; PRD §4.3 mechanical-blocker card; no §3 amendment needed);
+  `config_block` composed in-process via its scan primitives (§2 mandate — subprocessing it would
+  violate §1's git/gh-only-spawn rule); root **never auto-fixed** (§12). The v1→v2 hook result-key
+  mapping and the malformed-block graceful-degradation divergence are **inlined** into `workspace.py`
+  (self-contained — no dangling references to transient artifacts).
+- **Manual smoke (orchestrator-run):** `ensure --read main --root .` → `ok`, detached `ro-main` at
+  `origin/main`'s SHA; `gc --max-age 0` → removed `ro-main`, root clean.
+- **Dual-platform:** 400 tests pass on macOS and in the Linux `python:3-slim` container.
+- **Process:** 1 implementor → orchestrator sanity (macOS + Linux + the manual smoke) → 1 opus
+  reviewer (PASS, 0 actionable, 4 advisories) → 2 docstring fixups (hook-mapping durability;
+  self-containment). **1 review round.**
+- **Carried advisories (non-blocking, for later steps):** add a public `config_block.read_block()` API
+  to retire the `_private`-function reach; a fresh consuming repo's first `ensure` leaves `.gitignore`
+  uncommitted so a 2nd `ensure` trips `ROOT_DIRTY` (one-time bootstrap — surface in S6+/operator docs);
+  `gc`/`remove --work` leave the empty `.worktrees/` parent dir (harmless, git-ignored).
+- **Deferrals:** none.
 
 ### Session-mechanics note (applies to the whole run in this session)
 

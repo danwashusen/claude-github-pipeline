@@ -204,19 +204,19 @@ reset-on-ensure for `ro-*`; `BRANCH_IN_USE` when the branch is checked out elsew
 until S20.
 
 **DoD**
-- [ ] `ensure --work`: creates from `origin/<base>`, reuses an existing worktree, runs setup
+- [x] `ensure --work`: creates from `origin/<base>`, reuses an existing worktree, runs setup
       hooks on every entry, reports `reused` / dirty / unpushed facts.
-- [ ] `ensure --read`: detached at `origin/<ref>`, fetches then resets to current origin SHA on
+- [x] `ensure --read`: detached at `origin/<ref>`, fetches then resets to current origin SHA on
       re-ensure, reports the SHA.
-- [ ] `remove --work`: runs teardown hooks, then removes; dirty or unpushed state returns a
+- [x] `remove --work`: runs teardown hooks, then removes; dirty or unpushed state returns a
       decision instead of removing (both cases tested).
-- [ ] Each root-freshness failure mode returns its decision code (three cases), and the happy
+- [x] Each root-freshness failure mode returns its decision code (three cases), and the happy
       path ff-updates and records the SHA.
-- [ ] `gc` removes only `ro-*` older than max-age (default 7 days); an adversarial case proves an
+- [x] `gc` removes only `ro-*` older than max-age (default 7 days); an adversarial case proves an
       aged **work** worktree survives.
-- [ ] Hook semantics match v1 `worktree-hooks.sh` (fail-fast / best-effort / lint; result-key
+- [x] Hook semantics match v1 `worktree-hooks.sh` (fail-fast / best-effort / lint; result-key
       mapping documented).
-- [ ] `.gitignore` entry idempotent.
+- [x] `.gitignore` entry idempotent.
 
 **Testing:** git-sandbox unit tests covering every subcommand and decision code; hook cases use
 config-block fixtures; manual smoke: `ensure --read` against this repo, then `gc --max-age 0`.
