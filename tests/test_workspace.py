@@ -274,6 +274,67 @@ class EnsureWorkTests(WorkspaceGitSandboxTestCase):
         envelope = self._envelope(["ensure", "--work", "feature-x", "--base", "main"])
         self.assertTrue(envelope["reused"])
 
+    def test_existing_origin_branch_checks_out_at_the_branch_head_not_base(self):
+        # The regression test (S6-pilot fixup): an EXISTING branch on origin (e.g. a PR head) with
+        # no worktree yet and no local ref in this clone — the exact cross-compat/fresh-clone shape
+        # an evaluator hits. Before the fix this unconditionally created the worktree at
+        # origin/main's head; it must land at origin/feature-x's head instead.
+        other_clone = gitsandbox.mk_clone(self.origin)
+        self.addCleanup(other_clone.cleanup)
+        _git(["checkout", "-b", "feature-x"], other_clone.path)
+        _write(other_clone.path / "pr-only.txt", "content only on the PR branch\n")
+        _git(["add", "pr-only.txt"], other_clone.path)
+        _git(["commit", "-m", "PR branch commit main does not have"], other_clone.path)
+        _git(["push", "origin", "feature-x"], other_clone.path)
+        expected_sha = _git(["rev-parse", "feature-x"], other_clone.path)
+        main_sha = _git(["rev-parse", "origin/main"], self.root)
+        self.assertNotEqual(expected_sha, main_sha, "the fixture must actually diverge from main")
+
+        envelope = self._envelope(["ensure", "--work", "feature-x", "--base", "main"])
+        self.assertEqual(envelope["status"], "ok")
+        self.assertFalse(envelope["reused"])
+        self.assertEqual(envelope["base_ref"], "main", "base_ref stays the PR base for unpushed-count semantics")
+        self.assertEqual(
+            envelope["sha"], expected_sha,
+            "worktree HEAD must be origin/feature-x's head, not origin/main's",
+        )
+        wt = self.root / ".worktrees" / "feature-x"
+        self.assertEqual(_git(["rev-parse", "HEAD"], wt), expected_sha)
+        self.assertTrue((wt / "pr-only.txt").exists(), "must have the PR branch's actual content")
+        self.assertEqual(envelope["unpushed_commits"], 0, "worktree HEAD == origin/feature-x, nothing unpushed")
+
+    def test_existing_local_branch_with_no_worktree_is_attached_not_recreated(self):
+        # A local `feature-x` ref exists (e.g. left behind by a worktree removed earlier) but no
+        # worktree currently has it checked out. `git worktree add -b` would fail with "branch
+        # already exists"; the fix must attach the existing branch instead of crashing, and still
+        # land it at origin/feature-x's head (not leave it at whatever stale commit the local ref
+        # pointed to).
+        other_clone = gitsandbox.mk_clone(self.origin)
+        self.addCleanup(other_clone.cleanup)
+        _git(["checkout", "-b", "feature-x"], other_clone.path)
+        _write(other_clone.path / "pr-only.txt", "content only on the PR branch\n")
+        _git(["add", "pr-only.txt"], other_clone.path)
+        _git(["commit", "-m", "PR branch commit main does not have"], other_clone.path)
+        _git(["push", "origin", "feature-x"], other_clone.path)
+        expected_sha = _git(["rev-parse", "feature-x"], other_clone.path)
+
+        # Create a LOCAL branch ref in self.root pointing at the stale pre-push main tip, with no
+        # worktree attached to it (plain `git branch`, not `checkout -b`, never attaches HEAD).
+        stale_sha = _git(["rev-parse", "origin/main"], self.root)
+        _git(["branch", "feature-x", stale_sha], self.root)
+        self.assertNotEqual(stale_sha, expected_sha)
+
+        envelope = self._envelope(["ensure", "--work", "feature-x", "--base", "main"])
+        self.assertEqual(envelope["status"], "ok")
+        self.assertFalse(envelope["reused"])
+        self.assertEqual(
+            envelope["sha"], expected_sha,
+            "must fast-forward/reset the pre-existing local branch to origin/feature-x's head",
+        )
+        wt = self.root / ".worktrees" / "feature-x"
+        self.assertEqual(_git(["rev-parse", "HEAD"], wt), expected_sha)
+        self.assertTrue((wt / "pr-only.txt").exists())
+
     def test_reused_worktree_reports_dirty_true_when_it_has_uncommitted_changes(self):
         self._envelope(["ensure", "--work", "feature-x", "--base", "main"])
         _write(self.root / ".worktrees" / "feature-x" / "scratch.txt", "uncommitted\n")

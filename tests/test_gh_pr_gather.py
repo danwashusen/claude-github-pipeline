@@ -31,14 +31,16 @@ from tests.support import envelope_asserts, shimenv
 REPO_ROOT = Path(__file__).resolve().parent.parent
 SCRIPT = REPO_ROOT / "scripts" / "gh_pr_gather.py"
 
-# The exact v1 --json field list (gh-pr-gather.sh) this port must request unchanged — a fixture
-# manifest keyed on a different field list would silently stop matching and every test would fail
-# with an un-fixtured-call MISS, which is itself a coverage guard against a silent field-list
-# drift. Also asserted directly in one PortPreservesV1CliShapeTests test below.
+# The v1 --json field list (gh-pr-gather.sh) PLUS `labels` — the v1 list this port must request
+# unchanged, plus one deliberate v2 addition (the evaluator's escalation-label matching needs the
+# PR's own labels, which v1's fetch omitted despite referencing them; see the module docstring). A
+# fixture manifest keyed on a different field list would silently stop matching and every test
+# would fail with an un-fixtured-call MISS, which is itself a coverage guard against a silent
+# field-list drift. Also asserted directly in one PortPreservesV1CliShapeTests test below.
 _EXPECTED_VIEW_JSON_FIELDS = (
     "number,title,body,state,isDraft,author,baseRefName,headRefName,commits,additions,deletions,"
     "changedFiles,closingIssuesReferences,comments,reviews,latestReviews,reviewDecision,"
-    "mergeStateStatus,mergeable,statusCheckRollup,headRefOid,url"
+    "mergeStateStatus,mergeable,statusCheckRollup,headRefOid,url,labels"
 )
 
 
@@ -108,6 +110,7 @@ class LegacyInlineModeTests(unittest.TestCase):
             "closingIssuesReferences",
             "url",
             "latestReviews",
+            "labels",  # v2 addition (not a v1 field) — see the module docstring.
         ):
             self.assertIn(field, env, "missing v1-contract field %r" % field)
 
@@ -116,6 +119,28 @@ class LegacyInlineModeTests(unittest.TestCase):
         result = _run_script(["88", "octo/widgets"], fixture_case="gh_pr_gather_legacy_inline")
         env = _parse_one_envelope(result.stdout)
         self.assertEqual(env["commit_count"], 2)
+
+    def test_labelled_pr_surfaces_label_name_strings(self):
+        # v2 addition: `gh pr view --json ...,labels` returns each label as an object with a
+        # `name` (among other fields); this port maps to just the names, matching
+        # architecture.md §4's `"labels": ["story"]` facts-block example. Fixture carries two
+        # labels (`bug`, `needs-review`) to prove the mapping isn't accidentally correct only for
+        # a single-element list.
+        result = _run_script(["88", "octo/widgets"], fixture_case="gh_pr_gather_legacy_inline")
+        env = _parse_one_envelope(result.stdout)
+        self.assertEqual(env["labels"], ["bug", "needs-review"])
+        for label in env["labels"]:
+            self.assertIsInstance(label, str)
+
+    def test_unlabelled_pr_surfaces_empty_labels_list(self):
+        # A PR with no labels must surface `labels: []`, never a missing key or null.
+        with tempfile.TemporaryDirectory() as tmp:
+            result = _run_script(
+                ["88", "octo/widgets", "--scratch-dir", tmp],
+                fixture_case="gh_pr_gather_scratch_small",
+            )
+            env = _parse_one_envelope(result.stdout)
+            self.assertEqual(env["labels"], [])
 
     def test_body_thread_reviews_are_inline_regardless_of_scratch_dir_absence(self):
         result = _run_script(["88", "octo/widgets"], fixture_case="gh_pr_gather_legacy_inline")

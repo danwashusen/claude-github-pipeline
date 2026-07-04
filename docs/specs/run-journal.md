@@ -186,7 +186,7 @@ sandbox, or delete anything outside the working tree and the sandbox.
 
 ### S5 — `parse.py` — ACCEPTED (2026-07-04)
 
-- **Commit:** `<backfilled next commit>` (`S5: parse.py — the shared body-grammar parser`).
+- **Commit:** `fe16977` (`S5: parse.py — the shared body-grammar parser`).
 - **DoD:** all 4 boxes ticked, verified this session.
 - **Deliverables:** `scripts/parse.py` (`dod` + `dod --render`, `oq-links`, `phases` subcommands over
   a file path, envelope out) + `tests/test_parse.py` (54 tests) + fixtures lifted from the S1/`_shared`
@@ -216,6 +216,53 @@ sandbox, or delete anything outside the working tree and the sandbox.
   the `AMBIGUOUS` reuse. Worth a small hardening when the resolver/evaluator skills (which *use* render
   to write back DoD) are built (S7/S10).
 - **Deferrals:** none.
+
+### S6 — `prep_evaluator.py` (the prep-script pilot) — ACCEPTED (2026-07-04)
+
+- **Commit:** `<backfilled next commit>` (`S6: prep_evaluator.py — evaluator facts block (prep pilot)`).
+- **DoD:** all 5 boxes ticked, verified this session.
+- **Deliverables:** `scripts/prep_evaluator.py` (composes gh_pr_gather + gh_gather + workspace + parse
+  + config_block **in-process** into the architecture §4 facts block) + `tests/test_prep_evaluator.py`
+  (59 tests, shim + git-sandbox) + fixtures. **Amended `docs/architecture.md` §4** (content-only,
+  anchor stable) to match the real evaluator schema (added pr/pr_type/ci/self_review/current_user/
+  merge_config; dod/blocked_by/deps_available keyed per closing-issue; replaced the resolver-shaped
+  `open_questions` with the evaluator's native `blocked_by`/`deps_available`).
+- **Composition pattern (pilot):** in-process, NOT subprocess (§1); prep emits exactly one envelope;
+  emit-and-exit executors captured via `redirect_stdout`. Verified: single-invocation budget = 7 gh
+  calls (two-sided bound); gate config read at the root main SHA (§12); MARKER_AMBIGUOUS/ROOT_*/
+  BRANCH_IN_USE propagate; `--refresh` re-derives CI/PR-state without hook re-runs.
+- **Read-only live smoke (real GitHub, sandbox PR #6, on a pristine clone):** `status ok`,
+  `target.labels: ['story']`, `workspace.sha == PR head` (cae86c8), `pr_type standard`, `ci green`,
+  `self_review True`, `config.sha == root main`. (Labelled PR #6 `story` for the smoke; that label
+  stays on the sandbox.)
+- **Two shared-layer fixes the pilot surfaced (both actionable, both smoke-verified + re-reviewed):**
+  1. **PR labels** — `gh_pr_gather._VIEW_JSON_FIELDS` omitted `labels` (v1 did too, despite the
+     evaluator referencing a `labels` array — a latent v1 contradiction), so escalation-label matching
+     could never fire. Added `labels` (mapped to name strings), fixing the docstring-vs-code lie;
+     `target.labels` now populated.
+  2. **workspace `ensure --work` existing-branch bug** — it unconditionally created a new branch at
+     `origin/<base>`, so an existing PR branch checked out at `main` (wrong code to evaluate). Fixed
+     with 3-case logic (reuse worktree > checkout `origin/<branch>` at its head > create-from-base);
+     additive, regression-tested (fail-before/pass-after). This is the fix that made the smoke's
+     `workspace.sha == PR head`.
+- **S8 RETRO INPUT — composition-API friction (durable record for S8):** the executors have uneven
+  composition surfaces — `parse.py` exposes pure `parse_*()→dict`; `gh_gather.run` has a `stream=`
+  param + returns; but `gh_pr_gather.run`, `workspace.py` (subcommands), and `config_block.py` (run_*)
+  **emit-and-exit with no returnable/stream core**, forcing `prep_evaluator` to use
+  `contextlib.redirect_stdout` capture as a *bridge*. **Proposed lock for S8:** every executor exposes
+  a pure non-emitting core (e.g. `build_*(...) -> (payload, notices, decision|None)`) and `main()` is a
+  thin emit wrapper (the `gh_gather.run(stream=)`/`parse.parse_dod_bullets` shape) — retrofit onto
+  gh_pr_gather/workspace/config_block so no later prep (S9/S12/S14/S16/S18) re-implements the
+  stdout-capture shim. Also: distinguish "partial-but-honest envelope on failure" (e.g. setup-hook
+  failure) from "hard error" as a type-level return distinction; give workspace.py per-subcommand cores.
+  Treat the capture-via-redirect_stdout pattern as pilot-only, not the target.
+- **Dual-platform:** 517 tests pass on macOS and Linux.
+- **Process:** 1 implementor → orchestrator sanity (macOS+Linux) → 1 opus reviewer (CHANGES REQUIRED:
+  labels + merge-policy-coverage) → labels fixup → live smoke surfaced the workspace bug → workspace
+  fixup → live smoke (pristine) PASS → 1 opus re-review (PASS). **2 review rounds.**
+- **Deferrals:** none. Advisories carried: `vector.pr_state` self_review conflation (glance at S15);
+  the one-time `.gitignore` bootstrap dirties a fresh consuming-repo root (surfaced in the smoke as a
+  correctly-propagated `ROOT_DIRTY` on a re-run — operator commits `.gitignore` once).
 
 ### Session-mechanics note (applies to the whole run in this session)
 

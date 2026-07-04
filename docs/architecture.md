@@ -125,7 +125,8 @@ Every script emits exactly one JSON envelope on stdout.
 ## §4 The facts block
 
 The prep script's envelope payload is the **facts block**: the session's complete starting state,
-assembled in one call ([prd.md §9.2](prd.md)). Common core, extended per skill:
+assembled in one call ([prd.md §9.2](prd.md)). Common core, extended per skill — worked example
+below is `prep_evaluator.py` (S6, the pilot prep script):
 
 ```json
 {
@@ -133,31 +134,57 @@ assembled in one call ([prd.md §9.2](prd.md)). Common core, extended per skill:
   "repo": "owner/name",
   "scratch": "/tmp/gh-evaluator-88",
   "root": { "path": "/abs/repo", "sha": "abc123…", "fresh": true },
-  "target": { "kind": "pr", "number": 88, "title": "…", "state": "open", "labels": ["story"] },
+  "target": { "kind": "pr", "number": 88, "title": "…", "state": "OPEN", "labels": ["story"] },
   "vector": { "type": "story", "mode": "continue", "pr_state": "open-by-you" },
   "suggested_playbook": "story.md",
-  "workspace": { "kind": "work", "path": "/abs/repo/.worktrees/88-fix-x", "branch": "88-fix-x",
+  "workspace": { "path": "/abs/repo/.worktrees/88-fix-x", "branch": "88-fix-x",
                   "base_ref": "epic/42-journal", "sha": "def456…", "reused": true,
                   "dirty": false, "unpushed_commits": 2 },
   "read_workspaces": { "audit": { "path": "/abs/repo/.worktrees/ro-epic-42-journal", "sha": "0a1b2c…" } },
-  "config": { "sha": "abc123…", "test_target": "…", "static_checks": ["…"], "merge_policy": {"story": "ask"} },
+  "config": { "sha": "abc123…", "static_checks": ["…"], "static_checks_present": true,
+               "test_target_present": true, "test_target_raw": "…", "test_target_source": "…",
+               "escalation_labels": ["…"], "merge_policy": {"story": "ask", "epic-integration": "ask"},
+               "merge_policy_present": true, "legacy_health_checks_present": false,
+               "legacy_health_checks_source": null },
+  "pr": { "headRefName": "88-fix-x", "baseRefName": "epic/42-journal", "headRefOid": "def456…",
+           "isDraft": false, "author": {"login": "…"}, "mergeStateStatus": "CLEAN",
+           "reviewDecision": null, "url": "…", "closingIssuesReferences": [{"number": 101}] },
+  "pr_type": "story",
+  "ci": { "class": "green", "fail_checks": [] },
   "health_cache": { "sha": "def456…", "hit": false },
+  "self_review": false,
+  "current_user": "…",
+  "merge_config": { "allow_squash_merge": true, "allow_merge_commit": false,
+                      "allow_rebase_merge": false, "delete_branch_on_merge": true,
+                      "allow_auto_merge": false },
   "sections": { "issue_body_mode": "path", "issue_body_bytes": 41230,
                  "issue_body_path": "/tmp/gh-evaluator-88/body.md" },
-  "dod": [ { "index": 1, "text": "…", "checked": true, "annotation": { "form": "closed-by-phase", "phase": 1, "sha": "…" } } ],
-  "open_questions": [ { "issue": 101, "disposition": "in-scope (blocked)", "tracker_state": "open", "decision_marker": false } ],
+  "dod": { "101": [ { "index": 1, "text": "…", "checked": true,
+                        "annotation": { "form": "closed-by-phase-commit", "phase": 1, "sha": "…" } } ] },
+  "blocked_by": { "101": [] },
+  "deps_available": { "101": true },
   "attention": [ "work worktree has 2 unpushed commits" ],
   "notices": []
 }
 ```
 
+`dod`/`blocked_by`/`deps_available` are keyed by **closing-issue number** (a string key, since a
+PR's `closingIssuesReferences` may name more than one issue) rather than a flat list — a PR that
+closes issue #101 also carries #101's `## Definition of done` and native `blocked_by` state, so
+the two ride together per issue rather than as an independent top-level list. `read_workspaces`
+is present only for a skill that grounds on a second ref (e.g. the resolver's audit read); a
+skill with no second view (the evaluator above) omits the key entirely.
+
 Rules: every fact is **re-derivable** — prep supports `--refresh` and is re-run at the points
-where currency matters (e.g. pre-merge PR state). Values the flow needs (`base_ref`, branch name,
-merge strategy, audit SHA) appear as facts so playbooks consume them as data (§5). Ambiguities a
-script can detect but not resolve surface in `attention` or as a `needs_decision` — never as
-prompt-side re-derivation. Inline-mode sections carry the content in the bare field
-(`issue_body`) alongside `*_bytes`; additional named read workspaces ride under
-`read_workspaces`, keyed by purpose.
+where currency matters (e.g. pre-merge PR state); `--refresh` re-derives only the volatile facts
+named in the calling step's DoD (for the evaluator: PR state, `ci`, `health_cache`) and does
+**not** re-run `workspace.py`'s setup hooks or re-read the four gate-config blocks — a `--refresh`
+envelope therefore omits `workspace` entirely and reports `config: {}`, relying on the caller's
+prior full-run facts block for those. Values the flow needs (`base_ref`, branch name, merge
+strategy, audit SHA) appear as facts so playbooks consume them as data (§5). Ambiguities a script
+can detect but not resolve surface in `attention` or as a `needs_decision` — never as prompt-side
+re-derivation. Inline-mode sections carry the content in the bare field (`issue_body`) alongside
+`*_bytes`; additional named read workspaces ride under `read_workspaces`, keyed by purpose.
 
 ## §5 Routing & playbooks
 

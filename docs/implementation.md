@@ -259,14 +259,14 @@ the self-review fact (PR author vs current user); emit `suggested_playbook`, `at
 `notices`; support `--refresh` (re-derives volatile facts without re-running hooks).
 
 **DoD**
-- [ ] Facts schema matches the [architecture.md §4](architecture.md) example (kept in sync in the
+- [x] Facts schema matches the [architecture.md §4](architecture.md) example (kept in sync in the
       same PR) and passes conformance.
-- [ ] Fixtures: four CI states; cache hit and miss; merge-policy present and absent; story, epic
+- [x] Fixtures: four CI states; cache hit and miss; merge-policy present and absent; story, epic
       and standard detection; closing-issue DoD parsed.
-- [ ] Decision paths tested: `MARKER_AMBIGUOUS` (duplicate cache comments), `ROOT_*` propagation,
+- [x] Decision paths tested: `MARKER_AMBIGUOUS` (duplicate cache comments), `ROOT_*` propagation,
       `BRANCH_IN_USE`.
-- [ ] `--refresh` re-derives PR state and CI without hook re-runs.
-- [ ] Single-invocation budget asserted via shim call counts ([prd.md §9.2](prd.md)).
+- [x] `--refresh` re-derives PR state and CI without hook re-runs.
+- [x] Single-invocation budget asserted via shim call counts ([prd.md §9.2](prd.md)).
 
 **Testing:** shim-backed unit tests per the DoD matrix; one documented **read-only** live smoke
 against a real PR.

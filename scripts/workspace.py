@@ -145,6 +145,17 @@ def _remote_branch_exists(cwd, branch):
     return result.returncode == 0
 
 
+def _local_branch_exists(cwd, branch):
+    """True iff a local branch named ``<branch>`` exists in ``cwd``'s repo (``refs/heads/<branch>``),
+    regardless of whether any worktree currently has it checked out. Used only when no worktree is
+    already attached to ``<branch>`` (that case is handled earlier by ``_find_worktree_for_branch``)
+    — e.g. a clone that once had a worktree for this branch, removed it, but kept the local branch
+    ref. A plain ``git worktree add -b <branch> ...`` would fail with "branch already exists" in
+    that case, so callers must check this first and attach rather than create."""
+    result = _git(["show-ref", "--verify", "--quiet", "refs/heads/%s" % branch], cwd)
+    return result.returncode == 0
+
+
 def _unpushed_commits(cwd, branch, base_ref):
     """Count commits on ``HEAD`` not yet on the remote. If ``origin/<branch>`` exists, count
     relative to it (the true "not yet pushed" count for a branch with some history already
@@ -510,13 +521,52 @@ def _cmd_ensure_work(args):
 
     reused = target_path.is_dir() and _find_worktree_at_path(worktrees, target_path) is not None
     if not reused:
-        add_result = _git(
-            ["worktree", "add", "-b", args.branch, str(target_path), "origin/%s" % args.base],
-            root,
-        )
-        if add_result.returncode != 0:
-            sys.stderr.write(add_result.stderr)
-            return 1
+        # No worktree to reuse — pick the checkout source by branch existence, so an EXISTING
+        # branch (e.g. a PR head an evaluator must check out) lands the worktree at that branch's
+        # actual head, never silently at --base (architecture.md §6's "SHA" fact must be the
+        # branch's own head, not main's).
+        branch_on_remote = _remote_branch_exists(root, args.branch)
+        if branch_on_remote:
+            fetch_branch_result = _git(["fetch", "origin", args.branch], root)
+            if fetch_branch_result.returncode != 0:
+                sys.stderr.write(fetch_branch_result.stderr)
+                return 1
+
+        if branch_on_remote and _local_branch_exists(root, args.branch):
+            # Local branch ref exists (e.g. left behind by a worktree removed earlier) but no
+            # worktree currently has it checked out (ruled out above) — attach it, then fast-
+            # forward/reset it to origin/<branch>'s head so a stale local ref never wins over the
+            # remote's actual head.
+            add_result = _git(["worktree", "add", str(target_path), args.branch], root)
+            if add_result.returncode != 0:
+                sys.stderr.write(add_result.stderr)
+                return 1
+            reset_result = _git(
+                ["reset", "--hard", "origin/%s" % args.branch], str(target_path),
+            )
+            if reset_result.returncode != 0:
+                sys.stderr.write(reset_result.stderr)
+                return 1
+        elif branch_on_remote:
+            # No local branch at all — create one tracking origin/<branch>, checked out at its
+            # head, in the same worktree-add call.
+            add_result = _git(
+                ["worktree", "add", "-b", args.branch, str(target_path), "origin/%s" % args.branch],
+                root,
+            )
+            if add_result.returncode != 0:
+                sys.stderr.write(add_result.stderr)
+                return 1
+        else:
+            # Neither a worktree nor an origin branch — the resolver's fresh-work case: create a
+            # new branch at origin/<base> (unchanged from prior behavior).
+            add_result = _git(
+                ["worktree", "add", "-b", args.branch, str(target_path), "origin/%s" % args.base],
+                root,
+            )
+            if add_result.returncode != 0:
+                sys.stderr.write(add_result.stderr)
+                return 1
 
     _ensure_gitignore_entry(root)
 

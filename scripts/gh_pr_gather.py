@@ -30,7 +30,12 @@ Preserved from v1, re-expressed as a §3 envelope:
   ``baseRefName``, ``headRefName``, ``headRefOid``, ``additions``, ``deletions``, ``changedFiles``,
   ``commit_count`` (derived from ``commits`` length, as v1 does), ``mergeStateStatus``,
   ``mergeable``, ``reviewDecision``, ``statusCheckRollup``, ``closingIssuesReferences``, ``url``,
-  ``latestReviews``.
+  ``latestReviews``, **plus ``labels``** — the v1 field set plus `labels` (a deliberate v2
+  addition: the evaluator's escalation-label matching needs the PR's own labels, which v1's fetch
+  omitted despite referencing them). ``labels`` is surfaced as a list of label-name strings (``gh``
+  returns each label as an object with a ``name``; this module maps to just the names, matching
+  architecture.md §4's ``"labels": ["story"]`` example) and rides the *same* ``gh pr view`` call —
+  no additional ``gh`` invocation.
 - **Marker discovery + ``marker_comment_count``** — a marker-prefix match against the PR's
   issue-comments thread. Unlike v1 (which silently picks ``.[0]`` on a duplicate), a duplicate
   match is a **new v2 behavior**: ``MARKER_AMBIGUOUS`` (architecture.md §3: "more than one
@@ -64,8 +69,11 @@ from pipelib.envelope import (  # noqa: E402
 )
 from pipelib.spill import spill_bytes  # noqa: E402
 
-# Exactly the v1 --json field list (gh-pr-gather.sh's `gh pr view --json ...`) — the evaluator
-# keys on this field set; do not add/drop/rename a field without a matching evaluator-spec change.
+# The v1 --json field list (gh-pr-gather.sh's `gh pr view --json ...`) PLUS `labels` — a
+# deliberate v2 addition (the evaluator's escalation-label matching needs the PR's own labels,
+# which v1's fetch omitted despite referencing them; see docs/specs/evaluator.md's `labels` field
+# and architecture.md §4's `"labels": ["story"]` facts-block example). The evaluator keys on this
+# field set; do not add/drop/rename a field without a matching evaluator-spec change.
 _VIEW_JSON_FIELDS = ",".join(
     [
         "number",
@@ -90,6 +98,7 @@ _VIEW_JSON_FIELDS = ",".join(
         "statusCheckRollup",
         "headRefOid",
         "url",
+        "labels",
     ]
 )
 
@@ -266,6 +275,9 @@ def run(pr, repo, marker=None, scratch_dir=None, with_diff=False, with_line_comm
         "closingIssuesReferences": view["closingIssuesReferences"],
         "url": view["url"],
         "latestReviews": view["latestReviews"],
+        # v2 addition (not a v1 field): label-name strings, mapped from `gh`'s label objects
+        # (each carries a `name`) — see the module docstring and _VIEW_JSON_FIELDS comment.
+        "labels": [label["name"] for label in view.get("labels") or []],
     }
 
     if scratch_dir is not None:
