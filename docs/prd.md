@@ -185,6 +185,8 @@ an artifact written by a v1 skill is consumed correctly by its v2 counterpart, a
   is executing; alternative flows stay on disk.
 - **§9.5 Behavior parity.** A rewritten skill replaces its predecessor only after passing the
   parity protocol defined in [implementation.md](implementation.md).
+- **§9.6 Portability.** The deterministic layer behaves identically on macOS (BSD userland) and
+  Linux (GNU userland); no skill step depends on platform-specific tooling.
 
 ## §10 Success metrics
 
@@ -192,15 +194,16 @@ an artifact written by a v1 skill is consumed correctly by its v2 counterpart, a
   v1 `SKILL.md` line count for that skill (v1 baseline recorded by implementation step S1).
 - Session startup performs exactly one state-assembly invocation (§9.2).
 - The contract-token census (S1 baseline) shows zero unintended losses after each skill cutover.
-- The offline suite exercises every script decision code and passes.
+- The offline suite exercises every script decision code and passes on both macOS and Linux.
 - All nine skills pass the parity protocol before v1 removal.
 
 ## §11 Constraints & assumptions
 
 - One operator per consuming repo at a time; concurrent sessions share only git/GitHub-enforced
   state.
-- `gh` is installed and authenticated with repo scope; `git`, `jq`, and a POSIX-ish `bash` are
-  present (versions pinned in [architecture.md §1](architecture.md)).
+- `gh` is installed and authenticated with repo scope; `git` and Python 3 are present (versions
+  pinned in [architecture.md §1](architecture.md)). The skills require no other runtimes,
+  interpreters, or packages.
 - Consuming repos may lack optional capabilities (native issue dependencies, grounding docs,
   config blocks); skills degrade gracefully and say so.
 - The plugin install directory is read-only at runtime; nothing is ever written there.

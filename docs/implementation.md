@@ -1,7 +1,8 @@
 # github-pipeline v2 — Implementation Plan
 
 Step-by-step migration from v1 to the [architecture.md](architecture.md) design, preserving the
-[prd.md](prd.md) product truth. Steps have stable IDs (`S1`–`S20`) — cite them, never renumber.
+[prd.md](prd.md) product truth. Steps have stable IDs (`S1`–`S21`) — cite them, never renumber
+(IDs are labels, not positions: `S21` was added after initial authoring and runs in Phase 0).
 Each step is sized to be one issue and one PR.
 
 ## How to use this plan
@@ -10,10 +11,12 @@ Each step is sized to be one issue and one PR.
   PR into this repo's `main`. This repo runs the same write-protected-`main` model the plugin
   assumes ([prd.md §8](prd.md)); nothing lands without a PR.
 - A step is done only when every DoD box is ticked; DoD is verified in PR review, not assumed.
-- **Global DoD** (applies to every step, in addition to its own): `shellcheck scripts/*.sh`
-  clean; `tests/run.sh` green; `jq . .claude-plugin/*.json` parses; [architecture.md](architecture.md)
-  / [prd.md](prd.md) amended in the same PR when the step legitimately changed a contract
-  (content edits only — §-anchors are stable).
+- **Global DoD** (applies to every step, in addition to its own): `python3 -m compileall -q
+  scripts/` succeeds; `python3 tests/run.py` green — for steps that touch scripts, on **both
+  macOS and Linux** (container invocation documented in `tests/README.md`); `shellcheck` clean
+  for any v1 `*.sh` still present; `.claude-plugin/*.json` parses (`python3 -m json.tool`);
+  [architecture.md](architecture.md) / [prd.md](prd.md) amended in the same PR when the step
+  legitimately changed a contract (content edits only — §-anchors are stable).
 - **Order:** the table below. After S8 (pattern lock) the remaining tracks are parallelizable;
   before it, everything is deliberately serial so the shared patterns are corrected while only
   one skill uses them.
@@ -23,13 +26,14 @@ Each step is sized to be one issue and one PR.
 | S1 baseline & specs | — | S11 sub-agent exceptions | S10 |
 | S2 test harness | — | S12 prep-planner | S8 |
 | S3 lib + envelope | S2 | S13 planner skill | S12, S11 |
-| S4 workspace.sh | S3 | S14 prep-drafter | S8 |
-| S5 parse.sh | S3 | S15 drafter skill | S14 |
+| S4 workspace.py | S21 | S14 prep-drafter | S8 |
+| S5 parse.py | S3 | S15 drafter skill | S14 |
 | S6 prep-evaluator | S4, S5 | S16 researcher | S8 |
 | S7 evaluator skill | S6, S1 | S17 setup | S8, S4 |
 | S8 pilot retro & lock | S7 | S18 question pair | S8, S5 |
 | S9 prep-resolver | S8 | S19 doc-reviewer | S8 |
 | S10 resolver skill | S9 | S20 retirement | S9–S19 all |
+| S21 executor ports | S3 | — | — |
 
 ## The sandbox repo
 
@@ -89,45 +93,78 @@ harness involvement.
 
 **Goal:** the [architecture.md §10](architecture.md) harness exists and provably intercepts.
 
-**Work:** `tests/run.sh`; vendor bats-core under `tests/vendor/`; `tests/shim/gh` replaying
-fixtures from `tests/fixtures/<case>/` keyed on exact argv (helpful diff on miss); a git-sandbox
-helper (`mk_origin` / `mk_clone` in temp dirs with cleanup); `tests/README.md` (fixture layout,
-adding a case); `tests/SANDBOX.md` (live sandbox seeding).
+**Work:** `tests/run.py` (stdlib `unittest` discovery — no third-party framework, nothing to
+vendor or install); `tests/shim/gh` (a Python executable named `gh`) replaying fixtures from
+`tests/fixtures/<case>/` keyed on exact argv (helpful diff on miss); a git-sandbox helper
+(`mk_origin` / `mk_clone` in temp dirs with cleanup); `tests/README.md` (fixture layout, adding
+a case, and the Linux container invocation for dual-platform runs); `tests/SANDBOX.md` (live
+sandbox seeding).
 
 **DoD**
-- [ ] `tests/run.sh` discovers and runs all `*.bats`, exits non-zero on any failure.
-- [ ] Shim self-test proves interception: a probe script calling `gh` receives fixture bytes;
+- [ ] `python3 tests/run.py` discovers and runs all `test_*.py`, exits non-zero on any failure.
+- [ ] Shim self-test proves interception: a probe calling `gh` receives fixture bytes;
       un-fixtured argv fails the test loudly.
 - [ ] Runs make no network calls and never invoke the real `gh` (asserted, e.g. via a poisoned
       `PATH` sentinel).
 - [ ] Git-sandbox helper creates origin + clone and cleans up on exit, pass or fail.
+- [ ] The suite passes on macOS and on Linux (container or host), per the documented invocation.
 - [ ] `tests/README.md` and `tests/SANDBOX.md` exist and suffice to add a case / seed the
-      sandbox without reading harness source.
+      sandbox / run on Linux without reading harness source.
 
-**Testing:** the harness tests itself: shim hit/miss cases, sandbox create/teardown, run.sh
+**Testing:** the harness tests itself: shim hit/miss cases, sandbox create/teardown, run.py
 failure propagation.
 
-### S3 — `scripts/lib.sh` + the envelope
+### S3 — `scripts/pipelib/` + the envelope
 
 **Goal:** the [architecture.md §3](architecture.md) primitives every script shares.
 
-**Work:** emit helpers (`ok` / `needs_decision` / `notice`), spill helper (threshold env: new
-name honored, legacy `GH_OPS_INLINE_THRESHOLD_BYTES` fallback, default 25600), sha256 helper,
-jq-safe JSON assembly, the closed decision-code constants; plus reusable bats assertions for
-envelope conformance (status validity, decision payload shape, `*_mode`/`*_path` pairing,
-exit-code contract) that all later suites import.
+**Work:** a stdlib-only package: envelope emit (`ok` / `needs_decision` / `notice`), spill
+helper (threshold env: new name honored, legacy `GH_OPS_INLINE_THRESHOLD_BYTES` fallback,
+default 25600), sha256 helper, the closed decision-code constants, and the portable subprocess
+runner (argument lists only, never `shell=True`; `encoding="utf-8"` pinned; `git`/`gh` the only
+spawnable binaries — [architecture.md §1](architecture.md)); plus reusable unittest assertion
+helpers for envelope conformance (status validity, decision payload shape, `*_mode`/`*_path`
+pairing, exit-code contract) that all later suites import.
 
 **DoD**
-- [ ] Every lib function has a unit bats case.
+- [ ] Every pipelib function has a unit test.
+- [ ] The subprocess runner refuses string commands and non-`git`/`gh` binaries by construction,
+      and pins UTF-8 (tested).
 - [ ] Conformance assertions exist and are importable by other suites (used by a toy script
       end-to-end test).
 - [ ] Threshold precedence tested: new var, legacy var, default.
 - [ ] Decision-code constants exactly match [architecture.md §3](architecture.md); a drift-check
       test compares the doc list to the lib list.
 
-**Testing:** `tests/lib.bats` + the toy-script end-to-end envelope emission case.
+**Testing:** `tests/test_pipelib.py` + the toy-script end-to-end envelope emission case.
 
-### S4 — `workspace.sh`
+### S21 — GitHub executor ports (runs in Phase 0)
+
+**Goal:** the four v1 bash executors become Python modules under the §3 envelope
+([architecture.md §7](architecture.md)); the v1 `.sh` files stay untouched for v1 callers until
+S20.
+
+**Work:** port `gh-gather.sh` → `gh_gather.py`, `gh-pr-gather.sh` → `gh_pr_gather.py`,
+`gh-persist.sh` → `gh_persist.py`, `config-block.sh` → `config_block.py`, preserving each
+behavior contract exactly, re-expressed in §3 envelope terms: thread pagination, marker
+discovery + `marker_comment_count`, threshold spill, dependency capability-gating
+(`DEPS_UNSUPPORTED` notice + retry-without), the empty-body gate, post-new-before-delete-old,
+close/reopen idempotency, `body_sha256` receipts, canonical config-block forms and statuses.
+
+**DoD**
+- [ ] Each port emits a conformant envelope for its happy path and every decision/notice it can
+      produce (fixture per case).
+- [ ] Invariant tests: empty staged file → `EMPTY_BODY_FILE`; duplicate markers surfaced per
+      contract; deps-unsupported → notice + retry-without; comment replacement posts before
+      delete.
+- [ ] `config_block.py` round-trips the v1 canonical block forms byte-identically
+      (`read`/`list`/`upsert`/`remove` semantics preserved; fixtures lifted from v1 examples).
+- [ ] v1 `.sh` files untouched and still shellcheck-clean.
+
+**Testing:** shim-backed unit tests per the DoD matrix; one documented read-only live smoke for
+the two gathers.
+
+### S4 — `workspace.py`
 
 **Goal:** the [architecture.md §6](architecture.md) lifecycle owner.
 
@@ -135,7 +172,7 @@ exit-code contract) that all later suites import.
 [--max-age]` / `root-status`; root-freshness protocol (on-`main` + clean → fetch → `--ff-only` →
 SHA; `ROOT_NOT_ON_MAIN` / `ROOT_DIRTY` / `ROOT_DIVERGED` decisions); hook execution absorbed from
 `worktree-hooks.sh` (setup fail-fast, teardown best-effort, `lint`), discovered via
-`config-block.sh`; reset-on-ensure for `ro-*`; `BRANCH_IN_USE` when the branch is checked out
+`config_block.py`; reset-on-ensure for `ro-*`; `BRANCH_IN_USE` when the branch is checked out
 elsewhere; `.gitignore` maintenance. `worktree-hooks.sh` itself stays untouched for v1 callers
 until S20.
 
@@ -152,10 +189,10 @@ until S20.
       mapping documented).
 - [ ] `.gitignore` entry idempotent.
 
-**Testing:** git-sandbox bats covering every subcommand and decision code; hook cases use
+**Testing:** git-sandbox unit tests covering every subcommand and decision code; hook cases use
 config-block fixtures; manual smoke: `ensure --read` against this repo, then `gc --max-age 0`.
 
-### S5 — `parse.sh`
+### S5 — `parse.py`
 
 **Goal:** one parser for the shared body grammars, ending per-skill prompt parsing.
 
@@ -179,12 +216,12 @@ envelope conformance on every output.
 
 ## Phase 1 — Evaluator pilot
 
-### S6 — `prep-evaluator.sh`
+### S6 — `prep_evaluator.py`
 
 **Goal:** the evaluator's complete facts block in one call ([architecture.md §4](architecture.md)).
 
-**Work:** compose `gh-pr-gather.sh`, `gh-gather.sh` (each closing issue), `workspace.sh` (root
-freshness + work ensure on the PR branch), `parse.sh dod`; pin gate config at the root SHA
+**Work:** compose `gh_pr_gather.py`, `gh_gather.py` (each closing issue), `workspace.py` (root
+freshness + work ensure on the PR branch), `parse.py dod`; pin gate config at the root SHA
 (static-checks, test-target, escalation-labels, merge-policy); classify the CI rollup
 (green / red / pending / none); compare the health-cache marker SHA; detect PR type
 (epic-integration / story / standard) from base/head patterns; fetch repo merge config; surface
@@ -201,7 +238,7 @@ the self-review fact (PR author vs current user); emit `suggested_playbook`, `at
 - [ ] `--refresh` re-derives PR state and CI without hook re-runs.
 - [ ] Single-invocation budget asserted via shim call counts ([prd.md §9.2](prd.md)).
 
-**Testing:** bats with shim fixtures per the DoD matrix; one documented **read-only** live smoke
+**Testing:** shim-backed unit tests per the DoD matrix; one documented **read-only** live smoke
 against a real PR.
 
 ### S7 — Evaluator skill rewrite
@@ -247,14 +284,14 @@ stable); record the scale/no-scale decision.
 
 ## Phase 2 — Resolver
 
-### S9 — `prep-resolver.sh`
+### S9 — `prep_resolver.py`
 
 **Goal:** resolver startup — v1's ~130 lines of prompt-side state assembly — in one call.
 
 **Work:** state vector (labels → type; plan marker + SHA; fresh/continue mode from the six-row
 prior-PR table); epic branch discovery + slug computation; story parent-epic search; branch
-collision suffixing (`-vN`); phase facts via `parse.sh phases` + `dod`; open-question facts
-(`parse.sh oq-links` joined with tracker states and native `blocked_by`) including the
+collision suffixing (`-vN`); phase facts via `parse.py phases` + `dod`; open-question facts
+(`parse.py oq-links` joined with tracker states and native `blocked_by`) including the
 in-scope-blocked hard-gate fact; audit read-workspace + work-workspace ensure per mode; test and
 fast-check config pinned at root SHA; distiller input bundle staged to scratch; `suggested_playbook`;
 `attention` (dirty, unpushed, ambiguous branch matches).
@@ -268,7 +305,7 @@ fast-check config pinned at root SHA; distiller input bundle staged to scratch; 
 - [ ] Distiller bundle is staged paths, never above-threshold inline bytes.
 - [ ] Conformance + single-invocation call budget as S6.
 
-**Testing:** shim bats per the matrix; read-only live smoke on a real epic and story issue.
+**Testing:** shim-backed unit tests per the matrix; read-only live smoke on a real epic and story issue.
 
 ### S10 — Resolver skill rewrite
 
@@ -314,7 +351,7 @@ removal happens in S20); align the question-status reader's `AMBIGUOUS`.
 
 ## Phase 3 — Planner & drafter
 
-### S12 — `prep-planner.sh`
+### S12 — `prep_planner.py`
 
 **Goal:** planner facts with read-workspace grounding ([prd.md §5.3, §8.4](prd.md)).
 
@@ -332,7 +369,7 @@ keyword candidates in facts — the S1 bug (a) fix); grounding-doc inventory at 
 - [ ] Revise facts include prior plan body path + phase tracker.
 - [ ] Conformance + call budget as S6.
 
-**Testing:** shim bats including the seeded OQ case; read-only live smoke on an epic story.
+**Testing:** shim-backed unit tests including the seeded OQ case; read-only live smoke on an epic story.
 
 ### S13 — Planner skill rewrite
 
@@ -356,7 +393,7 @@ comment's planned-at SHA is the workspace SHA fact.
 
 **Testing:** offline routing + rendering fixtures; the three live parity scenarios.
 
-### S14 — `prep-drafter.sh`
+### S14 — `prep_drafter.py`
 
 **Goal:** drafter facts.
 
@@ -371,7 +408,7 @@ staging conventions.
 - [ ] Template/label inventory correct on present/absent fixtures.
 - [ ] Conformance + call budget.
 
-**Testing:** shim bats; read-only live smoke.
+**Testing:** shim-backed unit tests; read-only live smoke.
 
 ### S15 — Drafter skill rewrite
 
@@ -379,7 +416,7 @@ staging conventions.
 
 **Work:** router + playbooks `new` / `revise` / `epic-split` / `question`; judgment content
 carried (classification cues, PRD tension detection, adversarial review loop, story coalescing);
-open-question dispositions per `_shared`; filing via `gh-persist.sh` with native dependencies.
+open-question dispositions per `_shared`; filing via `gh_persist.py` with native dependencies.
 
 **DoD**
 - [ ] Filed bodies are template-conformant; `open-question-links:v1` sections diff clean against
@@ -400,7 +437,7 @@ open-question dispositions per `_shared`; filing via `gh-persist.sh` with native
 
 **Goal:** `skills/researcher/` — the thinnest cutover ([prd.md §5.2](prd.md)).
 
-**Work:** `prep-researcher.sh` (gather + dossier-marker detection + manifest/doc inventory
+**Work:** `prep_researcher.py` (gather + dossier-marker detection + manifest/doc inventory
 list); router with broad/targeted/revise as facts-selected modes (single playbook unless the §5
 bar says otherwise — decided at build); web-research loop and validator carried unchanged.
 
@@ -410,7 +447,7 @@ bar says otherwise — decided at build); web-research loop and validator carrie
 - [ ] Prep fixtures: marker present/absent; manifests found/missing.
 - [ ] Grep gates + pins; parity recorded: broad run on a currency-risky issue, decline case.
 
-**Testing:** shim bats; the two live parity scenarios.
+**Testing:** shim-backed unit tests; the two live parity scenarios.
 
 ---
 
@@ -421,10 +458,10 @@ bar says otherwise — decided at build); web-research loop and validator carrie
 **Goal:** `skills/setup/` with operator-gated PR landing ([prd.md §6.1, §8.2](prd.md)).
 
 **Work:** rename from `github-pipeline-setup`; inventory/detect/propose/validate flows carried
-(all block I/O via `config-block.sh`); writes are staged in a work workspace, with the landing
+(all block I/O via `config_block.py`); writes are staged in a work workspace, with the landing
 (commit + push + PR whose body summarizes the block diffs) offered as an explicit final gate per
 [prd.md §8.2](prd.md); merge-policy proposal includes a `docs: auto` style option; worktree
-hook-block authoring retained, linted via `workspace.sh lint`.
+hook-block authoring retained, linted via `workspace.py lint`.
 
 **DoD**
 - [ ] Written blocks are byte-identical to v1 canonical forms (fixture diff).
@@ -442,11 +479,11 @@ hook-block authoring retained, linted via `workspace.sh lint`.
 **Goal:** `skills/question-sweep/` (renamed from `open-questions`) + `skills/question-resolver/`
 ([prd.md §6.2, §6.3](prd.md)).
 
-**Work:** `prep-question-sweep.sh` (question-issue registry gather with Tier-1 status join; doc
-candidate list from config block + heuristic cues); `prep-question-resolver.sh` (gather +
+**Work:** `prep_question_sweep.py` (question-issue registry gather with Tier-1 status join; doc
+candidate list from config block + heuristic cues); `prep_question_resolver.py` (gather +
 decision marker + native `blocking` list); sweep apply-mode doc edits are staged in a work
 workspace with the landing offered per [prd.md §8.2](prd.md); decision recording and
-close/reopen stay on `gh-persist.sh` with reentrancy preserved.
+close/reopen stay on `gh_persist.py` with reentrancy preserved.
 
 **DoD**
 - [ ] Tier-1 status join fixtures: closed / decision-marker present / still open (→ Tier-2
@@ -459,7 +496,7 @@ close/reopen stay on `gh-persist.sh` with reentrancy preserved.
 - [ ] New names used throughout the new dirs; `disable-model-invocation` retained; grep gates;
       parity recorded: sweep report-only, sweep apply, resolve + close.
 
-**Testing:** shim bats for both preps; the three live parity scenarios.
+**Testing:** shim-backed unit tests for both preps; the three live parity scenarios.
 
 ### S19 — Doc-reviewer rewrite
 
@@ -486,9 +523,10 @@ gather — assert that stays true).
 
 **Goal:** delete what the cutovers obsoleted; make the repo describe v2.
 
-**Work:** remove `agents/github-ops.md`, `scripts/worktree-hooks.sh`, all v1 skill directories,
-and the superseded internal `_shared` docs (`subagent-decision-signal.md`; the mechanics half of
-`worktree-lifecycle.md` — external block formats stay); sweep old names and stale
+**Work:** remove `agents/github-ops.md`, every v1 `scripts/*.sh` (gh-gather, gh-pr-gather,
+gh-persist, config-block, worktree-hooks), all v1 skill directories, and the superseded internal
+`_shared` docs (`subagent-decision-signal.md`; the mechanics half of `worktree-lifecycle.md` —
+external block formats stay); sweep old names and stale
 `/github-pipeline:<old-name>` strings; update `README.md`, `plugin.json`, `marketplace.json`
 (version bump), the authoring guides where they name old skills, and this repo's `CLAUDE.md`
 (rewritten for v2, including the extended validator greps: old names, `git show` in `skills/`,
@@ -496,9 +534,11 @@ raw `gh` writes in `skills/`); record the final census diff against the S1 basel
 `docs/specs/baseline.md` with every dropped token accounted for.
 
 **DoD**
-- [ ] Zero grep hits repo-wide for: old skill names, `github-ops`, `worktree-hooks`.
+- [ ] Zero grep hits repo-wide for: old skill names, `github-ops`, `worktree-hooks`; no `*.sh`
+      remains under `scripts/`.
 - [ ] Census diff reviewed; every removed token is on the deliberate-retirement list.
-- [ ] Full offline suite green; shellcheck clean; manifests parse; version bumped.
+- [ ] Full offline suite green on macOS and Linux; manifests parse; version bumped; the
+      runtime-dependency docs list only `python3` / `git` / `gh` (`jq` and `bash` dropped).
 - [ ] Fresh end-to-end conveyor run on the sandbox — draft → research (decline acceptable) →
       plan → resolve → evaluate → merge — with every handoff schema-valid.
 - [ ] `CLAUDE.md` describes only the v2 architecture; guides name only new skills.

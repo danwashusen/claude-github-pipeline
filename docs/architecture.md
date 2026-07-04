@@ -11,7 +11,7 @@ One session = one skill = one pass through this shape:
 
 ```
 operator ─▶ Claude Code session
-              SKILL.md router ─▶ prep script (bash, one call) ─▶ facts block (JSON + spilled files)
+              SKILL.md router ─▶ prep script (python, one call) ─▶ facts block (JSON + spilled files)
                 │                                                        │
                 ├── reads exactly one playbook (chosen via routing table + facts)
                 ├── dispatches judgment sub-agents (workspace paths in, typed results out)
@@ -21,27 +21,39 @@ operator ─▶ Claude Code session
 Scripts own everything deterministic; the model owns judgment; GitHub artifacts and the handoff
 are the only cross-session state ([prd.md §4.1](prd.md)).
 
-**Pinned runtime:** `bash` 3.2+ (macOS default; no bash-4-only features), `git` ≥ 2.38,
-`gh` ≥ 2.40 authenticated with repo scope, `jq` ≥ 1.6. Scripts are invoked by absolute path via
+**Pinned runtime:** Python ≥ 3.9 (the macOS Command Line Tools floor; **stdlib only** — no
+third-party packages, no venv, no pip step), `git` ≥ 2.38, `gh` ≥ 2.40 authenticated with repo
+scope. `jq` and `bash` are not v2 dependencies (the v1 scripts keep needing them until S20
+retirement). Scripts are executables (`#!/usr/bin/env python3`) invoked by absolute path via
 `${CLAUDE_PLUGIN_ROOT}/scripts/...`; the install dir is read-only.
+
+**Portability (macOS/BSD + Linux/GNU) is a requirement, not an aspiration.** Python is how the
+BSD-vs-GNU userland divergence (`sed`/`awk`/`date`/`stat` dialects) is excluded by construction.
+Rules: the only external processes a script may spawn are `git` and `gh`, via `subprocess` with
+argument lists — never `shell=True`; all text I/O pins `encoding="utf-8"` (locale defaults
+differ across platforms); paths go through `pathlib` and are compared via `os.path.realpath`
+(macOS `/tmp` is a symlink to `/private/tmp`); nothing assumes a case-sensitive filesystem.
+Module filenames use underscores so the test suite can import them; the v1 hyphenated `.sh`
+files coexist untouched until S20.
 
 **Repo layout (after rewrite):**
 
 ```
 scripts/
-  lib.sh              # envelope, spill, decision, sha256 helpers — sourced by every script
-  workspace.sh        # ensure / gc / root-freshness; absorbs worktree-hooks.sh
-  parse.sh            # dod | oq-links | phases subcommands
-  gh-gather.sh  gh-pr-gather.sh  gh-persist.sh  config-block.sh   # retained executors
-  prep-drafter.sh  prep-researcher.sh  prep-planner.sh  prep-resolver.sh  prep-evaluator.sh
-  prep-question-sweep.sh  prep-question-resolver.sh
+  pipelib/            # shared package: envelope, spill, decisions, sha256, subprocess runner
+  workspace.py        # ensure / gc / root-freshness; absorbs the function of worktree-hooks.sh
+  parse.py            # dod | oq-links | phases subcommands
+  gh_gather.py  gh_pr_gather.py  gh_persist.py  config_block.py   # executor ports (S21)
+  prep_drafter.py  prep_researcher.py  prep_planner.py  prep_resolver.py  prep_evaluator.py
+  prep_question_sweep.py  prep_question_resolver.py
+  *.sh                # v1 scripts, untouched until S20 retirement
 skills/
   <name>/SKILL.md     # thin router (§9)
   <name>/playbooks/   # one file per behaviorally distinct flow (§5)
   <name>/references/  # judgment sub-agent prompts + contract renderings
   _shared/            # cross-skill contracts (external ones unchanged; see §11)
 tests/
-  run.sh  vendor/bats-core/  shim/gh  fixtures/  *.bats            # §10
+  run.py  shim/gh  fixtures/  test_*.py            # stdlib unittest; §10
 ```
 
 ## §2 Component model & where logic lives
@@ -50,8 +62,8 @@ Each layer has one job; the dependency rules between them are the architecture.
 
 | Layer | Job | Must never |
 |---|---|---|
-| `scripts/lib.sh` | Shared envelope/spill/decision primitives | Contain skill-specific logic |
-| `scripts/*.sh` | All deterministic work: fetch, parse, derive state, select refs, name branches, run hooks, write to GitHub | Author prose, classify meaning, make judgment calls |
+| `scripts/pipelib/` | Shared envelope/spill/decision/subprocess primitives | Contain skill-specific logic |
+| `scripts/*.py` | All deterministic work: fetch, parse, derive state, select refs, name branches, run hooks, write to GitHub | Author prose, classify meaning, make judgment calls |
 | `SKILL.md` router | Run prep, apply the routing table, enforce universal invariants, emit the handoff | Contain per-type flow bodies or raw `gh`/`git` write commands |
 | Playbooks | The behavioral flow for one route, read on demand | Do ref arithmetic, restate contracts owned by `_shared`, duplicate the router's invariants |
 | Judgment sub-agents | Isolated reasoning over prepared inputs (audit, distill, review, select) | Write to GitHub, ask the user, receive raw refs instead of workspace paths |
@@ -59,7 +71,9 @@ Each layer has one job; the dependency rules between them are the architecture.
 
 The governing rule: **facts by script, meaning by model.** A step whose inputs and correct output
 are fully defined belongs in a script ([prd.md §9.1](prd.md)); if a needed operation has no
-script, extend a script — never inline the operation in a prompt.
+script, extend a script — never inline the operation in a prompt. Prep scripts compose the
+executors **in-process** (module imports and function calls), so a session's state assembly is
+one Python process, not a subprocess chain.
 
 ## §3 The envelope contract
 
@@ -149,13 +163,13 @@ PR.
 | Path | `.worktrees/<branch>` | `.worktrees/ro-<ref-slug>` |
 | Checkout | branch | detached HEAD at `origin/<ref>` |
 | Hooks | setup on every ensure (fail-fast); teardown before removal (best-effort) | none |
-| Lifecycle | resolver creates; persists across sessions; evaluator tears down + removes after merge | reuse per logical ref; **reset to current `origin/<ref>` on every ensure**; `workspace.sh gc` removes `ro-*` older than `--max-age` (default 7 days) — and only `ro-*` |
+| Lifecycle | resolver creates; persists across sessions; evaluator tears down + removes after merge | reuse per logical ref; **reset to current `origin/<ref>` on every ensure**; `workspace.py gc` removes `ro-*` older than `--max-age` (default 7 days) — and only `ro-*` |
 | Facts | branch, base_ref, path, SHA, reused, dirty/unpushed state | path + the exact SHA grounded on |
 
-- **`workspace.sh` owns the lifecycle**: `ensure --work|--read`, `gc`, root freshness
+- **`workspace.py` owns the lifecycle**: `ensure --work|--read`, `gc`, root freshness
   (verify root on `main` + clean → fetch → `--ff-only` → record SHA; failures are
   `ROOT_NOT_ON_MAIN` / `ROOT_DIRTY` / `ROOT_DIVERGED` decisions, never auto-fixed), hook
-  execution (discovering `<!-- worktree-setup/teardown -->` blocks via `config-block.sh`), the
+  execution (discovering `<!-- worktree-setup/teardown -->` blocks via `config_block.py`), the
   `.gitignore` entry, and branch-exclusivity handling (`BRANCH_IN_USE` when the branch is checked
   out elsewhere).
 - **The single-workspace invariant**: a session's prompt-visible rule is "your workspace is
@@ -173,13 +187,13 @@ PR.
 
 ## §7 GitHub I/O & write discipline
 
-- The four retained executors (`gh-gather.sh`, `gh-pr-gather.sh`, `gh-persist.sh`,
-  `config-block.sh`) move under the §3 envelope; their behavior contracts are otherwise
-  unchanged. Prep scripts compose them; playbooks call `gh-persist.sh` (and `config-block.sh`)
-  directly via Bash for writes.
+- The four v1 executors are **ported to Python** — `gh_gather.py`, `gh_pr_gather.py`,
+  `gh_persist.py`, `config_block.py` (implementation S21) — under the §3 envelope; their
+  behavior contracts are otherwise unchanged. Prep scripts compose them in-process; playbooks
+  call `gh_persist.py` (and `config_block.py`) directly via Bash for writes.
 - **Write path:** the skill stages the verbatim body to its scratch dir
   (`/tmp/gh-<skill>-<N>/…`), passes the path, and verifies the returned `body_sha256`. The
-  leading `test -s` empty-body gate stays (the #626/#627 race fix); an empty staged file is an
+  leading empty-body gate stays (the #626/#627 race fix); an empty staged file is an
   `EMPTY_BODY_FILE` decision.
 - **Atomicity & idempotency stay as built:** marker replacement posts the new comment before
   deleting the old; `close` on a closed issue is a no-op; native-dependency writes are
@@ -196,7 +210,7 @@ PR.
 | v1 `github-ops` rule | v2 owner |
 |---|---|
 | 1 Faithful, never summarized | Scripts emit verbatim sections + `sha256`; playbooks read spilled files directly |
-| 2 Posts only what it's given | `gh-persist.sh` staged-path convention + empty-body gate |
+| 2 Posts only what it's given | `gh_persist.py` staged-path convention + empty-body gate |
 | 3 `DECISION_NEEDED`, can't ask user | `status: needs_decision` envelope + the router's universal card rule (§3) |
 | 4 Report errors faithfully | Bash tool surfaces script stderr to the main loop unmediated |
 | 5 No nesting | Moot — there is no executor agent |
@@ -246,15 +260,17 @@ namespace.
 The deterministic layer is tested offline ([prd.md §9.3](prd.md)); prompts are validated by
 census greps.
 
-- **Harness:** `tests/run.sh` runs bats-core (vendored under `tests/vendor/`). No network, no
-  live repo.
-- **`gh` shim:** `tests/shim/gh` sits first on `PATH` and replays canned responses from
+- **Harness:** `tests/run.py`, stdlib `unittest` discovery — no third-party test framework,
+  nothing to vendor or install. No network, no live repo. The suite must pass on **both macOS
+  and Linux** (Linux via any container or host; invocation documented in `tests/README.md`).
+- **`gh` shim:** `tests/shim/gh` (itself a small Python executable named `gh`) sits first on
+  `PATH` and replays canned responses from
   `tests/fixtures/<case>/` keyed on the argv it receives; unexpected argv fails the test. Scripts
   under test never notice.
 - **Git sandbox:** workspace/lifecycle tests run against a temp origin (bare repo) + clone built
   per test; no shim needed.
 - **Coverage bar:** every script's happy path, every §3 decision code it can emit, and envelope
-  schema conformance (shared jq assertions) for every emitting script.
+  schema conformance (shared assertion helpers) for every emitting script.
 - **Prompt-side validators** (no offline harness exists for prose): the contract-token census
   and banned-pattern greps from `CLAUDE.md`, extended with: zero old-name hits, zero `git show`
   in `skills/`, zero raw `gh` write invocations in `skills/`.
@@ -269,10 +285,10 @@ census greps.
 - `_shared/` files defining **external** artifacts (handoff format, DoD annotations,
   open-question links/detection, question-issue, epic-delivery-log, worktree block formats) are
   preserved; **internal** coordination files are superseded per §3 (`subagent-decision-signal.md`)
-  and §6 (`worktree-lifecycle.md` mechanics fold into `workspace.sh`; the ownership rules move
+  and §6 (`worktree-lifecycle.md` mechanics fold into `workspace.py`; the ownership rules move
   here).
-- `agents/github-ops.md` and `scripts/worktree-hooks.sh` are removed in the final cleanup step,
-  after their last caller is cut over.
+- `agents/github-ops.md` and every v1 `scripts/*.sh` (including `worktree-hooks.sh`) are removed
+  in the final cleanup step, after their last v1 caller is cut over.
 
 ## §12 Invariants registry
 
@@ -281,17 +297,18 @@ not a deviation.
 
 | Invariant | Why (short) | Enforced by |
 |---|---|---|
-| Empty-body gate: no body-bearing write without a non-empty staged file | #626/#627 empty-body race | `gh-persist.sh` `test -s` + `EMPTY_BODY_FILE` + tests |
+| Empty-body gate: no body-bearing write without a non-empty staged file | #626/#627 empty-body race | `gh_persist.py` size check + `EMPTY_BODY_FILE` + tests |
 | Bodies cross the prompt boundary as paths, never re-serialized | same race | staged-path convention (§7) |
-| Byte fidelity: persists return `body_sha256`; caller verifies | silent mangling is invisible | `lib.sh` + tests |
+| Byte fidelity: persists return `body_sha256`; caller verifies | silent mangling is invisible | `pipelib` + tests |
 | Successful write is self-confirming; never re-read to verify | re-reads reintroduce races | §3 rule + router invariant |
-| Post-new-before-delete-old on marker replacement | a crash must not lose the marker | `gh-persist.sh` + tests |
-| Spill threshold on verbatim sections | context blowout | `lib.sh` spill + tests |
-| Capability-gated degradation (native deps) with notice | consuming repos vary | `gh-persist.sh`/`gh-gather.sh` + tests |
-| Root is never written; skills never branch/commit/stash there | trust topology (§6) | `workspace.sh` decisions + prompt invariant |
+| Post-new-before-delete-old on marker replacement | a crash must not lose the marker | `gh_persist.py` + tests |
+| Spill threshold on verbatim sections | context blowout | `pipelib` spill + tests |
+| Capability-gated degradation (native deps) with notice | consuming repos vary | `gh_persist.py`/`gh_gather.py` + tests |
+| Root is never written; skills never branch/commit/stash there | trust topology (§6) | `workspace.py` decisions + prompt invariant |
 | All tracked-file changes land via PR | write-protected `main` | prompt invariant + review |
 | No ref arithmetic, no raw `gh` writes, no ambient cwd in prompts | the drift class the rewrite exists to kill | §10 prompt validators |
 | Contract tokens are frozen (marker strings, op names, closed sets) | cross-skill/GitHub parse compatibility | census greps (§10) |
 | Skills are stack-agnostic (gated integrations + ≥2-stack examples only) | multi-stack product | banned-pattern greps (§10) |
 | Session-per-skill; no autonomous stage chaining | context isolation is the design | prompt invariant + review |
 | Scripts never author prose; sub-agents never write to GitHub | role separation (§2) | review + tests |
+| Scripts are stdlib-only Python spawning only `git`/`gh` | excludes the BSD/GNU userland divergence class (§1) | review + dual-platform suite runs (§10) |
