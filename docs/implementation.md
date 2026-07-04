@@ -281,17 +281,17 @@ against the facts and recorded in the PR); preserve renderings byte-compatibly: 
 comment, review comment, delivery-log append, handoff; all I/O via scripts directly.
 
 **DoD**
-- [ ] Router ≤ 150 lines, contains the visible routing table; playbook bodies contain no
+- [x] Router ≤ 150 lines, contains the visible routing table; playbook bodies contain no
       PR-type conditionals.
-- [ ] Every artifact this skill writes diffs clean against the S1-captured v1 examples (schema
+- [x] Every artifact this skill writes diffs clean against the S1-captured v1 examples (schema
       level).
-- [ ] Grep gates: zero `github-ops`, raw `gh` writes, `git show`, or old skill names under
+- [x] Grep gates: zero `github-ops`, raw `gh` writes, `git show`, or old skill names under
       `skills/evaluator/`.
-- [ ] Frontmatter model/effort pins carried verbatim from v1.
-- [ ] Every operator gate in `specs/evaluator.md` is present, or its absence traces to a PRD §.
+- [x] Frontmatter model/effort pins carried verbatim from v1.
+- [x] Every operator gate in `specs/evaluator.md` is present, or its absence traces to a PRD §.
 - [ ] Parity run recorded in `docs/specs/parity/evaluator.md`: standard approve + merge; story
       merge (delivery-log append + epic checkbox); red-CI rejection; `ask`-policy gate.
-- [ ] Router + largest playbook line count recorded there and is at most half the v1 `SKILL.md`
+- [x] Router + largest playbook line count recorded there and is at most half the v1 `SKILL.md`
       count in `baseline.md` ([prd.md §10](prd.md)).
 
 **Testing:** offline — routing-table fixtures (vector → playbook) and `--dry-run` persist

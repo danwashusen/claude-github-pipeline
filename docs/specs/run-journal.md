@@ -219,7 +219,7 @@ sandbox, or delete anything outside the working tree and the sandbox.
 
 ### S6 — `prep_evaluator.py` (the prep-script pilot) — ACCEPTED (2026-07-04)
 
-- **Commit:** `<backfilled next commit>` (`S6: prep_evaluator.py — evaluator facts block (prep pilot)`).
+- **Commit:** `938d618` (`S6: prep_evaluator.py — evaluator facts block (prep pilot)`).
 - **DoD:** all 5 boxes ticked, verified this session.
 - **Deliverables:** `scripts/prep_evaluator.py` (composes gh_pr_gather + gh_gather + workspace + parse
   + config_block **in-process** into the architecture §4 facts block) + `tests/test_prep_evaluator.py`
@@ -264,6 +264,38 @@ sandbox, or delete anything outside the working tree and the sandbox.
   the one-time `.gitignore` bootstrap dirties a fresh consuming-repo root (surfaced in the smoke as a
   correctly-propagated `ROOT_DIRTY` on a re-run — operator commits `.gitignore` once).
 
+### S7 — Evaluator skill rewrite — PARTIAL (automatable work done + committed; parity run PENDING) (2026-07-04)
+
+- **Commit:** `<backfilled>` (`S7: skills/evaluator/ — first skill cutover (automatable work; parity pending)`).
+- **Status:** **6 of 7 DoD boxes ticked** (the automatable ones). **Box 6 — the live 4-scenario parity
+  run — is operator-gated and REMAINS unticked.** This is the run's first hard stop. S8 depends on
+  S7's parity, so S8 is NOT started.
+- **Deliverables:** `skills/evaluator/` authored **from scratch** — `SKILL.md` router (103 lines; the
+  4 §9 sections; a visible `vector→playbook` table; `name: evaluator` / `model: opus` / `effort: xhigh`)
+  + `playbooks/` (evaluate-spine 320 + standard 51 + story 95 + epic-integration 65 — the §5-bar split
+  is a **shared spine + 3 thin post-verdict variants**, zero PR-type conditionals) + `references/`
+  (health-cache / review-comment / delivery-log / handoff renderings byte-compatible per `_shared` +
+  the S1 examples; the carried test-selection sub-agent prompt) + `tests/test_evaluator_routing.py`
+  (23 tests) + `docs/specs/parity/evaluator.md` (metrics + the 4-scenario parity scaffold).
+- **Automatable DoD verified (reviewer PASS, 0 actionable):** router 103 ≤150; router+largest 423
+  ≤485; artifacts byte-diff clean vs S1 examples; grep gates clean *per intent* (see adjudications);
+  frontmatter pins verbatim; all 10 `specs/evaluator.md` operator gates present; census 81 tokens,
+  zero drops.
+- **Three gate-interpretation adjudications (reviewer-ruled; precedent for the 6 remaining cutovers):**
+  1. Artifact footers keep `github-pr-evaluator` — **required**: the S1-frozen example itself contains
+     `_Cached by github-pr-evaluator._`, so byte-compat requires it; it's provenance prose readers
+     don't parse, not a skill-invocation name.
+  2. `gh pr merge` / `gh pr ready --undo` — acceptable **scriptless raw-`gh` executors** (no
+     `gh_persist` merge op; spec-named). **→ S8 must amend architecture §10** (the flat "zero raw `gh`
+     invocations" → the narrower §7-rule-7 "no raw `gh` write/fetch-envelope ops that *have* a script",
+     excepting the scriptless merge/ready executors) so S20's validator regex is authored right.
+  3. `git show <end>` — a legit single-commit diff view, **not** the banned `git show <ref>:<path>`
+     ref-arithmetic. **→ S20's git-show validator must be ref:path-scoped**, not blanket `git show`.
+- **Advisory:** a *story* session loads router+spine+variant = 518 (the DoD metric router+largest = 423
+  is met; each file fits one Read). Disclosed in the parity doc; watch larger future spines.
+- **Process:** 1 opus implementor (skill authoring) → orchestrator sanity (line counts / grep / census
+  / 540 tests) → 1 opus reviewer (PASS, 0 actionable, 3 forward advisories). **1 review round.**
+
 ### Session-mechanics note (applies to the whole run in this session)
 
 The `.claude/agents/{implementor,reviewer}.md` definitions committed in setup are **not hot-loaded**
@@ -275,8 +307,73 @@ of truth; a **freshly started** resumed session will pick them up by name and ca
 
 ---
 
-## Current handback
+## Current handback — STOP at S7's live parity run (first operator gate) — 2026-07-04
 
-_(No stop reached yet. When the run stops, the operator handback is written here: accepted steps
-with SHAs, the current step and exactly which DoD items remain, the precise operator actions for
-each, and the resume instruction — re-run the orchestrator prompt on `rewrite/v2-implementation`.)_
+The autonomous run completed every step it can finish without an operator: the whole deterministic
+layer plus the evaluator skill's automatable build. It stops here because **S7's DoD box 6 is a live,
+interactive, operator-gated parity run** (per the stop conditions).
+
+### Fully accepted steps (committed on `rewrite/v2-implementation`)
+| Step | Commit | What |
+|---|---|---|
+| setup | `eb1dfb5` | orchestration: implementor/reviewer agents + run journal |
+| S1 | `3724328` | baseline: 9 v1 skill specs, contract-token census (79 tokens), artifact examples |
+| S2 | `69399c7` | offline harness (`gh` shim + git-sandbox) + live sandbox repo |
+| S3 | `a503ddf` | `pipelib` (envelope, spill, 13 decision codes, locked runner, hook carve-out) |
+| S21 | `246b64c` | 4 executor ports → Python (gh_gather/gh_pr_gather/gh_persist/config_block) |
+| S4 | `e20e4c3` | `workspace.py` (worktree lifecycle, root-freshness, gc, hooks) |
+| S5 | `fe16977` | `parse.py` (dod/oq-links/phases; byte-identical dod round-trip) |
+| S6 | `938d618` | `prep_evaluator.py` (facts-block pilot) + labels/workspace shared-layer fixes |
+| **S7** | `<backfilled>` | **skills/evaluator/ — first cutover; automatable work only (see below)** |
+
+The offline suite is **540 tests, green on macOS and Linux**. The disposable sandbox is
+**`https://github.com/danwashusen/gh-pipeline-sandbox`** (issue #4 bug, epic #1 + stories #2/#3,
+question #5, PR #6 labelled `story` — seeded per `tests/SANDBOX.md`).
+
+### Current step: S7 — the ONE remaining DoD item (box 6)
+> **Box 6 — Parity run recorded in `docs/specs/parity/evaluator.md`:** standard approve + merge; story
+> merge (delivery-log append + epic checkbox); red-CI rejection; `ask`-policy gate.
+
+Boxes 1–5 and 7 are ticked and verified (reviewer PASS, zero actionable). Only the live parity run is
+left. **Operator actions:**
+1. Open **`docs/specs/parity/evaluator.md`** — it scaffolds all four scenarios with per-scenario
+   checklists and cites the parity protocol ([implementation.md "The parity protocol"](../implementation.md)).
+2. For **each** of the four scenarios, on the sandbox: construct the target state (or a twin for the
+   destructive/shared-parent flows — e.g. a single-story epic for the story-merge case), run the **v1**
+   skill `/github-pipeline:github-pr-evaluator` in one session (capture every GitHub write, every gate,
+   the handoff, rough turn count), reset/switch to the twin, run the **v2** skill
+   `/github-pipeline:evaluator` on the same state, and compare: artifacts **schema-identical**
+   (same marker line, section set + order, structured fields; free prose may differ — confirm by
+   cross-consumption), the same genuine decisions gated, the handoff validates against the shared
+   schema, and startup did **at most one** state-assembly call (`prep_evaluator.py`). Record results +
+   any divergences (each must trace to a PRD requirement or be filed as a defect) in the parity doc.
+3. Fill the parity doc's **Go/no-go** block — that is S8's input.
+4. **Tick box 6** in `docs/implementation.md` (and box 6 only) once all four scenarios pass with no
+   unexplained divergence.
+
+### Then S8 (also operator-gated) + one architecture amendment S8 must land
+After the parity, **S8** (pilot retro & go/no-go — an operator decision) runs. Two concrete inputs are
+already recorded for it:
+- **The composition-API friction retro** (S6 journal entry, "S8 RETRO INPUT") — the proposed lock:
+  every executor exposes a pure non-emitting `build_*() -> (payload, notices, decision|None)` core with
+  a thin `main()` emit wrapper, retiring the `redirect_stdout` capture bridge before the S9/S12/S14/S16/
+  S18 preps are built.
+- **Amend architecture §10** so the "raw `gh` writes" validator carves out the **scriptless
+  `gh pr merge` / `gh pr ready --undo` executors** (the S7 adjudication (b)) — and note for **S20** that
+  the `git show` validator must match `git show <ref>:<path>` (ref-arithmetic), not blanket `git show`
+  (adjudication (c)). Do these at S8's "architecture amendments landed" step so S20's validator regex is
+  authored correctly.
+
+### Resume instruction
+Once box 6 is ticked (S7 parity recorded), **re-run this orchestrator prompt on
+`rewrite/v2-implementation`**. It will derive state from the ticked boxes + this journal + `git log`,
+see S7 complete, and proceed to **S8** (assemble the retro + evidence; the go/no-go decision is yours),
+then the remaining tracks (S9 → S10 → S11 → S12 → …). If box 6 is not yet ticked, a resumed run will
+re-stop here at the same parity gate.
+
+### Session-mechanics reminder for the resume
+This session dispatched all sub-agents via `general-purpose` with the committed
+`.claude/agents/{implementor,reviewer}.md` role files injected by reference (the definitions aren't
+hot-loaded mid-session) and the model tier pinned (implementor→sonnet, reviewer→opus; skill-authoring
+implementors → opus). A **freshly started** resumed session will have `implementor`/`reviewer` available
+by name and can use `subagent_type: implementor|reviewer` directly.
