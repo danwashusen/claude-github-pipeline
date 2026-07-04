@@ -44,8 +44,7 @@ sandbox, or delete anything outside the working tree and the sandbox.
 
 ### S1 — Baseline capture & per-skill functional specs — ACCEPTED (2026-07-04)
 
-- **Commit:** `S1: baseline capture — nine v1 skill specs, census, artifact examples` (SHA backfilled
-  next commit — see `git log`).
+- **Commit:** `3724328` (`S1: baseline capture — nine v1 skill specs, census, artifact examples`).
 - **DoD:** all 6 boxes ticked, each verified this session with reviewer-generated evidence.
 - **Deliverables:** nine per-skill v1 functional specs
   (`docs/specs/{drafter,researcher,planner,resolver,evaluator,setup,question-sweep,question-resolver,doc-reviewer}.md`);
@@ -72,6 +71,34 @@ sandbox, or delete anything outside the working tree and the sandbox.
   row-count errors (prior-PR table 8→7 **enumerated**, outcome-rubric 12→13). ~9 advisories folded
   in to harden the frozen baseline. **Zero actionable findings survived round 2.**
 - **Deferrals:** none — S1 has no operator-gated DoD items.
+
+### S2 — Offline test harness — ACCEPTED (2026-07-04)
+
+- **Commit:** `<backfilled next commit>` (`S2: offline test harness + live sandbox repo`).
+- **DoD:** all 7 boxes ticked, verified this session.
+- **Deliverables:** `tests/run.py` (stdlib `unittest` discovery + a PATH-interception self-check that
+  fails fast if `gh` doesn't resolve to the shim); `tests/shim/gh` (fixture-replaying `gh` stand-in,
+  exact-argv match, loud miss diff); `tests/support/poison/gh` (no-real-`gh` tripwire sentinel);
+  `tests/support/gitsandbox.py` (temp bare-origin + clone, cleanup on pass **or** fail);
+  `tests/support/shimenv.py`; the self-test suite (**25 tests** across
+  test_shim/test_no_real_gh/test_gitsandbox/test_run_py); fixtures; `tests/README.md`;
+  `tests/SANDBOX.md`. Plus a root `.gitignore` (`__pycache__/`, `*.pyc`).
+- **Dual-platform:** 25 tests pass on macOS (Python 3.14.6) **and** in a Debian `python:3-slim`
+  container (Linux/GNU userland, git 2.47.3) via the documented `docker run` invocation — proves the
+  architecture §9.6 portability requirement, not just asserts it.
+- **Live sandbox:** created **`https://github.com/danwashusen/gh-pipeline-sandbox`** (private) and
+  seeded per `SANDBOX.md`: 8 labels (`epic`/`story`/`question`/`planned`/`researched`/`audience:×3`),
+  issues **#1** epic + **#2/#3** stories + **#4** bug + **#5** question, 11 config marker blocks in the
+  sandbox `CLAUDE.md`, grounding docs (`docs/prd.md`, `docs/architecture.md`), and a controllable CI
+  gate (fails when `.ci-force-red` is present on a branch). URL recorded in `tests/SANDBOX.md`. This is
+  the target for every later parity run + read-only live smoke (S6/S7/S9/S10/…).
+- **Process:** 1 implementor (offline harness + both docs) → orchestrator sanity (macOS + the Docker
+  Linux leg) → 1 opus reviewer (PASS, 3 advisories) → 1 advisory fixup → orchestrator-run live sandbox
+  creation + seed verification. **1 review round.**
+- **Findings:** reviewer PASS with 3 advisories, all fixed (shim hit-path guard for a missing
+  `stdout_file` → curated `MISS-LIKE:` message via `is_file()`; stale poison docstring path;
+  README `os.path.realpath`→`Path.resolve()` wording). Zero actionable.
+- **Deferrals:** none.
 
 ### Session-mechanics note (applies to the whole run in this session)
 

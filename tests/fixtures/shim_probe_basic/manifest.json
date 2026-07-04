@@ -1,0 +1,12 @@
+[
+  {
+    "argv": ["issue", "view", "123", "--json", "body,title"],
+    "stdout_file": "issue_view_123.json",
+    "exit_code": 0
+  },
+  {
+    "argv": ["auth", "status"],
+    "stdout_file": "auth_status_fail.txt",
+    "exit_code": 1
+  }
+]

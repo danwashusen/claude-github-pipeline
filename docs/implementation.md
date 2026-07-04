@@ -123,16 +123,16 @@ a case, and the Linux container invocation for dual-platform runs); `tests/SANDB
 sandbox seeding).
 
 **DoD**
-- [ ] `python3 tests/run.py` discovers and runs all `test_*.py`, exits non-zero on any failure.
-- [ ] Shim self-test proves interception: a probe calling `gh` receives fixture bytes;
+- [x] `python3 tests/run.py` discovers and runs all `test_*.py`, exits non-zero on any failure.
+- [x] Shim self-test proves interception: a probe calling `gh` receives fixture bytes;
       un-fixtured argv fails the test loudly.
-- [ ] Runs make no network calls and never invoke the real `gh` (asserted, e.g. via a poisoned
+- [x] Runs make no network calls and never invoke the real `gh` (asserted, e.g. via a poisoned
       `PATH` sentinel).
-- [ ] Git-sandbox helper creates origin + clone and cleans up on exit, pass or fail.
-- [ ] The suite passes on macOS and on Linux (container or host), per the documented invocation.
-- [ ] `tests/README.md` and `tests/SANDBOX.md` exist and suffice to add a case / seed the
+- [x] Git-sandbox helper creates origin + clone and cleans up on exit, pass or fail.
+- [x] The suite passes on macOS and on Linux (container or host), per the documented invocation.
+- [x] `tests/README.md` and `tests/SANDBOX.md` exist and suffice to add a case / seed the
       sandbox / run on Linux without reading harness source.
-- [ ] The sandbox repo exists, seeded per `tests/SANDBOX.md`, and its URL is recorded there.
+- [x] The sandbox repo exists, seeded per `tests/SANDBOX.md`, and its URL is recorded there.
 
 **Testing:** the harness tests itself: shim hit/miss cases, sandbox create/teardown, run.py
 failure propagation.
