@@ -98,14 +98,14 @@ recorded as "(not filed)"; (b) the handoff's open-questions line must render in 
 epic + story sessions.
 
 **DoD**
-- [ ] `docs/specs/` contains nine per-skill specs plus `baseline.md`.
-- [ ] Every [prd.md §7](prd.md) artifact has at least one spec naming it as writer and one as
+- [x] `docs/specs/` contains nine per-skill specs plus `baseline.md`.
+- [x] Every [prd.md §7](prd.md) artifact has at least one spec naming it as writer and one as
       reader (cross-reference table in `baseline.md`).
-- [ ] Census command and verbatim output committed.
-- [ ] Every [prd.md §7](prd.md) artifact has a verbatim example under `docs/specs/examples/`,
+- [x] Census command and verbatim output committed.
+- [x] Every [prd.md §7](prd.md) artifact has a verbatim example under `docs/specs/examples/`,
       including one v1 handoff per pipeline skill.
-- [ ] Both planner bugs appear as falsifiable requirements in `specs/planner.md`.
-- [ ] Each spec was adversarially re-read against its source `SKILL.md` in an isolated session
+- [x] Both planner bugs appear as falsifiable requirements in `specs/planner.md`.
+- [x] Each spec was adversarially re-read against its source `SKILL.md` in an isolated session
       or sub-agent; misses were folded in and noted.
 
 **Testing:** documentation step — validation is the census run plus the adversarial re-read; no
