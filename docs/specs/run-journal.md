@@ -160,7 +160,7 @@ sandbox, or delete anything outside the working tree and the sandbox.
 
 ### S4 — `workspace.py` — ACCEPTED (2026-07-04)
 
-- **Commit:** `<backfilled next commit>` (`S4: workspace.py — worktree lifecycle owner`).
+- **Commit:** `e20e4c3` (`S4: workspace.py — worktree lifecycle owner`).
 - **DoD:** all 7 boxes ticked, verified this session.
 - **Deliverables:** `scripts/workspace.py` (`ensure --work`/`--read`, `remove --work`, `gc`,
   `root-status`, `lint`; root-freshness `ROOT_NOT_ON_MAIN`/`ROOT_DIRTY`/`ROOT_DIVERGED`; `BRANCH_IN_USE`;
@@ -182,6 +182,39 @@ sandbox, or delete anything outside the working tree and the sandbox.
   to retire the `_private`-function reach; a fresh consuming repo's first `ensure` leaves `.gitignore`
   uncommitted so a 2nd `ensure` trips `ROOT_DIRTY` (one-time bootstrap — surface in S6+/operator docs);
   `gc`/`remove --work` leave the empty `.worktrees/` parent dir (harmless, git-ignored).
+- **Deferrals:** none.
+
+### S5 — `parse.py` — ACCEPTED (2026-07-04)
+
+- **Commit:** `<backfilled next commit>` (`S5: parse.py — the shared body-grammar parser`).
+- **DoD:** all 4 boxes ticked, verified this session.
+- **Deliverables:** `scripts/parse.py` (`dod` + `dod --render`, `oq-links`, `phases` subcommands over
+  a file path, envelope out) + `tests/test_parse.py` (54 tests) + fixtures lifted from the S1/`_shared`
+  frozen grammar + adversarial mutations. File I/O only (no gh/git). This ends v1's per-skill inline
+  prompt-parsing.
+- **Verified (reviewer re-generated evidence):** `dod --render` round-trips **byte-identically** for
+  every closed-set annotation form (confirmed against an external byte-oracle); unknown/stacked
+  annotations → `DOD_MALFORMED` with no false positives on ordinary prose; all three OQ dispositions
+  parse + no-section → `ok` empty list; `phases` parses the plan `## Phases` structured grammar
+  (kinds `code-shipping`/`operator`/`decision-only`) with `PHASES_MALFORMED` on malformed (incl. the
+  #640 free-form-sequencing regression).
+- **Implementor caught + fixed 3 real regex bugs** via adversarial fixtures (prefix outside the
+  annotation alternation; a stacked annotation swallowed in a reason field; a `\b` terminator failing
+  after `)`), and correctly disambiguated `## Phases` (plan) from `## Phase tracker` (PR body — my
+  brief mis-cited the reference; the implementor caught it).
+- **Design calls (reviewer-adjudicated):** `oq-links` malformed-entry → `AMBIGUOUS` (the residual
+  closed-set code, as S4; strict-parse is faithful to "don't invent/normalize"); `phases` targets the
+  plan grammar.
+- **Dual-platform:** 454 tests pass on macOS and Linux.
+- **Process:** 1 implementor → orchestrator sanity (macOS + Linux) → 1 opus reviewer (PASS, 0
+  actionable, 3 advisories). **1 review round.**
+- **Carried advisories (non-blocking, semantically lossless — DoD round-trip is byte-perfect for the
+  canonical, pipeline-written forms):** `dod --render` normalizes *non-canonical* input (`- [X]`→`- [x]`,
+  collapsed inner spaces, a one-leading-space bullet renders at zero indent) — a "parser accepts a shape
+  it can't reproduce" edge unreachable from machine writers; a `## Phases` list starting at phase 2
+  parses ok (grammar states no "must start at 1"); a future `OQ_LINKS_MALFORMED` §3 code could replace
+  the `AMBIGUOUS` reuse. Worth a small hardening when the resolver/evaluator skills (which *use* render
+  to write back DoD) are built (S7/S10).
 - **Deferrals:** none.
 
 ### Session-mechanics note (applies to the whole run in this session)

@@ -232,12 +232,12 @@ checkbox state + annotation per the `_shared/dod-annotations.md` closed set), `o
 the bullets byte-identically from the parsed form — the round-trip DoD exercises it.
 
 **DoD**
-- [ ] `dod` parses every annotation form in the shared contract (one fixture per form);
+- [x] `dod` parses every annotation form in the shared contract (one fixture per form);
       parse → re-render round-trips byte-identically.
-- [ ] Unknown or stacked annotations return `DOD_MALFORMED` (never a crash or a guess).
-- [ ] `oq-links` parses the shared contract's examples including all three dispositions; a body
+- [x] Unknown or stacked annotations return `DOD_MALFORMED` (never a crash or a guess).
+- [x] `oq-links` parses the shared contract's examples including all three dispositions; a body
       without the section returns `ok` with an empty list.
-- [ ] `phases` parses well-formed lists and returns `PHASES_MALFORMED` on the malformed fixtures.
+- [x] `phases` parses well-formed lists and returns `PHASES_MALFORMED` on the malformed fixtures.
 
 **Testing:** fixture bodies lifted from the `_shared` examples plus adversarial mutations;
 envelope conformance on every output.
