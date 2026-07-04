@@ -30,9 +30,12 @@ retirement). Scripts are executables (`#!/usr/bin/env python3`) invoked by absol
 **Portability (macOS/BSD + Linux/GNU) is a requirement, not an aspiration.** Python is how the
 BSD-vs-GNU userland divergence (`sed`/`awk`/`date`/`stat` dialects) is excluded by construction.
 Rules: the only external processes a script may spawn are `git` and `gh`, via `subprocess` with
-argument lists — never `shell=True`; all text I/O pins `encoding="utf-8"` (locale defaults
-differ across platforms); paths go through `pathlib` and are compared via `os.path.realpath`
-(macOS `/tmp` is a symlink to `/private/tmp`); nothing assumes a case-sensitive filesystem.
+argument lists — never `shell=True` — with exactly one carve-out: `workspace.py`'s hook runner
+executes the consuming repo's `<!-- worktree-setup/teardown -->` commands verbatim as repo-owned
+opaque shell commands, cwd'd to the workspace; no other script spawns anything else. All text
+I/O pins `encoding="utf-8"` (locale defaults differ across platforms); paths go through
+`pathlib` and are compared via `os.path.realpath` (macOS `/tmp` is a symlink to
+`/private/tmp`); nothing assumes a case-sensitive filesystem.
 Module filenames use underscores so the test suite can import them; the v1 hyphenated `.sh`
 files coexist untouched until S20.
 
@@ -88,11 +91,27 @@ Every script emits exactly one JSON envelope on stdout.
   "context":{…},"options":["…"]}}`. The router's single universal rule: render `decision` as one
   `AskUserQuestion` card and act on the answer.
 - **Closed decision-code set** (one vocabulary across scripts *and* judgment sub-agents;
-  supersedes v1's `subagent-decision-signal.md`):
-  `AUTH_REQUIRED`, `EMPTY_BODY_FILE`, `MARKER_AMBIGUOUS`, `DOD_MALFORMED`, `PHASES_MALFORMED`,
-  `ROOT_NOT_ON_MAIN`, `ROOT_DIRTY`, `ROOT_DIVERGED`, `BRANCH_IN_USE`, `PLAN_MISSING`,
-  `THREAD_SUPERSEDED_PLAN`, `AMBIGUOUS`, `BLOCKED_ON_USER`. Adding a code is a contract change:
-  update this section and the router rule together.
+  supersedes v1's `subagent-decision-signal.md`). Meaning + canonical emitter per code:
+  - `AUTH_REQUIRED` — `gh` authentication/permission failure; detected by the pipelib runner,
+    any script.
+  - `EMPTY_BODY_FILE` — body-bearing write given an empty or missing staged file;
+    `gh_persist.py`.
+  - `MARKER_AMBIGUOUS` — more than one candidate marker comment/block where the contract expects
+    one; the gathers + `config_block.py`.
+  - `DOD_MALFORMED` — a DoD bullet or annotation outside the closed set; `parse.py dod`.
+  - `PHASES_MALFORMED` — a plan `## Phases` section that doesn't parse; `parse.py phases`.
+  - `ROOT_NOT_ON_MAIN` / `ROOT_DIRTY` / `ROOT_DIVERGED` — root-freshness failures;
+    `workspace.py`.
+  - `BRANCH_IN_USE` — the branch is checked out in another worktree; `workspace.py`.
+  - `PLAN_MISSING` — a required plan is absent; prep scripts + the state-distiller.
+  - `THREAD_SUPERSEDED_PLAN` — thread direction supersedes the recorded plan; the
+    state-distiller.
+  - `AMBIGUOUS` — residual non-marker ambiguity (e.g. multiple epic-branch matches); scripts +
+    sub-agents.
+  - `BLOCKED_ON_USER` — progress requires operator input beyond a listable option set;
+    sub-agents.
+
+  Adding a code is a contract change: update this section and the router rule together.
 - **Notices** (non-blocking degradations) ride in `notices: []` — e.g. `DEPS_UNSUPPORTED` when
   native issue dependencies are unavailable and prose links are the fallback. Work proceeds.
 - **Spill routing.** Any verbatim section (body, thread, diff, marker comment) is inline when
@@ -112,14 +131,19 @@ assembled in one call ([prd.md §9.2](prd.md)). Common core, extended per skill:
 {
   "status": "ok",
   "repo": "owner/name",
+  "scratch": "/tmp/gh-evaluator-88",
   "root": { "path": "/abs/repo", "sha": "abc123…", "fresh": true },
   "target": { "kind": "pr", "number": 88, "title": "…", "state": "open", "labels": ["story"] },
   "vector": { "type": "story", "mode": "continue", "pr_state": "open-by-you" },
   "suggested_playbook": "story.md",
   "workspace": { "kind": "work", "path": "/abs/repo/.worktrees/88-fix-x", "branch": "88-fix-x",
-                  "base_ref": "epic/42-journal", "sha": "def456…", "reused": true },
+                  "base_ref": "epic/42-journal", "sha": "def456…", "reused": true,
+                  "dirty": false, "unpushed_commits": 2 },
+  "read_workspaces": { "audit": { "path": "/abs/repo/.worktrees/ro-epic-42-journal", "sha": "0a1b2c…" } },
   "config": { "sha": "abc123…", "test_target": "…", "static_checks": ["…"], "merge_policy": {"story": "ask"} },
-  "sections": { "issue_body_mode": "path", "issue_body_path": "/tmp/gh-evaluator-88/body.md" },
+  "health_cache": { "sha": "def456…", "hit": false },
+  "sections": { "issue_body_mode": "path", "issue_body_bytes": 41230,
+                 "issue_body_path": "/tmp/gh-evaluator-88/body.md" },
   "dod": [ { "index": 1, "text": "…", "checked": true, "annotation": { "form": "closed-by-phase", "phase": 1, "sha": "…" } } ],
   "open_questions": [ { "issue": 101, "disposition": "in-scope (blocked)", "tracker_state": "open", "decision_marker": false } ],
   "attention": [ "work worktree has 2 unpushed commits" ],
@@ -131,7 +155,9 @@ Rules: every fact is **re-derivable** — prep supports `--refresh` and is re-ru
 where currency matters (e.g. pre-merge PR state). Values the flow needs (`base_ref`, branch name,
 merge strategy, audit SHA) appear as facts so playbooks consume them as data (§5). Ambiguities a
 script can detect but not resolve surface in `attention` or as a `needs_decision` — never as
-prompt-side re-derivation.
+prompt-side re-derivation. Inline-mode sections carry the content in the bare field
+(`issue_body`) alongside `*_bytes`; additional named read workspaces ride under
+`read_workspaces`, keyed by purpose.
 
 ## §5 Routing & playbooks
 
@@ -145,9 +171,11 @@ prompt-side re-derivation.
   name, merge strategy, cleanup list) is not a branch — the values are facts. A playbook exists
   only for flows that differ in *actions taken* (epic bootstrap files stories; story completion
   ticks the epic checkbox and appends the delivery log).
-- **One playbook per session.** The router reads exactly one; playbooks are linear narratives
-  with no `if epic … else if story …` interleaving. Shared behavior lives once — in the router's
-  invariants or a spine section — and playbooks reference it rather than restating it.
+- **One route per session.** The router selects exactly one playbook; a playbook may
+  additionally pull in its skill's single shared spine file — nothing else, and never a second
+  playbook. Playbooks are linear narratives with no `if epic … else if story …` interleaving.
+  Shared behavior lives once — in the router's invariants or the spine — and playbooks reference
+  it rather than restating it.
 - **Contract renderings stay point-of-use.** A playbook that emits a shared-schema artifact
   (handoff, DoD annotation, delivery-log entry) renders it per the `_shared` contract file and
   cites it.
@@ -163,15 +191,16 @@ PR.
 | Path | `.worktrees/<branch>` | `.worktrees/ro-<ref-slug>` |
 | Checkout | branch | detached HEAD at `origin/<ref>` |
 | Hooks | setup on every ensure (fail-fast); teardown before removal (best-effort) | none |
-| Lifecycle | resolver creates; persists across sessions; evaluator tears down + removes after merge | reuse per logical ref; **reset to current `origin/<ref>` on every ensure**; `workspace.py gc` removes `ro-*` older than `--max-age` (default 7 days) — and only `ro-*` |
+| Lifecycle | resolver creates; persists across sessions; evaluator tears down + removes after merge (`remove --work`) | reuse per logical ref; **fetch, then reset to current `origin/<ref>` on every ensure**; `workspace.py gc` removes `ro-*` older than `--max-age` (default 7 days) — and only `ro-*` |
 | Facts | branch, base_ref, path, SHA, reused, dirty/unpushed state | path + the exact SHA grounded on |
 
-- **`workspace.py` owns the lifecycle**: `ensure --work|--read`, `gc`, root freshness
-  (verify root on `main` + clean → fetch → `--ff-only` → record SHA; failures are
-  `ROOT_NOT_ON_MAIN` / `ROOT_DIRTY` / `ROOT_DIVERGED` decisions, never auto-fixed), hook
-  execution (discovering `<!-- worktree-setup/teardown -->` blocks via `config_block.py`), the
-  `.gitignore` entry, and branch-exclusivity handling (`BRANCH_IN_USE` when the branch is checked
-  out elsewhere).
+- **`workspace.py` owns the lifecycle**: `ensure --work|--read`, `remove --work` (teardown
+  hooks best-effort, then `git worktree remove`; dirty or unpushed state is a decision, never a
+  silent discard), `gc`, `root-status`, `lint`, root freshness (verify root on `main` + clean →
+  fetch → `--ff-only` → record SHA; failures are `ROOT_NOT_ON_MAIN` / `ROOT_DIRTY` /
+  `ROOT_DIVERGED` decisions, never auto-fixed), hook execution (discovering
+  `<!-- worktree-setup/teardown -->` blocks via `config_block.py`), the `.gitignore` entry, and
+  branch-exclusivity handling (`BRANCH_IN_USE` when the branch is checked out elsewhere).
 - **The single-workspace invariant**: a session's prompt-visible rule is "your workspace is
   `facts.workspace.path`" — every Read/Grep/Explore/test/command targets it by absolute path.
   When a flow needs a second view, prep hands out an additional *named* read workspace in the
@@ -192,9 +221,10 @@ PR.
   behavior contracts are otherwise unchanged. Prep scripts compose them in-process; playbooks
   call `gh_persist.py` (and `config_block.py`) directly via Bash for writes.
 - **Write path:** the skill stages the verbatim body to its scratch dir
-  (`/tmp/gh-<skill>-<N>/…`), passes the path, and verifies the returned `body_sha256`. The
-  leading empty-body gate stays (the #626/#627 race fix); an empty staged file is an
-  `EMPTY_BODY_FILE` decision.
+  (`/tmp/gh-<skill>-<N>/…`) and passes the path; `gh_persist.py` verifies the round-trip hash
+  itself and reports `body_sha256` in the envelope, failing on mismatch — callers act on
+  `status`, never re-hash prompt-side. The leading empty-body gate stays (the #626/#627 race
+  fix); an empty staged file is an `EMPTY_BODY_FILE` decision.
 - **Atomicity & idempotency stay as built:** marker replacement posts the new comment before
   deleting the old; `close` on a closed issue is a no-op; native-dependency writes are
   capability-gated (`DEPS_UNSUPPORTED` notice + prose-link fallback).
@@ -241,7 +271,9 @@ agents: if a task is deterministic it is a script, not a sub-agent.
 
 ## §9 Skill anatomy
 
-Every `SKILL.md` is a router with the same four sections, in order:
+Every `SKILL.md` is a router with the same four sections, in order (for the standalone tools:
+Prep collapses to a no-prep note where the skill has none — currently doc-reviewer — and
+section 4 is **Summary** per [prd.md §6](prd.md), not Handoff):
 
 1. **Prep** — the one prep-script invocation and the `needs_decision` card rule.
 2. **Route** — the visible `vector → playbook` table and the override rule (§5).
@@ -272,8 +304,9 @@ census greps.
 - **Coverage bar:** every script's happy path, every §3 decision code it can emit, and envelope
   schema conformance (shared assertion helpers) for every emitting script.
 - **Prompt-side validators** (no offline harness exists for prose): the contract-token census
-  and banned-pattern greps from `CLAUDE.md`, extended with: zero old-name hits, zero `git show`
-  in `skills/`, zero raw `gh` write invocations in `skills/`.
+  and banned-pattern greps from `CLAUDE.md`, extended with: zero old-name hits, zero
+  `git show` / `git grep <ref>` in `skills/`, zero raw `gh` invocations (write or gather) in
+  `skills/`.
 
 ## §11 Migration & coexistence
 
@@ -299,16 +332,17 @@ not a deviation.
 |---|---|---|
 | Empty-body gate: no body-bearing write without a non-empty staged file | #626/#627 empty-body race | `gh_persist.py` size check + `EMPTY_BODY_FILE` + tests |
 | Bodies cross the prompt boundary as paths, never re-serialized | same race | staged-path convention (§7) |
-| Byte fidelity: persists return `body_sha256`; caller verifies | silent mangling is invisible | `pipelib` + tests |
+| Byte fidelity: persists verify the round-trip hash and return `body_sha256` | silent mangling is invisible | `gh_persist.py` + tests |
 | Successful write is self-confirming; never re-read to verify | re-reads reintroduce races | §3 rule + router invariant |
 | Post-new-before-delete-old on marker replacement | a crash must not lose the marker | `gh_persist.py` + tests |
 | Spill threshold on verbatim sections | context blowout | `pipelib` spill + tests |
 | Capability-gated degradation (native deps) with notice | consuming repos vary | `gh_persist.py`/`gh_gather.py` + tests |
 | Root is never written; skills never branch/commit/stash there | trust topology (§6) | `workspace.py` decisions + prompt invariant |
+| Gate config is read only at the recorded root `main` SHA, never from a PR head | a PR must not weaken its own gates (§6) | prep scripts + tests |
 | All tracked-file changes land via PR | write-protected `main` | prompt invariant + review |
 | No ref arithmetic, no raw `gh` writes, no ambient cwd in prompts | the drift class the rewrite exists to kill | §10 prompt validators |
 | Contract tokens are frozen (marker strings, op names, closed sets) | cross-skill/GitHub parse compatibility | census greps (§10) |
 | Skills are stack-agnostic (gated integrations + ≥2-stack examples only) | multi-stack product | banned-pattern greps (§10) |
 | Session-per-skill; no autonomous stage chaining | context isolation is the design | prompt invariant + review |
 | Scripts never author prose; sub-agents never write to GitHub | role separation (§2) | review + tests |
-| Scripts are stdlib-only Python spawning only `git`/`gh` | excludes the BSD/GNU userland divergence class (§1) | review + dual-platform suite runs (§10) |
+| Scripts are stdlib-only Python spawning only `git`/`gh` (sole carve-out: `workspace.py`'s hook runner, §1) | excludes the BSD/GNU userland divergence class | review + dual-platform suite runs (§10) |

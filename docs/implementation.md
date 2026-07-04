@@ -12,11 +12,14 @@ Each step is sized to be one issue and one PR.
   assumes ([prd.md §8](prd.md)); nothing lands without a PR.
 - A step is done only when every DoD box is ticked; DoD is verified in PR review, not assumed.
 - **Global DoD** (applies to every step, in addition to its own): `python3 -m compileall -q
-  scripts/` succeeds; `python3 tests/run.py` green — for steps that touch scripts, on **both
-  macOS and Linux** (container invocation documented in `tests/README.md`); `shellcheck` clean
-  for any v1 `*.sh` still present; `.claude-plugin/*.json` parses (`python3 -m json.tool`);
-  [architecture.md](architecture.md) / [prd.md](prd.md) amended in the same PR when the step
-  legitimately changed a contract (content edits only — §-anchors are stable).
+  scripts/` succeeds; `python3 tests/run.py` green from S2 onward — for steps that touch
+  scripts, on **both macOS and Linux** (container invocation documented in `tests/README.md`);
+  `shellcheck` clean for any v1 `*.sh` still present; `.claude-plugin/*.json` parses
+  (`python3 -m json.tool`); for skill-cutover steps (S7, S10, S13, S15–S19) the contract-token
+  census is re-run against the S1 baseline and any count drop is accounted for on a
+  deliberate-retirement note in the PR; [architecture.md](architecture.md) / [prd.md](prd.md)
+  amended in the same PR when the step legitimately changed a contract (content edits only —
+  §-anchors are stable).
 - **Order:** the table below. After S8 (pattern lock) the remaining tracks are parallelizable;
   before it, everything is deliberately serial so the shared patterns are corrected while only
   one skill uses them.
@@ -32,7 +35,7 @@ Each step is sized to be one issue and one PR.
 | S7 evaluator skill | S6, S1 | S17 setup | S8, S4 |
 | S8 pilot retro & lock | S7 | S18 question pair | S8, S5 |
 | S9 prep-resolver | S8 | S19 doc-reviewer | S8 |
-| S10 resolver skill | S9 | S20 retirement | S9–S19 all |
+| S10 resolver skill | S9 | S20 retirement | all other steps |
 | S21 executor ports | S3 | — | — |
 
 ## The sandbox repo
@@ -40,9 +43,11 @@ Each step is sized to be one issue and one PR.
 Live smoke and parity runs use a disposable consuming repo (**the sandbox**) — a real GitHub
 repository seeded with: the pipeline labels (`epic`, `story`, `question`, `planned`,
 `researched`, `audience:*`), one epic with two stories, one plain bug issue, one question issue,
-grounding docs (`docs/prd.md`, `docs/architecture.md`), and the config marker blocks. S2 authors
-`tests/SANDBOX.md` with the exact seeding steps. Offline tests never touch it; parity runs always
-do.
+grounding docs (`docs/prd.md`, `docs/architecture.md`), the config marker blocks, and a minimal
+CI workflow whose pass/fail is controllable per branch (e.g. it fails when a marker filename is
+present). S2 authors `tests/SANDBOX.md` with the exact creation (`gh repo create … --private`)
+and seeding steps, creates the repo, and records its URL there. Offline tests never touch it;
+parity runs always do.
 
 ## The parity protocol
 
@@ -50,13 +55,17 @@ Referenced by every skill-cutover step as "parity run", recorded per skill in
 `docs/specs/parity/<skill>.md`:
 
 1. Construct the target state in the sandbox (issue/PR in the shape the skill expects), or use
-   twin targets for destructive flows.
+   twin targets for destructive flows. For flows that mutate a shared parent (epic checkbox,
+   delivery log, sandbox `main`), twin the parent subtree too (e.g. two single-story epics), not
+   just the target PR/issue.
 2. Run the **v1** skill in one session. Capture: every GitHub write (fetch bodies afterward),
    every gate asked, the handoff text, and the session's rough turn count.
 3. Reset (or switch to the twin) and run the **v2** skill on the same state.
-4. Compare: persisted artifacts are schema-identical ([prd.md §7](prd.md)); the same genuine
-   decisions were gated; the handoff validates against the shared schema; startup performed one
-   state-assembly call ([prd.md §9.2](prd.md)).
+4. Compare: persisted artifacts are **schema-identical** — same marker line, same
+   section/heading set and order, same structured fields; free prose may differ; confirmed by
+   cross-consumption (a v1 reader consumes the v2 artifact and vice versa, [prd.md §7](prd.md)).
+   The same genuine decisions were gated; the handoff validates against the shared schema;
+   startup performed at most one state-assembly call ([prd.md §9.2](prd.md)).
 5. Divergences are listed; each must trace to a PRD requirement (e.g. the §5.3 planner fixes) or
    be filed as a defect. Unexplained divergence fails the run.
 
@@ -71,8 +80,10 @@ Referenced by every skill-cutover step as "parity run", recorded per skill in
 **Work:** For each of the nine skills, extract `docs/specs/<skill>.md` from the v1 `SKILL.md` +
 references: artifacts written/read, operator gates, judgment steps, deterministic steps
 (candidate script work), invariants with their *why*, and known bugs. Record
-`docs/specs/baseline.md`: v1 line counts, the contract-token census output (command + verbatim
-result), and links to live examples of each persisted artifact. Fold in the two known planner
+`docs/specs/baseline.md`: v1 line counts and the contract-token census output (command +
+verbatim result); capture each persisted-artifact example **verbatim** under
+`docs/specs/examples/` (with its source link), including one sample v1 handoff per pipeline
+skill. Fold in the two known planner
 bugs as falsifiable spec lines: (a) an open question with an existing tracker issue must never be
 recorded as "(not filed)"; (b) the handoff's open-questions line must render in combined
 epic + story sessions.
@@ -82,6 +93,8 @@ epic + story sessions.
 - [ ] Every [prd.md §7](prd.md) artifact has at least one spec naming it as writer and one as
       reader (cross-reference table in `baseline.md`).
 - [ ] Census command and verbatim output committed.
+- [ ] Every [prd.md §7](prd.md) artifact has a verbatim example under `docs/specs/examples/`,
+      including one v1 handoff per pipeline skill.
 - [ ] Both planner bugs appear as falsifiable requirements in `specs/planner.md`.
 - [ ] Each spec was adversarially re-read against its source `SKILL.md` in an isolated session
       or sub-agent; misses were folded in and noted.
@@ -110,6 +123,7 @@ sandbox seeding).
 - [ ] The suite passes on macOS and on Linux (container or host), per the documented invocation.
 - [ ] `tests/README.md` and `tests/SANDBOX.md` exist and suffice to add a case / seed the
       sandbox / run on Linux without reading harness source.
+- [ ] The sandbox repo exists, seeded per `tests/SANDBOX.md`, and its URL is recorded there.
 
 **Testing:** the harness tests itself: shim hit/miss cases, sandbox create/teardown, run.py
 failure propagation.
@@ -122,14 +136,16 @@ failure propagation.
 helper (threshold env: new name honored, legacy `GH_OPS_INLINE_THRESHOLD_BYTES` fallback,
 default 25600), sha256 helper, the closed decision-code constants, and the portable subprocess
 runner (argument lists only, never `shell=True`; `encoding="utf-8"` pinned; `git`/`gh` the only
-spawnable binaries — [architecture.md §1](architecture.md)); plus reusable unittest assertion
-helpers for envelope conformance (status validity, decision payload shape, `*_mode`/`*_path`
+spawnable binaries — [architecture.md §1](architecture.md)) and the separate hook executor only
+`workspace.py` imports (the §1 carve-out); plus reusable unittest assertion helpers for envelope
+conformance (status validity, decision payload shape, `*_mode`/`*_path`
 pairing, exit-code contract) that all later suites import.
 
 **DoD**
 - [ ] Every pipelib function has a unit test.
-- [ ] The subprocess runner refuses string commands and non-`git`/`gh` binaries by construction,
-      and pins UTF-8 (tested).
+- [ ] The subprocess runner refuses string commands and non-`git`/`gh` binaries by construction
+      and pins UTF-8; the hook executor is a separate, explicitly-named entry point (tested).
+- [ ] A `gh` authentication failure surfaces as an `AUTH_REQUIRED` decision (fixture).
 - [ ] Conformance assertions exist and are importable by other suites (used by a toy script
       end-to-end test).
 - [ ] Threshold precedence tested: new var, legacy var, default.
@@ -168,19 +184,23 @@ the two gathers.
 
 **Goal:** the [architecture.md §6](architecture.md) lifecycle owner.
 
-**Work:** subcommands `ensure --work <branch> --base <ref>` / `ensure --read <ref>` / `gc
-[--max-age]` / `root-status`; root-freshness protocol (on-`main` + clean → fetch → `--ff-only` →
-SHA; `ROOT_NOT_ON_MAIN` / `ROOT_DIRTY` / `ROOT_DIVERGED` decisions); hook execution absorbed from
-`worktree-hooks.sh` (setup fail-fast, teardown best-effort, `lint`), discovered via
-`config_block.py`; reset-on-ensure for `ro-*`; `BRANCH_IN_USE` when the branch is checked out
-elsewhere; `.gitignore` maintenance. `worktree-hooks.sh` itself stays untouched for v1 callers
+**Work:** subcommands `ensure --work <branch> --base <ref>` / `ensure --read <ref>` /
+`remove --work <branch>` (teardown hooks best-effort, then `git worktree remove`; dirty or
+unpushed state → decision) / `gc [--max-age]` / `root-status` / `lint <setup|teardown>`;
+root-freshness protocol (on-`main` + clean → fetch → `--ff-only` → SHA; `ROOT_NOT_ON_MAIN` /
+`ROOT_DIRTY` / `ROOT_DIVERGED` decisions); hook execution absorbed from `worktree-hooks.sh`
+(setup fail-fast, teardown best-effort, `lint`), discovered via `config_block.py`; fetch +
+reset-on-ensure for `ro-*`; `BRANCH_IN_USE` when the branch is checked out elsewhere;
+`.gitignore` maintenance. `worktree-hooks.sh` itself stays untouched for v1 callers
 until S20.
 
 **DoD**
 - [ ] `ensure --work`: creates from `origin/<base>`, reuses an existing worktree, runs setup
       hooks on every entry, reports `reused` / dirty / unpushed facts.
-- [ ] `ensure --read`: detached at `origin/<ref>`, resets to current origin SHA on re-ensure,
-      reports the SHA.
+- [ ] `ensure --read`: detached at `origin/<ref>`, fetches then resets to current origin SHA on
+      re-ensure, reports the SHA.
+- [ ] `remove --work`: runs teardown hooks, then removes; dirty or unpushed state returns a
+      decision instead of removing (both cases tested).
 - [ ] Each root-freshness failure mode returns its decision code (three cases), and the happy
       path ff-updates and records the SHA.
 - [ ] `gc` removes only `ro-*` older than max-age (default 7 days); an adversarial case proves an
@@ -199,7 +219,8 @@ config-block fixtures; manual smoke: `ensure --read` against this repo, then `gc
 **Work:** subcommands over a file path, envelope out: `dod` (issue body → indexed bullets with
 checkbox state + annotation per the `_shared/dod-annotations.md` closed set), `oq-links` (body →
 `open-question-links:v1` entries with dispositions per `_shared/open-question-links.md`),
-`phases` (plan body → phase list with kinds).
+`phases` (plan body → phase list with kinds). Plus a render mode (`dod --render`) that re-emits
+the bullets byte-identically from the parsed form — the round-trip DoD exercises it.
 
 **DoD**
 - [ ] `dod` parses every annotation form in the shared contract (one fixture per form);
@@ -261,6 +282,8 @@ comment, review comment, delivery-log append, handoff; all I/O via scripts direc
 - [ ] Every operator gate in `specs/evaluator.md` is present, or its absence traces to a PRD §.
 - [ ] Parity run recorded in `docs/specs/parity/evaluator.md`: standard approve + merge; story
       merge (delivery-log append + epic checkbox); red-CI rejection; `ask`-policy gate.
+- [ ] Router + largest playbook line count recorded there and is at most half the v1 `SKILL.md`
+      count in `baseline.md` ([prd.md §10](prd.md)).
 
 **Testing:** offline — routing-table fixtures (vector → playbook) and `--dry-run` persist
 envelopes; live — the four parity scenarios on the sandbox.
@@ -271,12 +294,14 @@ envelopes; live — the four parity scenarios on the sandbox.
 
 **Work:** retro over S6/S7 — facts-schema gaps, envelope friction, playbook-granularity calls;
 amend [architecture.md](architecture.md) §3–§5 content where the pilot contradicted it (anchors
-stable); record the scale/no-scale decision.
+stable); record the go/no-go decision.
 
 **DoD**
 - [ ] Retro appended to `docs/specs/baseline.md`.
 - [ ] Architecture amendments landed; validators and census still green.
-- [ ] Explicit operator go/no-go recorded for the remaining phases.
+- [ ] Operator go/no-go recorded with criteria — **go** requires the S7 parity run recorded
+      with zero unexplained divergences, architecture amendments landed, and validators + census
+      green; **no-go** names the blocking finding and its remediation step.
 
 **Testing:** process step — re-run validators only.
 
@@ -288,8 +313,8 @@ stable); record the scale/no-scale decision.
 
 **Goal:** resolver startup — v1's ~130 lines of prompt-side state assembly — in one call.
 
-**Work:** state vector (labels → type; plan marker + SHA; fresh/continue mode from the six-row
-prior-PR table); epic branch discovery + slug computation; story parent-epic search; branch
+**Work:** state vector (labels → type; plan marker + SHA; fresh/continue mode from the prior-PR
+state table as captured in `specs/resolver.md`); epic branch discovery + slug computation; story parent-epic search; branch
 collision suffixing (`-vN`); phase facts via `parse.py phases` + `dod`; open-question facts
 (`parse.py oq-links` joined with tracker states and native `blocked_by`) including the
 in-scope-blocked hard-gate fact; audit read-workspace + work-workspace ensure per mode; test and
@@ -297,7 +322,8 @@ fast-check config pinned at root SHA; distiller input bundle staged to scratch; 
 `attention` (dirty, unpushed, ambiguous branch matches).
 
 **DoD**
-- [ ] One fixture per prior-PR state row (six) proving mode/vector derivation.
+- [ ] One fixture per row of the v1 prior-PR table (as captured in `specs/resolver.md`),
+      proving mode/vector derivation.
 - [ ] Epic-branch discovery fixtures: zero, one, multiple matches (multiple → `AMBIGUOUS`).
 - [ ] Collision fixture: existing `-v2` branch yields `-v3`.
 - [ ] Blocked-OQ fixtures both ways: open tracker + `in-scope (blocked)` sets the hard-gate fact;
@@ -326,6 +352,8 @@ forced-read workaround are retired.
 - [ ] Grep gates and pins as S7.
 - [ ] Parity runs recorded: fresh bug-fix end-to-end; continue-mode re-entry; comment-only;
       multi-phase tick projection.
+- [ ] Router + largest playbook line count recorded in `docs/specs/parity/resolver.md` and is
+      at most half the v1 `SKILL.md` count in `baseline.md` ([prd.md §10](prd.md)).
 
 **Testing:** offline routing + dry-run suites; the four live parity scenarios on the sandbox.
 
@@ -334,14 +362,17 @@ forced-read workaround are retired.
 **Goal:** one typed-exception vocabulary across scripts and judgment sub-agents
 ([architecture.md §3, §8](architecture.md)).
 
-**Work:** update the resolver-family sub-agent prompts (state-distiller, fitness audit,
-test-selection, review-loop) to take workspace paths + staged files and return §3 codes; mark
+**Work:** converge the resolver-family sub-agent prompts (state-distiller, fitness audit,
+test-selection, review-loop) on the §3 return vocabulary — path inputs landed in S10; mark
 `_shared/subagent-decision-signal.md` superseded-for-v2 (v1 planner/drafter still cite it —
-removal happens in S20); align the question-status reader's `AMBIGUOUS`.
+removal happens in S20). The question-status reader converges in S18 with the rest of the
+question pair.
 
 **DoD**
 - [ ] No v2 sub-agent prompt takes a ref as input or cites the old signal doc.
-- [ ] A drift-check validator compares prompt code sets to [architecture.md §3](architecture.md).
+- [ ] A drift-check validator compares prompt code sets to
+      [architecture.md §3](architecture.md); this committed validator binds later prompt authors
+      (S13, S15, S16, S18).
 - [ ] Old signal doc carries the superseded breadcrumb; v1 callers still function.
 - [ ] Resolver live smoke re-run green (distiller + audit round-trip).
 
@@ -388,10 +419,12 @@ comment's planned-at SHA is the workspace SHA fact.
       a rendering example and a parity check.
 - [ ] Playbook rule (falsifiable): an OQ may be recorded "(not filed)" only when the facts
       candidate list is empty or each candidate was explicitly rejected; parity-checked (bug (a)).
-- [ ] Gates from `specs/planner.md` present; grep gates + pins; parity recorded: plan-new epic,
-      JIT story, revise.
+- [ ] Gates from `specs/planner.md` present; grep gates + pins; parity recorded: plan-new
+      single issue, plan-new epic, JIT story, revise.
+- [ ] Router + largest playbook line count recorded in `docs/specs/parity/planner.md` and is at
+      most half the v1 `SKILL.md` count in `baseline.md` ([prd.md §10](prd.md)).
 
-**Testing:** offline routing + rendering fixtures; the three live parity scenarios.
+**Testing:** offline routing + rendering fixtures; the four live parity scenarios.
 
 ### S14 — `prep_drafter.py`
 
@@ -426,6 +459,8 @@ open-question dispositions per `_shared`; filing via `gh_persist.py` with native
       matched tracker issue + disposition; parity-checked with a seeded doc OQ.
 - [ ] Gates from `specs/drafter.md` present; grep gates + pins; parity recorded: new bug draft,
       epic split, revise, question.
+- [ ] Router + largest playbook line count recorded in `docs/specs/parity/drafter.md` and is at
+      most half the v1 `SKILL.md` count in `baseline.md` ([prd.md §10](prd.md)).
 
 **Testing:** offline routing + dry-run suites; the four live parity scenarios.
 
@@ -445,9 +480,12 @@ bar says otherwise — decided at build); web-research loop and validator carrie
 - [ ] Dossier comment diffs clean against S1 captures; the decline gate is preserved (parity: a
       no-currency-risk issue declines).
 - [ ] Prep fixtures: marker present/absent; manifests found/missing.
-- [ ] Grep gates + pins; parity recorded: broad run on a currency-risky issue, decline case.
+- [ ] Grep gates + pins; parity recorded: broad run on a currency-risky issue, decline case,
+      revise of an existing dossier.
+- [ ] Router + largest playbook line count recorded in `docs/specs/parity/researcher.md` and is
+      at most half the v1 `SKILL.md` count in `baseline.md` ([prd.md §10](prd.md)).
 
-**Testing:** shim-backed unit tests; the two live parity scenarios.
+**Testing:** shim-backed unit tests; the three live parity scenarios.
 
 ---
 
@@ -483,7 +521,8 @@ hook-block authoring retained, linted via `workspace.py lint`.
 candidate list from config block + heuristic cues); `prep_question_resolver.py` (gather +
 decision marker + native `blocking` list); sweep apply-mode doc edits are staged in a work
 workspace with the landing offered per [prd.md §8.2](prd.md); decision recording and
-close/reopen stay on `gh_persist.py` with reentrancy preserved.
+close/reopen stay on `gh_persist.py` with reentrancy preserved; the question-status reader's
+return vocabulary converges on the §3 codes here (`AMBIGUOUS`), completing S11's sweep.
 
 **DoD**
 - [ ] Tier-1 status join fixtures: closed / decision-marker present / still open (→ Tier-2
@@ -534,8 +573,10 @@ raw `gh` writes in `skills/`); record the final census diff against the S1 basel
 `docs/specs/baseline.md` with every dropped token accounted for.
 
 **DoD**
-- [ ] Zero grep hits repo-wide for: old skill names, `github-ops`, `worktree-hooks`; no `*.sh`
-      remains under `scripts/`.
+- [ ] Zero grep hits under `skills/`, `agents/`, `scripts/`, `tests/`, `README.md`,
+      `.claude-plugin/`, and `CLAUDE.md` for: old skill names, `github-ops`, `worktree-hooks`
+      (`docs/specs/**` and `docs/implementation.md` are exempt as the historical record); no
+      `*.sh` remains under `scripts/`.
 - [ ] Census diff reviewed; every removed token is on the deliberate-retirement list.
 - [ ] Full offline suite green on macOS and Linux; manifests parse; version bumped; the
       runtime-dependency docs list only `python3` / `git` / `gh` (`jq` and `bash` dropped).
