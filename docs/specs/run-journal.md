@@ -266,7 +266,7 @@ sandbox, or delete anything outside the working tree and the sandbox.
 
 ### S7 — Evaluator skill rewrite — PARTIAL (automatable work done + committed; parity run PENDING) (2026-07-04)
 
-- **Commit:** `<backfilled>` (`S7: skills/evaluator/ — first skill cutover (automatable work; parity pending)`).
+- **Commit:** `25be0a5` (`S7: skills/evaluator/ — first skill cutover (automatable work; parity pending)`).
 - **Status:** **6 of 7 DoD boxes ticked** (the automatable ones). **Box 6 — the live 4-scenario parity
   run — is operator-gated and REMAINS unticked.** This is the run's first hard stop. S8 depends on
   S7's parity, so S8 is NOT started.
@@ -324,7 +324,7 @@ interactive, operator-gated parity run** (per the stop conditions).
 | S4 | `e20e4c3` | `workspace.py` (worktree lifecycle, root-freshness, gc, hooks) |
 | S5 | `fe16977` | `parse.py` (dod/oq-links/phases; byte-identical dod round-trip) |
 | S6 | `938d618` | `prep_evaluator.py` (facts-block pilot) + labels/workspace shared-layer fixes |
-| **S7** | `<backfilled>` | **skills/evaluator/ — first cutover; automatable work only (see below)** |
+| **S7** | `25be0a5` | **skills/evaluator/ — first cutover; automatable work only (see below)** |
 
 The offline suite is **540 tests, green on macOS and Linux**. The disposable sandbox is
 **`https://github.com/danwashusen/gh-pipeline-sandbox`** (issue #4 bug, epic #1 + stories #2/#3,
