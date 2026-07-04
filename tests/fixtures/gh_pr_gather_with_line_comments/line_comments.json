@@ -1,0 +1,16 @@
+[
+  {
+    "id": 5001,
+    "path": "widget.py",
+    "line": 12,
+    "body": "Consider naming this method something clearer.",
+    "user": {"login": "reviewer1"}
+  },
+  {
+    "id": 5002,
+    "path": "widget.py",
+    "line": 14,
+    "body": "Nit: missing docstring.",
+    "user": {"login": "reviewer1"}
+  }
+]

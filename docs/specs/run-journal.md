@@ -102,7 +102,7 @@ sandbox, or delete anything outside the working tree and the sandbox.
 
 ### S3 — `scripts/pipelib/` + the envelope — ACCEPTED (2026-07-04)
 
-- **Commit:** `<backfilled next commit>` (`S3: pipelib primitives + the §3 envelope`).
+- **Commit:** `a503ddf` (`S3: pipelib primitives + the §3 envelope`).
 - **DoD:** all 6 boxes ticked, verified this session.
 - **Deliverables:** `scripts/pipelib/` — `decisions.py` (the 13 closed decision codes + `needs_decision`
   builder + `DEPS_UNSUPPORTED` notice), `hashing.py` (sha256), `spill.py` (threshold precedence
@@ -122,6 +122,41 @@ sandbox, or delete anything outside the working tree and the sandbox.
 - **Carried notes (not deferred DoD):** adv-1 — harden the AST `shell=` guard to also reject a
   non-literal `shell=<var>` kwarg; adv-2 — `process.run` defaults `cwd=None`, so S21/S4 callers must
   pass explicit `cwd` (or `git -C`). Both carried into the S21 brief. No DoD item deferred.
+
+### S21 — GitHub executor ports — ACCEPTED (2026-07-04)
+
+- **Commit:** `<backfilled next commit>` (`S21: port the four gh executors to Python`).
+- **DoD:** all 4 boxes ticked, verified this session.
+- **Deliverables:** `scripts/{gh_gather,gh_pr_gather,gh_persist,config_block}.py` (Python ports under
+  the §3 envelope, importing `pipelib`) + `tests/test_*.py` + fixtures. v1 `.sh` untouched +
+  shellcheck-clean.
+- **Contract fidelity:** each preserves its v1 CLI + output field set (gh_persist verified byte-for-byte
+  against live v1 side-by-side; config_block round-trips the v1 canonical block forms **byte-identically**
+  under adversarial attack). Invariants preserved: empty-body gate → `EMPTY_BODY_FILE` (as a
+  `needs_decision` envelope at exit 0 — the v2 envelope form of v1's bare exit 2; the gate is proven to
+  run **before** any `gh` write, the #626/#627 guarantee); `body_sha256`; post-new-before-delete-old
+  (with an explicit positive call-order assertion); close/reopen idempotency; deps capability-gating →
+  `DEPS_UNSUPPORTED` + retry-without; `MARKER_AMBIGUOUS`.
+- **Cross-port unification (from review):** inline `thread` is a JSON `str` in **both** gathers
+  (conforming to `pipelib.spill`/`envelope_asserts`; gh_gather was corrected to match gh_pr_gather);
+  `AUTH_REQUIRED` classified in all gh-facing ports; `config_block.py` made executable.
+- **Live smoke (read-only, sandbox):** gh_gather on issue **#4** → `status ok`, marker_comment_count 0,
+  deps_available true, `thread`/`issue_body` type `str`; gh_pr_gather on PR **#6** (`--with-diff`) →
+  `status ok`, OPEN, diff spilled to path, `thread` type `str`. (Created sandbox PR #6, which also seeds
+  the S7 evaluator parity run.)
+- **Dual-platform:** 337 tests pass on macOS and in the Linux `python:3-slim` container.
+- **Process (fan-out):** 4 port implementors + 1 consolidation fixup; review = 3 reviewers (gathers /
+  gh_persist / config_block) round 1 → fixup → 1 gh_gather round-2 reviewer + orchestrator mechanical
+  checks (config_block `+x`, gh_persist ordering test). **2 review rounds** (gathers/config_block had
+  actionable findings; gh_persist was clean in round 1).
+- **Findings resolved:** gh_gather inline-`thread` list→`str` (actionable); `config_block.py` `+x`
+  (actionable); advisories folded (gh_gather `AUTH_REQUIRED` for cross-port consistency; gh_persist
+  explicit ordering assertion).
+- **Carried to S20 (not S21 gaps):** a uniform-`AUTH_REQUIRED` audit note; and a possible
+  `stderr_file` field for `tests/shim/gh` — the deps/error stderr-classification paths currently use
+  in-process fakes (the shim replays stdout only), which all three reviewers ruled **adequate** for
+  S21 (the shim is frozen for S21). A future harness improvement, not required.
+- **Deferrals:** none of S21's own DoD.
 
 ### Session-mechanics note (applies to the whole run in this session)
 

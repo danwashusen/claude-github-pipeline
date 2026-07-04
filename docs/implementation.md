@@ -177,14 +177,14 @@ discovery + `marker_comment_count`, threshold spill, dependency capability-gatin
 close/reopen idempotency, `body_sha256` receipts, canonical config-block forms and statuses.
 
 **DoD**
-- [ ] Each port emits a conformant envelope for its happy path and every decision/notice it can
+- [x] Each port emits a conformant envelope for its happy path and every decision/notice it can
       produce (fixture per case).
-- [ ] Invariant tests: empty staged file → `EMPTY_BODY_FILE`; duplicate markers surfaced per
+- [x] Invariant tests: empty staged file → `EMPTY_BODY_FILE`; duplicate markers surfaced per
       contract; deps-unsupported → notice + retry-without; comment replacement posts before
       delete.
-- [ ] `config_block.py` round-trips the v1 canonical block forms byte-identically
+- [x] `config_block.py` round-trips the v1 canonical block forms byte-identically
       (`read`/`list`/`upsert`/`remove` semantics preserved; fixtures lifted from v1 examples).
-- [ ] v1 `.sh` files untouched and still shellcheck-clean.
+- [x] v1 `.sh` files untouched and still shellcheck-clean.
 
 **Testing:** shim-backed unit tests per the DoD matrix; one documented read-only live smoke for
 the two gathers.

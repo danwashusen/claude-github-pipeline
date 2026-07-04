@@ -1,0 +1,6 @@
+[
+  {
+    "argv": ["issue", "view", "42", "--repo", "o/r", "--json", "number,title,body,state,labels,author,createdAt,updatedAt,assignees,milestone,url,blockedBy,blocking"],
+    "exit_code": 4
+  }
+]

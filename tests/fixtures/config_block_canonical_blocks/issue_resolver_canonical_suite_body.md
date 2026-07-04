@@ -1,0 +1,3 @@
+- full-suite: `./scripts/xcb.sh test`
+- build-once: `./scripts/xcb.sh build-for-testing`
+- retry-without-rebuild: `./scripts/xcb.sh test-without-building`

@@ -1,0 +1,14 @@
+[
+  {
+    "argv": [
+      "issue",
+      "view",
+      "999",
+      "--repo",
+      "o/r",
+      "--json",
+      "number,title,body,state,labels,author,createdAt,updatedAt,assignees,milestone,url,blockedBy,blocking"
+    ],
+    "exit_code": 1
+  }
+]

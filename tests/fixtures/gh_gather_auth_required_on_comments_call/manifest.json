@@ -1,0 +1,11 @@
+[
+  {
+    "argv": ["issue", "view", "42", "--repo", "o/r", "--json", "number,title,body,state,labels,author,createdAt,updatedAt,assignees,milestone,url,blockedBy,blocking"],
+    "stdout_file": "issue_view.json",
+    "exit_code": 0
+  },
+  {
+    "argv": ["api", "--paginate", "repos/o/r/issues/42/comments"],
+    "exit_code": 4
+  }
+]

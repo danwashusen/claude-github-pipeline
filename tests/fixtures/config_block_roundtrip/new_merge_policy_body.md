@@ -1,0 +1,2 @@
+- standard: auto
+- story: ask

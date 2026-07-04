@@ -1,0 +1,2 @@
+- `./scripts/check-layer-imports.sh` — Layer-import boundary lint (fast, <5s)
+- `CI=1 ./scripts/run-swiftlint.sh` — SwiftLint in CI strict mode

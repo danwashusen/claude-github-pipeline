@@ -1,0 +1,2 @@
+- standard: ask
+- story: ask

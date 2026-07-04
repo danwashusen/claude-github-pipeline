@@ -1,0 +1,11 @@
+diff --git a/widget.py b/widget.py
+index aaa1111..bbb2222 100644
+--- a/widget.py
++++ b/widget.py
+@@ -10,3 +10,5 @@ class Widget:
+     def render(self):
+         self.layout()
+         return self.paint()
++
++    def defer_layout(self):
++        pass
