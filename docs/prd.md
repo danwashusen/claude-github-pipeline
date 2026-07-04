@@ -120,6 +120,7 @@ ground these are produced by implementation step S1.
 
 All four run only on explicit invocation, are report-then-apply (nothing changes without the
 operator seeing the proposal), and end with a plain summary — not a pipeline handoff.
+Tracked-file edits follow §8.2: staged in a workspace, with the landing offered as a final gate.
 
 - **§6.1 setup.** Proposes and reconciles the consuming repo's configuration blocks: inventories
   existing blocks, drafts grounded candidates from repo evidence, interviews the operator for
@@ -156,9 +157,13 @@ an artifact written by a v1 skill is consumed correctly by its v2 counterpart, a
 
 - **§8.1 Root is read-only.** The project root checkout stays on `main`; no skill modifies
   tracked files, switches branches, or creates commits there.
-- **§8.2 Everything lands via PR.** All tracked-file changes a skill produces — code, docs, and
-  configuration blocks (including those from `setup`, `question-sweep`, and `doc-reviewer`) —
-  are made in a workspace on a branch and land on `main` only through a PR.
+- **§8.2 Everything lands via PR; landing is operator-approved.** All tracked-file changes a
+  skill produces — code, docs, and configuration blocks — are made in a workspace on a branch,
+  never in the root, and reach `main` only through a PR. The resolver opens its PR as part of
+  its flow. The standalone tools (`setup`, `question-sweep`, `doc-reviewer`) stage approved
+  edits in the workspace and **offer** the landing (commit + push + PR) as one explicit final
+  gate: on decline they perform no git actions, and the summary reports the workspace path and
+  the ready-to-run landing commands.
 - **§8.3 Workspaces.** All skill file activity happens in `.worktrees/` workspaces; a session
   reports which workspace it used.
 - **§8.4 Pinned grounding.** Plans, audits, and evaluations ground on an explicitly recorded

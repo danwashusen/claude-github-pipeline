@@ -184,10 +184,13 @@ PR.
 - **Atomicity & idempotency stay as built:** marker replacement posts the new comment before
   deleting the old; `close` on a closed issue is a no-op; native-dependency writes are
   capability-gated (`DEPS_UNSUPPORTED` notice + prose-link fallback).
-- **PR-only landing.** Skills that change tracked files (`setup` config blocks, `question-sweep`
-  doc fixes, `doc-reviewer` applied findings, resolver code) do so in a work workspace and open a
-  PR ([prd.md §8.2](prd.md)). Consuming repos may set a merge-policy entry (e.g. `docs: auto`) to
-  keep small maintenance PRs low-ceremony.
+- **PR-only landing, operator-gated.** Skills that change tracked files (`setup` config blocks,
+  `question-sweep` doc fixes, `doc-reviewer` applied findings, resolver code) do so only in a
+  work workspace ([prd.md §8.2](prd.md)). The resolver opens its PR as part of its flow; the
+  three maintenance tools stage approved edits and **offer** the landing (commit + push + PR) as
+  one explicit final gate — on decline they perform no git actions and report the workspace path
+  + ready-to-run commands in the summary. Consuming repos may set a merge-policy entry (e.g.
+  `docs: auto`) to keep accepted maintenance PRs low-ceremony.
 - **No executor agent.** v1's `github-ops` sub-agent is retired; its responsibilities land here:
 
 | v1 `github-ops` rule | v2 owner |

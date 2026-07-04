@@ -418,16 +418,20 @@ bar says otherwise — decided at build); web-research loop and validator carrie
 
 ### S17 — Setup rewrite
 
-**Goal:** `skills/setup/` with PR landing ([prd.md §6.1, §8.2](prd.md)).
+**Goal:** `skills/setup/` with operator-gated PR landing ([prd.md §6.1, §8.2](prd.md)).
 
 **Work:** rename from `github-pipeline-setup`; inventory/detect/propose/validate flows carried
-(all block I/O via `config-block.sh`); writes happen in a work workspace and land as a PR whose
-body summarizes the block diffs; merge-policy proposal includes a `docs: auto` style option;
-worktree hook-block authoring retained, linted via `workspace.sh lint`.
+(all block I/O via `config-block.sh`); writes are staged in a work workspace, with the landing
+(commit + push + PR whose body summarizes the block diffs) offered as an explicit final gate per
+[prd.md §8.2](prd.md); merge-policy proposal includes a `docs: auto` style option; worktree
+hook-block authoring retained, linted via `workspace.sh lint`.
 
 **DoD**
 - [ ] Written blocks are byte-identical to v1 canonical forms (fixture diff).
-- [ ] Live sandbox run: setup produces a PR; `git -C <root> status` stays clean throughout.
+- [ ] Live sandbox run (landing approved): PR opened with the block-diff summary;
+      `git -C <root> status` clean throughout.
+- [ ] Live sandbox run (landing declined): no commit/push/PR occurs; the summary reports the
+      workspace path and ready-to-run landing commands.
 - [ ] Legacy `pr-evaluator-health-checks` split/migration preserved (fixture).
 - [ ] `disable-model-invocation: true` retained; grep gates; parity recorded.
 
@@ -440,13 +444,16 @@ worktree hook-block authoring retained, linted via `workspace.sh lint`.
 
 **Work:** `prep-question-sweep.sh` (question-issue registry gather with Tier-1 status join; doc
 candidate list from config block + heuristic cues); `prep-question-resolver.sh` (gather +
-decision marker + native `blocking` list); sweep apply-mode doc edits land via PR; decision
-recording and close/reopen stay on `gh-persist.sh` with reentrancy preserved.
+decision marker + native `blocking` list); sweep apply-mode doc edits are staged in a work
+workspace with the landing offered per [prd.md §8.2](prd.md); decision recording and
+close/reopen stay on `gh-persist.sh` with reentrancy preserved.
 
 **DoD**
 - [ ] Tier-1 status join fixtures: closed / decision-marker present / still open (→ Tier-2
       needed flag).
-- [ ] Sweep apply mode produces a PR; root stays clean.
+- [ ] Sweep apply (landing approved): PR opened; root clean throughout.
+- [ ] Sweep apply (landing declined): no git actions; summary reports workspace + landing
+      commands.
 - [ ] `question-decision:v1` comment diffs clean against S1 captures; reentrant revise
       (post-new-then-delete-old) parity-tested.
 - [ ] New names used throughout the new dirs; `disable-model-invocation` retained; grep gates;
@@ -458,12 +465,15 @@ recording and close/reopen stay on `gh-persist.sh` with reentrancy preserved.
 
 **Goal:** `skills/doc-reviewer/` aligned to the router shape ([prd.md §6.4](prd.md)).
 
-**Work:** name unchanged; guide resolution and review lenses carried; apply mode edits in a work
-workspace and lands via PR; no prep script (nothing to gather — assert that stays true).
+**Work:** name unchanged; guide resolution and review lenses carried; apply mode stages edits in
+a work workspace and offers the landing per [prd.md §8.2](prd.md); no prep script (nothing to
+gather — assert that stays true).
 
 **DoD**
 - [ ] Review report structure preserved (parity on one sandbox doc).
-- [ ] Apply mode produces a PR; root stays clean.
+- [ ] Apply mode (landing approved): PR opened; root clean throughout.
+- [ ] Apply mode (landing declined): no git actions; summary reports workspace + landing
+      commands.
 - [ ] `disable-model-invocation` retained; grep gates.
 
 **Testing:** live parity on one doc; offline n/a beyond validators.
