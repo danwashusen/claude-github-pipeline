@@ -1,0 +1,7 @@
+[
+  {
+    "argv": ["auth", "status"],
+    "stdout_file": "auth_status_output.txt",
+    "exit_code": 0
+  }
+]

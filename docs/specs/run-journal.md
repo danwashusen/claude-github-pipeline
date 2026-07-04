@@ -74,7 +74,7 @@ sandbox, or delete anything outside the working tree and the sandbox.
 
 ### S2 — Offline test harness — ACCEPTED (2026-07-04)
 
-- **Commit:** `<backfilled next commit>` (`S2: offline test harness + live sandbox repo`).
+- **Commit:** `69399c7` (`S2: offline test harness + live sandbox repo`).
 - **DoD:** all 7 boxes ticked, verified this session.
 - **Deliverables:** `tests/run.py` (stdlib `unittest` discovery + a PATH-interception self-check that
   fails fast if `gh` doesn't resolve to the shim); `tests/shim/gh` (fixture-replaying `gh` stand-in,
@@ -99,6 +99,29 @@ sandbox, or delete anything outside the working tree and the sandbox.
   `stdout_file` → curated `MISS-LIKE:` message via `is_file()`; stale poison docstring path;
   README `os.path.realpath`→`Path.resolve()` wording). Zero actionable.
 - **Deferrals:** none.
+
+### S3 — `scripts/pipelib/` + the envelope — ACCEPTED (2026-07-04)
+
+- **Commit:** `<backfilled next commit>` (`S3: pipelib primitives + the §3 envelope`).
+- **DoD:** all 6 boxes ticked, verified this session.
+- **Deliverables:** `scripts/pipelib/` — `decisions.py` (the 13 closed decision codes + `needs_decision`
+  builder + `DEPS_UNSUPPORTED` notice), `hashing.py` (sha256), `spill.py` (threshold precedence
+  new→legacy→`25600`), `envelope.py` (build/emit `ok`|`needs_decision`, exit-code constants),
+  `process.py` (locked-down runner: arg-lists only, `git`/`gh` only, UTF-8, `shell=False`,
+  `AUTH_REQUIRED` via `gh` exit-4), `hooks.py` (the §1 carve-out — the sole `shell=True` call site,
+  `workspace.py`-only). Plus `tests/support/envelope_asserts.py` (7 conformance helpers imported by
+  later suites), `tests/test_pipelib.py` (118 tests), two gh-auth fixtures, a toy e2e script, and a
+  4-line `tests/run.py` change (adds `scripts/` to `sys.path`).
+- **Key §12 invariants enforced here:** the drift-check test **parses the 13 codes out of
+  architecture §3** and asserts lib==doc (mutation-tested both directions); the runner refuses `str` +
+  non-`git`/`gh` by construction (`isinstance` is the first statement); `shell=True` exists only in the
+  separate hook executor (AST-verified, not substring).
+- **Dual-platform:** 143 tests pass on macOS and in the Linux `python:3-slim` container (0.87s).
+- **Process:** 1 implementor → orchestrator sanity (macOS + Linux) → 1 opus reviewer (PASS, 0
+  actionable, 3 advisories). **1 review round.**
+- **Carried notes (not deferred DoD):** adv-1 — harden the AST `shell=` guard to also reject a
+  non-literal `shell=<var>` kwarg; adv-2 — `process.run` defaults `cwd=None`, so S21/S4 callers must
+  pass explicit `cwd` (or `git -C`). Both carried into the S21 brief. No DoD item deferred.
 
 ### Session-mechanics note (applies to the whole run in this session)
 

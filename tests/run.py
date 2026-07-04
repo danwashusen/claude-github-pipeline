@@ -32,12 +32,17 @@ from pathlib import Path
 
 _THIS_DIR = Path(__file__).resolve().parent
 REPO_ROOT = _THIS_DIR.parent
+SCRIPTS_DIR = REPO_ROOT / "scripts"
 
 # Make `tests` (and `from tests.support import ...`) importable regardless of the invoking cwd,
-# and ahead of any same-named package that might otherwise shadow it.
-_repo_root_str = str(REPO_ROOT)
-if _repo_root_str not in sys.path:
-    sys.path.insert(0, _repo_root_str)
+# and ahead of any same-named package that might otherwise shadow it. Also put `scripts/` on
+# sys.path so `pipelib` (scripts/pipelib/, from S3 onward) and later top-level script modules
+# (workspace.py, parse.py, gh_gather.py, ...) are importable by tests the same way a script
+# invoked directly (its own directory on sys.path[0]) already resolves them — this is the one
+# place that equivalence needs to be established for the *test* side, not per test file.
+for _extra_path in (str(REPO_ROOT), str(SCRIPTS_DIR)):
+    if _extra_path not in sys.path:
+        sys.path.insert(0, _extra_path)
 
 from tests.support import shimenv  # noqa: E402  (import after sys.path setup, by necessity)
 

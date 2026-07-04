@@ -151,14 +151,14 @@ conformance (status validity, decision payload shape, `*_mode`/`*_path`
 pairing, exit-code contract) that all later suites import.
 
 **DoD**
-- [ ] Every pipelib function has a unit test.
-- [ ] The subprocess runner refuses string commands and non-`git`/`gh` binaries by construction
+- [x] Every pipelib function has a unit test.
+- [x] The subprocess runner refuses string commands and non-`git`/`gh` binaries by construction
       and pins UTF-8; the hook executor is a separate, explicitly-named entry point (tested).
-- [ ] A `gh` authentication failure surfaces as an `AUTH_REQUIRED` decision (fixture).
-- [ ] Conformance assertions exist and are importable by other suites (used by a toy script
+- [x] A `gh` authentication failure surfaces as an `AUTH_REQUIRED` decision (fixture).
+- [x] Conformance assertions exist and are importable by other suites (used by a toy script
       end-to-end test).
-- [ ] Threshold precedence tested: new var, legacy var, default.
-- [ ] Decision-code constants exactly match [architecture.md §3](architecture.md); a drift-check
+- [x] Threshold precedence tested: new var, legacy var, default.
+- [x] Decision-code constants exactly match [architecture.md §3](architecture.md); a drift-check
       test compares the doc list to the lib list.
 
 **Testing:** `tests/test_pipelib.py` + the toy-script end-to-end envelope emission case.
