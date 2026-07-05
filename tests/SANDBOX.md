@@ -102,58 +102,76 @@ git commit -m "seed: grounding docs for parity runs"
 
 ### 3. Config marker blocks
 
-Append to (or create) `CLAUDE.md` in the sandbox root — each block is
-`<!-- NAME -->` / interior / `<!-- /NAME -->`, one delimiter per line:
+Append to (or create) `CLAUDE.md` in the sandbox root. Each block is `<!-- NAME -->` / interior /
+`<!-- /NAME -->`, one delimiter per line — but the **interior** is not free text: every block
+below reproduces its canonical schema from
+[`docs/specs/examples/config-blocks.md`](../docs/specs/examples/config-blocks.md) exactly
+(structured list items, backtick-quoted commands, nested `targets:`), because that is the only
+shape `scripts/config_block.py` / `scripts/workspace.py` / `scripts/prep_evaluator.py` parse —
+a bare command line with no leading `- ` and no backticks parses to an **empty** command/policy
+list, not the command itself:
 
 ```bash
 cat >> CLAUDE.md <<'EOF'
 
 <!-- issue-resolver-test-target -->
-python3 -m pytest -q
+- wrapper: `python3 -m pytest`
+- targets:
+  - `unit` (unit)
+    - naming: `tests/test_<module>.py` mirrors `scripts/<module>.py`
+    - helpers-fallback: none
+    - broad-change-fallback: `python3 -m pytest -q`
 <!-- /issue-resolver-test-target -->
 
 <!-- issue-resolver-fast-checks -->
-python3 -m compileall -q .
+- `python3 -m compileall -q .` — byte-compile sanity check
 <!-- /issue-resolver-fast-checks -->
 
 <!-- issue-resolver-canonical-suite -->
-python3 -m pytest
+- full-suite: `python3 -m pytest -q`
+- build-once: `python3 -m compileall -q .`
+- retry-without-rebuild: `python3 -m pytest -q`
 <!-- /issue-resolver-canonical-suite -->
 
 <!-- pr-evaluator-health-checks -->
-python3 -m compileall -q .
+- `python3 -m compileall -q .` — byte-compile sanity check
 <!-- /pr-evaluator-health-checks -->
 
 <!-- pr-evaluator-static-checks -->
-python3 -m pyflakes .
+- `python3 -m pyflakes .` — static lint pass
 <!-- /pr-evaluator-static-checks -->
 
 <!-- pr-evaluator-test-target -->
-python3 -m pytest -q
+- wrapper: `python3 -m pytest`
+- full-suite-command: `python3 -m pytest -q`
+- targets:
+  - `unit` (unit)
+    - naming: `tests/test_<module>.py` mirrors `scripts/<module>.py`
+    - helpers-fallback: none
+    - broad-change-fallback: `python3 -m pytest -q`
 <!-- /pr-evaluator-test-target -->
 
 <!-- pr-evaluator-escalation-labels -->
-needs-human
+- `needs-human` — bypass targeted selection, run everything
 <!-- /pr-evaluator-escalation-labels -->
 
 <!-- pr-evaluator-merge-policy -->
-standard: ask
-epic: ask
-story: ask
+- standard: ask
+- story: ask
 <!-- /pr-evaluator-merge-policy -->
 
 <!-- drafter-open-question-markers -->
-register: docs/open-questions.md
-inline-pattern: \[OPEN QUESTION\]
-open-status: unresolved
+- register: `docs/open-questions.md`
+- inline-pattern: `\[OPEN QUESTION\]`
+- open-status: unresolved
 <!-- /drafter-open-question-markers -->
 
 <!-- worktree-setup -->
-echo "sandbox worktree setup ran"
+- `echo "sandbox worktree setup ran"` — placeholder setup hook
 <!-- /worktree-setup -->
 
 <!-- worktree-teardown -->
-echo "sandbox worktree teardown ran"
+- `echo "sandbox worktree teardown ran"` — placeholder teardown hook
 <!-- /worktree-teardown -->
 EOF
 git add CLAUDE.md
@@ -161,9 +179,12 @@ git commit -m "seed: config marker blocks for resolver/evaluator/drafter"
 ```
 
 The block *contents* above are minimal placeholders — realistic enough to exercise the parse
-path, not a claim about what a real consuming repo's checks should be. A parity run that needs a
-specific block value (e.g. to force a fast-check failure) edits the relevant block on a throwaway
-branch for that run.
+path, not a claim about what a real consuming repo's checks should be. Note `pr-evaluator-merge-policy`
+carries **only** `standard` and `story` keys — `epic-integration` merges are hardcoded to `ask`
+by `prep_evaluator.py` and are never configurable, so an `epic:`/`epic-integration:` line in this
+block would simply be ignored, not honored. A parity run that needs a specific block value (e.g.
+to force a fast-check failure) edits the relevant block on a throwaway branch for that run, keeping
+the same structured form.
 
 ### 4. Controllable CI workflow
 
