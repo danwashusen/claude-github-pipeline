@@ -356,12 +356,117 @@ Target: a PR whose CI is red at head (or a failing local gate). Expected v2: hea
 `/github-pipeline:resolver continue #<N>` (`merge: skipped (verdict)`, no Cleanup line). No merge, no
 story bookkeeping.
 
-- [ ] v1 run captured:
-- [ ] v2 run captured:
-- [ ] Artifacts schema-identical (health-cache comment "N failed ❌", `--comment` review): 
-- [ ] PR flipped to draft; no merge fired; workspace left in place:
-- [ ] Gates match; handoff schema-valid; ≤1 state-assembly call:
-- [ ] Divergences:
+> **Run recorded 2026-07-05** on `danwashusen/gh-pipeline-sandbox`. **Twin fixture:** two equivalent
+> red-CI PRs, each adding a broken `sign_off(name)` helper (a `def sign_off(name)` line **missing its
+> trailing colon** → `SyntaxError`) plus a `.ci-force-red` marker, base `main`, and `Closes`-linking its
+> own seeded `bug` issue. **Twin-A → v1** = PR #19 / issue #17 (`parity/s3-twin-a`, `src/signoff_a.py`);
+> **Twin-B → v2** = PR #20 / issue #18 (`parity/s3-twin-b`, `src/signoff_b.py`). Twinning (not reset) —
+> the flow rejects rather than merges, so two independent red PRs are cleaner and touch nothing shared.
+> Both runs headless: `claude -p "/github-pipeline:<skill> <PR>" --plugin-dir <this branch> --model opus
+> --permission-mode bypassPermissions`, cwd = a fresh sandbox clone (one per run; `main` never mutates
+> here so no `ROOT_DIVERGED` risk). Three constraints shaped the run and apply **identically to both
+> versions**, so none breaks parity: (a) single-account sandbox ⇒ both PRs self-authored ⇒ both post the
+> review as `--comment` — but a soft-reject is `--comment` regardless of authorship, so the self-approval
+> downgrade is a no-op on this path (unlike S1/S2 it changes nothing). (b) The **fixture is deliberately
+> double-red**: `.ci-force-red` forces GitHub CI red *and* the syntax error fails the local byte-compile,
+> so CI and the local gate **agree red** and the CI/local-discrepancy operator gate never fires (a
+> single-red fixture — red CI over a green local gate — would have tripped that gate and stalled the
+> headless run). (c) The sandbox's configured static check (`pyflakes`) and test wrapper (`pytest`) are
+> **not installed** in the run environment, so **both** skills, by their own judgment, substituted the
+> `CLAUDE.md`-documented no-dependency `python3 -m compileall` byte-compile check as the code-health
+> signal — which caught the genuine `SyntaxError` and independently confirmed red CI. Identical
+> substitution on both sides ⇒ parity-neutral; recorded transparently in both cache comments.
+
+- [x] v1 run captured (writes / gates / handoff / turns): **0 gates.** Writes: health-cache comment
+      (`issuecomment-4885917764`, first-line `failed ❌`), soft-reject review (`COMMENTED`, self-authored,
+      `pullrequestreview-4631253219`), PR #19 flipped back to **draft** (`gh pr ready 19 --undo`). **No
+      merge** (`main` unchanged at `f148437`); no story bookkeeping. Worktree `.worktrees/parity/s3-twin-a`
+      provisioned (the red-CI path runs the local gate, so a checkout is needed — unlike the S1/S2
+      CI-green short-circuit) and **left in place** (no teardown — merge didn't run). Handoff → re-route
+      `/github-pipeline:github-issue-resolver continue #19` (`review: COMMENT (soft-reject)` · `health: ❌
+      at ba53cfb` · `merge: skipped (verdict)`, **no Cleanup line**). ~23 turns, ~7.1 min, $2.59; **4
+      `github-pipeline:github-ops` sub-agents** (`GATHER_PR` #19 + `GATHER_ISSUE` #17 + two
+      `PERSIST_COMMENT`); startup state assembled via **2** GATHER calls.
+- [x] v2 run captured: **0 gates.** Writes: health-cache comment (`issuecomment-4885913604`, first-line
+      `1 failed ❌`), soft-reject review (`COMMENTED`, self-authored, `pullrequestreview-4631250582`), PR
+      #20 flipped back to **draft** (`gh pr ready 20 --undo`). **No merge** (`main` unchanged at
+      `f148437`); no story bookkeeping. Workspace provisioned by `prep_evaluator.py` (`ensure --work`,
+      `.worktrees/parity/s3-twin-b`) and **left in place** (no teardown — the no-merge exit skips the
+      routed playbook's post-merge/cleanup). Handoff → re-route `/github-pipeline:resolver continue #20`
+      (`review: COMMENT (soft-reject)` · `health: ❌ at a5c788e` · `merge: skipped (verdict)`, **no Cleanup
+      line**). ~19 turns, ~4.8 min, $1.39; **0 sub-agents** (direct `prep_evaluator.py` + `gh_persist.py` —
+      the §9.1 "no intermediary relay" design). Startup state assembled via **1** `prep_evaluator.py` call
+      (no `--refresh`: the soft-reject short-circuits before the S7 merge gate, so the pre-merge currency
+      re-check never fires).
+- [x] Artifacts schema-identical (health-cache comment "N failed ❌", `--comment` review): **Yes.**
+      **Health-cache:** both lead with marker `<!-- pr-evaluator-health-cache:v1 -->`, first-line state in
+      the `N failed ❌` family (v2 `1 failed ❌`; v1 `failed ❌` — same `❌` fail token, v1 drops the count
+      `N`), full `SHA:`, `TIER: targeted`, `Source:` field, a `| Command | Status | Duration |` table
+      showing `compileall` `❌ fail (exit 1)` with the `SyntaxError` cause, and a `<details>` fail block
+      carrying the identical `SyntaxError: expected ':'` at `src/signoff_<x>.py:4`; both preserve the
+      **frozen** `_Cached by `github-pr-evaluator`._` footer, and **both correctly omit** the
+      `**Selection reasoning**` block (static checks short-circuited before test selection fired — the
+      `health-cache-comment.md` rule). **Review:** both are `COMMENTED` (self-authored), **lead with
+      `HEALTH_BODY`** (the red-health line + the failing `compileall` command + the SHA + "CI agrees red"
+      + a link to the health-cache comment), carry the `pyflakes → compileall` substitution note as a
+      block-quote, then the five-dimension assessment (scope / DoD / native-blocked-by / doc-grounding /
+      plan-adherence) with `.ci-force-red` flagged out-of-scope in both; **neither** emits `## DoD
+      verification` (historical un-annotated-DoD path — correct omission).
+- [x] PR flipped to draft; no merge fired; workspace left in place: **Yes** (all three, both twins). Both
+      PRs `isDraft: true`, `mergedAt: null`, `state: OPEN`; sandbox `main` unchanged at `f148437`; **no
+      `gh pr merge`** in either transcript; **no `worktree-hooks.sh teardown` / `git worktree remove`** in
+      either; both worktrees present on disk at eval end (`.worktrees/parity/s3-twin-a` @ `ba53cfb`,
+      `.worktrees/parity/s3-twin-b` @ `a5c788e`). Both handoffs **omit the Cleanup line** per the
+      no-merge omission rule.
+- [x] Gates match; handoff schema-valid; ≤1 state-assembly call: **Yes.** Gates **0 = 0** (the
+      double-red fixture keeps the CI/local-discrepancy gate silent; no `closingIssuesReferences` gate —
+      default-base PRs link cleanly; no `/review`/reviewer gates). Both handoffs validate against
+      `_shared/handoff-format.md`'s **soft-reject re-route** shape (`handoff-renderings.md` "Soft-reject —
+      re-route to resolver"): `Issue:` (`open · bug · plan: ✗`), `PR:` (`draft · base main · review:
+      COMMENT (soft-reject) · health: ❌ at <7-sha> · merge: skipped (verdict)`), **no Cleanup line**,
+      `Next:` fenced `resolver continue #<PR>`, load-bearing `Why:` naming the syntax error + `.ci-force-red`.
+      All closed-set markers valid. v2 startup state assembly = **1** `prep_evaluator.py` call (§9.2
+      satisfied); v1's 2-call GATHER assembly is its own architecture, not the §9.2 bar.
+- [x] Divergences (each traced to a PRD § or filed as a defect):
+  - **(deliberate rename, schema-valid) Handoff next-command namespace.** v1 re-routes to
+    `/github-pipeline:github-issue-resolver continue #19`, v2 to `/github-pipeline:resolver continue #20` —
+    the v1→v2 skill rename. Both target the resolver in continue-on-existing-branch mode; parity-neutral.
+    Same device as S2.
+  - **(environment, identical on both sides) `pyflakes`/`pytest` not installed → `compileall`
+    substitution.** Both skills, by their own judgment, ran the `CLAUDE.md`-documented no-dependency
+    `python3 -m compileall -q .` as the health signal (the configured `pyflakes` and `pytest` modules are
+    absent in the run environment), which caught the genuine `SyntaxError` and agreed with red CI. This is
+    not a spec-gap gate (`Health-check config missing` fires only when *no* static-checks config exists;
+    here the config is present but the tool is missing) — it's a run-time judgment substitution both
+    versions made **identically**, recorded transparently in both cache comments. Parity-neutral; the
+    scenario's "N failed ❌" is therefore a real code failure, not just a tooling gap.
+  - **(free prose, schema-identical) Health-cache first-line count.** v2 `1 failed ❌` (the strictly-correct
+    frozen `N failed ❌` form) vs v1 `failed ❌` (drops the `N`). Same `❌` fail token and state family; the
+    only consumer-parsed distinction is fail-vs-green, which both carry. Low-severity v1-side omission.
+  - **(free prose, non-consumed) Health-cache `Source:` value.** v1 `CLAUDE.md` vs v2 `COMMANDS.md /
+    CLAUDE.md` (the frozen template's literal default). Same field, read by no consumer beyond `SHA:`.
+    Identical to the S1/S2 finding.
+  - **(free prose) Health-cache table rows + review lead ordering.** v1's table lists three commands
+    (`pyflakes` / `compileall` / `pytest`) with a trailing prose paragraph and `0s`/`1s` durations; v2's
+    lists two (`pyflakes` / `compileall`) with `—` durations. Same `| Command | Status | Duration |`
+    schema. In the review, v2 **leads with the health line** (spine S5 "start the body with `HEALTH_BODY`");
+    v1 prepends a `**Verdict: soft-reject**` line first. Same element set, free-prose arrangement — same
+    ordering divergence noted in S2.
+  - **(architecture, metrics not artifacts) Sub-agent topology / startup calls.** v1 = 4 `github-ops`
+    sub-agents, 2 `GATHER` startup calls; v2 = 0 sub-agents (direct scripts, §9.1), 1 `prep` startup call
+    (§9.2 ≤1). Same shape as S1/S2; no persisted-artifact impact. (v2 also issued one supplemental direct
+    `gh issue view 18` after prep — a redundant targeted re-read of an issue prep had already assembled,
+    not a second one-shot state assembly; the §9.2 startup bar is still met at 1 `prep` call. Low-severity
+    observation, not a divergence in behavior.)
+
+**Verdict: PASS.** The health gate produced an **unconditional hard block** on both twins → soft-reject
+`--comment` review leading with `HEALTH_BODY`, PR flipped back to **draft**, **no merge** (`main`
+untouched), **workspace left in place** (no teardown, no Cleanup line), and a schema-valid re-route
+handoff to `resolver continue #<PR>` (`merge: skipped (verdict)`). Persisted artifacts (health-cache
+`N failed ❌` comment + `--comment` soft-reject review) are schema-identical; gate set identical (0 = 0);
+v2 startup = one state-assembly call. Every divergence traces to the deliberate v1→v2 rename, a run-time
+environment substitution both versions made identically, or free prose within the shared schema — **no
+unexplained divergence**.
 
 ### Scenario 4 — `ask`-policy merge gate
 
