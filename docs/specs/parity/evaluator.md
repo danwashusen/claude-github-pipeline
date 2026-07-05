@@ -227,13 +227,126 @@ the destructive checkbox/log mutation). Expected v2: after merge, story issue cl
 (shape from the merged diff), forward handoff to `/github-pipeline:planner` (more stories) or
 `/github-pipeline:resolver` (last sibling).
 
-- [ ] v1 run captured:
-- [ ] v2 run captured:
-- [ ] Artifacts schema-identical (delivery-log line, epic-checkbox edit, review): 
-- [ ] Cross-consumption confirmed (the planner reads the v2 delivery-log line; a v1 delivery-log is readable by v2):
-- [ ] Story closed + checkbox ticked + log appended, each idempotent on a re-run:
-- [ ] Gates match; handoff schema-valid; ≤1 state-assembly call:
-- [ ] Divergences:
+> **Run recorded 2026-07-05** on `danwashusen/gh-pipeline-sandbox`. **Twin fixture (parent twinned):** two
+> single-story epics, each `epic #<E>` → one `story #<S>` → one story PR (base `epic/<E>-s2-twin-<x>`, head
+> `story/<S>-farewell-<x>`) adding an identical `farewell(name)` helper to its own `src/greeter_<x>.py`, so v1
+> mutates epic-A's checkbox+log and v2 mutates epic-B's independently. **Twin-A → v1** = epic #11 / story #13 /
+> PR #15 (`epic/11-s2-twin-a`); **Twin-B → v2** = epic #12 / story #14 / PR #16 (`epic/12-s2-twin-b`). Both runs
+> headless: `claude -p "/github-pipeline:<skill> <PR>" --plugin-dir <this branch> --model opus
+> --permission-mode bypassPermissions`, cwd = a fresh sandbox clone (one per run). Three setup constraints shaped
+> the run and apply **identically to both versions**, so none breaks parity: (a) a **per-run `- story: auto`**
+> merge-policy override (SANDBOX.md-sanctioned local-commit-only block edit, never pushed) made the story merge
+> hands-free — same device as S1's `- standard: auto`; (b) GitHub does **not** populate `closingIssuesReferences`
+> from a `Closes #<story>` keyword on a **non-default-base** PR (verified: PR #15 base `epic/11-…` → empty; the
+> default-base S1 PR #9 → `#7`), so the story→issue link was established with a **pure-CLI base-swap** (point base
+> at `main` → GitHub populates the ref → point base back to the epic branch → the ref **persists**). This mirrors
+> the manual Development-panel link / the "Name the issue" gate answer a real operator supplies — the invariant's
+> "linkage is recorded but the close never auto-fires" (`docs/specs/evaluator.md` §13). Without it, both v1 and v2
+> would hit the identical "No `closingIssuesReferences`" gate (spine S2 / v1 §"When to ask"). (c) single-account
+> sandbox ⇒ both PRs self-authored ⇒ both correctly downgraded `--approve`→`--comment` (GitHub 422s self-approve),
+> verdict APPROVE and the squash merge proceeding either way. Both stories carry an unticked, un-annotated DoD →
+> both took the **historical walk-the-item** DoD path (no `## DoD verification` section — correct omission).
+
+- [x] v1 run captured (writes / gates / handoff / turns): **0 gates.** Writes: health-cache comment
+      (`issuecomment-4885133981`), approval review (`COMMENTED`, self-authored, `pullrequestreview-4630881075`),
+      squash-merge → `epic/11-s2-twin-a@5f7ee9f` (subject `feat: add farewell(name) to greeter_a (#15)`), story
+      #13 closed `--reason completed`, epic #11 `## Stories` ticked `- [x] #13` (explicit `gh issue edit`,
+      userContentEdit 06:48:36), delivery-log created on epic #11 (`issuecomment-4885141304`). Forward handoff →
+      `/github-pipeline:github-issue-resolver #11` (last sibling → Epic-integration mode). ~25 turns, ~8.7 min,
+      $3.25; **6 `github-pipeline:github-ops` sub-agents**; startup state assembled via **3** GATHER calls
+      (`GATHER_PR` #15 + `GATHER_ISSUE` #13 + `GATHER_ISSUE` #11). A **transient `503`** on `gh pr merge` (the
+      merge had already landed server-side; v1 confirmed `MERGED`/`5f7ee9f` before any retry and deleted the
+      lingering `story/13-farewell-a` branch by hand since `--delete-branch` didn't fire) — infra artifact,
+      handled correctly, not a parity divergence.
+- [x] v2 run captured: **0 gates.** Writes: health-cache comment (`issuecomment-4885769777`), approval review
+      (`COMMENTED`, self-authored), squash-merge → `epic/12-s2-twin-b@2a2059c` (subject `feat: add farewell(name)
+      to greeter_b (#16)`), story #14 closed `--reason completed`, epic #12 `## Stories` shows `- [x] #14`
+      (**no `edit-body` write** — GitHub auto-ticked the task-list item on story close; Action 2 re-fetched, saw
+      `[x]`, and skipped per its idempotency guard), delivery-log created on epic #12 (`issuecomment-4885775766`).
+      Forward handoff → `/github-pipeline:resolver #12` (last sibling → Epic-integration mode). ~29 turns, ~6.9
+      min, $1.90; **0 sub-agents** (direct `prep_evaluator.py` + `gh_persist.py` — the §9.1 "no intermediary
+      relay" design). Startup state assembled via **1** `prep_evaluator.py` call (+ 1 pre-merge `--refresh`, the
+      router-prescribed currency re-check, not a second assembly).
+- [x] Artifacts schema-identical (delivery-log line, epic-checkbox edit, review): **Yes.** **Delivery-log:** both
+      lead with marker `<!-- epic-delivery-log:v1 -->` (first line), `**Epic delivery log** — #<E> <title>`, then
+      one `- #<story> — delivered: <shape> @ \`<sha>\` (PR #<M>, merged 2026-07-05)` line — v1 `#13 … \`farewell(name)\`
+      → personalized farewell string in \`src/greeter_a.py\` @ \`5f7ee9f\` (PR #15, …)`, v2 `#14 … \`farewell(name)\`
+      in \`src/greeter_b.py\` (returns \`"Goodbye, {name}!"\`, personalized) @ \`2a2059c\` (PR #16, …)`. Both name the
+      **actual merged public surface** (`farewell(name)` + file) derived from the diff per the contract; the
+      `<shape>` prose and a header/entry blank line (v1 has one, v2 none) are free-form. **Epic-checkbox edit:**
+      both epic bodies end at `- [x] #<story>` in `## Stories` (identical). **Review:** both are `COMMENTED`
+      (self-authored downgrade), lead with a health line, carry `Verdict: APPROVE` + the five-dimension assessment
+      (scope / DoD / native-blocked-by / doc-grounding / plan-adherence) + story/epic-context note + self-authored
+      footer; **neither** emits `## DoD verification` (historical DoD path — correct omission). Squash subjects
+      schema-identical: `feat: <summary> (#<PR>)`.
+- [x] Cross-consumption confirmed (the planner reads the v2 delivery-log line; a v1 delivery-log is readable by
+      v2): **Yes — both directions, mechanically.** A contract-faithful reader (the planner's read: locate by
+      `startswith("<!-- epic-delivery-log:v1 -->")`, parse each `- #<story> — delivered: … @ \`sha\` (PR #M, merged
+      date)` line per `_shared/epic-delivery-log.md`) parses **both** logs to one structured entry each — v2's
+      epic #12 log → `{story: 14, shape, sha: 2a2059c, pr: 16, date}` (the planner reads the v2 line), and v1's
+      epic #11 log → `{story: 13, shape, sha: 5f7ee9f, pr: 15, date}` (readable by the same version-agnostic
+      reader the v2 evaluator uses before appending). The reader is shared, so consumability is symmetric.
+- [x] Story closed + checkbox ticked + log appended, each idempotent on a re-run: **Yes** (verified by re-invoking
+      each action's v2 script on twin B). **Action 1 (close):** re-running `gh_persist.py close … 14 --reason
+      completed` on the already-closed story returns `closed: true`, exit 0, no error — safe no-op; story stays
+      `CLOSED/COMPLETED`. **Action 2 (checkbox):** the box is already `- [x] #14` (GitHub auto-tick + the skill's
+      note-and-skip), and re-PUT of the identical body via `gh_persist.py edit-body` leaves exactly one `[x] #14`
+      (no duplicate). **Action 3 (delivery-log):** delete-and-repost via `gh_persist.py comment … --delete-marker-id
+      <numeric-id>` leaves exactly **one** comment with **one** `#14` entry (update-in-place). Note: `--delete-marker-id`
+      requires the **numeric** REST comment id — `gh_gather.py:268-272` surfaces the marker's numeric id for exactly
+      this DELETE endpoint; passing the GraphQL node id instead leaves a stale duplicate (`gh_persist.py:377-388`
+      warns). The live run's Action 3 was a fresh **create** (single-story epic), so the delete-and-repost path was
+      exercised **post-hoc** here, not during the run.
+- [x] Gates match; handoff schema-valid; ≤1 state-assembly call: **Yes.** Gates 0 = 0 (both hands-free under the
+      per-run `story: auto`; prep raised no `needs_decision`). Both handoffs match the **"story merged — last
+      sibling"** rendering (`references/handoff-renderings.md`): `Story:` (`closed · story`) + `Epic:` (`open (1 of
+      1 stories closed)`) + `PR:` (`merged · base epic/<E>-s2-twin-<x> · review: APPROVE · health: ✅ at <7-sha> ·
+      merge: squash → epic/<E>-s2-twin-<x>@<7-sha>`) + `Cleanup:` + forward `Next:` to the resolver in
+      Epic-integration mode + `Why:`; all closed-set markers valid. Startup state assembly = **1** `prep_evaluator.py`
+      call for v2 (§9.2 satisfied; the pre-merge `--refresh` re-derives only volatile PR/CI facts). v1's 3-call
+      `GATHER` assembly is its own architecture and not the §9.2 bar.
+- [x] Divergences (each traced to a PRD § or filed as a defect):
+  - **(explained → §9.1 / GitHub behavior) Epic-checkbox write mechanism.** v1 **explicitly** writes `- [x] #13`
+    via `gh issue edit` (userContentEdit at 06:48:36); v2 issues **no** `edit-body` — GitHub auto-ticks the
+    `- [ ] #<story>` task-list item when the referenced story closes (verified: epic #12 has no post-fixture
+    userContentEdit yet shows `- [x] #14`), so v2's Action 2 re-fetches, sees `[x]`, and skips per `story.md`'s
+    "already `[x]` → note and skip" guard. **Identical `- [x] #story` artifact.** v2's skip is the strictly-more-
+    idempotent behavior and directly exercises the Action-2 idempotency guard; both are correct.
+  - **(explained → §8.3 / §9.2) Cleanup line — worktree.** v1 `no worktree (CI green — local gate short-circuited)`
+    vs v2 `worktree removed; …`. Same as S1: v2's `prep_evaluator.py` always provisions the PR-head workspace
+    (`ensure --work`) as one-shot state assembly, so there is always a worktree to remove; v1 lazily skips
+    worktree creation on the CI-green short-circuit. Both correct for their architecture; v2 matches `story.md`'s
+    Cleanup shape (`worktree removed; epic checkbox ticked; delivery log …; story issue closed; scratch purged`).
+  - **(deliberate rename, schema-valid) Handoff next-command namespace.** v1 forwards to
+    `/github-pipeline:github-issue-resolver #11`, v2 to `/github-pipeline:resolver #12` — the v1→v2 skill rename.
+    Both are the resolver in Epic-integration mode; parity-neutral.
+  - **(free prose, schema-identical) Handoff `review:` annotation.** v1 `APPROVE (self-authored → comment)` vs v2
+    bare `APPROVE`. Both carry the `APPROVE` closed-set marker; v2's bare form is the strictly schema-compliant one
+    (v1's parenthetical is free text). Same as S1.
+  - **(free prose / free rendering) Health-cache non-consumed fields.** Same marker, first-line state token `all
+    green ✅`, and full `SHA:` in both (the only field a consumer parses — `prep` reads `SHA:`). Free-prose diffs:
+    `Source:` v1 `GitHub statusCheckRollup` vs v2 `COMMANDS.md / CLAUDE.md` (frozen template default — same as
+    S1); v1 **omits** the `TIER:` line (adds a prose note) while v2 emits `TIER: full` (schema: `TIER` optional,
+    absent → read as `full` — both valid); the check table columns differ (v1 `Check|Status|Source`, v2 the frozen
+    `Command|Status|Duration`) on the CI-green path. Read by no consumer beyond `SHA:`; not a compatibility break.
+  - **(free prose) Review lead ordering.** v2 leads with the `**Health:**` line then `## Verdict: APPROVE` (spine
+    S5 "start the body with `HEALTH_BODY`"); v1 leads with `**Verdict: APPROVE**` then the health line. Same
+    element set (health + verdict + five dimensions + self-authored footer); free-prose arrangement.
+  - **(architecture, metrics not artifacts) Sub-agent topology / startup calls.** v1 = 6 `github-ops` sub-agents +
+    some raw main-loop `gh`; v2 = 0 sub-agents (direct scripts, §9.1). Startup: v1 = 3 `GATHER` calls, v2 = 1
+    `prep` (+1 pre-merge `--refresh`). Same shape as S1; v2 meets §9.2's ≤1, v1's multi-call assembly is its own
+    architecture. No persisted-artifact impact.
+  - **(shared cosmetic, parity-neutral) `plan: none`.** Both skills render `plan: none` on the `Story:` line where
+    `handoff-format.md`'s inline `plan:` set is `✓ | ✗ | stale` (the fixture stories carry no plan). Identical
+    across versions — a pre-existing baseline behavior, also noted in S1, not a v2 regression.
+
+**Verdict: PASS.** Schema-identical persisted artifacts — delivery-log line, epic `## Stories` checkbox, and the
+review — cross-consumable in both directions by the shared reader; the three story-completion actions (close story
+`--reason completed`, tick the epic checkbox, append the delivery log) each verified idempotent on re-run; identical
+gate set (0), schema-valid v2 handoff (story-merged-last-sibling → forward to the resolver), one v2 startup
+state-assembly call. Every divergence traces to a PRD § (§9.1 / §8.3 / §9.2), a GitHub behavior (task-list auto-tick,
+self-approve 422, non-default-base `closingIssuesReferences`), the deliberate v1→v2 skill rename, or free prose within
+the shared schema — **no unexplained divergence**.
 
 ### Scenario 3 — Red-CI rejection
 
