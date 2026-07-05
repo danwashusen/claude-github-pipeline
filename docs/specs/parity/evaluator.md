@@ -140,12 +140,84 @@ merge-policy `auto` (or operator Approve at the `ask` gate). Expected v2: health
 `--approve` review, squash merge into `main`, terminal handoff (`merge: squash → main@<sha>`), residual
 follow-ups filed if any, workspace torn down + removed.
 
-- [ ] v1 run captured (writes / gates / handoff / turns):
-- [ ] v2 run captured:
-- [ ] Artifacts schema-identical (health-cache comment, review): 
-- [ ] Cross-consumption confirmed (v1 reader ↔ v2 artifact):
-- [ ] Gates match; handoff schema-valid; ≤1 state-assembly call:
-- [ ] Divergences (each traced to a PRD § or filed as a defect):
+> **Run recorded 2026-07-05** on `danwashusen/gh-pipeline-sandbox`. **Twin fixture:** two equivalent
+> standard PRs, each adding a `greet(name)` fix and `Closes`-linking its own seeded `bug` issue, base
+> `main`, green CI (no `.ci-force-red`). Twin-A → v1 = PR #9 / issue #7; Twin-B → v2 = PR #10 / issue
+> #8 (rebased onto post-twin-A `main` so both PRs were `CLEAN`/single-commit at eval time). Both runs
+> headless: `claude -p "/github-pipeline:<skill> <PR>" --plugin-dir <this branch> --model opus
+> --permission-mode bypassPermissions`, cwd = a fresh sandbox clone (v2 clone created after twin-A's
+> merge to avoid `ROOT_DIVERGED`). Made hands-free by a **per-run** `- standard: auto` merge-policy
+> override (SANDBOX.md-sanctioned per-run block edit; local-commit-only, never pushed). Two constraints
+> shaped the run and apply **identically to both versions**, so neither breaks parity: (a) single-account
+> sandbox ⇒ both PRs self-authored ⇒ both correctly downgraded `--approve`→`--comment` (GitHub 422s
+> self-approve), verdict APPROVE and the squash-merge proceeding either way; (b) CI-green ⇒ both skills
+> take the local-gate-skip short-circuit (v1 §5.3, v2 spine S3.2), so the missing `pyflakes`/`pytest`
+> never ran. **Seed defect noted (not a parity divergence):** the sandbox's seeded
+> `<!-- pr-evaluator-merge-policy -->` block uses bare `standard: ask` lines, but *both* v1 (SKILL.md:481)
+> and v2 (`prep_evaluator._MERGE_POLICY_LINE_RE`) require the `- standard: ask` list-item form — so as
+> seeded the block parses to empty and every type defaults to `ask`; SANDBOX.md's §3 seed recipe should
+> emit the list form.
+
+- [x] v1 run captured (writes / gates / handoff / turns): **0 gates.** Writes: health-cache comment
+      (`issuecomment-4884932829`), approval review (`COMMENTED`, self-authored), squash-merge →
+      `main@26e6046` (subject `fix: greet() returns a personalized greeting (#9)`), issue #7 auto-closed,
+      branch deleted. Terminal handoff (`merge: squash → main@26e6046` · `review: APPROVE (self-authored →
+      --comment)` · Cleanup `no worktree for this branch; scratch dir purged`). ~23 turns, ~7 min, $2.30;
+      **4 `github-pipeline:github-ops` sub-agents**; startup state assembled via **2** `GATHER` calls
+      (PR #9 + issue #7).
+- [x] v2 run captured: **0 gates.** Writes: health-cache comment (`issuecomment-4884968411`), approval
+      review (`COMMENTED`, self-authored), squash-merge → `main@edf293a` (subject `fix: greet() returns a
+      personalized greeting (#10)`), issue #8 auto-closed, branch deleted. Terminal handoff (`merge: squash
+      → main@edf293a` · `review: APPROVE` · Cleanup `worktree removed; teardown ran; scratch dir purged`).
+      ~25 turns, ~6.7 min, $1.85; **0 sub-agents** (direct `prep_evaluator.py` + `gh_persist.py` calls —
+      the §9.1 "no intermediary relay" design). Startup state assembled via **1** `prep_evaluator.py` call
+      (+ 1 pre-merge `--refresh`, the router-prescribed currency re-check, not a second assembly).
+- [x] Artifacts schema-identical (health-cache comment, review): **Yes.** Health-cache: same marker
+      `<!-- pr-evaluator-health-cache:v1 -->`, first-line state token `all green ✅`, `SHA:` (full) / `TIER:
+      full` / `Source:` fields in order, a 2-row check table, and the **frozen** `_Cached by
+      `github-pr-evaluator`._` footer — both preserve the v1 attribution token despite the v2 rename.
+      Review: both prose bodies lead with a health line → `## Verdict: APPROVE` → five-dimension assessment
+      (scope / DoD / native-blocked-by / doc-grounding / plan-adherence) → self-authored footer; **neither**
+      emits `## DoD verification` (historical DoD path — no projection annotations — correct omission).
+      Squash subjects schema-identical: `fix: <summary> (#<PR>)`, the title's issue-ref `(#N)` stripped and
+      the PR-ref appended (the double-suffix rule) → `(#9)` / `(#10)`.
+- [x] Cross-consumption confirmed (v1 reader ↔ v2 artifact): **Yes — both directions, mechanically.**
+      v2's `prep_evaluator._health_cache_fact` on v1's comment → `{sha: 768d534…, hit: True}`; v1's §5.2
+      parse rules on v2's comment → `{state: all green ✅, HEALTH_OK: true, sha: 7f8e119, tier: full}`.
+      Each version's health-cache comment is read correctly by the other's reader.
+- [x] Gates match; handoff schema-valid; ≤1 state-assembly call: **Yes.** Gates 0 = 0 (both hands-free
+      under `auto`). v2 handoff validates against `_shared/handoff-format.md`: `Issue:`/`PR:` field order,
+      all closed-set markers correct (`closed`, `merged`, `review: APPROVE`, `health: ✅ at 7f8e119`,
+      `merge: squash → main@edf293a` with 7-char SHAs), `research:` omitted (never researched), terminal
+      `(terminal — no follow-up skill)` — matching `docs/specs/examples/handoff-evaluator.md`. Startup
+      state assembly = **1** `prep_evaluator.py` call (§9.2 satisfied; the `--refresh` re-derives only
+      volatile PR/CI facts before merge).
+- [x] Divergences (each traced to a PRD § or filed as a defect):
+  - **(explained → §8.3 / §9.2) Cleanup line.** v1 `no worktree for this branch` vs v2 `worktree removed;
+    teardown ran; scratch dir purged`. v2's `prep_evaluator.py` always provisions the PR-head workspace
+    (`ensure --work`) as part of one-shot state assembly (§9.2 / §8.3 workspaces), so there is always a
+    worktree to tear down + remove; v1 lazily skips worktree creation on the CI-green short-circuit. Both
+    correct for their architecture; v2 matches the `standard.md` Cleanup shape.
+  - **(free prose, schema-identical) Handoff `review:` annotation.** v1 `APPROVE (self-authored →
+    --comment)` vs v2 bare `APPROVE`. Both carry the `APPROVE` closed-set marker; v2's bare form is the
+    strictly schema-compliant one (v1's parenthetical is free text outside the closed set).
+  - **(free prose, non-consumed) Health-cache `Source:` value.** v1 `GitHub statusCheckRollup (sandbox-ci
+    / gate)` vs v2 `COMMANDS.md / CLAUDE.md` (the frozen template's literal default). Same `Source:` field
+    (schema-identical); the value is free prose read by no consumer (prep parses only `SHA:`; v1 parses
+    state + SHA + TIER). On the CI-green path v1's value is marginally more accurate; a low-severity
+    template nit for the v2 `references/health-cache-comment.md`, not a compatibility break.
+  - **(test-harness artifact, not v1/v2 behavior)** v2 surfaced a phantom `CLAUDE.md` merge-policy delta
+    in a two-dot `main..HEAD` scope diff — an artifact of the per-run local-only `- standard: auto`
+    commit (clone `main` carries it; the PR head does not). v2 correctly diagnosed it as a fork-point
+    artifact (`changedFiles: 1`; the branch commit doesn't touch `CLAUDE.md`; squash applies only
+    `merge-base..head`) and did **not** reject on it. No persisted-artifact impact.
+
+**Verdict: PASS.** Schema-identical persisted artifacts (cross-consumable both directions), identical gate
+set (0), schema-valid v2 handoff, one startup state-assembly call. Every divergence traces to a PRD § (§8.3
+/ §9.2), is free prose within the shared schema, or is a test-harness artifact — **no unexplained
+divergence**. (One shared cosmetic: both skills render `plan: none` where `handoff-format.md`'s inline
+`plan:` set is `✓ | ✗ | stale`; identical across versions, so parity-neutral — a pre-existing baseline
+behavior, not a v2 regression.)
 
 ### Scenario 2 — Story PR: merge (delivery-log append + epic checkbox)
 
