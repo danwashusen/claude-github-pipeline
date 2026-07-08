@@ -264,12 +264,23 @@ sandbox, or delete anything outside the working tree and the sandbox.
   the one-time `.gitignore` bootstrap dirties a fresh consuming-repo root (surfaced in the smoke as a
   correctly-propagated `ROOT_DIRTY` on a re-run — operator commits `.gitignore` once).
 
-### S7 — Evaluator skill rewrite — PARTIAL (automatable work done + committed; parity run PENDING) (2026-07-04)
+### S7 — Evaluator skill rewrite — ACCEPTED (automatable 2026-07-04; live parity 2026-07-05)
 
-- **Commit:** `25be0a5` (`S7: skills/evaluator/ — first skill cutover (automatable work; parity pending)`).
-- **Status:** **6 of 7 DoD boxes ticked** (the automatable ones). **Box 6 — the live 4-scenario parity
-  run — is operator-gated and REMAINS unticked.** This is the run's first hard stop. S8 depends on
-  S7's parity, so S8 is NOT started.
+- **Commits:** `25be0a5` (automatable build) + the operator-run live-parity commits `11cb5cb` (S1
+  standard approve+merge), `031027a` (S2 story merge), `6ea339b` (S3 red-CI rejection), `693f195`
+  (S4 ask-policy gate + **box 6 ticked**). (`ae283af`, the SANDBOX config-block seed fix, landed
+  between S1 and S2.)
+- **Status:** **7 of 7 DoD boxes ticked.** Box 6 — the live 4-scenario parity run — is complete:
+  **all four scenarios PASS with zero unexplained divergences**, recorded per scenario in
+  `docs/specs/parity/evaluator.md` with a filled Go/no-go block (**Accepted — go**). Verified this
+  session (2026-07-09) from the committed parity doc + `git log`: box 6 `[x]`, four `Verdict: PASS`,
+  four recorded runs, tree clean at `693f195`.
+- **Parity (operator-run, headless/`!`-driven on `danwashusen/gh-pipeline-sandbox`):** twin fixtures
+  per scenario (independent parents for destructive mutations); each confirmed schema-identical
+  persisted artifacts (cross-consumable both directions), identical gate sets, schema-valid v2
+  handoffs, and **one** `prep_evaluator.py` state-assembly call with **0** sub-agents (v1: 4–6
+  `github-ops` + 2–3 GATHER). Every divergence traced to the v1→v2 rename, free prose within the
+  shared schema, GitHub behavior, or an identical run-time environment substitution.
 - **Deliverables:** `skills/evaluator/` authored **from scratch** — `SKILL.md` router (103 lines; the
   4 §9 sections; a visible `vector→playbook` table; `name: evaluator` / `model: opus` / `effort: xhigh`)
   + `playbooks/` (evaluate-spine 320 + standard 51 + story 95 + epic-integration 65 — the §5-bar split
