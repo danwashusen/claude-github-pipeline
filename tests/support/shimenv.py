@@ -19,6 +19,16 @@ reads from; it is not set by this module — callers set it per-test to the fixt
 Paths are built with ``pathlib.Path`` per architecture.md §1, and converted to ``str`` only at
 the boundary where one is required (environment variable values and PATH entries must be `str`,
 not `Path`, when handed to `os.environ` / `subprocess`).
+
+Network poison (S9 hermeticity incident): a script under test may shell out to `git` (never
+shimmed — only `gh` is) against a real remote if a caller passes a `--root` that resolves to a
+real checkout instead of a local git-sandbox clone. That bug is invisible on a machine with real
+network/SSH access (the live call just quietly succeeds) and only surfaces as a hard failure on a
+network-isolated CI runner — exactly backwards from "fail loudly, fail locally." `intercepted_env`
+therefore ALWAYS poisons outbound network by default (`NETWORK_POISON_ENV`, below), so the
+offline suite's own "no network, no live repo" contract (architecture.md §10) is structurally
+enforced rather than dependent on every test author noticing. A test with a genuine, reviewed need
+for real network overrides via `intercepted_env(..., extra={...})` (`extra` already wins last).
 """
 
 import os
@@ -35,6 +45,21 @@ FIXTURES_DIR = TESTS_DIR / "fixtures"
 
 SHIM_GH_PATH = SHIM_DIR / "gh"
 POISON_GH_PATH = POISON_DIR / "gh"
+
+# Fail-fast network poison, applied by default in every `intercepted_env()` (kills the whole
+# "offline suite makes a live network call" incident class: `GIT_SSH_COMMAND`/`GIT_PROXY_COMMAND`
+# force any git SSH/other-transport spawn to fail immediately; the `*_proxy` pair routes any
+# HTTP(S) attempt (git-over-https, a stray `gh` bypassing the shim, etc.) at an unreachable
+# loopback port instead of the real network. A caller with a genuine need for real network passes
+# `extra={...}` to override any of these.
+NETWORK_POISON_ENV = {
+    "GIT_SSH_COMMAND": "false",
+    "GIT_PROXY_COMMAND": "false",
+    "http_proxy": "http://127.0.0.1:1",
+    "https_proxy": "http://127.0.0.1:1",
+    "HTTP_PROXY": "http://127.0.0.1:1",
+    "HTTPS_PROXY": "http://127.0.0.1:1",
+}
 
 
 def fixture_case_dir(case_name):
@@ -64,6 +89,7 @@ def intercepted_env(base_env=None, fixture_case=None, extra=None):
         env["GH_SHIM_FIXTURES"] = str(fixture_case_dir(fixture_case))
     else:
         env.pop("GH_SHIM_FIXTURES", None)
+    env.update(NETWORK_POISON_ENV)
     if extra:
         env.update(extra)
     return env

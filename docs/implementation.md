@@ -331,14 +331,14 @@ fast-check config pinned at root SHA; distiller input bundle staged to scratch; 
 `attention` (dirty, unpushed, ambiguous branch matches).
 
 **DoD**
-- [ ] One fixture per row of the v1 prior-PR table (as captured in `specs/resolver.md`),
+- [x] One fixture per row of the v1 prior-PR table (as captured in `specs/resolver.md`),
       proving mode/vector derivation.
-- [ ] Epic-branch discovery fixtures: zero, one, multiple matches (multiple → `AMBIGUOUS`).
-- [ ] Collision fixture: existing `-v2` branch yields `-v3`.
-- [ ] Blocked-OQ fixtures both ways: open tracker + `in-scope (blocked)` sets the hard-gate fact;
+- [x] Epic-branch discovery fixtures: zero, one, multiple matches (multiple → `AMBIGUOUS`).
+- [x] Collision fixture: existing `-v2` branch yields `-v3`.
+- [x] Blocked-OQ fixtures both ways: open tracker + `in-scope (blocked)` sets the hard-gate fact;
       a `question-decision:v1` comment (Tier 1) clears it.
-- [ ] Distiller bundle is staged paths, never above-threshold inline bytes.
-- [ ] Conformance + single-invocation call budget as S6.
+- [x] Distiller bundle is staged paths, never above-threshold inline bytes.
+- [x] Conformance + single-invocation call budget as S6.
 
 **Testing:** shim-backed unit tests per the matrix; read-only live smoke on a real epic and story issue.
 

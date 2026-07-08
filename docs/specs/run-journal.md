@@ -353,6 +353,66 @@ sandbox, or delete anything outside the working tree and the sandbox.
   types available and used them directly (`subagent_type: implementor|reviewer` + opus override for
   both S8 roles) — the prior session's `general-purpose` workaround is no longer needed.
 
+### S9 — `prep_resolver.py` — ACCEPTED (2026-07-09)
+
+- **Commit:** _backfilled post-commit_ (`S9: prep_resolver.py — resolver startup facts in one call`).
+- **Deliverables:** `scripts/prep_resolver.py` (the resolver's ~130 lines of v1 prompt-side startup
+  assembly in one call) + `tests/test_prep_resolver.py` (65 tests) + 18 fixture dirs. Facts block:
+  `target` (issue + native deps), `vector` (`type` epic/story/standard; **`mode` is a three-value
+  closed set `continue` / `gated` / `fresh`** + `prior_pr_row` from the 7-row v1 step-5 table;
+  `vector.gate` carries the operator card `{reason, header, options, prior_pr}` verbatim for gated
+  rows), `plan` (marker/SHA/staged body), epic facts (discovery zero/one/multiple→`AMBIGUOUS`;
+  6-step bootstrap slug), story parent-epic search, `branch` (collision `-vN` suffixing),
+  `phases`/`dod` (via `parse` cores), `open_questions` + **top-level `open_questions_gate`
+  `{blocked, blocking}`** (Tier-1 tracker join; `question-decision:v1` clears), per-mode
+  work/read workspaces, `config` pinned at root main SHA (three resolver blocks + fallback chain),
+  `distiller_bundle` (always staged paths, reusing gather spill), `suggested_playbook`,
+  `attention`, `prior_pr.stale_cutoff_days` (= 14, a **chosen deterministic default** — v1 says
+  only "a long time"; surfaced as a fact, boundary-tested time-invariantly).
+- **Composition:** pure cores per the S8 lock (zero stdout capture — first post-lock prep); three
+  prep-owned direct calls for genuinely uncovered queries (`git ls-remote`, `gh issue list --label
+  epic`, `gh pr list --state closed`). Call budget **two-sided: exactly 5** gh calls canonical /
+  **exactly 4** when an open PR short-circuits the closed-PR search.
+- **Live smoke (read-only, sandbox):** epic #1 (zero-match discovery → bootstrap slug
+  `sandbox-parity-fixture`, `epic.md`) + story #2 (`story.md`; parent-epic search legitimately zero —
+  the seeded epic body never references `#2`, a SANDBOX.md seed gap noted, the one-match path is
+  proven offline). Zero GitHub writes (`ls-remote` before/after identical).
+- **Hermeticity incident (orchestrator sanity catch):** the original submission was green on macOS
+  but **596/598 in the Linux container** — `RefreshModeTests` defaulted `--root` to the real
+  checkout, so `git ls-remote` hit the live SSH origin (silently *succeeding* on a networked mac —
+  the worse failure shape). Fixed test-side (git-sandbox origins, a misnamed invariant corrected,
+  +1 positive collision-re-derivation test). **Authorized deviation (recorded):** the orchestrator
+  authorized one shared-harness edit outside the add-only boundary — `NETWORK_POISON_ENV` in
+  `tests/support/shimenv.py` (GIT_SSH_COMMAND/GIT_PROXY_COMMAND=false, http(s)_proxy→127.0.0.1:1,
+  `extra` wins last) so every `intercepted_env()` fails loudly on any live network call
+  (architecture §10 now structurally enforced on the shared path). Reviewer ruled the guard sound;
+  bypass class (env builders not using `intercepted_env` — none exist today) noted.
+- **Review (1 opus reviewer, 1 fix round):** CHANGES REQUIRED — **1 actionable**: the
+  open-PR-by-another-author rows (and foreign drafts, via an isDraft-before-authorship ordering
+  bug) classified `continue` and **eagerly created a work worktree on a fabricated branch named
+  after the other author's PR**, pre-empting v1's operator gate (Review/Comment/Wait ·
+  Take-over/Start-fresh) and handing S10 a misleading workspace fact. Fixed: authorship checked
+  before draft state; `gated` mode skips branch computation + work-workspace ensure entirely;
+  the gate card fact renders v1's row semantics. Re-verified by the reviewer running the fixtures
+  itself → **PASS**; DoD box 1 re-verdict verified for all 7 rows (`closed-resolved → fresh` ruled
+  acceptable: anomalous-state row, mode never fabricates work for a closed issue).
+- **Rulings of record:** blocked-OQ → `comment-only` is v1's blocked outcome (not a re-route that
+  hides the gate — prep skips the worktree and surfaces the gate facts); the
+  `config_block._read_lines_or_empty`/`_scan_marker` composition is the same surface
+  `prep_evaluator` uses (within the S8 lock); the closed-PR resolved rule (`merged` AND issue
+  `CLOSED`) is faithful to v1's two rows; OQ-excluded canonical call-budget framing is defensible
+  (O(n)-per-OQ tracker fetch disclosed).
+- **Carried advisories:** (a) `_read_block_anywhere` is duplicated between the two preps —
+  promote to a shared helper at **S12** (the third prep); (b) **S10's brief must carry:**
+  `audit_ref` is a BARE ref (`origin/`-prefix before any git/distiller use;
+  `read_workspaces.audit.ref` is the prefixed handle), the `vector.gate` card contract, and the
+  three-value mode closed set; (c) the network poison covers the `intercepted_env` path only.
+- **Dual-platform:** **605/605** on macOS and Linux (container), verified by orchestrator and
+  reviewer independently.
+- **Process:** 1 sonnet implementor → orchestrator sanity **caught the Linux hermeticity failure**
+  → 2 remediation rounds (fix + authorized guard) → 1 opus reviewer (CHANGES REQUIRED, 1
+  actionable + 5 advisories) → fix round → re-verify (**PASS**). Ticks all 6 S9 boxes.
+
 ### Session-mechanics note (the 2026-07-04 session)
 
 The `.claude/agents/{implementor,reviewer}.md` definitions committed in setup are **not hot-loaded**
