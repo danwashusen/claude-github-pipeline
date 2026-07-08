@@ -355,7 +355,7 @@ sandbox, or delete anything outside the working tree and the sandbox.
 
 ### S9 — `prep_resolver.py` — ACCEPTED (2026-07-09)
 
-- **Commit:** _backfilled post-commit_ (`S9: prep_resolver.py — resolver startup facts in one call`).
+- **Commit:** `9f34931` (`S9: prep_resolver.py — resolver startup facts in one call`).
 - **Deliverables:** `scripts/prep_resolver.py` (the resolver's ~130 lines of v1 prompt-side startup
   assembly in one call) + `tests/test_prep_resolver.py` (65 tests) + 18 fixture dirs. Facts block:
   `target` (issue + native deps), `vector` (`type` epic/story/standard; **`mode` is a three-value
