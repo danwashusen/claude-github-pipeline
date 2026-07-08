@@ -309,8 +309,8 @@ sandbox, or delete anything outside the working tree and the sandbox.
 
 ### S8 — Pilot retro & pattern lock — ACCEPTED (2026-07-09)
 
-- **Commit:** _backfilled post-commit (see the follow-up docs commit)_ (`S8: pilot retro & pattern
-  lock — pure executor cores, retro, architecture amendments`).
+- **Commit:** `8a43db0` (`S8: pilot retro & pattern lock — pure executor cores, retro, architecture
+  amendments`).
 - **Scope:** the DoD's two doc boxes plus the code retrofit — S8's goal sentence ("correct the
   shared patterns **while exactly one skill uses them**") and the S6-recorded retro input both
   mandate landing the composition lock now, before the S9/S12/S14/S16/S18 preps are built.
