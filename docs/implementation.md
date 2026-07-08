@@ -306,9 +306,9 @@ amend [architecture.md](architecture.md) §3–§5 content where the pilot contr
 stable); record the go/no-go decision.
 
 **DoD**
-- [ ] Retro appended to `docs/specs/baseline.md`.
-- [ ] Architecture amendments landed; validators and census still green.
-- [ ] Operator go/no-go recorded with criteria — **go** requires the S7 parity run recorded
+- [x] Retro appended to `docs/specs/baseline.md`.
+- [x] Architecture amendments landed; validators and census still green.
+- [x] Operator go/no-go recorded with criteria — **go** requires the S7 parity run recorded
       with zero unexplained divergences, architecture amendments landed, and validators + census
       green; **no-go** names the blocking finding and its remediation step.
 

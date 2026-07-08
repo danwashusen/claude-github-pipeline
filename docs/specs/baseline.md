@@ -514,3 +514,120 @@ with separate context windows, so a discrepancy between a spec's prose and this 
 cross-reference table is a fan-out-seam bug to fix in whichever file is wrong — not evidence that
 one of the nine specs is more authoritative than the other by construction. The DoD's "adversarial
 re-read against its source `SKILL.md`" step closes exactly this class of seam.
+
+## 5. S8 pilot retro & pattern lock
+
+> Produced by [implementation.md](../implementation.md) step **S8** ("Pilot retro & pattern lock"),
+> after the S6 evaluator prep (`prep_evaluator.py`) and the S7 evaluator cutover + parity run made
+> the shared patterns concrete against exactly one skill. The audience is a later cutover author
+> (S9–S19): the corrections below are already landed, so the six remaining cutovers inherit the
+> corrected patterns rather than rediscovering them. S8's goal is precisely "correct the shared
+> patterns **while exactly one skill uses them**."
+
+### 5.1 Composition-API friction → the adopted lock
+
+**Friction (S6).** The executors reached S6 with **uneven composition surfaces.** `parse.py`
+exposed pure `parse_*() -> data` cores (with `run_*`/`main` as thin emit wrappers), and
+`gh_gather.run(..., stream=None)` returned `(exit, envelope)` while honoring a provided stream — both
+composable. But `gh_pr_gather.run`, every `workspace.py` subcommand, and `config_block.py`'s `run_*`
+functions **emitted-and-exited with no returnable core**: their only way to produce a result was to
+`emit_ok`/`emit_needs_decision`/`sys.stdout.write` onto real stdout. Composing them in-process from a
+prep therefore meant their envelope would land on the prep's own stdout, breaking the §3 "exactly one
+JSON envelope" invariant. The S6 pilot bridged this with `contextlib.redirect_stdout` into an
+`io.StringIO` buffer that the prep parsed and never re-emitted — a working stopgap, but a shim every
+later prep would otherwise have to re-implement.
+
+**The lock (shipped in S8).** Every executor now exposes a **pure, non-emitting core** —
+`build_*(...) -> (payload, notices, decision | None)` — and `main()`/`run_*` is a thin emit wrapper
+over it. The type-level distinction the retro asked for rides in the return tuple:
+
+- `decision is None` → success; the caller uses `payload` + `notices`.
+- `decision is not None` → a `needs_decision` outcome (a `pipelib.decisions` code dict, e.g.
+  `MARKER_AMBIGUOUS`, `AUTH_REQUIRED`, `ROOT_DIRTY`, `BRANCH_IN_USE`); the caller propagates it to
+  its single envelope.
+- a **partial-but-honest** degradation rides in `notices` (or, for `ensure --work`'s setup-hook
+  failure, in the `payload` itself as `setup.succeeded: false`), distinct from a **hard error**,
+  which still exits non-zero with stderr and no envelope (§3 exit-code contract — unchanged).
+
+Files retrofitted: `scripts/gh_pr_gather.py` (`build_pr_facts`), `scripts/workspace.py` (per
+subcommand: `_build_ensure_work` / `_build_ensure_read` / `_build_remove_work` / `_build_gc` /
+`_build_root_status` / `_build_lint`), and `scripts/config_block.py` (`build_read` / `build_list` /
+`build_upsert` / `build_remove`). `parse.py` and `gh_gather.run(stream=)` are the **reference shapes**
+and were left untouched. `prep_evaluator.py` was rewired to call the new cores directly; its
+`contextlib` / `io` imports and every `redirect_stdout` / `io.StringIO` capture block are removed. The
+sole remaining stream use is `gh_gather.run(stream=...)`, the accepted-reference emit-through-a-stream
+executor — its emit is routed to a trivial discard sink, not captured.
+
+**Rule for S9+.** A prep composes the executor cores **directly** and acts on each core's returned
+`decision` channel. **No new prep may reintroduce stdout capture** (`redirect_stdout` /
+`io.StringIO` around another script's emit). Envelope output is byte-identical across the retrofit:
+the S6 fixtures were untouched and `python3 tests/run.py` stays fully green.
+
+### 5.2 Facts-schema gaps (closed pilot findings, for the record)
+
+Two shared-layer defects the S6 pilot surfaced, both **already landed** — recorded here as
+pilot findings, not open work:
+
+- **`gh_pr_gather` `labels` omission.** v1's PR fetch referenced escalation labels but never fetched
+  the PR's own `labels`, so the evaluator's escalation-label matching could never fire. v2's
+  `GATHER_PR` field set adds `labels` (surfaced as a list of label-name strings on the same
+  `gh pr view` call — no extra round-trip), and `prep_evaluator` carries it through to
+  `target.labels`.
+- **`workspace ensure --work` existing-branch bug.** The original create path checked out `main`
+  (the `--base`) even when the requested branch already existed on the remote, so an evaluator
+  ensuring the PR **head** branch got `main`, not the PR head. `_build_ensure_work` now picks the
+  checkout source by branch existence, landing the worktree at the branch's own head, so the
+  recorded `sha` fact is the head SHA, never `main`'s.
+
+### 5.3 Playbook-granularity / router-shape confirmations (from S7)
+
+The S7 evaluator cutover **held** the §5 routing bar and the size metrics, so they carry forward as
+the validated template for the six remaining cutovers:
+
+- **Routing bar held.** Shared spine + thin post-verdict variants, **zero PR-type conditionals** in
+  the router or playbooks (no `if epic … else if story …` interleaving; a difference in *values* is a
+  fact, not a branch — §5 "Parameterize before you playbook"). Router ≤150 lines and router+largest
+  playbook ≤ half the v1 `SKILL.md` line count (§1's parity denominator) both met.
+
+The §1 baseline census's recorded distinct-token count (79, frozen at S1) grew to 81 at S7 — the
+evaluator cutover's own additions, with zero drops — so a downstream cutover author diffing the
+census command's output against the §1 table should read that delta as expected growth, not a
+stale-baseline error.
+
+**Three S7 gate-interpretation adjudications, recorded as precedent** (they recur across the
+remaining pipeline skills):
+
+- **(a) Artifact-footer provenance string.** An emitted artifact's footer keeps the literal
+  `github-pr-evaluator` provenance string. This is a **byte-compatibility contract token** (a v1
+  artifact reader / cross-consumer matches it verbatim), **not** a skill name to be renamed to the
+  v2 `evaluator` — the skill rename does not propagate into the persisted artifact bytes.
+- **(b) Scriptless raw-`gh` executors.** `gh pr merge` and `gh pr ready --undo` are **sanctioned**
+  raw-`gh` executors in `skills/`: no `gh_persist.py` op covers them (they are not body-bearing
+  writes on the write path), and the behaviors they implement — merge execution and the soft-reject
+  draft-flip on Needs Revision / Reject — are spec'd in `docs/specs/evaluator.md`. The §10 raw-`gh`
+  validator is narrowed accordingly (see §5.4).
+- **(c) `git show <end>` vs ref arithmetic.** A single-commit diff view — `git show <commit>` — is
+  legitimate and permitted; only `git show <ref>:<path>` (ref-arithmetic path extraction) and
+  `git grep <ref>` are banned. The §10 `git`-ref validator is narrowed to the ref-arithmetic form
+  (see §5.4).
+
+(b) and (c) are the drivers of the S8 architecture amendments (§2 pure-core pattern, §10 validator
+narrowings, §12 consistency qualifier) — content-only, all `## §N` anchors stable.
+
+### 5.4 Go/no-go (S8 box 3), recorded — not decided
+
+The operator's decision, recorded in `docs/specs/parity/evaluator.md`'s "Go/no-go (S8 input)" block,
+is **Accepted — go.** S8 only *records* it here; it does not make it. The three go criteria and their
+status:
+
+1. **S7 parity recorded with zero unexplained divergences — met.** All four scenarios PASS
+   (1 standard approve+merge, 2 story merge / delivery-log + epic checkbox, 3 red-CI rejection,
+   4 `ask`-policy merge gate + operator override). Every recorded divergence traces to a PRD §
+   (§8.3 / §9.1 / §9.2), a GitHub behavior, the deliberate v1→v2 rename, free prose within the shared
+   schema, or a run-time environment substitution — none unexplained.
+2. **Architecture amendments landed — met.** The §2 / §10 / §12 amendments (§5.3 (b)+(c) above) are
+   applied, anchors stable.
+3. **Validators + census green — met.** compileall, `tests/run.py`, shellcheck, and the contract-token
+   census are green; the orchestrator re-runs them at acceptance.
+
+**No blocking finding.**

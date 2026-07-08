@@ -13,25 +13,23 @@ model-mediated round-trip (prd.md §9.2).
 Composition (architecture.md §2 "compose the executors in-process"; architecture.md §1 "the only
 external processes any script may spawn are git/gh")::
 
-    gh_pr_gather.run(...)         -- PR facts + thread + the health-cache marker comment
-    gh_gather.run(..., stream=)   -- the closing issue's body + thread (per issue)
-    workspace.main([...])         -- root-freshness (via "root-status") + "ensure --work" on the
-                                     PR head branch
-    parse.parse_dod_bullets(...)  -- the closing issue's ## Definition of done, parsed
+    gh_pr_gather.build_pr_facts(...)      -- PR facts + thread + the health-cache marker comment
+    gh_gather.run(..., stream=)           -- the closing issue's body + thread (per issue)
+    workspace._build_ensure_work / _build_root_status
+                                          -- root-freshness + "ensure --work" on the PR head branch
+    parse.parse_dod_bullets(...)          -- the closing issue's ## Definition of done, parsed
     config_block._read_lines_or_empty / _scan_marker
-                                   -- the four gate-config blocks, read at the root main SHA
+                                          -- the four gate-config blocks, read at the root main SHA
 
-The executors have an uneven composition surface (see the implementor report's "S8 retro input"
-section for the write-up this uneveness produced): ``gh_gather.run`` and ``parse.py``'s functions
-are clean return-a-value calls; ``gh_pr_gather.run`` and every ``workspace.py`` subcommand build
-their own envelope and print it via ``pipelib.envelope.emit_ok``/``emit_needs_decision`` with NO
-``stream=`` passthrough, so composing them in-process means their emit would otherwise land on
-THIS script's own stdout — breaking the "exactly one JSON envelope" invariant (architecture.md
-§3). ``contextlib.redirect_stdout`` around each such call captures that emit into an
-``io.StringIO`` buffer instead, which this script then parses as a plain in-memory result and
-never re-emits — see :func:`_capture_stdout_json` and :func:`_run_workspace_subcommand`. No
-executor is modified; every composition here is capture-based (S6 brief: "Do NOT edit the
-executors if capture-based in-process composition works — it does").
+Every executor exposes a **pure, non-emitting core** — ``build_*(...) -> (payload, notices,
+decision|None)`` — as of the S8 pattern lock (docs/specs/baseline.md §5): ``gh_pr_gather``,
+``workspace`` (per subcommand), and ``config_block`` were retrofitted alongside the already-pure
+``parse.py`` / ``gh_gather.run(stream=)`` references. This prep composes those cores **directly**
+and acts on each core's returned ``decision`` channel (:func:`_forward_decision`),
+emitting exactly one envelope of its own. The S6 pilot's ``contextlib.redirect_stdout`` capture
+bridge — needed only because those executors used to emit-and-exit with no returnable core — is
+**retired**: no prep captures another script's stdout, and no later prep may reintroduce it (§5
+retro's rule for S9+).
 
 Usage::
 
@@ -50,8 +48,6 @@ hard `gh`/`git` failure surfaced by a composed executor — stderr carries the f
 """
 
 import argparse
-import contextlib
-import io
 import json
 import re
 import sys
@@ -109,70 +105,43 @@ ROOT_MAIN_BRANCH = "main"
 
 
 # ---------------------------------------------------------------------------
-# In-process composition helpers — capture an emit-and-print executor's stdout instead of
-# subprocessing it (architecture.md §1: only git/gh may be spawned as external processes; a
-# `python3 <executor>.py` subprocess would be an unlisted third spawned binary).
+# In-process composition (architecture.md §2 "compose the executors in-process"; §1: only git/gh
+# may be spawned as external processes — a `python3 <executor>.py` subprocess would be an unlisted
+# third spawned binary). As of the S8 pattern lock (docs/specs/baseline.md §5) every executor
+# exposes a pure, non-emitting `build_*(...) -> (payload, notices, decision|None)` core, so this
+# prep calls those cores DIRECTLY and forwards a returned decision to its own single envelope —
+# the S6 `redirect_stdout`/`io.StringIO` capture bridge is retired.
 # ---------------------------------------------------------------------------
 
 
-def _capture_stdout_json(callable_with_no_return_value):
-    """Run ``callable_with_no_return_value`` with stdout redirected to an in-memory buffer, then
-    parse and return the single JSON envelope it printed (or ``None`` if it printed nothing).
+class _DiscardStream:
+    """A minimal write-sink for ``gh_gather.run(stream=...)`` — the one remaining executor prep
+    composes that emits-through-a-``stream=`` (its accepted-reference shape, S8 retro §5) while
+    ALSO returning ``(exit, envelope)``. prep consumes only the returned envelope, so the emit is
+    routed here and discarded rather than captured into a buffer — no ``io.StringIO``, no
+    ``redirect_stdout``. Implements just the ``write``/``flush`` surface
+    :func:`pipelib.envelope.emit` touches on a stream without a ``.buffer`` attribute."""
 
-    This is the capture technique the S6 brief names explicitly for composing an
-    "emit-and-return-the-dict-but-also-print-to-real-stdout" executor
-    (``gh_pr_gather.run``, whose ``emit_ok``/``emit_needs_decision`` calls carry no ``stream=``)
-    without leaking its envelope onto THIS script's own stdout. Raises ``AssertionError`` if more
-    than one non-blank line was printed — every composed executor's contract is "exactly one
-    envelope," so more than one line means something upstream broke that contract, and prep must
-    not silently swallow the extra line(s).
-    """
-    buffer = io.StringIO()
-    with contextlib.redirect_stdout(buffer):
-        callable_with_no_return_value()
-    lines = [line for line in buffer.getvalue().splitlines() if line.strip()]
-    if not lines:
+    def write(self, _data):
         return None
-    assert len(lines) == 1, (
-        "prep_evaluator: composed executor printed %d lines, expected exactly one envelope: %r"
-        % (len(lines), lines)
-    )
-    return json.loads(lines[0])
+
+    def flush(self):
+        return None
 
 
-def _run_workspace_subcommand(argv):
-    """Compose ``workspace.py`` in-process: call ``workspace.main(argv)`` under stdout capture and
-    return ``(exit_code, envelope_or_none)``. ``workspace.py`` has no clean testable-core /
-    ``stream=`` split (unlike ``gh_gather.run``), so its CLI entrypoint is composed directly —
-    this exercises the exact same argument-parsing + dispatch path a real subprocess invocation
-    would use, just without the second Python process (architecture.md §2/§9.2).
-    """
-    buffer = io.StringIO()
-    with contextlib.redirect_stdout(buffer):
-        exit_code = workspace.main(argv)
-    lines = [line for line in buffer.getvalue().splitlines() if line.strip()]
-    if not lines:
-        return exit_code, None
-    assert len(lines) == 1, (
-        "prep_evaluator: workspace.py %r printed %d lines, expected exactly one envelope: %r"
-        % (argv, len(lines), lines)
-    )
-    return exit_code, json.loads(lines[0])
-
-
-def _forward_decision_if_present(envelope):
-    """If ``envelope`` (from a composed executor) is a ``needs_decision`` envelope, emit it
-    AS-IS on prep's own stdout (this is prep's one and only envelope for this run) and return
-    ``True``. Otherwise return ``False`` so the caller continues assembling facts.
+def _forward_decision(decision, notices=None):
+    """Emit a composed core's returned ``decision`` (a ``pipelib.decisions`` code dict) AS-IS on
+    prep's own stdout — this is prep's one and only envelope for the run — and return ``True`` when
+    a decision was present, else ``False`` so the caller continues assembling facts.
 
     This is how ``MARKER_AMBIGUOUS`` (gh_pr_gather / gh_gather), ``AUTH_REQUIRED`` (any gh call),
     ``ROOT_NOT_ON_MAIN``/``ROOT_DIRTY``/``ROOT_DIVERGED``/``BRANCH_IN_USE`` (workspace.py), and
     ``DOD_MALFORMED`` (parse.py, raised in-process — see :func:`_parse_closing_issue_dod`)
-    propagate through prep untouched, per architecture.md §3's closed decision-code set: a
-    composed executor's decision IS prep's decision, verbatim, never re-derived or reworded.
+    propagate through prep untouched, per architecture.md §3's closed decision-code set: a composed
+    core's decision IS prep's decision, verbatim, never re-derived or reworded.
     """
-    if envelope is not None and envelope.get("status") == "needs_decision":
-        emit_needs_decision(envelope["decision"], notices=envelope.get("notices"))
+    if decision is not None:
+        emit_needs_decision(decision, notices=notices)
         return True
     return False
 
@@ -569,55 +538,38 @@ def build_facts(pr_number, repo, root=".", scratch_dir=None, refresh=False, cwd=
         scratch_dir = "/tmp/gh-evaluator-%s" % pr_number
     Path(scratch_dir).mkdir(parents=True, exist_ok=True)
 
-    # 1) PR facts (+ thread + the health-cache marker) — gh_pr_gather has no stream= passthrough,
-    #    so its emit is captured via redirect_stdout rather than leaked onto our own stdout.
-    pr_envelope = _capture_stdout_json(
-        lambda: gh_pr_gather.run(
-            pr_number,
-            repo,
-            marker=HEALTH_CACHE_MARKER,
-            scratch_dir=scratch_dir,
-            cwd=cwd,
-        )
+    # 1) PR facts (+ thread + the health-cache marker) — compose gh_pr_gather's pure core
+    #    directly; its returned decision (AUTH_REQUIRED / MARKER_AMBIGUOUS) becomes prep's own.
+    pr_envelope, _pr_notices, pr_decision = gh_pr_gather.build_pr_facts(
+        pr_number,
+        repo,
+        marker=HEALTH_CACHE_MARKER,
+        scratch_dir=scratch_dir,
+        cwd=cwd,
     )
-    if _forward_decision_if_present(pr_envelope):
+    if _forward_decision(pr_decision):
         return None  # already emitted — main() reads EXIT_OK regardless (needs_decision is exit 0)
 
-    # 2) Root freshness + "ensure --work" on the PR head branch. workspace.py's CLI is composed
-    #    directly (no testable-core split exists there) via _run_workspace_subcommand.
-    #    "root-status" alone performs the freshness protocol without creating anything, so a
-    #    ROOT_* decision surfaces before any worktree side effect — matching workspace.py's own
-    #    "freshness failure short-circuits the whole subcommand" contract, now short-circuiting
-    #    prep's own assembly the same way.
+    # 2) Root freshness + "ensure --work" on the PR head branch — compose workspace's per-subcommand
+    #    pure cores directly. _build_root_status alone performs the freshness protocol without
+    #    creating anything, so a ROOT_* decision surfaces before any worktree side effect — matching
+    #    workspace.py's own "freshness failure short-circuits the whole subcommand" contract, now
+    #    short-circuiting prep's own assembly the same way.
     if not refresh:
-        _root_exit, root_status_envelope = _run_workspace_subcommand(
-            ["root-status", "--root", root]
-        )
-        if _forward_decision_if_present(root_status_envelope):
+        root_status, _rs_notices, root_status_decision = workspace._build_root_status(root)
+        if _forward_decision(root_status_decision):
             return None
-        root_sha = root_status_envelope["sha"]
+        root_sha = root_status["sha"]
 
-        ws_exit, workspace_envelope = _run_workspace_subcommand(
-            [
-                "ensure",
-                "--work",
-                pr_envelope["headRefName"],
-                "--base",
-                pr_envelope["baseRefName"],
-                "--root",
-                root,
-            ]
+        workspace_envelope, _ws_notices, ws_decision = workspace._build_ensure_work(
+            root, pr_envelope["headRefName"], pr_envelope["baseRefName"]
         )
-        if _forward_decision_if_present(workspace_envelope):
+        if _forward_decision(ws_decision):
             return None
-        if ws_exit != 0 and (workspace_envelope is None or workspace_envelope.get("setup", {}).get("succeeded", True)):
-            # A hard workspace failure with no envelope at all (e.g. `git fetch`/`worktree add`
-            # itself failed) — surfaced faithfully rather than silently assembling partial facts.
-            sys.stderr.write(
-                "prep_evaluator: workspace ensure --work failed (exit %d) with no recoverable "
-                "envelope\n" % ws_exit
-            )
-            sys.exit(1)
+        # A setup-hook failure is a partial-but-honest payload (setup.succeeded == False) that the
+        # evaluator playbook reads off `workspace.setup` + an `attention` line — never a hard exit.
+        # A hard git failure (fetch/worktree add) already sys.exit(1)'d inside the core with faithful
+        # stderr and no envelope (§3), so there is nothing to guard for here anymore.
 
         # 3) Gate config, pinned at the root main SHA just recorded.
         gate_config, config_notices = _read_gate_config(root)
@@ -633,7 +585,9 @@ def build_facts(pr_number, repo, root=".", scratch_dir=None, refresh=False, cwd=
         gate_config, config_notices = {}, []
 
     # 4) The closing issue's DoD (parse.py dod, composed as a pure function) — for each issue in
-    #    closingIssuesReferences. gh_gather.run has a stream= passthrough, so no redirect needed.
+    #    closingIssuesReferences. gh_gather.run is the accepted-reference emit-through-a-stream
+    #    executor (S8 retro §5): it returns (exit, envelope) and emits into a discard sink so its
+    #    envelope never reaches prep's own stdout — no io.StringIO/redirect_stdout capture.
     closing_issues = pr_envelope.get("closingIssuesReferences") or []
     dod_by_issue = {}
     blocked_by_by_issue = {}
@@ -643,12 +597,12 @@ def build_facts(pr_number, repo, root=".", scratch_dir=None, refresh=False, cwd=
         issue_number = closing_issue.get("number")
         if issue_number is None:
             continue
-        issue_stream = io.StringIO()
         issue_exit, issue_envelope = gh_gather.run(
-            str(issue_number), repo, scratch_dir=scratch_dir, stream=issue_stream
+            str(issue_number), repo, scratch_dir=scratch_dir, stream=_DiscardStream()
         )
-        if _forward_decision_if_present(issue_envelope):
-            return None
+        if issue_envelope is not None and issue_envelope.get("status") == "needs_decision":
+            if _forward_decision(issue_envelope["decision"], notices=issue_envelope.get("notices")):
+                return None
         if issue_exit != 0:
             sys.stderr.write(
                 "prep_evaluator: gh_gather on closing issue #%s failed (exit %d)\n"

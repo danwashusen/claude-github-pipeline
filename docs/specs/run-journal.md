@@ -307,7 +307,53 @@ sandbox, or delete anything outside the working tree and the sandbox.
 - **Process:** 1 opus implementor (skill authoring) → orchestrator sanity (line counts / grep / census
   / 540 tests) → 1 opus reviewer (PASS, 0 actionable, 3 forward advisories). **1 review round.**
 
-### Session-mechanics note (applies to the whole run in this session)
+### S8 — Pilot retro & pattern lock — ACCEPTED (2026-07-09)
+
+- **Commit:** _backfilled post-commit (see the follow-up docs commit)_ (`S8: pilot retro & pattern
+  lock — pure executor cores, retro, architecture amendments`).
+- **Scope:** the DoD's two doc boxes plus the code retrofit — S8's goal sentence ("correct the
+  shared patterns **while exactly one skill uses them**") and the S6-recorded retro input both
+  mandate landing the composition lock now, before the S9/S12/S14/S16/S18 preps are built.
+- **D1 — composition retrofit (the pattern lock):** every prep-composed executor now exposes a pure
+  non-emitting `build_*(...) -> (payload, notices, decision|None)` core with `main()`/`run_*` as thin
+  emit wrappers — `gh_pr_gather.py` (`build_pr_facts`), `workspace.py` (six per-subcommand cores),
+  `config_block.py` (four cores). `prep_evaluator.py` composes the cores directly and forwards a
+  returned `decision` to a single emitted envelope; the S6 `contextlib.redirect_stdout`/`io.StringIO`
+  capture bridge is retired (a minimal `_DiscardStream` sinks the one sanctioned
+  `gh_gather.run(stream=)` emit). **Byte-identical envelopes proven:** `tests/` untouched, fixtures
+  unedited, 540/540 green on macOS and Linux (container).
+- **D2 — retro:** `docs/specs/baseline.md` gains `## 5. S8 pilot retro & pattern lock` — the
+  composition friction → adopted lock + the S9+ rule (preps compose cores directly; no new prep may
+  reintroduce stdout capture), the two closed S6 shared-layer fixes (labels; `ensure --work`
+  existing-branch), the S7 routing-bar confirmations + three gate adjudications as precedent for the
+  six remaining cutovers, the census 79→81 growth reconciliation (S7's own additions, zero drops),
+  and the go/no-go as recorded.
+- **D3 — architecture amendments (content-only; all `## §N` anchors byte-stable):** §2 specifies the
+  pure-core/thin-emit-wrapper composition pattern (S6 bridge marked pilot-only, retired); §10
+  narrows two prompt validators for S20 — the raw-`gh` rule to the §7-rule-7 form excepting exactly
+  the scriptless `gh pr merge` / `gh pr ready --undo` (behavior-cited to `specs/evaluator.md` :195
+  merge-execution and :144 draft-flip rows), and the git-ref rule to ref-arithmetic scope
+  (`git show <ref>:<path>` / `git grep <ref>` banned; bare `git show <commit>` permitted); §12's
+  drift-class invariant row reconciled ("carve-outs in §10"). §3–§5 needed no amendment (S7 parity
+  contradicted nothing); `prd.md` untouched.
+- **Go/no-go (box 3 — recorded, not decided):** **Accepted — go**, per the operator's
+  `docs/specs/parity/evaluator.md` "Go/no-go (S8 input)" block; criteria restated with status in
+  baseline §5.4, all met.
+- **Reviewer rulings of record (both flagged judgment calls ACCEPTED with falsification attempts):**
+  `_DiscardStream`'s write/flush surface is complete against `pipelib.envelope.emit`'s actual stream
+  use (no `.buffer` path taken; spills go to files, never the stream); the workspace cores'
+  hard-git-failure `sys.exit(1)` is process-identical to HEAD, and the setup-hook-failure case that
+  must *not* exit rides in `payload` (`setup.succeeded: false`), preserved.
+- **Process:** 1 opus implementor → orchestrator sanity (compileall / 540 macOS / 540 Linux /
+  shellcheck / jq / census byte-identical / anchors) → 1 opus reviewer (PASS, 0 actionable, 3
+  advisories) → fix round 1 (§10 citation truth-fix to behavior citations; census-growth sentence;
+  the same citation error fixed where the retro restated it) → reviewer re-verify (**PASS holds;
+  advisory 1 resolved; no advisories remain**). **1 fix round.**
+- **Session-mechanics:** this session (2026-07-09) had the named `implementor`/`reviewer` agent
+  types available and used them directly (`subagent_type: implementor|reviewer` + opus override for
+  both S8 roles) — the prior session's `general-purpose` workaround is no longer needed.
+
+### Session-mechanics note (the 2026-07-04 session)
 
 The `.claude/agents/{implementor,reviewer}.md` definitions committed in setup are **not hot-loaded**
 into an already-running session, so every sub-agent this session was dispatched via the
@@ -318,73 +364,16 @@ of truth; a **freshly started** resumed session will pick them up by name and ca
 
 ---
 
-## Current handback — STOP at S7's live parity run (first operator gate) — 2026-07-04
+## Handback log
 
-The autonomous run completed every step it can finish without an operator: the whole deterministic
-layer plus the evaluator skill's automatable build. It stops here because **S7's DoD box 6 is a live,
-interactive, operator-gated parity run** (per the stop conditions).
+### 2026-07-04 handback — STOP at S7's live parity (first operator gate) — CLOSED 2026-07-09
 
-### Fully accepted steps (committed on `rewrite/v2-implementation`)
-| Step | Commit | What |
-|---|---|---|
-| setup | `eb1dfb5` | orchestration: implementor/reviewer agents + run journal |
-| S1 | `3724328` | baseline: 9 v1 skill specs, contract-token census (79 tokens), artifact examples |
-| S2 | `69399c7` | offline harness (`gh` shim + git-sandbox) + live sandbox repo |
-| S3 | `a503ddf` | `pipelib` (envelope, spill, 13 decision codes, locked runner, hook carve-out) |
-| S21 | `246b64c` | 4 executor ports → Python (gh_gather/gh_pr_gather/gh_persist/config_block) |
-| S4 | `e20e4c3` | `workspace.py` (worktree lifecycle, root-freshness, gc, hooks) |
-| S5 | `fe16977` | `parse.py` (dod/oq-links/phases; byte-identical dod round-trip) |
-| S6 | `938d618` | `prep_evaluator.py` (facts-block pilot) + labels/workspace shared-layer fixes |
-| **S7** | `25be0a5` | **skills/evaluator/ — first cutover; automatable work only (see below)** |
-
-The offline suite is **540 tests, green on macOS and Linux**. The disposable sandbox is
-**`https://github.com/danwashusen/gh-pipeline-sandbox`** (issue #4 bug, epic #1 + stories #2/#3,
-question #5, PR #6 labelled `story` — seeded per `tests/SANDBOX.md`).
-
-### Current step: S7 — the ONE remaining DoD item (box 6)
-> **Box 6 — Parity run recorded in `docs/specs/parity/evaluator.md`:** standard approve + merge; story
-> merge (delivery-log append + epic checkbox); red-CI rejection; `ask`-policy gate.
-
-Boxes 1–5 and 7 are ticked and verified (reviewer PASS, zero actionable). Only the live parity run is
-left. **Operator actions:**
-1. Open **`docs/specs/parity/evaluator.md`** — it scaffolds all four scenarios with per-scenario
-   checklists and cites the parity protocol ([implementation.md "The parity protocol"](../implementation.md)).
-2. For **each** of the four scenarios, on the sandbox: construct the target state (or a twin for the
-   destructive/shared-parent flows — e.g. a single-story epic for the story-merge case), run the **v1**
-   skill `/github-pipeline:github-pr-evaluator` in one session (capture every GitHub write, every gate,
-   the handoff, rough turn count), reset/switch to the twin, run the **v2** skill
-   `/github-pipeline:evaluator` on the same state, and compare: artifacts **schema-identical**
-   (same marker line, section set + order, structured fields; free prose may differ — confirm by
-   cross-consumption), the same genuine decisions gated, the handoff validates against the shared
-   schema, and startup did **at most one** state-assembly call (`prep_evaluator.py`). Record results +
-   any divergences (each must trace to a PRD requirement or be filed as a defect) in the parity doc.
-3. Fill the parity doc's **Go/no-go** block — that is S8's input.
-4. **Tick box 6** in `docs/implementation.md` (and box 6 only) once all four scenarios pass with no
-   unexplained divergence.
-
-### Then S8 (also operator-gated) + one architecture amendment S8 must land
-After the parity, **S8** (pilot retro & go/no-go — an operator decision) runs. Two concrete inputs are
-already recorded for it:
-- **The composition-API friction retro** (S6 journal entry, "S8 RETRO INPUT") — the proposed lock:
-  every executor exposes a pure non-emitting `build_*() -> (payload, notices, decision|None)` core with
-  a thin `main()` emit wrapper, retiring the `redirect_stdout` capture bridge before the S9/S12/S14/S16/
-  S18 preps are built.
-- **Amend architecture §10** so the "raw `gh` writes" validator carves out the **scriptless
-  `gh pr merge` / `gh pr ready --undo` executors** (the S7 adjudication (b)) — and note for **S20** that
-  the `git show` validator must match `git show <ref>:<path>` (ref-arithmetic), not blanket `git show`
-  (adjudication (c)). Do these at S8's "architecture amendments landed" step so S20's validator regex is
-  authored correctly.
-
-### Resume instruction
-Once box 6 is ticked (S7 parity recorded), **re-run this orchestrator prompt on
-`rewrite/v2-implementation`**. It will derive state from the ticked boxes + this journal + `git log`,
-see S7 complete, and proceed to **S8** (assemble the retro + evidence; the go/no-go decision is yours),
-then the remaining tracks (S9 → S10 → S11 → S12 → …). If box 6 is not yet ticked, a resumed run will
-re-stop here at the same parity gate.
-
-### Session-mechanics reminder for the resume
-This session dispatched all sub-agents via `general-purpose` with the committed
-`.claude/agents/{implementor,reviewer}.md` role files injected by reference (the definitions aren't
-hot-loaded mid-session) and the model tier pinned (implementor→sonnet, reviewer→opus; skill-authoring
-implementors → opus). A **freshly started** resumed session will have `implementor`/`reviewer` available
-by name and can use `subagent_type: implementor|reviewer` directly.
+**Superseded; retained as a pointer.** The operator completed every action it requested: all four
+parity scenarios run and recorded PASS (`11cb5cb` scenario 1, `031027a` scenario 2, `6ea339b`
+scenario 3, `693f195` scenario 4 + box 6 tick; `ae283af` fixed the SANDBOX.md config-block seeds —
+bare forms parsed empty — between scenarios 1 and 2), the Go/no-go block filled (**Accepted — go**).
+S7 flipped to ACCEPTED at `b59e56d`; S8 — the step this handback teed up, both of whose recorded
+inputs (the composition lock; the §10 amendment) are now landed — is accepted above. The full
+original handback text (operator scenario instructions, accepted-steps table through S7) is in git
+history at `ff3064f`. The run has resumed the serial order at **S9**; the next planned operator gate
+is **S10's live parity run** (or any earlier stop condition).

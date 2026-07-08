@@ -262,8 +262,10 @@ def _root_freshness(root):
     Returns either ``("ok", sha)`` on success, or a §3 decision dict (one of
     ``ROOT_NOT_ON_MAIN`` / ``ROOT_DIRTY`` / ``ROOT_DIVERGED``) — never raises, and never mutates
     root beyond the ``fetch``/``--ff-only merge`` the protocol itself performs. The caller
-    distinguishes the two return shapes (tuple vs dict) and must emit a ``needs_decision``
-    envelope for the latter without proceeding further — see :func:`_check_root_freshness_or_emit`.
+    distinguishes the two return shapes (tuple vs dict): each pure ``_build_*`` core that gates on
+    freshness (``_build_ensure_work``, ``_build_root_status``) returns the dict as its own
+    ``decision`` channel, and its thin emit wrapper turns that into a ``needs_decision`` envelope
+    without proceeding further.
     """
     branch = _current_branch(root)
     if branch != ROOT_BRANCH:
@@ -301,18 +303,6 @@ def _root_freshness(root):
         )
 
     return "ok", _current_sha(root)
-
-
-def _check_root_freshness_or_emit(root):
-    """Run :func:`_root_freshness`; on failure, emit the ``needs_decision`` envelope and return
-    ``None`` (caller must return immediately without touching any worktree). On success, return
-    the fresh SHA."""
-    outcome = _root_freshness(root)
-    if isinstance(outcome, dict):
-        emit_needs_decision(outcome)
-        return None
-    _, sha = outcome
-    return sha
 
 
 # ---------------------------------------------------------------------------
@@ -489,26 +479,45 @@ def _run_teardown_hooks(root, workspace_path):
 # ---------------------------------------------------------------------------
 
 
-def _cmd_ensure_work(args):
-    root = str(Path(args.root).resolve())
-    if _check_root_freshness_or_emit(root) is None:
-        return EXIT_OK
+def _build_ensure_work(root, branch, base):
+    """Pure ``ensure --work`` core (architecture.md §2's pure-core pattern, S8 pattern lock):
+    create/reuse the work worktree on ``branch`` (checked out at its own head when it exists, else
+    forked at ``origin/<base>``), run setup hooks, and return ``(payload, notices, decision)`` —
+    **never emits** (no ``print``/``emit_ok``/``emit_needs_decision``). ``prep_evaluator`` calls
+    this directly, retiring the S6 ``redirect_stdout`` bridge.
 
-    fetch_result = _git(["fetch", "origin", args.base], root)
+    Return contract (the type-level distinction the S8 retro asks for):
+      - ``decision is not None`` → a ``needs_decision`` (``ROOT_*`` from freshness, or
+        ``BRANCH_IN_USE``); ``payload`` is ``None`` and the caller propagates the decision.
+      - ``decision is None`` → success or a *setup-hook failure*: both carry a ``payload``. A
+        setup-hook failure is a **partial-but-honest** envelope (``payload["setup"]["succeeded"]``
+        is ``False`` and ``sha``/``dirty``/``unpushed_commits`` are absent), rides in ``payload``
+        exactly as v1 emitted it, and the emit wrapper maps it to process exit 1 by inspecting
+        ``setup.succeeded`` — the caller (prep) likewise reads ``setup.succeeded`` rather than a
+        process exit code, so nothing about the observed behavior changes.
+      - a hard `git` failure still ``sys.exit(1)`` with faithful stderr and no envelope (§3
+        exit-code contract — unchanged), not a returnable decision.
+    """
+    root = str(Path(root).resolve())
+    freshness = _root_freshness(root)
+    if isinstance(freshness, dict):
+        return None, [], freshness
+
+    fetch_result = _git(["fetch", "origin", base], root)
     if fetch_result.returncode != 0:
         sys.stderr.write(fetch_result.stderr)
-        return 1
+        sys.exit(1)
 
-    target_path = _work_path(root, args.branch)
+    target_path = _work_path(root, branch)
     worktrees = _list_worktrees(root)
 
-    existing_for_branch = _find_worktree_for_branch(worktrees, args.branch)
+    existing_for_branch = _find_worktree_for_branch(worktrees, branch)
     if existing_for_branch is not None and existing_for_branch["path"] != target_path:
-        emit_needs_decision(needs_decision(
+        return None, [], needs_decision(
             BRANCH_IN_USE,
-            summary="branch %r is already checked out at %s" % (args.branch, existing_for_branch["path"]),
+            summary="branch %r is already checked out at %s" % (branch, existing_for_branch["path"]),
             context={
-                "branch": args.branch,
+                "branch": branch,
                 "existing_path": str(existing_for_branch["path"]),
                 "requested_path": str(target_path),
             },
@@ -516,8 +525,7 @@ def _cmd_ensure_work(args):
                 "use the existing worktree at %s" % existing_for_branch["path"],
                 "remove that worktree first, then re-run",
             ],
-        ))
-        return EXIT_OK
+        )
 
     reused = target_path.is_dir() and _find_worktree_at_path(worktrees, target_path) is not None
     if not reused:
@@ -525,48 +533,48 @@ def _cmd_ensure_work(args):
         # branch (e.g. a PR head an evaluator must check out) lands the worktree at that branch's
         # actual head, never silently at --base (architecture.md §6's "SHA" fact must be the
         # branch's own head, not main's).
-        branch_on_remote = _remote_branch_exists(root, args.branch)
+        branch_on_remote = _remote_branch_exists(root, branch)
         if branch_on_remote:
-            fetch_branch_result = _git(["fetch", "origin", args.branch], root)
+            fetch_branch_result = _git(["fetch", "origin", branch], root)
             if fetch_branch_result.returncode != 0:
                 sys.stderr.write(fetch_branch_result.stderr)
-                return 1
+                sys.exit(1)
 
-        if branch_on_remote and _local_branch_exists(root, args.branch):
+        if branch_on_remote and _local_branch_exists(root, branch):
             # Local branch ref exists (e.g. left behind by a worktree removed earlier) but no
             # worktree currently has it checked out (ruled out above) — attach it, then fast-
             # forward/reset it to origin/<branch>'s head so a stale local ref never wins over the
             # remote's actual head.
-            add_result = _git(["worktree", "add", str(target_path), args.branch], root)
+            add_result = _git(["worktree", "add", str(target_path), branch], root)
             if add_result.returncode != 0:
                 sys.stderr.write(add_result.stderr)
-                return 1
+                sys.exit(1)
             reset_result = _git(
-                ["reset", "--hard", "origin/%s" % args.branch], str(target_path),
+                ["reset", "--hard", "origin/%s" % branch], str(target_path),
             )
             if reset_result.returncode != 0:
                 sys.stderr.write(reset_result.stderr)
-                return 1
+                sys.exit(1)
         elif branch_on_remote:
             # No local branch at all — create one tracking origin/<branch>, checked out at its
             # head, in the same worktree-add call.
             add_result = _git(
-                ["worktree", "add", "-b", args.branch, str(target_path), "origin/%s" % args.branch],
+                ["worktree", "add", "-b", branch, str(target_path), "origin/%s" % branch],
                 root,
             )
             if add_result.returncode != 0:
                 sys.stderr.write(add_result.stderr)
-                return 1
+                sys.exit(1)
         else:
             # Neither a worktree nor an origin branch — the resolver's fresh-work case: create a
             # new branch at origin/<base> (unchanged from prior behavior).
             add_result = _git(
-                ["worktree", "add", "-b", args.branch, str(target_path), "origin/%s" % args.base],
+                ["worktree", "add", "-b", branch, str(target_path), "origin/%s" % base],
                 root,
             )
             if add_result.returncode != 0:
                 sys.stderr.write(add_result.stderr)
-                return 1
+                sys.exit(1)
 
     _ensure_gitignore_entry(root)
 
@@ -574,34 +582,45 @@ def _cmd_ensure_work(args):
     if not hook_result["succeeded"]:
         # Fail-fast (matching v1's setup exit 1): the worktree exists but isn't ready — report the
         # failure with as much fact context as we already have, but do NOT compute/report
-        # dirty/unpushed/sha, since those facts are about a workspace ready for use.
-        emit_ok(payload={
+        # dirty/unpushed/sha, since those facts are about a workspace ready for use. This is the
+        # partial-but-honest payload the emit wrapper maps to exit 1 (setup.succeeded == False).
+        return {
             "op": "ensure",
             "kind": "work",
             "path": str(target_path),
-            "branch": args.branch,
-            "base_ref": args.base,
+            "branch": branch,
+            "base_ref": base,
             "reused": reused,
             "setup": hook_result,
-        })
-        return 1
+        }, [], None
 
     dirty = _is_dirty(str(target_path))
-    unpushed = _unpushed_commits(str(target_path), args.branch, args.base)
+    unpushed = _unpushed_commits(str(target_path), branch, base)
     sha = _current_sha(str(target_path))
 
-    emit_ok(payload={
+    return {
         "op": "ensure",
         "kind": "work",
         "path": str(target_path),
-        "branch": args.branch,
-        "base_ref": args.base,
+        "branch": branch,
+        "base_ref": base,
         "reused": reused,
         "dirty": dirty,
         "unpushed_commits": unpushed,
         "sha": sha,
         "setup": hook_result,
-    })
+    }, [], None
+
+
+def _cmd_ensure_work(args):
+    payload, notices, decision = _build_ensure_work(args.root, args.branch, args.base)
+    if decision is not None:
+        emit_needs_decision(decision, notices=notices)
+        return EXIT_OK
+    emit_ok(payload=payload, notices=notices)
+    # A setup-hook failure is an ok envelope but a non-zero process exit (v1's fail-fast exit 1).
+    if not (payload.get("setup") or {}).get("succeeded", True):
+        return 1
     return EXIT_OK
 
 
@@ -610,16 +629,22 @@ def _cmd_ensure_work(args):
 # ---------------------------------------------------------------------------
 
 
-def _cmd_ensure_read(args):
-    root = str(Path(args.root).resolve())
+def _build_ensure_read(root, ref):
+    """Pure ``ensure --read`` core (S8 pattern lock): create/refresh the detached read workspace at
+    ``origin/<ref>`` and return ``(payload, notices, decision)`` — **never emits**. ``ensure
+    --read`` has no root-freshness gate and no ``needs_decision`` path (it grounds directly at a
+    freshly fetched ``origin/<ref>``), so ``decision`` is always ``None`` here; the tuple shape is
+    kept uniform with every other retrofitted core. A hard `git` failure still ``sys.exit(1)`` with
+    faithful stderr and no envelope (§3 — unchanged)."""
+    root = str(Path(root).resolve())
 
-    fetch_result = _git(["fetch", "origin", args.ref], root)
+    fetch_result = _git(["fetch", "origin", ref], root)
     if fetch_result.returncode != 0:
         sys.stderr.write(fetch_result.stderr)
-        return 1
+        sys.exit(1)
 
-    target_path = _read_path(root, args.ref)
-    remote_ref = "origin/%s" % args.ref
+    target_path = _read_path(root, ref)
+    remote_ref = "origin/%s" % ref
 
     _ensure_gitignore_entry(root)
 
@@ -627,31 +652,39 @@ def _cmd_ensure_read(args):
         reset_result = _git(["reset", "--hard", remote_ref], str(target_path))
         if reset_result.returncode != 0:
             sys.stderr.write(reset_result.stderr)
-            return 1
+            sys.exit(1)
         # `reset --hard` only rewrites tracked content; it leaves untracked files (e.g. scratch
         # output a prior grounding read left behind) in place. A read workspace must be a pristine
         # view of exactly origin/<ref> on every ensure, so also discard untracked files/dirs.
         clean_result = _git(["clean", "-fd"], str(target_path))
         if clean_result.returncode != 0:
             sys.stderr.write(clean_result.stderr)
-            return 1
+            sys.exit(1)
         reused = True
     else:
         add_result = _git(["worktree", "add", "--detach", str(target_path), remote_ref], root)
         if add_result.returncode != 0:
             sys.stderr.write(add_result.stderr)
-            return 1
+            sys.exit(1)
         reused = False
 
     sha = _current_sha(str(target_path))
-    emit_ok(payload={
+    return {
         "op": "ensure",
         "kind": "read",
         "path": str(target_path),
-        "ref": args.ref,
+        "ref": ref,
         "reused": reused,
         "sha": sha,
-    })
+    }, [], None
+
+
+def _cmd_ensure_read(args):
+    payload, notices, decision = _build_ensure_read(args.root, args.ref)
+    if decision is not None:  # pragma: no cover — ensure --read has no decision path today
+        emit_needs_decision(decision, notices=notices)
+        return EXIT_OK
+    emit_ok(payload=payload, notices=notices)
     return EXIT_OK
 
 
@@ -660,22 +693,33 @@ def _cmd_ensure_read(args):
 # ---------------------------------------------------------------------------
 
 
-def _cmd_remove_work(args):
-    root = str(Path(args.root).resolve())
+def _build_remove_work(root, branch):
+    """Pure ``remove --work`` core (S8 pattern lock): tear down and remove the work worktree for
+    ``branch`` and return ``(payload, notices, decision)`` — **never emits**.
 
-    target_path = _work_path(root, args.branch)
+    Return contract (the type-level distinction the S8 retro asks for):
+      - ``decision is not None`` → ``AMBIGUOUS`` when the worktree is dirty or has unpushed commits
+        (architecture.md §6: "dirty or unpushed state is a decision, never a silent discard");
+        ``payload`` is ``None`` and the worktree is left in place.
+      - ``decision is None`` → success, carrying the removal receipt (or the ``removed: False,
+        reason: not_found`` no-op when nothing is there to remove).
+      - a hard `git` failure still ``sys.exit(1)`` with faithful stderr and no envelope (§3 —
+        unchanged).
+    """
+    root = str(Path(root).resolve())
+
+    target_path = _work_path(root, branch)
     worktrees = _list_worktrees(root)
     entry = _find_worktree_at_path(worktrees, target_path)
     if entry is None:
-        emit_ok(payload={
+        return {
             "op": "remove",
             "kind": "work",
-            "branch": args.branch,
+            "branch": branch,
             "path": str(target_path),
             "removed": False,
             "reason": "not_found",
-        })
-        return EXIT_OK
+        }, [], None
 
     dirty = _is_dirty(str(target_path))
     # remove --work has no --base (the subcommand signature is `remove --work <branch>` only), so
@@ -685,7 +729,7 @@ def _cmd_remove_work(args):
     # OVER-count for a story branch created off an unmerged epic branch that is itself ahead of
     # main (that epic's own commits would be included too) — a known, accepted narrow edge case,
     # since remove's CLI has no --base to give a tighter answer.
-    unpushed = _unpushed_commits(str(target_path), args.branch, ROOT_BRANCH)
+    unpushed = _unpushed_commits(str(target_path), branch, ROOT_BRANCH)
 
     if dirty or unpushed > 0:
         # architecture.md §6: "dirty or unpushed state is a decision, never a silent discard." The
@@ -696,11 +740,11 @@ def _cmd_remove_work(args):
         # failing or resource-releasing teardown must not run against a workspace we are about to
         # leave in place specifically so the operator can recover its uncommitted/unpushed state.
         hazard = "uncommitted changes" if dirty else "%d unpushed commit(s)" % unpushed
-        emit_needs_decision(needs_decision(
+        return None, [], needs_decision(
             AMBIGUOUS,
-            summary="work worktree for branch %r has %s — refusing to remove" % (args.branch, hazard),
+            summary="work worktree for branch %r has %s — refusing to remove" % (branch, hazard),
             context={
-                "branch": args.branch,
+                "branch": branch,
                 "path": str(target_path),
                 "dirty": dirty,
                 "unpushed_commits": unpushed,
@@ -710,24 +754,31 @@ def _cmd_remove_work(args):
                 "commit or discard the uncommitted changes, then re-run remove --work",
                 "remove the worktree manually if the state is intentionally being discarded",
             ],
-        ))
-        return EXIT_OK
+        )
 
     teardown_result = _run_teardown_hooks(root, str(target_path))
 
     remove_result = _git(["worktree", "remove", str(target_path)], root)
     if remove_result.returncode != 0:
         sys.stderr.write(remove_result.stderr)
-        return 1
+        sys.exit(1)
 
-    emit_ok(payload={
+    return {
         "op": "remove",
         "kind": "work",
-        "branch": args.branch,
+        "branch": branch,
         "path": str(target_path),
         "removed": True,
         "teardown": teardown_result,
-    })
+    }, [], None
+
+
+def _cmd_remove_work(args):
+    payload, notices, decision = _build_remove_work(args.root, args.branch)
+    if decision is not None:
+        emit_needs_decision(decision, notices=notices)
+        return EXIT_OK
+    emit_ok(payload=payload, notices=notices)
     return EXIT_OK
 
 
@@ -736,9 +787,12 @@ def _cmd_remove_work(args):
 # ---------------------------------------------------------------------------
 
 
-def _cmd_gc(args):
-    root = str(Path(args.root).resolve())
-    max_age_seconds = args.max_age * 86400
+def _build_gc(root, max_age):
+    """Pure ``gc`` core (S8 pattern lock): age out ``ro-*`` read workspaces older than ``max_age``
+    days (work worktrees are never touched) and return ``(payload, notices, decision)`` — **never
+    emits**. ``gc`` has no ``needs_decision`` path, so ``decision`` is always ``None`` here."""
+    root = str(Path(root).resolve())
+    max_age_seconds = max_age * 86400
     now = time.time()
 
     worktrees = _list_worktrees(root)
@@ -761,12 +815,17 @@ def _cmd_gc(args):
         else:
             skipped.append(str(entry["path"]))
 
-    emit_ok(payload={
+    return {
         "op": "gc",
-        "max_age_days": args.max_age,
+        "max_age_days": max_age,
         "removed": removed,
         "skipped": skipped,
-    })
+    }, [], None
+
+
+def _cmd_gc(args):
+    payload, notices, _decision = _build_gc(args.root, args.max_age)
+    emit_ok(payload=payload, notices=notices)
     return EXIT_OK
 
 
@@ -775,12 +834,26 @@ def _cmd_gc(args):
 # ---------------------------------------------------------------------------
 
 
+def _build_root_status(root):
+    """Pure ``root-status`` core (S8 pattern lock): run the root-freshness protocol and return
+    ``(payload, notices, decision)`` — **never emits**. On a freshness failure the ``ROOT_*``
+    decision rides in ``decision`` (``payload`` is ``None``); on success the fresh-SHA status rides
+    in ``payload``. A hard `git` failure (e.g. ``fetch`` itself failing) still raises out of
+    ``_root_freshness`` (§3 — unchanged)."""
+    root = str(Path(root).resolve())
+    outcome = _root_freshness(root)
+    if isinstance(outcome, dict):
+        return None, [], outcome
+    _, sha = outcome
+    return {"op": "root-status", "root": root, "branch": ROOT_BRANCH, "sha": sha}, [], None
+
+
 def _cmd_root_status(args):
-    root = str(Path(args.root).resolve())
-    sha = _check_root_freshness_or_emit(root)
-    if sha is None:
+    payload, notices, decision = _build_root_status(args.root)
+    if decision is not None:
+        emit_needs_decision(decision, notices=notices)
         return EXIT_OK
-    emit_ok(payload={"op": "root-status", "root": root, "branch": ROOT_BRANCH, "sha": sha})
+    emit_ok(payload=payload, notices=notices)
     return EXIT_OK
 
 
@@ -789,16 +862,24 @@ def _cmd_root_status(args):
 # ---------------------------------------------------------------------------
 
 
-def _cmd_lint(args):
-    root = str(Path(args.root).resolve())
-    phase_present, commands = _discover_hook_commands(root, args.phase)
-    emit_ok(payload={
+def _build_lint(root, phase):
+    """Pure ``lint`` core (S8 pattern lock): discover the ``<!-- worktree-<phase> -->`` block's
+    commands (no execution, no worktree) and return ``(payload, notices, decision)`` — **never
+    emits**. ``lint`` has no ``needs_decision`` path, so ``decision`` is always ``None`` here."""
+    root = str(Path(root).resolve())
+    phase_present, commands = _discover_hook_commands(root, phase)
+    return {
         "op": "lint",
-        "phase": args.phase,
+        "phase": phase,
         "phase_present": phase_present,
         "command_count": len(commands),
         "would_run": commands,
-    })
+    }, [], None
+
+
+def _cmd_lint(args):
+    payload, notices, _decision = _build_lint(args.root, args.phase)
+    emit_ok(payload=payload, notices=notices)
     return EXIT_OK
 
 

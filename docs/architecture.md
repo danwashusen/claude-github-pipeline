@@ -78,6 +78,18 @@ script, extend a script — never inline the operation in a prompt. Prep scripts
 executors **in-process** (module imports and function calls), so a session's state assembly is
 one Python process, not a subprocess chain.
 
+**The pure-core / thin-emit-wrapper pattern.** Every executor exposes a **pure, non-emitting core**
+— `build_*(...) -> (payload, notices, decision | None)` — and its `main()` / `run_*` is a thin emit
+wrapper over that core. `decision is None` means success (the caller uses `payload` + `notices`);
+`decision is not None` is a `needs_decision` outcome the caller propagates; a partial-but-honest
+degradation rides in `notices`, and a hard error still exits non-zero with stderr and no envelope
+(the §3 contract). A prep script calls the cores **directly** and acts on the returned `decision`
+channel, emitting exactly one envelope of its own — **no `redirect_stdout` capture** of another
+script's stdout. `parse.py` (`parse_*`) and `gh_gather.run(stream=)` are the reference shapes; the
+S6 pilot's `redirect_stdout` bridge — needed only while `gh_pr_gather` / `workspace` / `config_block`
+still emitted-and-exited with no returnable core — was pilot-only and is retired (§4/§6 pilot;
+[docs/specs/baseline.md](specs/baseline.md) §5).
+
 ## §3 The envelope contract
 
 Every script emits exactly one JSON envelope on stdout.
@@ -336,9 +348,20 @@ census greps.
 - **Coverage bar:** every script's happy path, every §3 decision code it can emit, and envelope
   schema conformance (shared assertion helpers) for every emitting script.
 - **Prompt-side validators** (no offline harness exists for prose): the contract-token census
-  and banned-pattern greps from `CLAUDE.md`, extended with: zero old-name hits, zero
-  `git show` / `git grep <ref>` in `skills/`, zero raw `gh` invocations (write or gather) in
-  `skills/`.
+  and banned-pattern greps from `CLAUDE.md`, extended with: zero old-name hits, plus the two
+  drift-class validators below.
+  - **Raw-`gh` rule (the §7 rule-7 form).** Zero raw `gh` **write / fetch-envelope** invocations in
+    `skills/` — any `gh` op that *has* a bundled script (writes → `gh_persist.py`; fetch-envelopes →
+    `gh_gather.py` / `gh_pr_gather.py`) must go through it, never a hand-rolled `gh`. **Excepting the
+    scriptless `gh pr merge` and `gh pr ready --undo` executors** (no `gh_persist.py` op covers them)
+    — these two are sanctioned raw-`gh` executors, not violations, because the behaviors they
+    implement are spec'd in [docs/specs/evaluator.md](specs/evaluator.md): merge execution
+    (`gh pr merge`, its "Merge execution" row) and the soft-reject draft-flip on Needs Revision /
+    Reject ("flips PR to draft," its merge-approval decision-gate row). §7 rule 7 is the source of
+    truth for which ops are script-backed.
+  - **`git`-ref rule (ref-arithmetic-scoped).** Zero `git show <ref>:<path>` / `git grep <ref>` in
+    `skills/` — a bare `git show <commit>` single-commit diff view is permitted; only the
+    `<ref>:<path>` extraction (and `git grep <ref>`) is the banned ref-arithmetic form.
 
 ## §11 Migration & coexistence
 
@@ -372,7 +395,7 @@ not a deviation.
 | Root is never written; skills never branch/commit/stash there | trust topology (§6) | `workspace.py` decisions + prompt invariant |
 | Gate config is read only at the recorded root `main` SHA, never from a PR head | a PR must not weaken its own gates (§6) | prep scripts + tests |
 | All tracked-file changes land via PR | write-protected `main` | prompt invariant + review |
-| No ref arithmetic, no raw `gh` writes, no ambient cwd in prompts | the drift class the rewrite exists to kill | §10 prompt validators |
+| No ref arithmetic, no raw `gh` writes, no ambient cwd in prompts | the drift class the rewrite exists to kill | §10 prompt validators (carve-outs in §10: `gh pr merge` / `gh pr ready --undo`; bare `git show <commit>`) |
 | Contract tokens are frozen (marker strings, op names, closed sets) | cross-skill/GitHub parse compatibility | census greps (§10) |
 | Skills are stack-agnostic (gated integrations + ≥2-stack examples only) | multi-stack product | banned-pattern greps (§10) |
 | Session-per-skill; no autonomous stage chaining | context isolation is the design | prompt invariant + review |

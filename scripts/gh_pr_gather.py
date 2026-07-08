@@ -159,18 +159,36 @@ def _matching_markers(comments, marker):
     return [c for c in comments if isinstance(c.get("body"), str) and c["body"].startswith(marker)]
 
 
-def run(pr, repo, marker=None, scratch_dir=None, with_diff=False, with_line_comments=False, cwd=None):
-    """Perform the GATHER_PR fetch and return the built envelope dict (does not emit/exit) — the
-    testable core, separated from ``main``'s argv/exit-code plumbing so unit tests can call this
-    directly when they don't need a full subprocess round-trip.
+def build_pr_facts(
+    pr, repo, marker=None, scratch_dir=None, with_diff=False, with_line_comments=False, cwd=None
+):
+    """Pure ``GATHER_PR`` core (architecture.md §2's pure-core pattern, S8 pattern lock): perform
+    the fetch and return ``(payload, notices, decision)`` — **never emits, never exits** (no
+    ``print`` / ``emit_ok`` / ``emit_needs_decision``). This is the composable surface
+    ``prep_evaluator`` (and every later prep) calls directly, retiring the S6 ``redirect_stdout``
+    bridge.
+
+    Return contract (the type-level distinction the S8 retro asks for):
+      - ``decision is None`` → success; the caller uses ``payload`` (the §4 facts dict) + ``notices``.
+      - ``decision is not None`` → a ``needs_decision`` outcome (a ``pipelib.decisions`` code dict —
+        ``AUTH_REQUIRED`` or ``MARKER_AMBIGUOUS``); ``payload`` is ``None`` and the caller propagates
+        the decision to its single emitted envelope.
+      - a hard `gh`/`git` failure still ``sys.exit(1)`` with the faithful stderr and no envelope (§3
+        exit-code contract — unchanged); this is not a returnable ``decision``, it is a process
+        failure.
+
+    ``notices`` is always a list (empty on the success paths this core currently has — kept in the
+    return tuple so the shape matches every other retrofitted core and a future non-blocking
+    degradation has a channel without a signature change).
 
     ``cwd`` is the explicit working directory passed to every ``gh`` call (per the S21 brief's cwd
     discipline: never rely on ambient cwd — every subprocess call is scoped by an explicit ``cwd``
     and/or ``--repo``).
     """
+    notices = []
     view_result = _fetch_view(pr, repo, cwd)
     if view_result.auth_required:
-        return emit_needs_decision(_auth_required_decision(view_result))
+        return None, notices, _auth_required_decision(view_result)
     if view_result.returncode != 0:
         sys.stderr.write(view_result.stderr)
         sys.exit(1)
@@ -180,7 +198,7 @@ def run(pr, repo, marker=None, scratch_dir=None, with_diff=False, with_line_comm
     if marker:
         markers_result = _fetch_markers(pr, repo, marker, cwd)
         if markers_result.auth_required:
-            return emit_needs_decision(_auth_required_decision(markers_result))
+            return None, notices, _auth_required_decision(markers_result)
         if markers_result.returncode != 0:
             sys.stderr.write(markers_result.stderr)
             sys.exit(1)
@@ -191,7 +209,9 @@ def run(pr, repo, marker=None, scratch_dir=None, with_diff=False, with_line_comm
     # v1 silently picked .[0] here). Detected before any diff/line-comments fetch or spill, so an
     # ambiguous state never partially spills scratch files the caller then has to clean up.
     if len(matched_markers) > 1:
-        return emit_needs_decision(
+        return (
+            None,
+            notices,
             needs_decision(
                 MARKER_AMBIGUOUS,
                 summary="more than one PR comment matches marker prefix %r" % marker,
@@ -204,7 +224,7 @@ def run(pr, repo, marker=None, scratch_dir=None, with_diff=False, with_line_comm
                     ],
                 },
                 options=["delete the stale duplicate", "pick the candidate to treat as canonical"],
-            )
+            ),
         )
 
     diff_bytes = 0
@@ -213,7 +233,7 @@ def run(pr, repo, marker=None, scratch_dir=None, with_diff=False, with_line_comm
     if with_diff:
         diff_result = _fetch_diff(pr, repo, cwd)
         if diff_result.auth_required:
-            return emit_needs_decision(_auth_required_decision(diff_result))
+            return None, notices, _auth_required_decision(diff_result)
         if diff_result.returncode != 0:
             sys.stderr.write(diff_result.stderr)
             sys.exit(1)
@@ -234,7 +254,7 @@ def run(pr, repo, marker=None, scratch_dir=None, with_diff=False, with_line_comm
     if with_line_comments:
         lc_result = _fetch_line_comments(pr, repo, cwd)
         if lc_result.auth_required:
-            return emit_needs_decision(_auth_required_decision(lc_result))
+            return None, notices, _auth_required_decision(lc_result)
         if lc_result.returncode != 0:
             sys.stderr.write(lc_result.stderr)
             sys.exit(1)
@@ -336,7 +356,28 @@ def run(pr, repo, marker=None, scratch_dir=None, with_diff=False, with_line_comm
         )
         payload["marker_comment_count"] = len(matched_markers)
 
-    return emit_ok(payload=payload)
+    return payload, notices, None
+
+
+def run(pr, repo, marker=None, scratch_dir=None, with_diff=False, with_line_comments=False, cwd=None):
+    """Thin emit wrapper over :func:`build_pr_facts` (S8 pattern lock: ``main``/``run`` is a thin
+    emit wrapper, the core is pure). Calls the core, then emits **exactly** the envelope this
+    module emitted before the retrofit — a ``needs_decision`` when the core returns a decision, an
+    ``ok`` otherwise — so the wire output is byte-identical for every input. Returns the emitted
+    envelope dict (does not exit), matching its prior signature for any caller that captured it.
+    """
+    payload, notices, decision = build_pr_facts(
+        pr,
+        repo,
+        marker=marker,
+        scratch_dir=scratch_dir,
+        with_diff=with_diff,
+        with_line_comments=with_line_comments,
+        cwd=cwd,
+    )
+    if decision is not None:
+        return emit_needs_decision(decision, notices=notices)
+    return emit_ok(payload=payload, notices=notices)
 
 
 def _resolve_threshold_for_report():
