@@ -289,7 +289,7 @@ comment, review comment, delivery-log append, handoff; all I/O via scripts direc
       `skills/evaluator/`.
 - [x] Frontmatter model/effort pins carried verbatim from v1.
 - [x] Every operator gate in `specs/evaluator.md` is present, or its absence traces to a PRD §.
-- [ ] Parity run recorded in `docs/specs/parity/evaluator.md`: standard approve + merge; story
+- [x] Parity run recorded in `docs/specs/parity/evaluator.md`: standard approve + merge; story
       merge (delivery-log append + epic checkbox); red-CI rejection; `ask`-policy gate.
 - [x] Router + largest playbook line count recorded there and is at most half the v1 `SKILL.md`
       count in `baseline.md` ([prd.md §10](prd.md)).

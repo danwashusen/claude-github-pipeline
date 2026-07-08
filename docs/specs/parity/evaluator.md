@@ -476,14 +476,124 @@ asks `header: "Approve PR"`, posts the review as the **operator's** decision wit
 operator-attribution header, and merges only on Approve (or prints the command on
 DIRTY/BLOCKED/deferred). `review: APPROVE (operator)`.
 
-- [ ] v1 run captured:
-- [ ] v2 run captured:
-- [ ] Merge gate asked with the fixed option set; review posted operator-attributed (schema-identical header): 
-- [ ] Operator override path exercised (Approve a soft-reject and/or Reject an approve), recorded on the PR:
-- [ ] Gates match; handoff schema-valid; ≤1 state-assembly call:
-- [ ] Divergences:
+> **Run recorded 2026-07-05** on `danwashusen/gh-pipeline-sandbox`. **Twin fixture:** two equivalent
+> passing standard PRs, each adding a distinct-file `welcome(name)` helper and `Closes`-linking its own
+> seeded `bug` issue, base `main`, green CI (no `.ci-force-red`). **Twin-A → v1** = PR #24 / issue #21
+> (`parity/s4-twin-a`, `src/welcome_a.py`); **Twin-B → v2** = PR #25 / issue #22 (`parity/s4-twin-b`,
+> `src/welcome_b.py`, rebased onto post-twin-A `main` so both PRs were `CLEAN`/single-commit at eval
+> time). A **third solo v2 PR** exercises the override path: PR #26 / issue #23
+> (`parity/s4-override`, `src/salute_o.py`, `salute(name)`), rebased onto post-twin-B `main`. Unlike
+> S1/S2, the sandbox's `<!-- pr-evaluator-merge-policy -->` was **left at its `- standard: ask` default
+> — that *is* this scenario's condition**, so the merge-approval gate fired naturally on every run (no
+> per-run `auto` override). Runs were **interactive** (not headless `-p`) precisely because the `ask`
+> gate needs a live operator to answer `header: "Approve PR"`. Two constraints apply **identically to
+> both versions** (parity-neutral): (a) single-account sandbox ⇒ all PRs self-authored ⇒ both correctly
+> downgraded `--approve`→`--comment` (GitHub 422s self-approve), the operator decision authoritative
+> and the `review:` marker unchanged; (b) each PR carries an unticked, un-annotated DoD → the
+> historical walk-the-item DoD path (no `## DoD verification` section — correct omission).
+
+- [x] v1 run captured: PR #24, standard, `ask` policy, verdict **APPROVE**. Review **deferred** to the
+      §12.0 gate (§11 deferral rule — not posted at verdict time). §12.0 **merge-approval gate fired**
+      (`header: "Approve PR"`; the pre-gate recap named the PR/verdict/squash plan) → operator chose
+      **Approve**. Writes: health-cache comment (`issuecomment-4886042341`, first-line `all green ✅` at
+      `34e8f04`), the deferred review posted **operator-attributed** (`COMMENTED`, self-authored;
+      header `**Operator decision: Approve** — operator action 2026-07-05T12:33:36Z` / rationale
+      `Confirmed the evaluator's APPROVE verdict.` / frozen footer `_Recorded by `github-pr-evaluator`
+      on behalf of the human operator._`), squash-merge → `main@90f9923` (subject `fix: add
+      welcome(name) helper (S4 twin-a) (#24)`), issue #21 auto-closed. Terminal handoff
+      (`review: APPROVE (operator)` · `merge: squash → main@90f9923`).
+- [x] v2 run captured: PR #25, standard, `ask` policy, verdict **APPROVE**. Review **deferred** — the
+      skill showed the verdict + merge plan and explicitly gated ("Standard merge policy is `ask`, so
+      this is your call at the gate"), staging `review.md` without posting (spine S7 defer rule). S7-gate
+      **refreshed** first (`prep_evaluator.py --refresh` — clean, no external action), then asked
+      `header: "Approve PR"` → operator **Approve**. Writes: health-cache comment
+      (`issuecomment-4886137100`, `all green ✅` at `a269c83`), the deferred review posted
+      **operator-attributed** (`COMMENTED`, self-authored; header `**Operator decision: Approve** —
+      operator action 2026-07-05T13:05:19Z` + the same frozen `github-pr-evaluator` footer, body leading
+      `**Health:**` → `Verdict: APPROVE` → five-dimension assessment), squash-merge → `main@a07eb90`
+      (subject `fix: add welcome(name) helper (S4 twin-b) (#25)`), issue #22 auto-closed. **Terminal
+      handoff** (`review: APPROVE (operator)` · `merge: squash → main@a07eb90` · Cleanup `worktree
+      force-removed; teardown ran; scratch purged`) — the `standard.md` shape. Startup = **1**
+      `prep_evaluator.py` call (+1 pre-merge `--refresh`, the router-prescribed currency re-check).
+- [x] Merge gate asked with the fixed option set; review posted operator-attributed (schema-identical
+      header): **Yes.** Both v1 §12.0 and v2 spine S7-gate ask the **identical** gate — `header:
+      "Approve PR"`, the `question` naming the PR + its URL + a one-line verdict/strategy recap, and the
+      **fixed option set Approve / Needs Revision / Reject** (Other → deferred-merge). Both **defer** the
+      review under `ask` and post it only after the operator decides, with a **schema-identical**
+      operator-attribution header (`**Operator decision: <decision>** — operator action <ISO-8601 UTC>` /
+      rationale / the **frozen** `_Recorded by `github-pr-evaluator` on behalf of the human operator._`
+      footer — preserved verbatim despite the v2 rename, a prd.md §7 compatibility token). The v2 #26
+      gate card (captured verbatim from the run transcript) names the PR + URL + `verdict APPROVE …
+      Recommended merge: squash → main, subject …` — matching the spec.
+- [x] Operator override path exercised (Reject an approve), recorded on the PR: **Yes** (PR #26, v2). The
+      automated verdict was **APPROVE** (all five dimensions clean, health green at `10f5a02`); the
+      review was **deferred**; the S7-gate fired and the operator chose **Reject**, overriding the
+      verdict. v2 posted the review **operator-attributed as a Reject** (`COMMENTED`, self-authored;
+      header `**Operator decision: Reject** — operator action 2026-07-05T13:20:27Z`, rationale carrying
+      the spec-mandated **`Overrides this run's automated verdict (APPROVE).`** line + frozen footer),
+      flipped PR #26 back to **draft** (`gh pr ready 26 --undo`), ran **no merge** (`main` unchanged at
+      `a07eb90`; issue #23 stays open), and emitted the **re-route handoff** (`review: COMMENT (operator:
+      reject)` · `merge: skipped (verdict)`, **no Cleanup line**) → `/github-pipeline:resolver continue
+      #26`. The override is durably recorded on the PR. (Note: "Approve a soft-reject" is **unreachable**
+      by design in both versions — a COMMENT/soft-reject verdict short-circuits *before* the gate, so the
+      gate only ever adjudicates an APPROVE; "Reject an approve" is the reachable override, and it is what
+      was exercised.)
+- [x] Gates match; handoff schema-valid; ≤1 state-assembly call: **Yes.** Gate set matches exactly —
+      each run fired **one** merge-approval gate (`header: "Approve PR"`, identical option set); no other
+      gates (default-base PRs link cleanly, health green, no `/review`/reviewer gates). All three v2
+      handoffs validate against `_shared/handoff-format.md`: #25 the **standard-terminal** shape, #26 the
+      **operator soft-reject → re-route** shape (`handoff-renderings.md` "Operator soft-reject (Needs
+      Revision / Reject)"); all closed-set markers valid (`APPROVE (operator)`, `COMMENT (operator:
+      reject)`, `merge: squash → main@<7-sha>` / `merge: skipped (verdict)`, `health: ✅ at <7-sha>`).
+      v2 startup state assembly = **1** `prep_evaluator.py` call per run (§9.2 satisfied; the pre-merge
+      `--refresh` re-derives only volatile PR/CI facts); **0** sub-agents (direct `prep_evaluator.py` +
+      `gh_persist.py`, the §9.1 "no intermediary relay" design).
+- [x] Divergences (each traced to a PRD § or filed as a defect):
+  - **(deliberate rename, schema-valid) Handoff next-command namespace.** v2 re-routes #26 to
+    `/github-pipeline:resolver continue #26` — the v1→v2 skill rename. The v2 `resolver` skill does not
+    exist until S9/S10, so a live session reports "Unknown command" until the resolver cutover lands;
+    the operator ran the current v1 `/github-pipeline:github-issue-resolver continue #26` instead. Benign
+    forward-looking namespace, identical device to S1–S3; parity-neutral.
+  - **(free prose, non-consumed) Health-cache `Source:` value.** v1 #24 `GitHub statusCheckRollup` vs v2
+    #25 `COMMANDS.md / CLAUDE.md` (frozen template default). Same `Source:` field, same marker /
+    `all green ✅` / `SHA:` / `TIER: full`; read by no consumer beyond `SHA:`. Identical to the S1/S3
+    finding.
+  - **(v2 solo behavior, not a v1↔v2 comparison) Local byte-compile on the CI-green path (#26).** On
+    #26's green-CI path v2 additionally ran `python3 -m compileall -q .` to ground the health-cache with
+    an honest command row (the configured `pyflakes` being unavailable — the same substitution device as
+    S3), rather than taking the strict spine-S3.2 skip-to-cache short-circuit it took in S1/S2. Same
+    `HEALTH_OK=true`; extra work within model discretion. #26 is a solo v2 override PR (no v1 twin), so
+    this is not a parity comparison — noted for completeness.
+  - **(out of S7 scope) Downstream resolver card.** After the #26 re-route the operator invoked the
+    resolver (`github-issue-resolver continue #26`); on a **no-reason** Reject with clean code it
+    correctly asked a "rework / close / re-submit" decision card rather than fabricating changes. That is
+    the *resolver's* behavior (not under test at S7 — the evaluator's re-route + operator-attributed
+    Reject were both correct and complete) and the operator declined it. No evaluator-side impact.
+
+**Verdict: PASS.** Under the sandbox's default `- standard: ask` policy, both versions **deferred** the
+review, fired the **identical** merge-approval gate (`header: "Approve PR"`, fixed option set), and
+posted the review as the **operator's** decision with a **schema-identical** operator-attribution header
+(frozen `github-pr-evaluator` footer preserved). On operator **Approve** v2 squash-merged and rendered
+`review: APPROVE (operator)` (terminal); on operator **Reject** (overriding an APPROVE) v2 posted the
+operator-attributed Reject with the `Overrides this run's automated verdict (APPROVE)` note, flipped the
+PR back to draft, ran no merge, and re-routed — the override durably recorded on the PR. Gate set
+identical; handoffs schema-valid; v2 startup = one state-assembly call. Every divergence traces to the
+deliberate v1→v2 rename, free prose within the shared schema, a solo-run v2 judgment, or downstream
+(out-of-scope) resolver behavior — **no unexplained divergence**.
 
 ## Go/no-go (S8 input)
 
-- [ ] All four scenarios pass with **zero unexplained divergences**.
-- [ ] Result summary (accepted / blocking finding + remediation step):
+- [x] All four scenarios pass with **zero unexplained divergences**. Scenario 1 (standard approve +
+      merge) **PASS**, Scenario 2 (story merge — delivery-log + epic checkbox) **PASS**, Scenario 3
+      (red-CI rejection) **PASS**, Scenario 4 (`ask`-policy merge gate + operator override) **PASS**.
+- [x] Result summary (accepted / blocking finding + remediation step): **Accepted — go.** Across all
+      four scenarios the v2 `evaluator` produces persisted artifacts (health-cache comment, PR review
+      incl. operator-attribution header, delivery-log line, epic checkbox) that are **schema-identical**
+      to v1 and **cross-consumable in both directions** by the shared readers; the same genuine decisions
+      are gated (merge-approval, none-else under these fixtures); every handoff validates against
+      `_shared/handoff-format.md`; and startup is **one** `prep_evaluator.py` state-assembly call
+      (§9.2). No blocking finding. All recorded divergences trace to a PRD § (§8.3 / §9.1 / §9.2), a
+      GitHub behavior (task-list auto-tick, self-approve 422, non-default-base `closingIssuesReferences`),
+      the deliberate v1→v2 skill rename, free prose within the shared schema, or an identical run-time
+      environment substitution. The S8 go/no-go input is satisfied: **S7 parity recorded with zero
+      unexplained divergences.**
