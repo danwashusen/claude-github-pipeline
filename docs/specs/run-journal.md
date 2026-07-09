@@ -415,8 +415,7 @@ sandbox, or delete anything outside the working tree and the sandbox.
 
 ### S10 — Resolver skill rewrite — PARTIAL (automatable work done + committed; live legs PENDING) (2026-07-09)
 
-- **Commit:** _backfilled post-commit_ (`S10: skills/resolver/ — resolver cutover + create-pr write
-  path`).
+- **Commit:** `806f883` (`S10: skills/resolver/ — resolver cutover + create-pr write path`).
 - **Status:** **5 of 7 DoD boxes ticked** (1, 2, 4, 5, 7). **Box 3 (live in-scope-blocked refusal)
   and box 6 (the four live parity runs) are operator-gated and REMAIN unticked** — the run's second
   hard stop. S11 does not start until they close.
