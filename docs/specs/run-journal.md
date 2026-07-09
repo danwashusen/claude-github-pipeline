@@ -465,6 +465,26 @@ sandbox, or delete anything outside the working tree and the sandbox.
   orchestrator-authorized extension → orchestrator sanity (646 both platforms) → 1 opus reviewer
   (PASS, 0 actionable, 3 advisories) → authorized §10/§12 amendment → reviewer delta re-verify
   (**PASS holds; advisory 1 resolved**). **1 fix round.**
+- **Live-parity fix round (2026-07-10, commit** _backfilled below_**):** the operator's scenario
+  runs surfaced three v2 defects, fixed + re-reviewed (**PASS holds**, 652/652 both platforms):
+  - **D2 (blocking — scenario 1 FAIL):** the spine's fresh-PR staging omitted the closing
+    keyword v1 mandates (SKILL.md:888) → issue never auto-closes, evaluator's
+    `closingIssuesReferences` gate trips. Fixed: S5 mandates `Fixes #<issue>` as the body's
+    first line; the S1 spec's Artifacts-written table gained the missing standard/story
+    closing-keyword row (a **capture-gap correction**, quote byte-verbatim per the reviewer —
+    the pre-existing row covered only epic-integration); 3 regression tests incl. an
+    end-to-end dry-run pinning body + title. S6's phase-tick guard byte-untouched.
+  - **D4 (upgraded cosmetic → fidelity):** v1 SKILL.md:885 literally mandates
+    `--title "Fix: <summary> (#<issue-number>)"`; the spine is now faithful (feeds the
+    evaluator's squash-subject derivation).
+  - **D1 (scenario 3, low):** `handoff-renderings.md` gained the question-type terminal shape
+    per `_shared/handoff-format.md:33` (no plan/research markers, `Audience:` line; `_shared`
+    untouched); `comment-only.md` dispatches by the issue's own type; a conflated worked
+    example corrected. 3 tests, fence-scoped (verified load-bearing by the reviewer).
+  - Scenario records annotate FIXED **without self-certifying a live PASS** — the operator's
+    re-run closes them. Carried advisory: `_shared/handoff-format.md`'s question-type rule is
+    labeled "(drafter only)"; a second emitter now exists — relabel on the next legitimate
+    `_shared` touch.
 
 ### Session-mechanics note (the 2026-07-04 session)
 

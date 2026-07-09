@@ -498,6 +498,53 @@ class PrCreateContractTests(unittest.TestCase):
                 "%s must route PR-open through gh_persist.py create-pr" % playbook,
             )
 
+    def test_spine_mandates_the_closing_keyword_on_fresh_pr_open(self):
+        # Filed defect (S10 live parity, scenario 1 D2 — docs/specs/parity/resolver.md): v1
+        # (SKILL.md:888) mandates the PR body carry `Fixes #<number>` (or `Closes #<number>`) so
+        # GitHub auto-links and auto-closes on merge; v2's spine had listed every OTHER PR-body
+        # section (Doc grounding / Plan / Audit override / Plan override / Phase tracker /
+        # Predecessor) but omitted this mandate, so v2 PRs never auto-closed. Regression guard: the
+        # spine's fresh-mode PR-open prose must state the mandate.
+        text = (PLAYBOOKS_DIR / "resolve-spine.md").read_text(encoding="utf-8")
+        self.assertRegex(
+            text,
+            r"Fixes #<issue-number>.{0,40}Closes\s*\n?\s*#<issue-number>",
+            "resolve-spine.md must mandate the closing keyword (Fixes/Closes #<issue-number>) on "
+            "fresh-PR open, per v1 SKILL.md:888",
+        )
+        self.assertIn(
+            "must be `Fixes #<issue-number>`",
+            text,
+            "the closing keyword must be stated as mandatory, not optional prose",
+        )
+
+    def test_spine_mandates_the_v1_fresh_pr_title_shape(self):
+        # D4 (checked, ruled MANDATED): v1 SKILL.md:885 passes a literal --title "Fix: <summary>
+        # (#<issue-number>)" to `gh pr create` -- not free prose, a command-line argument every
+        # fresh-PR-open takes. The spine must be faithful to that shape (it also feeds the
+        # evaluator's squash-subject derivation, which reads a Conventional-Commits-prefixed title).
+        text = (PLAYBOOKS_DIR / "resolve-spine.md").read_text(encoding="utf-8")
+        self.assertIn(
+            'Fix: <summary> (#<issue-number>)',
+            text,
+            "resolve-spine.md must mandate the v1 fresh-PR title shape, per SKILL.md:885",
+        )
+
+    def test_create_pr_dry_run_with_closing_keyword_and_mandated_title(self):
+        # End-to-end dry-run proof: the exact title shape + a body whose first line is the closing
+        # keyword round-trips cleanly through gh_persist.py create-pr.
+        proc, env = _run_persist(
+            [
+                "create-pr", "octo/widgets", "@BODY@",
+                "--title", "Fix: greet() returns a personalized greeting (#142)",
+                "--base", "main", "--head", "142-add-csv-export", "--dry-run",
+            ],
+            body_text="Fixes #142\n\n## Doc grounding\ncites architecture.md §3\n",
+        )
+        self.assertEqual(proc.returncode, 0, msg=proc.stderr)
+        self.assertEqual(env.get("op"), "create-pr")
+        self.assertIn("Fix: greet() returns a personalized greeting (#142)", env["would_run"])
+
 
 class ArtifactRenderingByteCompatTests(unittest.TestCase):
     """S10 DoD box 2 (offline half): the DoD-projection annotation forms the resolver writes must diff
@@ -530,6 +577,93 @@ class ArtifactRenderingByteCompatTests(unittest.TestCase):
                 "dod-projection-rule.md must render the annotation form %r byte-for-byte (it "
                 "diverges from the S1 capture otherwise — box 2)" % form,
             )
+
+
+class QuestionTypeHandoffVariantTests(unittest.TestCase):
+    """Filed defect (S10 live parity, scenario 3 D1 — docs/specs/parity/resolver.md): a `question`-type
+    issue's terminal handoff must follow skills/_shared/handoff-format.md's question-type rule (omit
+    research:/plan: entirely, add an Audience: line) — v2 had rendered `· plan: ✗` and dropped
+    Audience:. Fixed in comment-only.md's Handoff section (dispatches by the issue's own type) +
+    handoff-renderings.md (a dedicated "Terminal — question-type issue" shape). These tests assert the
+    fix without editing _shared (render, don't restate)."""
+
+    RENDERINGS = REFERENCES_DIR / "handoff-renderings.md"
+    COMMENT_ONLY = PLAYBOOKS_DIR / "comment-only.md"
+
+    @staticmethod
+    def _fenced_blocks(path, fence="```"):
+        text = path.read_text(encoding="utf-8")
+        blocks, cur, inb = [], [], False
+        for line in text.splitlines():
+            if line.strip() == fence:
+                if inb:
+                    blocks.append("\n".join(cur))
+                    cur = []
+                    inb = False
+                else:
+                    inb = True
+                continue
+            if inb:
+                cur.append(line)
+        return blocks
+
+    def test_question_type_variant_present_and_shaped_per_shared_contract(self):
+        text = self.RENDERINGS.read_text(encoding="utf-8")
+        self.assertIn(
+            "## Terminal — question-type issue",
+            text,
+            "handoff-renderings.md must carry a dedicated question-type terminal shape",
+        )
+        # Isolate the actual RENDERED example (the fenced ## Handoff block) -- the surrounding prose
+        # legitimately explains the rule by naming the forbidden marker ("do not render `plan: ✗`
+        # here"), which must not itself trip a naive whole-section grep (same fence-scoping
+        # discipline as ContractTokenGateTests' raw-gh / ref-arithmetic checks).
+        rendered_blocks = [b for b in self._fenced_blocks(self.RENDERINGS) if "## Handoff" in b]
+        question_rendering = next(
+            (b for b in rendered_blocks if "· question" in b and "**Audience:**" in b), None
+        )
+        self.assertIsNotNone(
+            question_rendering, "the question-type section must contain a rendered ## Handoff example"
+        )
+        # The Issue: line for this shape must end at the type marker `· question` -- no plan:/research:
+        # segment at all (handoff-format.md:33: "the research: and plan: markers omitted").
+        self.assertRegex(
+            question_rendering,
+            r"\*\*Issue:\*\* #\d+ — [^\n]+ · open · question\s*\n",
+            "the question-type Issue: line must end at '· question' with no plan:/research: marker",
+        )
+        self.assertNotRegex(
+            question_rendering,
+            r"plan:\s*[✓✗]",
+            "the RENDERED question-type shape must never carry a plan: marker (handoff-format.md's "
+            "rule) -- prose explaining the rule is fine; the example itself must not regress",
+        )
+        self.assertIn(
+            "**Audience:**",
+            question_rendering,
+            "the question-type shape must carry the Audience: line per handoff-format.md",
+        )
+
+    def test_non_pr_resolution_shape_unchanged_for_build_types(self):
+        # The pre-existing "Terminal — non-PR resolution" shape (OQ refusal / triage / decline on a
+        # build-type issue) still renders its plan: marker -- only the question-type issue's own
+        # handoff omits it.
+        text = self.RENDERINGS.read_text(encoding="utf-8")
+        self.assertIn("## Terminal — non-PR resolution", text)
+        section = text.split("## Terminal — non-PR resolution", 1)[1].split(
+            "## Terminal — question-type issue", 1
+        )[0]
+        self.assertIn("plan:", section)
+
+    def test_comment_only_playbook_dispatches_by_issue_type(self):
+        text = self.COMMENT_ONLY.read_text(encoding="utf-8")
+        self.assertIn(
+            "question-type issue",
+            text,
+            "comment-only.md's Handoff section must route a genuine question-type issue to the "
+            "dedicated rendering, not the build-type Terminal — non-PR resolution shape",
+        )
+        self.assertIn("non-PR resolution", text)
 
 
 if __name__ == "__main__":

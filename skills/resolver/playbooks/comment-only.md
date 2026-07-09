@@ -40,9 +40,20 @@ ${CLAUDE_PLUGIN_ROOT}/scripts/gh_persist.py comment <owner/repo> issue <issue> \
 
 ## Handoff
 
-Read [`../references/handoff-renderings.md`](../references/handoff-renderings.md) and emit the
-**Terminal — non-PR resolution** shape: the `Issue:` line naming the issue's current state (no `PR:`
-line — none was opened, so it is omitted), `Next: (terminal — no follow-up skill)`, and a load-bearing
-`Why:` that states what was posted and why no code change was warranted. For an OQ / native-blocked
-refusal, the `Why:` names the blocking question `#<N>` and that resolving it (via the
-`question`-tracker path) unblocks a future resolver run. For a decline/duplicate close, name the reason.
+Read [`../references/handoff-renderings.md`](../references/handoff-renderings.md) and pick the shape by
+the issue's **own** type:
+
+- **The issue's type is `question`** (a genuine `question`-type issue, not merely a question-shaped
+  build issue) → emit the **Terminal — question-type issue** shape per
+  [`../../_shared/handoff-format.md`](../../_shared/handoff-format.md)'s question-type rule: the
+  `Issue:` line omits `research:`/`plan:` entirely (never render `plan: ✗` here) and a
+  `**Audience:**` line (comma-separated `audience:*` labels) follows immediately.
+- **Any other build type** (OQ / native-blocked refusal, triage/decline/duplicate close on a
+  `bug`/`feature`/`incomplete`/`story`/`epic`) → emit the **Terminal — non-PR resolution** shape: the
+  `Issue:` line naming the issue's current state and type (with its `plan:` marker), no `PR:` line
+  (none was opened, so it is omitted).
+
+Both shapes: `Next: (terminal — no follow-up skill)`, and a load-bearing `Why:` that states what was
+posted and why no code change was warranted. For an OQ / native-blocked refusal, the `Why:` names the
+blocking question `#<N>` and that resolving it (via the `question`-tracker path) unblocks a future
+resolver run. For a decline/duplicate close, name the reason.

@@ -176,20 +176,41 @@ verbatim.
 
 ## Terminal — non-PR resolution
 
-Comment-only answer, OQ / native-blocked refusal, triage-only re-labelling, or abandoned/declined work.
-No PR was opened; the handoff names the issue's current state and closes the pipeline for this run.
+Comment-only answer, OQ / native-blocked refusal, triage-only re-labelling, or abandoned/declined work
+on a **build** issue (`bug`/`feature`/`incomplete`/`story`/`epic`) whose thread the comment resolves
+without code. No PR was opened; the handoff names the issue's current state and closes the pipeline for
+this run.
 
 ```
 ## Handoff
 
-**Issue:** #142 — Should we add CSV export? · open · feature · plan: ✗
+**Issue:** #142 — Duplicate of the export feature · open · feature · plan: ✗
 
 **Next:** (terminal — no follow-up skill)
 
-**Why:** the resolver posted a clarifying comment in response to the question; no code change was warranted and no PR was opened. The issue stays open in its current state for the user (or a future resolver run) to take forward.
+**Why:** the resolver posted a comment identifying this as a duplicate of #138; no code change was warranted and no PR was opened. The issue stays open in its current state for the user (or a future resolver run) to take forward.
 ```
 
 For an OQ / native-blocked refusal, the `Why:` instead names the blocking `question` issue `#<N>` and
-that resolving it via the tracker unblocks a future resolver run. For abandoned / declined / duplicate
-outcomes, name the reason in the `Why:` (e.g. "the user declined to open a PR after the existing-work
-check surfaced a duplicate in #138").
+that resolving it via the tracker unblocks a future resolver run. For abandoned / declined outcomes,
+name the reason in the `Why:` (e.g. "the user declined to open a PR after the existing-work check
+surfaced a duplicate in #138").
+
+## Terminal — question-type issue
+
+The issue's own type is `question` — answered by a human in the thread, not built by the pipeline, so
+per [`../../_shared/handoff-format.md`](../../_shared/handoff-format.md) ("Question-type issue") its
+`Issue:` line omits the `research:`/`plan:` markers entirely (they don't apply) and carries no `plan`
+segment at all — do **not** render `plan: ✗` here, that marker is for build-type issues only — and a
+question-only `**Audience:**` line (comma-separated `audience:*` labels) follows immediately.
+
+```
+## Handoff
+
+**Issue:** #142 — Should we add CSV export? · open · question
+**Audience:** product
+
+**Next:** (terminal — no follow-up skill)
+
+**Why:** the resolver posted a clarifying comment answering (or narrowing) the question in the issue thread; no code change was warranted and no PR was opened. The issue stays open for the audience to weigh in (or close once satisfied).
+```

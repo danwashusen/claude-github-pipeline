@@ -16,25 +16,27 @@ half** the v1 `SKILL.md` line count. v1 `github-issue-resolver/SKILL.md` = **116
 | File | Lines |
 |---|---:|
 | `skills/resolver/SKILL.md` (router) | 128 |
-| `skills/resolver/playbooks/resolve-spine.md` (the shared spine — largest) | 177 |
+| `skills/resolver/playbooks/resolve-spine.md` (the shared spine — largest) | 184 |
 | `skills/resolver/playbooks/epic.md` | 114 |
-| `skills/resolver/playbooks/comment-only.md` | 48 |
+| `skills/resolver/playbooks/comment-only.md` | 59 |
 | `skills/resolver/playbooks/story.md` | 33 |
 | `skills/resolver/playbooks/standard.md` | 28 |
-| **router + largest playbook (the loaded set)** | **305** |
+| **router + largest playbook (the loaded set)** | **312** |
 
-**305 ≤ 584** ✅. Router **128 ≤ 150** ✅ (architecture.md §9 size bar). References are read on-demand
+**312 ≤ 584** ✅. Router **128 ≤ 150** ✅ (architecture.md §9 size bar). References are read on-demand
 and are not part of the loaded-prompt metric; recorded for completeness: `common-pitfalls.md` 240,
-`review-loop-sub-agent.md` 221 (carried from v1), `epic-flow.md` 220, `handoff-renderings.md` 195,
+`review-loop-sub-agent.md` 221 (carried from v1), `epic-flow.md` 220, `handoff-renderings.md` 216,
 `test-selection-sub-agent.md` 178 (carried), `issue-audit-prompt.md` 177 (carried),
 `retry-ladder.md` 181, `state-distiller-prompt.md` 106 (carried), `dod-projection-rule.md` 104,
 `follow-up-tracking.md` 92, `epic-baseline.md` 45.
 
-A standard/story session loads router (128) + `resolve-spine.md` (177) + one thin routed playbook
-(28–33) = **≤ 338**; the DoD's metric is *router + largest playbook* = 305 (the +7/+4 vs. the initial
-draft is the concrete `create-pr` invocation the write-path prose now names — see "PR-create write
-path" below). An epic session loads router + `epic.md` (114) = 242; a comment-only session router +
-`comment-only.md` (48) = 176. Each document fits one default `Read`.
+A standard/story session loads router (128) + `resolve-spine.md` (184) + one thin routed playbook
+(28–33) = **≤ 345**; the DoD's metric is *router + largest playbook* = 312 (the growth from the initial
+298 across this step's two live-parity-driven fix rounds: the concrete `create-pr` invocation the
+write-path prose now names, and the D2/D4 fixes below — the mandatory closing-keyword + title-shape
+lines). An epic session loads router + `epic.md` (114) = 242; a comment-only session router +
+`comment-only.md` (59, grown by the D1 question-type dispatch fix below) = 187. Each document fits one
+default `Read`.
 
 ## Playbook split (the §5-bar decision the Work says to record)
 
@@ -335,24 +337,32 @@ fresh sandbox clone per run, backgrounded stream-json log). The resolver opens a
         artifact intent; the mechanism change was called out up front. Not a defect (and orthogonal to D2 —
         `create-pr` writes whatever body it is handed; the missing keyword is the *staging* gap, not the
         script).
-      - **D4 — PR title convention (minor, cosmetic).** v1 title `Fix: salute(name, title) includes the
-        title honorific (#31)` follows the v1 `--title "Fix: <summary> (#<issue-number>)"` shape
-        ([`SKILL.md:885`](../../../skills/github-issue-resolver/SKILL.md)); v2 echoed the issue title verbatim
-        (`Bug: salute() ignores the title honorific (S10 scenario 1 twin-B)`) — no `Fix:`-shaped summary and
-        no `(#N)` reference. Free-prose title (schema-allowed to differ), but v2's `create-pr` title
-        discipline drifts from v1's convention. Low severity; folds into the same theme as D2 (v2's fresh-open
-        title/link discipline is under-specified).
+      - **D4 — PR title convention (CHECKED — v1 mandates a title shape; FIXED).** v1's `--title "Fix:
+        <summary> (#<issue-number>)"` is not free prose — it is the literal `gh pr create --title` argument
+        every fresh-PR open takes ([`SKILL.md:885`](../../../skills/github-issue-resolver/SKILL.md)); v2 had
+        echoed the issue title verbatim instead. **Fixed:** `resolve-spine.md` now mandates the same
+        `Fix: <summary> (#<issue-number>)` title shape on fresh-PR open (both the prose and the
+        `create-pr --title` invocation), so the evaluator's squash-subject derivation (which reads a
+        Conventional-Commits-prefixed title) stays fed consistently. Not left as a cosmetic divergence.
 
-**Verdict:** **FAIL — blocked on D2 (filed defect).** The v2 leg reproduces v1 on every judgment/gate
-dimension (clean audit, plan consumed, one-line fix, `/review` APPROVE with 0 items, **0 = 0** operator
-gates, ≤1 state-assembly call, schema-valid forward handoff) **and is the more faithful leg on the DoD
-projection** (it applied `(closed by commit 61bd8e3)`; v1's run skipped it — D1). But v2's central output,
-the PR, is **not Closes-linked** (`closingIssuesReferences: []`) because the v2 spine dropped the `Fixes/Closes
-#<issue>` keyword v1 mandates — an artifact-level regression that breaks issue auto-close and the downstream
-evaluator's issue-resolution (D2). No PRD § relaxes this, so it is a filed defect, not an explained
-divergence, and the scenario does **not** pass until the spine (and the S1 Artifacts-written table) carry the
-fresh-open closing keyword and the leg is re-run. D1 is an explained v1 non-determinism (v2 faithful); D3/D4
-are the known mechanism cutover + a cosmetic title drift.
+**Fix landed (D2 + D4).** `resolve-spine.md`'s fresh-mode PR staging now mandates the body's first line
+be `Fixes #<issue-number>` (or `Closes #<issue-number>`) and the `--title "Fix: <summary>
+(#<issue-number>)"` shape, per v1 SKILL.md:885/888; the `S6` phase-tick guard (never add `Closes #N` in
+reaction to shipping a phase) is unchanged. `docs/specs/resolver.md`'s Artifacts-written table gained
+the missing standard/story closing-keyword row (the S1 capture gap D2's root-cause analysis found).
+Regression-guarded by `tests/test_resolver_routing.py::PrCreateContractTests` (spine-mandate greps +
+an end-to-end `create-pr --dry-run` proof). **Verdict pending an operator re-run of this scenario** —
+this record does not self-certify a live PASS; re-run twin-B against the fixed spine and confirm
+`closingIssuesReferences: [<issue>]` populates before flipping the verdict below.
+
+**Prior verdict (pre-fix, superseded by the re-run above):** **FAIL — blocked on D2 (filed defect).**
+The v2 leg reproduced v1 on every judgment/gate dimension (clean audit, plan consumed, one-line fix,
+`/review` APPROVE with 0 items, **0 = 0** operator gates, ≤1 state-assembly call, schema-valid forward
+handoff) **and was the more faithful leg on the DoD projection** (it applied `(closed by commit
+61bd8e3)`; v1's run skipped it — D1). But v2's central output, the PR, was **not Closes-linked**
+(`closingIssuesReferences: []`) because the v2 spine dropped the `Fixes/Closes #<issue>` keyword v1
+mandates. D1 is an explained v1 non-determinism (v2 faithful); D3 is the known mechanism cutover; D4
+is now fixed rather than left cosmetic (see above).
 
 ### Scenario 2 — Continue-mode re-entry
 
@@ -425,19 +435,22 @@ is loose for the *answer-only* case — see Divergences.
       `## Handoff` blocks; **v2 startup = 1 `prep_resolver.py` call, 0 sub-agents for state assembly**
       (the distiller is judgment, not assembly).
 - [x] Divergences (each traced to a PRD § or filed as a defect):
-      - **D1 — terminal `Issue:`-line rendering on a `question` (FILED DEFECT, low severity).** v1
+      - **D1 — terminal `Issue:`-line rendering on a `question` (FILED DEFECT, low severity; FIXED).** v1
         rendered the question-type Issue line per [`../../../skills/_shared/handoff-format.md`](../../../skills/_shared/handoff-format.md)
         line 33 — `research:`/`plan:` markers **omitted** + a `**Audience:** audience:architect` line; v2
         rendered `· plan: ✗` and **omitted** the `Audience:` line, following its generic
         [`references/handoff-renderings.md`](../../../skills/resolver/references/handoff-renderings.md)
-        "Terminal — non-PR resolution" shape (whose worked example is a *feature*-typed issue). The shared
-        rule scopes the question rendering "(drafter only)," so the resolver's question-type comment-only
-        terminal is under-specified — but a `plan: ✗` marker on a `· question` line is semantically off (a
-        question never has a plan; the shared schema says omit the marker). **Fix:** add a question-type
-        variant to the resolver's "Terminal — non-PR resolution" rendering (omit `plan:`/`research:`
-        markers, add the `Audience:` line) and/or broaden the "(drafter only)" scope at
-        `handoff-format.md:33` to cover the resolver's comment-only terminal. Cosmetic marker-level only —
-        does not change the outcome (comment-only, no PR, terminal).
+        "Terminal — non-PR resolution" shape (whose worked example is a *feature*-typed issue). **Fixed**
+        by adding a dedicated question-type variant — a new "## Terminal — question-type issue" shape in
+        `handoff-renderings.md` (no `plan:`/`research:` marker, `**Audience:**` line, per the existing
+        `_shared` contract — `_shared` itself is untouched) — and by making `comment-only.md`'s Handoff
+        section dispatch on the issue's own type (`question` → the new shape; any other type → the
+        pre-existing "Terminal — non-PR resolution" shape, corrected to a non-question worked example so
+        the two shapes are no longer conflated). Regression-guarded by
+        `tests/test_resolver_routing.py::QuestionTypeHandoffVariantTests` (asserts the rendered example
+        omits `plan:` and carries `Audience:`, and that the playbook dispatches by type). Cosmetic
+        marker-level only — did not change the outcome (comment-only, no PR, terminal) — but no longer
+        left open; **verdict pending an operator re-run to confirm the live rendering.**
       - **D2 — prep eagerly builds an unused work worktree (EXPLAINED; benign; architecture, not defect).**
         Because prep is judgment-free deterministic state-assembly ([prd.md §9.2](../../prd.md)), it
         cannot make the answer-only call and so ensures a work worktree for the `standard`/`fresh` vector;

@@ -97,19 +97,26 @@ skip) / **Restructure** (re-route to the planner). Never run the **full** canoni
 CI, and in the evaluator).
 
 **Open or continue the PR + push the phase.** Fresh-mode first push: stage the body to
-`<facts.scratch>/pr.md` — carrying `## Doc grounding` + the `## Plan` link + `## Audit
-override`/`## Plan override` when they fired + a `## Phase tracker` for multi-phase + a
-`## Predecessor` when the branch is a `-vN` (predecessor PR detected) — and open the PR through the
-single write path:
+`<facts.scratch>/pr.md`. The body's **first line must be `Fixes #<issue-number>` (or `Closes
+#<issue-number>`)** — mandatory, not optional prose — so GitHub auto-links and auto-closes the issue
+on merge; without it the issue never auto-closes and the evaluator's "No closingIssuesReferences" gate
+trips on a PR that should have linked cleanly. Then carry `## Doc grounding` + the `## Plan` link +
+`## Audit override`/`## Plan override` when they fired + a `## Phase tracker` for multi-phase + a
+`## Predecessor` when the branch is a `-vN` (predecessor PR detected). Title is `Fix: <summary>
+(#<issue-number>)` (mandatory shape — `<summary>` is a short present-tense description of the fix; the
+evaluator's later squash-subject derivation reads a Conventional-Commits-prefixed title, so a
+consistently-shaped fresh-PR title keeps that derivation clean). Open the PR through the single write
+path:
 
 ```bash
 ${CLAUDE_PLUGIN_ROOT}/scripts/gh_persist.py create-pr <owner/repo> "<facts.scratch>/pr.md" \
-  --title "<title>" --base "<facts.workspace.base_ref>" --head "<facts.branch.name>" \
-  [--draft]   # only for a multi-phase issue (S4); omit for single-phase
+  --title "Fix: <summary> (#<issue-number>)" --base "<facts.workspace.base_ref>" \
+  --head "<facts.branch.name>" [--draft]   # --draft only for a multi-phase issue (S4)
 ```
 
 `--base`/`--head` are always explicit facts from the workspace (never inferred from cwd). Continue-mode:
-push onto the existing branch (no PR create). Then run the **review loop** (S5.1).
+push onto the existing branch (no PR create; the closing keyword and title were already set at fresh-PR
+open). Then run the **review loop** (S5.1).
 
 ### S5.1 — Review loop
 
