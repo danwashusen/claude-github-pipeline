@@ -287,14 +287,86 @@ Target: a `question`-shaped issue (or an issue the thread resolves with an answe
 Expected v2: prep sets `comment_only`, the router routes to `comment-only.md`, the distiller grounds the
 answer, one comment staged + posted via `gh_persist.py comment`, terminal handoff (no PR line).
 
-- [ ] v1 run captured.
-- [ ] v2 run captured (comment-only route; no PR opened; no spine read).
-- [ ] Artifact schema-identical (staged-body comment; terminal handoff with the `Issue:` line + no PR
-      line + `(terminal — no follow-up skill)`).
-- [ ] Gates match (0 code-work gates); handoff schema-valid; ≤1 state-assembly call.
-- [ ] Divergences.
+**Fixture (twins on `danwashusen/gh-pipeline-sandbox`).** Two identical `question` + `audience:architect`
+issues carrying the question-issue schema (`## Question`/`## Audience`/`## Constraints`/`## Context`/
+`## References`/`## Why this matters`/`## Tracked in`) and **no** `## Definition of done` — so the
+correct outcome is a posted answer, not code: **#29** (twin-A → v1 `github-issue-resolver`) and **#30**
+(twin-B → v2 `resolver`). Headless recipe per the [handback](../../run-journal.md) (`claude -p
+"/github-pipeline:<skill> <n>" --plugin-dir <this branch> --model opus --permission-mode
+bypassPermissions`, fresh sandbox clone per run). The refusal mutates only by posting one comment (no
+branch/PR/shared-parent), so independent twins keep each run's thread clean for the distiller.
 
-**Verdict:** _TODO — operator-gated._
+**Pre-flight (the crux this scenario tests).** `prep_resolver.py 30` returns `status: ok`,
+`vector.type: standard`, `vector.mode: fresh`, `comment_only: **false**`, `suggested_playbook:
+**standard.md**`, `dod: []`, `open_questions_gate.blocked: false` — and eagerly ensures a **work
+worktree**. Prep sets `comment_only` **only** on the OQ hard gate / native `blocked_by`
+(`prep_resolver.py:1005`; that path is Scenario 5), never on an answer-only classification — the spec
+assigns response-type classification (`bug/feature/question/…`) to the **main loop consuming the
+distiller's `## Classification`** ([resolver.md](../resolver.md) §4, "Judgment steps" table), not to
+prep. So v2's comment-only routing must come from the **router's §77 override on the `question`
+label**, not from a prep fact. This is where the scenario's expected text ("prep sets `comment_only`")
+is loose for the *answer-only* case — see Divergences.
+
+- [x] v1 run captured — #29 classified **Question** → posted one free-prose recommendation comment
+      ([#29 comment](https://github.com/danwashusen/gh-pipeline-sandbox/issues/29#issuecomment-4930081450),
+      `## Recommendation …` + `### Why …`/`### When inlining …`/`### Concrete shape`/`### One honesty note`),
+      **no worktree, no PR**; terminal `## Handoff` (`Issue:` line + a `**Audience:** audience:architect`
+      line, `plan:` marker **omitted**, no `PR:` line, `Next: (terminal — no follow-up skill)`).
+- [x] v2 run captured (comment-only route; no PR opened; no spine read) — prep = **one**
+      `prep_resolver.py` call (`suggested standard.md`); the router **overrode to `comment-only.md`**,
+      logging verbatim *"Prep suggested `standard.md`, but the state-distiller classified this `type:
+      question` / `plan: absent` … an answer-only classification the prep script couldn't make — so I
+      overrode the route"* (SKILL.md §77). The **spine was not read**. Distiller ran (a *judgment*
+      sub-agent grounding the answer, not state-assembly). Posted one comment
+      ([#30 comment](https://github.com/danwashusen/gh-pipeline-sandbox/issues/30#issuecomment-4930115450))
+      via `gh_persist.py comment`; **no PR, no origin branch** (prep's local `.worktrees/30-…` was created
+      but never used and discarded with the clone — see D2).
+- [x] Artifact schema-identical (staged-body comment; terminal handoff with the `Issue:` line + no PR
+      line + `(terminal — no follow-up skill)`) — **comment:** both are a single free-prose answer posted
+      via the staged-body write path (no frozen marker/section schema for a comment-only answer per the
+      Renderings table; prose differs, as the protocol allows). **Handoff:** both are terminal `## Handoff`
+      blocks with `## Handoff` + `Issue:` (`#N — <title> · <state> · question`) + **no** `PR:` line +
+      `Next: (terminal — no follow-up skill)` + load-bearing `Why:`. One structured-field divergence on the
+      `Issue:` line — see D1.
+- [x] Gates match (0 code-work gates); handoff schema-valid; ≤1 state-assembly call — **0** operator
+      gates fired on either leg (comment-only = no audit/plan/PR gates); both handoffs are valid terminal
+      `## Handoff` blocks; **v2 startup = 1 `prep_resolver.py` call, 0 sub-agents for state assembly**
+      (the distiller is judgment, not assembly).
+- [x] Divergences (each traced to a PRD § or filed as a defect):
+      - **D1 — terminal `Issue:`-line rendering on a `question` (FILED DEFECT, low severity).** v1
+        rendered the question-type Issue line per [`../../../skills/_shared/handoff-format.md`](../../../skills/_shared/handoff-format.md)
+        line 33 — `research:`/`plan:` markers **omitted** + a `**Audience:** audience:architect` line; v2
+        rendered `· plan: ✗` and **omitted** the `Audience:` line, following its generic
+        [`references/handoff-renderings.md`](../../../skills/resolver/references/handoff-renderings.md)
+        "Terminal — non-PR resolution" shape (whose worked example is a *feature*-typed issue). The shared
+        rule scopes the question rendering "(drafter only)," so the resolver's question-type comment-only
+        terminal is under-specified — but a `plan: ✗` marker on a `· question` line is semantically off (a
+        question never has a plan; the shared schema says omit the marker). **Fix:** add a question-type
+        variant to the resolver's "Terminal — non-PR resolution" rendering (omit `plan:`/`research:`
+        markers, add the `Audience:` line) and/or broaden the "(drafter only)" scope at
+        `handoff-format.md:33` to cover the resolver's comment-only terminal. Cosmetic marker-level only —
+        does not change the outcome (comment-only, no PR, terminal).
+      - **D2 — prep eagerly builds an unused work worktree (EXPLAINED; benign; architecture, not defect).**
+        Because prep is judgment-free deterministic state-assembly ([prd.md §9.2](../../prd.md)), it
+        cannot make the answer-only call and so ensures a work worktree for the `standard`/`fresh` vector;
+        the router then overrides to comment-only and never uses it. v1 (which classifies before touching a
+        worktree — v1 SKILL.md:79) creates none. In this run the worktree was local-only, unpushed, and
+        discarded with the throwaway clone. Candidate low-severity cleanliness improvement (a real,
+        non-clone run would leave one stray unused worktree), **not** run-failing.
+      - **D3 — comment write mechanism (EXPLAINED; expected v1→v2 cutover).** v1 posts via the
+        `github-ops` sub-agent → `gh-persist.sh comment`; v2 posts directly via `gh_persist.py comment`
+        (the `github-ops` indirection is removed in v2). Same staged-body write path, same artifact. Not a
+        defect.
+
+**Verdict:** **PASS (both legs) — one filed defect (D1, low severity).** Both classify the `question`
+issue as answer-only, post exactly one free-prose comment via the staged-body write path, open **no
+PR/branch**, run **0 code-work gates**, and emit a schema-valid terminal `## Handoff` (`Issue:` line, no
+`PR:` line, `(terminal — no follow-up skill)`). v2 confirmed the crux: routing to comment-only is the
+**router's §77 override on the `question` label**, not a prep fact — so the scenario's "prep sets
+`comment_only`" expectation holds only for the OQ-gate case (Scenario 5); for the answer-only case it is
+the router's judgment. The sole divergence in the persisted handoff (D1) is a filed, low-severity
+contract-underspecification of the question-type terminal `Issue:` line; D2/D3 are architecture-traced.
+No unexplained divergence.
 
 ### Scenario 4 — Multi-phase tick projection
 
