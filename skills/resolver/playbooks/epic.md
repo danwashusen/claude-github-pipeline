@@ -1,0 +1,114 @@
+# Epic-as-target
+
+Route for `vector.type == epic` (the issue is the epic itself, not a story). An epic is a **container**:
+no code lands here — child stories are where code lands, and opening a monolithic feature PR for an epic
+conflates resolution with implementation. This flow's distinct **actions** are the epic-branch
+lifecycle: discover-or-bootstrap the `epic/<N>-<slug>` integration branch, keep it from drifting off
+`main`, hold a trusted green baseline, and — when every story is closed and the DoD is verifiable — open
+the integration PR that lands the accumulated diff on `main`. It does **not** read the code-shipping
+spine.
+
+All facts come from the prep facts block (SKILL.md §1); `facts.epic` carries the branch discovery
+(`match_count` / `branch` / `bootstrap_slug`); `facts.workspace` is the epic-branch work worktree prep
+ensured (its `base_ref` is `main`); the audit read workspace (`facts.read_workspaces.audit`) is at the
+epic branch. All GitHub writes go through `${CLAUDE_PLUGIN_ROOT}/scripts/gh_persist.py` with a staged
+body path (SKILL.md §3); every git worktree command runs against the work workspace by absolute path
+(SKILL.md §3 — the root is never written). Baseline comment renderings are in
+[`../references/epic-baseline.md`](../references/epic-baseline.md); the full runbooks (canonical suite,
+drift rectification, bootstrap, legacy recovery) are in
+[`../references/epic-flow.md`](../references/epic-flow.md) — **read that file before any bootstrap or
+rectification step**.
+
+## S1 — Resolve the integration branch
+
+`facts.epic.match_count` classifies the branch state:
+- **One match** (`facts.epic.branch`) → use it verbatim; never recompute the slug from the title (an
+  independent run's stricter slug rule would orphan the original branch's commits — the #102 incident).
+- **Zero matches** (`facts.epic.bootstrap_slug` present, `attention` names "bootstrap required") →
+  **bootstrap** per `epic-flow.md`'s "Bootstrap a new epic branch": create `epic/<N>-<slug>` off
+  `origin/main` in the work workspace, run the canonical suite (S3), push the branch, and post the
+  first `Baseline established` comment. Story runs deliberately redirect here rather than bootstrap
+  silently, so a missing step stays visible.
+- **Multiple matches** never reaches here — prep raised an `AMBIGUOUS` decision the router already
+  resolved.
+
+## S2 — Assess epic-vs-main drift
+
+From the work workspace, assess whether `epic/<N>-<slug>` has drifted behind `main` and, if so, whether
+to rebase or merge, per `epic-flow.md`'s "Drift rectification" (the 4-rule strategy table: commits-behind
+× open-story-PR count × file-overlap). **Rebase force-pushes the epic branch; merge does not** — choose
+rebase only when no open story PRs exist against the branch, else merge, so in-flight sibling story PRs
+aren't force-reset. On conflicts, run the shared conflict-handling procedure (capture the set, gather
+cross-side context, dispatch the `general-purpose` conflict-resolution proposer sub-agent — it proposes,
+never writes — then gate `header: "Rectify epic"`: **Apply all** / **Apply some** / **Abort — manual**,
+and the skill applies the approved edits). After rectification the epic HEAD changed → the prior baseline
+is untrusted; re-run S3.
+
+## S3 — Canonical baseline + trust state
+
+The story gates run targeted tests; the epic baseline / bootstrap / post-rectification flow is the one
+place that legitimately runs the project's **full** canonical suite (every unit + integration test) in
+the work workspace. Run it per `epic-flow.md`'s "Running the full canonical suite":
+- Read `facts.config.canonical_suite_raw` for the labelled commands. First attempt → `full-suite` (one
+  cold build + every suite). Any re-run → `build-once` **once**, then `retry-without-rebuild` — never
+  re-issue `full-suite` (re-paying the cold build that dominates wall time on a compiled stack turned
+  one re-baseline into a multi-hour hang).
+- Run it as a **harness-tracked background bash owned by this main loop**, never delegated to a
+  sub-agent (a sub-agent can end its turn mid-build, orphan the process, and lose the tally). Use
+  **absolute paths**; never chain the real command behind a relative `cd … &&` (which `&&`-short-circuits
+  to a false `exit 0` running nothing). Tee to a log; read the log on completion, never re-run to see
+  scrolled-off output.
+
+**Trust-state.** A story under this epic inherits the epic baseline; the epic-as-target run re-runs it
+only when `main` merged into the epic since the last `Baseline established`, or after rectification. On
+**green**, post a fresh `Baseline established` comment (render per
+[`../references/epic-baseline.md`](../references/epic-baseline.md)) recording the epic-branch SHA + the
+`main` SHA. On **red**, stop and surface every failing test; acceptable next moves are a detour-first
+fix or an explicit operator override recorded as a `Baseline override` comment (same reference) before
+proceeding.
+
+## S4 — Integration PR (all stories closed + DoD verifiable)
+
+When the epic's `## Stories` are all closed and its `## Definition of done` is verifiable against the
+accumulated diff, open the integration PR — `epic/<N>-<slug>` → `main`, title `Epic #<N>: <title>`, body
+citing the epic's `## Goal` + DoD checklist + `Fixes #<epic-number>`. Then run the review loop against it
+(the integration PR lands the whole epic on `main` at once — higher risk, so apply the same review-loop
+discipline as any story PR, per [`resolve-spine.md`](resolve-spine.md) §S5.1). Stage the PR body to
+`<facts.scratch>/epic-integration-pr.md` and open the PR through the single write path — the same
+`create-pr` call the spine's S5 uses for a story/standard PR (base/head differ; the values are
+facts, not a branch):
+
+```bash
+${CLAUDE_PLUGIN_ROOT}/scripts/gh_persist.py create-pr <owner/repo> "<facts.scratch>/epic-integration-pr.md" \
+  --title "Epic #<N>: <title>" --base main --head "epic/<N>-<slug>"
+```
+
+If stories remain open, do **not** open the integration PR — the epic isn't ready; emit the handoff
+naming what's left.
+
+## S5 — Epic body-tick close-out (after the integration PR merges)
+
+This runs only when the integration PR has merged (the evaluator merges it; on a resolver-driven close
+after merge, do the housekeeping GitHub doesn't auto-fire). Re-fetch the epic body, flip every `- [ ]`
+→ `- [x]` in `## Stories` and `## Definition of done` (preserve the `## Goal` / `## Background` /
+`## Stories` / `## Definition of done` section names exactly — they're load-bearing for PRD
+traceability), stage to `<facts.scratch>/epic-body-closed.md`, and apply:
+
+```bash
+${CLAUDE_PLUGIN_ROOT}/scripts/gh_persist.py edit-body <owner/repo> <epic> \
+  "<facts.scratch>/epic-body-closed.md"
+```
+
+## Handoff
+
+Read [`../references/handoff-renderings.md`](../references/handoff-renderings.md) and emit the matching
+shape:
+
+- **Forward — Epic integration PR** (S4 opened the integration PR): `Epic:` + `Stories:` (`M of M
+  closed`) + `PR:` (`base main · review: not run · …`), `Next: /github-pipeline:evaluator #<PR>`; the
+  `Why:` calls out the higher merge risk and the evaluator's full-canonical-suite escalation on
+  `pr_type: epic-integration`.
+- **Bootstrap / rectification only** (branch created or drift rectified, no integration PR yet — stories
+  still open): the `Epic:` + `Stories:` progress lines and a `Next:` pointing at the planner for the next
+  story (`/github-pipeline:planner #<next-story>`) or the resolver for a story run, per the epic cadence;
+  the `Why:` names the branch action taken and what unblocks next.

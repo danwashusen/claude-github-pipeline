@@ -6,6 +6,8 @@ Subcommands (unchanged surface from v1 — same names, same flags, same position
 
     gh_persist.py create     <repo> <body_path> --title <title> [--label L]...
                               [--blocked-by <nums/urls>] [--blocking <nums/urls>] [--dry-run]
+    gh_persist.py create-pr  <repo> <body_path> --title <title> --base <ref> --head <ref>
+                              [--draft]                                        [--dry-run]
     gh_persist.py edit-body  <repo> <issue>     <body_path>                      [--dry-run]
     gh_persist.py link       <repo> <issue>
                               [--add-blocked-by N]... [--remove-blocked-by N]...
@@ -27,6 +29,27 @@ below) exactly as v1's leading ``test -s`` did; the only change here is that fai
 now a ``needs_decision`` envelope (architecture.md §3: "needs_decision is a valid outcome, not an
 error") rather than v1's bare ``exit 2`` + stderr line, because ``EMPTY_BODY_FILE`` is a §3 closed
 decision code with a canonical emitter of this script.
+
+``create-pr`` (added S10, additive-only — architecture.md §2's "if a needed operation has no
+script, extend a script") is the resolver's PR-open write path — the one persisted-artifact write
+the v1-ported six subcommands never covered (v1's own ``gh-persist.sh create`` was ``gh issue
+create`` only; the v1 resolver hand-rolled a raw ``gh pr create``, the exact Rule-7 divergence
+``docs/specs/resolver.md``'s "Known bugs / gaps" flags). It mirrors ``create``'s body-bearing-write
+shape exactly: the same staged-file-path convention, the same leading ``_verify_body_file`` empty-
+body gate, the same unconditional ``body_bytes``/``body_sha256`` receipt (dry-run or not), the same
+``--dry-run`` preview convention, and the same ``AUTH_REQUIRED`` classification via the pipelib
+runner. ``--base``/``--head`` are **required and explicit** — no ambient-cwd branch inference
+(architecture.md §6 "No ambient cwd"): the caller (a prep-derived fact, e.g. the work workspace's
+`base_ref`) always names both ends. ``--draft`` is optional and capability-universal (every ``gh``
+version /repo supports it — no capability gate needed, unlike the native-dependency flags below);
+it exists because the v1 resolver's multi-phase fresh-PR-open path passes ``--draft`` and flips
+draft→ready via a separate ``gh pr ready`` once every planned phase has shipped
+(``skills/github-issue-resolver/SKILL.md:896``; ``docs/specs/resolver.md`` "On the last-planned-
+phase-shipped handoff, flip the PR draft→ready" invariant) — that flip is the pre-existing
+sanctioned raw-``gh`` PR-state toggle (architecture.md §10), unaffected by this op. No native-
+dependency support (``--blocked-by``/``--blocking``) is added to ``create-pr``: GitHub's issue-
+dependency feature is a construct on **issues**, not PRs — the resolver's PR-open write never sets
+one.
 
 ``create --blocked-by/--blocking`` and ``link`` set GitHub's NATIVE issue dependencies (gh >= 2.95
 + the repo feature enabled). They are capability-gated by ATTEMPTING the real write and classifying
@@ -231,6 +254,43 @@ def _cmd_create(args):
     payload = {"op": "create", "dry_run": False, "url": url}
     payload.update(_write_receipt_fields(args.body_path))
     emit_ok(payload=payload, notices=notices)
+    return EXIT_OK
+
+
+# ---- create-pr ----
+
+
+def _cmd_create_pr(args):
+    gate = _verify_body_file(args.body_path)
+    if gate is not None:
+        emit_needs_decision(gate)
+        return EXIT_OK
+
+    cmd = ["gh", "pr", "create", "--repo", args.repo, "--title", args.title,
+           "--body-file", args.body_path, "--base", args.base, "--head", args.head]
+    if args.draft:
+        cmd.append("--draft")
+
+    if args.dry_run:
+        # Same convention as every other body-bearing op: body_bytes/body_sha256 are hashed
+        # straight from the staged file, so a dry-run preview reports the write receipt without a
+        # live `gh` round-trip.
+        payload = {"op": "create-pr", "dry_run": True, "would_run": _quote_cmd(cmd)}
+        payload.update(_write_receipt_fields(args.body_path))
+        emit_ok(payload=payload)
+        return EXIT_OK
+
+    result = process.run(cmd, cwd=args.cwd)
+    if result.auth_required:
+        emit_needs_decision(_auth_decision(result))
+        return EXIT_OK
+    if result.returncode != 0:
+        sys.stderr.write(result.stderr)
+        return 1
+
+    payload = {"op": "create-pr", "dry_run": False, "url": result.stdout.strip()}
+    payload.update(_write_receipt_fields(args.body_path))
+    emit_ok(payload=payload)
     return EXIT_OK
 
 
@@ -474,6 +534,15 @@ def _build_parser():
     p_create.add_argument("--blocking", default="")
     p_create.add_argument("--dry-run", action="store_true")
 
+    p_create_pr = sub.add_parser("create-pr")
+    p_create_pr.add_argument("repo")
+    p_create_pr.add_argument("body_path")
+    p_create_pr.add_argument("--title", required=True)
+    p_create_pr.add_argument("--base", required=True)
+    p_create_pr.add_argument("--head", required=True)
+    p_create_pr.add_argument("--draft", action="store_true")
+    p_create_pr.add_argument("--dry-run", action="store_true")
+
     p_edit = sub.add_parser("edit-body")
     p_edit.add_argument("repo")
     p_edit.add_argument("issue")
@@ -514,6 +583,7 @@ def _build_parser():
     subparsers_by_name.update(
         {
             "create": p_create,
+            "create-pr": p_create_pr,
             "edit-body": p_edit,
             "link": p_link,
             "comment": p_comment,
@@ -530,6 +600,8 @@ def main(argv):
 
     if args.subcommand == "create":
         return _cmd_create(args)
+    if args.subcommand == "create-pr":
+        return _cmd_create_pr(args)
     if args.subcommand == "edit-body":
         return _cmd_edit_body(args)
     if args.subcommand == "link":

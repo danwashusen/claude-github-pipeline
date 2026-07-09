@@ -413,6 +413,60 @@ sandbox, or delete anything outside the working tree and the sandbox.
   → 2 remediation rounds (fix + authorized guard) → 1 opus reviewer (CHANGES REQUIRED, 1
   actionable + 5 advisories) → fix round → re-verify (**PASS**). Ticks all 6 S9 boxes.
 
+### S10 — Resolver skill rewrite — PARTIAL (automatable work done + committed; live legs PENDING) (2026-07-09)
+
+- **Commit:** _backfilled post-commit_ (`S10: skills/resolver/ — resolver cutover + create-pr write
+  path`).
+- **Status:** **5 of 7 DoD boxes ticked** (1, 2, 4, 5, 7). **Box 3 (live in-scope-blocked refusal)
+  and box 6 (the four live parity runs) are operator-gated and REMAIN unticked** — the run's second
+  hard stop. S11 does not start until they close.
+- **Deliverables:** `skills/resolver/` authored from scratch — `SKILL.md` router (128 lines; §9
+  sections; visible `vector → playbook` table; `model: opus` / `effort: xhigh` pins verbatim) +
+  `playbooks/` (**4 routable + 1 shared spine**: `resolve-spine.md` 177 read by standard + story
+  only; `standard.md` / `story.md` thin variants; `epic.md` / `comment-only.md` standalone — zero
+  cross-type conditionals, grep committed as `PlaybookInterleavingGrepTests`) + `references/` (the
+  four carried v1 sub-agent prompts with path-inputs swapped to facts/workspaces — the issue-audit's
+  ref-arithmetic fully replaced by `read_workspaces.audit.path` plain reads; DoD-projection forms
+  **byte-identical** to the S1 capture; 9 handoff shapes — fixing v1's "seven" miscount; retry
+  ladder / follow-up tracking / epic flow / epic baseline) + `tests/test_resolver_routing.py`
+  (27 tests) + `docs/specs/parity/resolver.md` (metrics + 4 parity scenarios + the box-3 refusal
+  seeding recipe, all operator-marked). Budget: router+largest **305 ≤ 584** (half of v1's 1169).
+- **Authorized shared-layer extension (S6 precedent; architecture §2 "extend a script"):**
+  `gh_persist.py` gained **`create-pr`** — v1 hand-rolled `gh pr create` (a Rule-7 divergence the
+  spec flags); the v2 write path was missing the resolver's central output. Additive only (72
+  insertions, 0 deletions; existing ops byte-identical; existing tests unmodified): staged-body
+  path + leading empty-body gate, `--title`/`--base`/`--head` required + explicit (no cwd
+  inference), `--draft` (v1 opens multi-phase PRs draft — SKILL.md:896), `--dry-run`, receipts,
+  AUTH_REQUIRED classification. 20 new tests; the implementor's `PrCreateGapTests` (built to fail
+  loudly when the op appeared) flipped to `PrCreateContractTests` pinning the four playbook
+  invocation shapes.
+- **Authorized architecture amendment (same-commit contract-change rule):** §10's raw-`gh`
+  carve-out grew **two → three** sanctioned scriptless executors — added the resolver's
+  `gh pr ready <N>` **draft→ready flip** (spec invariant at `specs/resolver.md:213–216`: flip
+  immediately before the last-phase handoff or the evaluator's draft-PR guard deadlocks; carried
+  from v1 SKILL.md:896), behavior-cited like the evaluator's two; §12's enforcement cell kept
+  consistent. Anchors byte-stable. `baseline.md` §5.3(b) untouched (frozen S7-era record).
+- **Review (1 opus reviewer, 2 delta rounds, 0 actionable):** PASS. Rulings of record:
+  (a) "exactly four playbooks" = 4 routable + 1 non-routable spine — the S7 precedent, faithful;
+  (b) the draft→ready flip was a NEW uncarved raw write under §10's then-wording — fixed in-step
+  (above), the test comment citing §10 is now true; (c) `create-pr` correctly follows
+  `gh_persist`'s existing `_cmd_*` shape — the S8 pure-core lock is composition-driven and
+  `gh_persist` is playbook-called via Bash, never prep-composed (a full retrofit is legitimately
+  deferrable); (d) the issue-audit ref-arithmetic swap is complete (residuals are provenance +
+  negations); (e) census 81 → **83**, zero drops, +2 legitimate (`github-pipeline:drafter`,
+  `github-pipeline:evaluator` — resolver next-commands).
+- **Carried advisories:** (i) the interleaving grep is a real but **partial** guard (misses
+  if-without-else and declarative parallels — the zero-interleaving property was verified by
+  reading); S13/S15–S19 briefs must not treat a green grep as proof-of-absence and may broaden the
+  patterns; (ii) `gh_persist.py`'s full `build_*` retrofit deferred to a future scripts step;
+  (iii) routing-test count is 27 (implementor reports said 22/28 — cosmetic).
+- **Dual-platform:** **646/646** on macOS and Linux (container), orchestrator + reviewer
+  independently.
+- **Process:** 1 opus implementor (skill authoring) → gap report (missing PR-create op) →
+  orchestrator-authorized extension → orchestrator sanity (646 both platforms) → 1 opus reviewer
+  (PASS, 0 actionable, 3 advisories) → authorized §10/§12 amendment → reviewer delta re-verify
+  (**PASS holds; advisory 1 resolved**). **1 fix round.**
+
 ### Session-mechanics note (the 2026-07-04 session)
 
 The `.claude/agents/{implementor,reviewer}.md` definitions committed in setup are **not hot-loaded**
@@ -425,6 +479,38 @@ of truth; a **freshly started** resumed session will pick them up by name and ca
 ---
 
 ## Handback log
+
+### 2026-07-09 handback — STOP at S10's live legs (second operator gate) — OPEN
+
+The run is stopped at **S10 boxes 3 + 6** (per the stop conditions: parity runs are operator-owned).
+Everything automatable through S10 is accepted and committed on `rewrite/v2-implementation`
+(**unpushed**; S7→S10 all green, 646 offline tests on macOS + Linux).
+
+**Operator actions (all scaffolded in [`docs/specs/parity/resolver.md`](parity/resolver.md)):**
+1. **Box 6 — four parity scenarios** on `danwashusen/gh-pipeline-sandbox`, v1
+   `/github-pipeline:github-issue-resolver` vs v2 `/github-pipeline:resolver`, twin fixtures per
+   scenario: fresh bug-fix end-to-end; continue-mode re-entry; comment-only; multi-phase tick
+   projection. Same headless recipe as S7 (`claude -p "/github-pipeline:<skill> <issue>"
+   --plugin-dir <this branch> --model opus --permission-mode bypassPermissions`, fresh clone per
+   run; auto-mode blocks nested runs — drive via `!`). Record per-scenario results + divergences in
+   the parity doc; every divergence traces to a PRD § or is filed as a defect.
+2. **Box 3 — the live in-scope-blocked refusal** (Scenario 5 in the parity doc, with its full
+   seeding recipe): seed a sandbox issue with an `<!-- open-question-links:v1 -->`
+   `in-scope (blocked)` entry + an open `question` tracker + native `blocked_by`; run the v2
+   resolver; it must REFUSE code work with the gate (comment-only path naming the blocking `#Q`),
+   no worktree, no PR.
+3. Tick boxes 3 and 6 in `docs/implementation.md` (and only those) when the runs pass with no
+   unexplained divergence; commit locally (don't push), per the S7 flow.
+4. Resume the orchestrator on `rewrite/v2-implementation` — it re-derives state, flips S10 to
+   ACCEPTED, and proceeds **S11 → S12 → S13 → …** (S11 sub-agent exception unification is next;
+   the S10 sub-agent prompts deliberately carry v1's exception protocol verbatim for it).
+
+**Context the runs need:** the sandbox's config blocks are canonical since `ae283af`; the
+`create-pr` op is new in this branch (the resolver's PR-opens go through it — a v1-vs-v2
+divergence in *mechanism*, not artifact, expected in scenarios 1/2/4); the S7-era gotchas
+(closingIssuesReferences on non-default-base PRs needs the base-swap trick; GitHub auto-ticks
+task-list checkboxes on issue close; self-authored PRs 422 on approve) are recorded in the S7
+parity doc + your memory notes.
 
 ### 2026-07-04 handback — STOP at S7's live parity (first operator gate) — CLOSED 2026-07-09
 

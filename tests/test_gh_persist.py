@@ -257,6 +257,249 @@ class CreateHappyPathTests(unittest.TestCase):
             self.assertEqual(result.returncode, 0, msg=result.stderr)
 
 
+class CreatePrHappyPathTests(unittest.TestCase):
+    """gh_persist.py create-pr (added S10, additive per architecture.md §2) — the resolver's PR-open
+    write path. Mirrors CreateHappyPathTests' shape: staged-body-path convention, unconditional
+    write receipts, --base/--head explicit and required (no ambient-cwd branch inference), --draft
+    optional (the v1 resolver's multi-phase fresh-PR-open path, SKILL.md:896)."""
+
+    def test_create_pr_ready_emits_ok_with_write_receipt(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            body_path = Path(tmp) / "pr-body.md"
+            body_bytes = b"## Doc grounding\ncites architecture.md \xc2\xa73\n"
+            body_path.write_bytes(body_bytes)
+
+            cmd = ["pr", "create", "--repo", "o/r", "--title", "Add CSV export (#142)",
+                   "--body-file", str(body_path), "--base", "main", "--head", "142-add-csv-export"]
+            _write_stdout_file(tmp, "url.txt", b"https://github.com/o/r/pull/287\n")
+            _write_manifest(tmp, [{"argv": cmd, "stdout_file": "url.txt", "exit_code": 0}])
+
+            result = _run_script(
+                ["create-pr", "o/r", str(body_path), "--title", "Add CSV export (#142)",
+                 "--base", "main", "--head", "142-add-csv-export"],
+                fixtures_dir=tmp,
+            )
+            self.assertEqual(result.returncode, 0, msg=result.stderr)
+            env = _parse_envelope(result)
+            envelope_asserts.assert_full_envelope_conformance(env)
+            envelope_asserts.assert_write_receipt_shape(env)
+            self.assertEqual(env["status"], "ok")
+            self.assertEqual(env["op"], "create-pr")
+            self.assertEqual(env["url"], "https://github.com/o/r/pull/287")
+            self.assertEqual(env["body_bytes"], len(body_bytes))
+            self.assertEqual(env["body_sha256"], hashing.sha256_hex(body_bytes))
+            self.assertEqual(env["notices"], [])
+
+    def test_create_pr_draft_forwards_draft_flag(self):
+        # v1 parity: the multi-phase fresh-PR-open path passes --draft (SKILL.md:896); the PR
+        # stays draft until every planned phase has shipped, then flips via the sanctioned
+        # `gh pr ready` toggle (architecture.md §10) -- unaffected by this op.
+        with tempfile.TemporaryDirectory() as tmp:
+            body_path = Path(tmp) / "pr-body.md"
+            body_path.write_bytes(b"multi-phase body")
+
+            cmd = ["pr", "create", "--repo", "o/r", "--title", "feat(llm): #640 spike harness",
+                   "--body-file", str(body_path), "--base", "main", "--head", "640-spike",
+                   "--draft"]
+            _write_stdout_file(tmp, "url.txt", b"https://github.com/o/r/pull/649\n")
+            _write_manifest(tmp, [{"argv": cmd, "stdout_file": "url.txt"}])
+
+            result = _run_script(
+                ["create-pr", "o/r", str(body_path), "--title", "feat(llm): #640 spike harness",
+                 "--base", "main", "--head", "640-spike", "--draft"],
+                fixtures_dir=tmp,
+            )
+            self.assertEqual(result.returncode, 0, msg=result.stderr)
+            env = _parse_envelope(result)
+            self.assertEqual(env["status"], "ok")
+            self.assertEqual(env["url"], "https://github.com/o/r/pull/649")
+
+    def test_create_pr_story_base_is_the_epic_branch(self):
+        # A story PR bases on the parent epic's integration branch, not main -- base/head are
+        # explicit facts the caller supplies (no ambient-cwd inference, architecture.md §6).
+        with tempfile.TemporaryDirectory() as tmp:
+            body_path = Path(tmp) / "pr-body.md"
+            body_path.write_bytes(b"story body")
+
+            cmd = ["pr", "create", "--repo", "o/r", "--title", "Add export service (#151)",
+                   "--body-file", str(body_path), "--base", "epic/150-chat-session-ux-polish",
+                   "--head", "151-add-export-service"]
+            _write_stdout_file(tmp, "url.txt", b"https://github.com/o/r/pull/155\n")
+            _write_manifest(tmp, [{"argv": cmd, "stdout_file": "url.txt"}])
+
+            result = _run_script(
+                ["create-pr", "o/r", str(body_path), "--title", "Add export service (#151)",
+                 "--base", "epic/150-chat-session-ux-polish", "--head", "151-add-export-service"],
+                fixtures_dir=tmp,
+            )
+            self.assertEqual(result.returncode, 0, msg=result.stderr)
+            env = _parse_envelope(result)
+            self.assertEqual(env["url"], "https://github.com/o/r/pull/155")
+
+    def test_create_pr_dry_run_previews_command_and_makes_no_live_call(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            body_path = Path(tmp) / "pr-body.md"
+            body_bytes = b"preview body"
+            body_path.write_bytes(body_bytes)
+
+            # No manifest.json / fixtures_dir -- any live gh call would MISS the shim.
+            result = _run_script(
+                ["create-pr", "o/r", str(body_path), "--title", "T", "--base", "main",
+                 "--head", "my-branch", "--dry-run"]
+            )
+            self.assertEqual(result.returncode, 0, msg=result.stderr)
+            env = _parse_envelope(result)
+            envelope_asserts.assert_full_envelope_conformance(env)
+            self.assertEqual(env["status"], "ok")
+            self.assertEqual(env["op"], "create-pr")
+            self.assertTrue(env["dry_run"])
+            self.assertIn("would_run", env)
+            self.assertNotIn("url", env)
+            self.assertEqual(env["body_bytes"], len(body_bytes))
+            self.assertEqual(env["body_sha256"], hashing.sha256_hex(body_bytes))
+
+    def test_create_pr_dry_run_preview_includes_draft_flag(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            body_path = Path(tmp) / "pr-body.md"
+            body_path.write_bytes(b"content")
+            result = _run_script(
+                ["create-pr", "o/r", str(body_path), "--title", "T", "--base", "main",
+                 "--head", "my-branch", "--draft", "--dry-run"]
+            )
+            self.assertEqual(result.returncode, 0, msg=result.stderr)
+            env = _parse_envelope(result)
+            self.assertIn("--draft", env["would_run"])
+
+    def test_create_pr_with_missing_body_file_returns_empty_body_file_decision(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            missing_path = str(Path(tmp) / "does-not-exist.md")
+            result = _run_script(
+                ["create-pr", "o/r", missing_path, "--title", "T", "--base", "main",
+                 "--head", "my-branch"],
+                fixtures_dir=tmp,
+            )
+            self.assertEqual(result.returncode, 0, msg=result.stderr)
+            env = _parse_envelope(result)
+            envelope_asserts.assert_full_envelope_conformance(env)
+            self.assertEqual(env["status"], "needs_decision")
+            self.assertEqual(env["decision"]["code"], "EMPTY_BODY_FILE")
+
+    def test_create_pr_with_zero_byte_body_file_returns_empty_body_file_decision(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            empty_path = Path(tmp) / "empty.md"
+            empty_path.write_bytes(b"")
+            result = _run_script(
+                ["create-pr", "o/r", str(empty_path), "--title", "T", "--base", "main",
+                 "--head", "my-branch"],
+                fixtures_dir=tmp,
+            )
+            self.assertEqual(result.returncode, 0, msg=result.stderr)
+            env = _parse_envelope(result)
+            self.assertEqual(env["decision"]["code"], "EMPTY_BODY_FILE")
+            self.assertEqual(env["decision"]["context"]["reason"], "zero bytes")
+
+    def test_create_pr_empty_body_gate_never_calls_gh_at_all(self):
+        # No manifest.json in this tempdir -- a live gh call would MISS the shim if the gate
+        # didn't short-circuit first, proving the empty-body gate runs before any `gh` invocation.
+        with tempfile.TemporaryDirectory() as tmp:
+            empty_path = Path(tmp) / "empty.md"
+            empty_path.write_bytes(b"")
+            result = _run_script(
+                ["create-pr", "o/r", str(empty_path), "--title", "T", "--base", "main",
+                 "--head", "my-branch"],
+                fixtures_dir=tmp,
+            )
+            self.assertEqual(result.returncode, 0, msg=result.stderr)
+            env = _parse_envelope(result)
+            self.assertEqual(env["status"], "needs_decision")
+
+    def test_create_pr_without_title_is_a_usage_error(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            body_path = Path(tmp) / "body.md"
+            body_path.write_bytes(b"content")
+            result = _run_script(
+                ["create-pr", "o/r", str(body_path), "--base", "main", "--head", "my-branch"]
+            )
+            self.assertEqual(result.returncode, 2)
+            self.assertEqual(result.stdout, "")
+
+    def test_create_pr_without_base_is_a_usage_error(self):
+        # --base is required and explicit -- no ambient-cwd / current-branch inference
+        # (architecture.md §6 "No ambient cwd").
+        with tempfile.TemporaryDirectory() as tmp:
+            body_path = Path(tmp) / "body.md"
+            body_path.write_bytes(b"content")
+            result = _run_script(
+                ["create-pr", "o/r", str(body_path), "--title", "T", "--head", "my-branch"]
+            )
+            self.assertEqual(result.returncode, 2)
+            self.assertEqual(result.stdout, "")
+
+    def test_create_pr_without_head_is_a_usage_error(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            body_path = Path(tmp) / "body.md"
+            body_path.write_bytes(b"content")
+            result = _run_script(
+                ["create-pr", "o/r", str(body_path), "--title", "T", "--base", "main"]
+            )
+            self.assertEqual(result.returncode, 2)
+            self.assertEqual(result.stdout, "")
+
+    def test_create_pr_surfaces_auth_required_as_needs_decision(self):
+        # architecture.md §3: AUTH_REQUIRED is "detected by the pipelib runner, any script" --
+        # gh's own documented exit code 4 (`gh help exit-codes`) is sufficient to exercise the
+        # classification path (see AuthRequiredClassificationTests' matching docstring).
+        with tempfile.TemporaryDirectory() as tmp:
+            body_path = Path(tmp) / "body.md"
+            body_path.write_bytes(b"content")
+            cmd = ["pr", "create", "--repo", "o/r", "--title", "T", "--body-file",
+                   str(body_path), "--base", "main", "--head", "my-branch"]
+            _write_manifest(tmp, [{"argv": cmd, "exit_code": 4}])
+            result = _run_script(
+                ["create-pr", "o/r", str(body_path), "--title", "T", "--base", "main",
+                 "--head", "my-branch"],
+                fixtures_dir=tmp,
+            )
+            self.assertEqual(result.returncode, 0, msg=result.stderr)
+            env = _parse_envelope(result)
+            envelope_asserts.assert_full_envelope_conformance(env)
+            self.assertEqual(env["status"], "needs_decision")
+            self.assertEqual(env["decision"]["code"], "AUTH_REQUIRED")
+
+    def test_create_pr_hard_gh_failure_surfaces_nonzero_no_envelope(self):
+        # A non-auth, non-zero gh failure propagates as this script's own non-zero exit with
+        # stderr forwarded verbatim and no envelope guaranteed (architecture.md §3).
+        with tempfile.TemporaryDirectory() as tmp:
+            body_path = Path(tmp) / "body.md"
+            body_path.write_bytes(b"content")
+            cmd = ["pr", "create", "--repo", "o/r", "--title", "T", "--body-file",
+                   str(body_path), "--base", "main", "--head", "my-branch"]
+            _write_manifest(tmp, [{"argv": cmd, "exit_code": 1}])
+            result = _run_script(
+                ["create-pr", "o/r", str(body_path), "--title", "T", "--base", "main",
+                 "--head", "my-branch"],
+                fixtures_dir=tmp,
+            )
+            self.assertEqual(result.returncode, 1)
+            self.assertEqual(result.stdout, "")
+
+    def test_create_pr_forwards_explicit_cwd_to_gh_call(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            body_path = Path(tmp) / "body.md"
+            body_path.write_bytes(b"body")
+            cmd = ["pr", "create", "--repo", "o/r", "--title", "T", "--body-file",
+                   str(body_path), "--base", "main", "--head", "my-branch"]
+            _write_stdout_file(tmp, "url.txt", b"https://github.com/o/r/pull/5\n")
+            _write_manifest(tmp, [{"argv": cmd, "stdout_file": "url.txt"}])
+
+            result = _run_script(
+                ["--cwd", tmp, "create-pr", "o/r", str(body_path), "--title", "T",
+                 "--base", "main", "--head", "my-branch"],
+                fixtures_dir=tmp,
+            )
+            self.assertEqual(result.returncode, 0, msg=result.stderr)
+
+
 class IsDepsErrorUnitTests(unittest.TestCase):
     """Direct unit tests of gh_persist._is_deps_error (the pure stderr-classification predicate),
     imported in-process rather than via subprocess -- mirroring how test_pipelib.py's

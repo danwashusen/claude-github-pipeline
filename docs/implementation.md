@@ -353,15 +353,15 @@ paths/workspaces); multi-phase flow; re-route handoffs with `Why:`. The `§P-ID`
 forced-read workaround are retired.
 
 **DoD**
-- [ ] Router ≤ 150 lines; exactly four playbooks; zero epic/story interleaving in any playbook
+- [x] Router ≤ 150 lines; exactly four playbooks; zero epic/story interleaving in any playbook
       (pattern grep committed as a validator).
-- [ ] DoD projection annotations diff clean against S1 captures.
+- [x] DoD projection annotations diff clean against S1 captures.
 - [ ] A seeded in-scope-blocked issue is refused with the gate (live).
-- [ ] Every gate/judgment step in `specs/resolver.md` present or PRD-justified.
-- [ ] Grep gates and pins as S7.
+- [x] Every gate/judgment step in `specs/resolver.md` present or PRD-justified.
+- [x] Grep gates and pins as S7.
 - [ ] Parity runs recorded: fresh bug-fix end-to-end; continue-mode re-entry; comment-only;
       multi-phase tick projection.
-- [ ] Router + largest playbook line count recorded in `docs/specs/parity/resolver.md` and is
+- [x] Router + largest playbook line count recorded in `docs/specs/parity/resolver.md` and is
       at most half the v1 `SKILL.md` count in `baseline.md` ([prd.md §10](prd.md)).
 
 **Testing:** offline routing + dry-run suites; the four live parity scenarios on the sandbox.

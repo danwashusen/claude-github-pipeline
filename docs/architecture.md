@@ -352,13 +352,16 @@ census greps.
   drift-class validators below.
   - **Raw-`gh` rule (the §7 rule-7 form).** Zero raw `gh` **write / fetch-envelope** invocations in
     `skills/` — any `gh` op that *has* a bundled script (writes → `gh_persist.py`; fetch-envelopes →
-    `gh_gather.py` / `gh_pr_gather.py`) must go through it, never a hand-rolled `gh`. **Excepting the
-    scriptless `gh pr merge` and `gh pr ready --undo` executors** (no `gh_persist.py` op covers them)
-    — these two are sanctioned raw-`gh` executors, not violations, because the behaviors they
-    implement are spec'd in [docs/specs/evaluator.md](specs/evaluator.md): merge execution
-    (`gh pr merge`, its "Merge execution" row) and the soft-reject draft-flip on Needs Revision /
-    Reject ("flips PR to draft," its merge-approval decision-gate row). §7 rule 7 is the source of
-    truth for which ops are script-backed.
+    `gh_gather.py` / `gh_pr_gather.py`) must go through it, never a hand-rolled `gh`. **Excepting three
+    scriptless executors** (no `gh_persist.py` op covers them) — these are sanctioned raw-`gh`
+    executors, not violations, because the behaviors they implement are spec'd: `gh pr merge` (merge
+    execution) and `gh pr ready --undo` (the soft-reject draft-flip on Needs Revision / Reject), both
+    the evaluator's and both cited to [docs/specs/evaluator.md](specs/evaluator.md) ("Merge execution"
+    and its merge-approval decision-gate row, "flips PR to draft"); and `gh pr ready <N>` (the
+    resolver's last-planned-phase-shipped draft→ready flip), cited to
+    [docs/specs/resolver.md](specs/resolver.md) (its invariant: the flip runs immediately before the
+    handoff, or the evaluator's draft-PR guard deadlocks it — carried from v1 SKILL.md:896). §7 rule 7
+    is the source of truth for which ops are script-backed.
   - **`git`-ref rule (ref-arithmetic-scoped).** Zero `git show <ref>:<path>` / `git grep <ref>` in
     `skills/` — a bare `git show <commit>` single-commit diff view is permitted; only the
     `<ref>:<path>` extraction (and `git grep <ref>`) is the banned ref-arithmetic form.
@@ -395,7 +398,7 @@ not a deviation.
 | Root is never written; skills never branch/commit/stash there | trust topology (§6) | `workspace.py` decisions + prompt invariant |
 | Gate config is read only at the recorded root `main` SHA, never from a PR head | a PR must not weaken its own gates (§6) | prep scripts + tests |
 | All tracked-file changes land via PR | write-protected `main` | prompt invariant + review |
-| No ref arithmetic, no raw `gh` writes, no ambient cwd in prompts | the drift class the rewrite exists to kill | §10 prompt validators (carve-outs in §10: `gh pr merge` / `gh pr ready --undo`; bare `git show <commit>`) |
+| No ref arithmetic, no raw `gh` writes, no ambient cwd in prompts | the drift class the rewrite exists to kill | §10 prompt validators (carve-outs in §10: `gh pr merge` / `gh pr ready` [evaluator `--undo`; resolver draft→ready flip]; bare `git show <commit>`) |
 | Contract tokens are frozen (marker strings, op names, closed sets) | cross-skill/GitHub parse compatibility | census greps (§10) |
 | Skills are stack-agnostic (gated integrations + ≥2-stack examples only) | multi-stack product | banned-pattern greps (§10) |
 | Session-per-skill; no autonomous stage chaining | context isolation is the design | prompt invariant + review |
