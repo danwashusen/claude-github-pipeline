@@ -465,7 +465,7 @@ sandbox, or delete anything outside the working tree and the sandbox.
   orchestrator-authorized extension → orchestrator sanity (646 both platforms) → 1 opus reviewer
   (PASS, 0 actionable, 3 advisories) → authorized §10/§12 amendment → reviewer delta re-verify
   (**PASS holds; advisory 1 resolved**). **1 fix round.**
-- **Live-parity fix round (2026-07-10, commit** _backfilled below_**):** the operator's scenario
+- **Live-parity fix round (2026-07-10, commit `db2ca73`):** the operator's scenario
   runs surfaced three v2 defects, fixed + re-reviewed (**PASS holds**, 652/652 both platforms):
   - **D2 (blocking — scenario 1 FAIL):** the spine's fresh-PR staging omitted the closing
     keyword v1 mandates (SKILL.md:888) → issue never auto-closes, evaluator's
