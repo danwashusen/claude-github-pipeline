@@ -344,16 +344,27 @@ Run **v1** `github-issue-resolver <build-issue>` and **v2** `resolver <build-iss
 fixture (the refusal mutates nothing, so two independent build issues sharing one open `#Q`, or a twinned
 `#Q`, both work). Compare the refusal comment + terminal handoff.
 
-- [ ] Fixture seeded (open `#Q`; build issue with `<!-- open-question-links:v1 -->` `in-scope (blocked)`
-      entry + native `blocked_by #Q`).
-- [ ] v1 refusal captured (comment naming `#Q`; no PR; no DoD tick; terminal handoff).
-- [ ] v2 refusal captured (`prep_resolver` `open_questions_gate.blocked: true`; router → `comment-only.md`;
-      comment naming `#Q`; no PR; no DoD tick; terminal handoff whose `Why:` names `#Q`).
-- [ ] Refusal comments schema-identical; both leave the issue open and un-touched (no branch, no PR, no
-      DoD projection).
-- [ ] Divergences (each traced to a PRD § or filed as a defect).
+- [x] Fixture seeded — open `#Q` = **#27** (`question` + `audience:architect`); build issue **#28** carries
+      the `<!-- open-question-links:v1 -->` `in-scope (blocked)` entry (`OQ-1` → question `#27`) + native
+      `blocked_by #27` (confirmed via `gh_gather.py`: `deps_available: true`, `blocked_by[0]` = #27 `OPEN`).
+- [ ] v1 refusal captured — **not run this session.** Box 3 ("refused with the gate (live)") gates on the
+      **v2** live refusal only; the full v1↔v2 schema-identical comparison is not a box-3 requirement.
+- [x] v2 refusal captured — pre-flight `prep_resolver.py` from the run clone returned
+      `open_questions_gate.blocked: true`, `suggested_playbook: comment-only.md`, `vector.comment_only: true`
+      (blocking cites `#27` `OPEN`, `native_blocked: true`, `resolved: false`); the headless
+      `resolver 28` run posted a comment-only refusal
+      ([#28 comment](https://github.com/danwashusen/gh-pipeline-sandbox/issues/28#issuecomment-4929973301))
+      naming `OQ-1` + tracker `#27`, opened **no PR**, created **no branch/worktree**, ticked **no** DoD
+      bullet, and emitted a terminal `## Handoff` whose `Why:` names `#27`/`OQ-1` and omits the `PR:` line.
+- [x] Issue left open + untouched — #28 still `OPEN`, all three `## Definition of done` bullets `- [ ]`,
+      `blocked_by #27` intact; the run's clone stayed on `main` @ `a07eb90` with no worktree and a clean
+      working tree. (Schema-identical-to-v1 not asserted — the v1 leg was not run this session.)
+- [x] Divergences — none (v2 leg). No PRD-traced divergence, no defect filed.
 
-**Verdict:** _TODO — operator-gated (S10 DoD box 3)._
+**Verdict:** **PASS (v2 live refusal)** — S10 DoD box 3 closed. The seeded in-scope-blocked issue **#28** was
+refused with the OQ hard gate: comment-only path, refusal comment naming blocking `#27`, no worktree, no PR,
+no DoD tick, schema-valid terminal handoff. The v1 leg was not run this session — box 3 gates only the v2
+live refusal; the full v1↔v2 schema-identical comparison is not a box-3 requirement.
 
 ## Go/no-go (S-step input)
 

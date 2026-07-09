@@ -356,7 +356,7 @@ forced-read workaround are retired.
 - [x] Router ≤ 150 lines; exactly four playbooks; zero epic/story interleaving in any playbook
       (pattern grep committed as a validator).
 - [x] DoD projection annotations diff clean against S1 captures.
-- [ ] A seeded in-scope-blocked issue is refused with the gate (live).
+- [x] A seeded in-scope-blocked issue is refused with the gate (live).
 - [x] Every gate/judgment step in `specs/resolver.md` present or PRD-justified.
 - [x] Grep gates and pins as S7.
 - [ ] Parity runs recorded: fresh bug-fix end-to-end; continue-mode re-entry; comment-only;
