@@ -251,16 +251,108 @@ single-phase). Expected v2: state-distiller runs, fitness audit runs (clean), pl
 work workspace, review loop to approval, PR opened against `main`, single-phase DoD projection onto the
 issue body, forward handoff to `/github-pipeline:evaluator #<PR>`.
 
-- [ ] v1 run captured (writes / gates / handoff / turns).
-- [ ] v2 run captured (prep facts / sub-agent dispatches / writes / handoff / one state-assembly call).
-- [ ] Artifacts schema-identical (PR body sections, single-phase DoD projection `(closed by commit
-      <short-sha>)`, forward handoff).
-- [ ] Cross-consumption confirmed (the evaluator reads the v2 PR + projected DoD; a v1-projected DoD is
-      read by the v2 evaluator).
-- [ ] Gates match; handoff schema-valid; ≤1 state-assembly call.
-- [ ] Divergences (each traced to a PRD § or filed as a defect).
+**Fixture (twins on `danwashusen/gh-pipeline-sandbox`).** A buggy `salute(name, title)` helper seeded on
+`main@e61fd39` in two parallel modules (`src/salute_a.py`, `src/salute_b.py` — the `_a`/`_b` twin split
+that lets both legs open PRs against shared `main` without colliding): the body returns `f"Dear {name},"`,
+dropping the `title` honorific its docstring documents. Two identical `bug`+`planned` issues each carry a
+single-phase `## Definition of done` (2 bullets) and a verified single-phase `<!-- implementation-plan:v1 -->`
+plan comment (no `## Phases`; `## Coverage gap` = `(none)` — the `src/` surface has no mirrored test
+harness, so the compileall fast-check is the mechanical gate): **#31** (twin-A → v1 `github-issue-resolver`)
+and **#32** (twin-B → v2 `resolver`). Headless recipe per the run-journal (`claude -p
+"/github-pipeline:<skill> <n>" --plugin-dir <this branch> --model opus --permission-mode bypassPermissions`,
+fresh sandbox clone per run, backgrounded stream-json log). The resolver opens a PR but never merges, so
+`main` stays `e61fd39` across both legs (confirmed post-run) and the twins never contend.
 
-**Verdict:** _TODO — operator-gated._
+- [x] v1 run captured (writes / gates / handoff / turns) — #31 → **PR #33** (`Fix: salute(name, title)
+      includes the title honorific (#31)`, base `main`, head `issue-31-salute-title`), body led by **`Fixes
+      #31`** → `closingIssuesReferences: [31]`, with `## Plan`/`## Doc grounding`/`## Summary`/`## Verification`
+      sections. `/review` → **APPROVE, 0 addressable items** (posted as a `--comment`, self-authored-PR
+      downgrade). **0** operator gates. Forward `## Handoff` → `/github-pipeline:github-pr-evaluator #33`
+      (`PR:` line `review: APPROVE at 1ec807f · health: not run · merge: not run`). 26 turns / $3.98 / ~9 min.
+      **v1 did NOT project the single-phase DoD** — issue #31's two DoD bullets stayed `- [ ]` (see D1).
+- [x] v2 run captured (prep facts / sub-agent dispatches / writes / handoff / one state-assembly call) —
+      **startup = 1 `prep_resolver.py 32` call** (the sole state-assembly call ✓); judgment sub-agents =
+      state-distiller + fitness-audit + test-selection (×2: §8 gate + §10.6) `Explore` + one review-loop
+      `general-purpose` — none is state-assembly. PR opened via **`gh_persist.py create-pr … --base main
+      --head 32-bug-salute-… `** (single write path, explicit base/head — D3). `/review` → **APPROVE, 0
+      items**. **0** operator gates. Forward `## Handoff` → `/github-pipeline:evaluator #34`. 36 turns /
+      $4.17 / ~11 min.
+- [ ] Artifacts schema-identical (PR body sections, single-phase DoD projection `(closed by commit
+      <short-sha>)`, forward handoff) — **PARTIAL.** *DoD projection:* v2 applied it correctly — issue #32
+      both bullets `- [x] … (closed by commit 61bd8e3)`, byte-matching the frozen S1 capture form; v1
+      produced **no** DoD artifact this run (D1), so the two legs' projections are not directly comparable.
+      *PR body sections:* `## Summary`/`## Plan` (link to the plan comment)/`## Doc grounding`/`## Verification`
+      present on both — schema-consistent. *Forward handoff:* both are valid forward `## Handoff` blocks
+      (`Issue:` + `PR:` + `Next:` + `Why:`), diverging only in the expected `github-pr-evaluator` →
+      `evaluator` next-command rename. **But the PR-body *closing keyword* diverges: v2 omits `Fixes/Closes
+      #<issue>` → `closingIssuesReferences: []` (D2, a filed defect).**
+- [ ] Cross-consumption confirmed (the evaluator reads the v2 PR + projected DoD; a v1-projected DoD is
+      read by the v2 evaluator) — **blocked by D2.** The v2 evaluator resolves the issue via the PR's
+      `closingIssuesReferences` (`evaluate-spine.md:24`); with `[]` on PR #34 it trips the `No
+      closingIssuesReferences` gate (`evaluate-spine.md:35`) instead of reading the projected DoD, so
+      end-to-end cross-consumption cannot be confirmed until D2 is fixed and the leg re-run.
+- [x] Gates match; handoff schema-valid; ≤1 state-assembly call — **0 = 0** operator gates on both legs;
+      both handoffs are schema-valid forward blocks; v2 startup = **1** `prep_resolver.py` call, 0
+      sub-agents for state assembly (distiller/audit/test-selection are judgment).
+- [x] Divergences (each traced to a PRD § or filed as a defect):
+      - **D2 — v2 PR is not Closes-linked (FILED DEFECT, blocking).** v1's fresh standard-PR body leads with
+        `Fixes #31` (mandated verbatim at [`skills/github-issue-resolver/SKILL.md:888`](../../../skills/github-issue-resolver/SKILL.md):
+        "PR body must include `Fixes #<number>` (or `Closes #<number>`) so GitHub auto-links and auto-closes
+        on merge") → `closingIssuesReferences: [31]`. v2's PR #34 body carries **no** closing keyword →
+        `closingIssuesReferences: []`: the issue↔PR auto-link and auto-close-on-merge are broken, and the
+        downstream evaluator's `closingIssuesReferences` dependency ([`evaluate-spine.md:24`](../../../skills/evaluator/playbooks/evaluate-spine.md))
+        trips its `No closingIssuesReferences → ask "Issue link"` gate (line 35). **Root cause:** the v2 spine's
+        S5 "Open or continue the PR" fresh-mode staging ([`resolve-spine.md:99-109`](../../../skills/resolver/playbooks/resolve-spine.md))
+        lists the body sections (`## Doc grounding` + `## Plan` + overrides + tracker + predecessor) but never
+        the `Fixes/Closes #<issue>` keyword, while spine `S6:158` keeps v1's *narrow* prohibition ("never add
+        `Closes #N` **in reaction to shipping a phase**") — so v2 retained the multi-phase-tick guard but
+        dropped the fresh-open mandate. This also fell through the S1 spec: the resolver spec's
+        Artifacts-written table ([`docs/specs/resolver.md`](../../resolver.md)) has a closing-keyword row only
+        for the *epic-integration* PR (`Fixes #<epic-number>`), none for the standard/story fresh PR. On this
+        same-account default-base PR the keyword would have populated the ref cleanly (the S7 gotcha), so the
+        empty ref is caused **solely** by the missing keyword. No PRD § relaxes the standard-PR close-link →
+        **not an explained divergence; a v2 regression vs v1.** *Fix:* add to the spine's S5 fresh-mode
+        staging "the PR body's first line is `Fixes #<issue>` (or `Closes #<issue>`)" and add the matching
+        standard/story fresh-PR closing-keyword row to the S1 Artifacts-written table; keep the `S6:158`
+        phase-tick prohibition unchanged.
+      - **D1 — v1 skipped its own single-phase DoD projection (EXPLAINED; non-deterministic v1 miss; v2 is
+        the faithful leg).** Both skills mandate single-phase DoD projection identically — v1
+        [`SKILL.md:868`](../../../skills/github-issue-resolver/SKILL.md) ("Then project the phase's `closes-dod`
+        onto the issue body … apply via `gh issue edit`") + its §4.7 re-entry reconciliation
+        ([`SKILL.md:441-443`](../../../skills/github-issue-resolver/SKILL.md)), and v2
+        [`dod-projection-rule.md`](../../../skills/resolver/references/dod-projection-rule.md) "Single-phase
+        fallback" ("tick every top-level DoD bullet on the first push"). v2 executed it (`61bd8e3`); **v1's
+        opus run silently omitted the §9 `gh issue edit`** (no explicit reasoning in the transcript — it went
+        audit→implement→push→PR→review→handoff), leaving #31's bullets `- [ ]`. This is a non-deterministic
+        model-execution miss of a step v1's own spec mandates, with §4.7 re-entry reconciliation as the
+        designed backstop — **not** a skill-contract divergence and **not** a v2 defect (v2 is the more
+        faithful executor). Consequence for this run: a clean *both-legs* comparison of the DoD-projection
+        artifact would need a fresh v1 re-run (moot while D2 blocks the scenario). v2's projection form is
+        already verified byte-identical to the S1 capture offline (`ArtifactRenderingByteCompatTests`).
+      - **D3 — PR-open mechanism (EXPLAINED; known v1→v2 cutover).** v1 hand-rolls `gh pr create
+        --body-file` (the Rule-7 divergence the resolver spec flags); v2 opens through the single write path
+        `gh_persist.py create-pr` with explicit `--base main --head <branch>` (no cwd inference). Same
+        artifact intent; the mechanism change was called out up front. Not a defect (and orthogonal to D2 —
+        `create-pr` writes whatever body it is handed; the missing keyword is the *staging* gap, not the
+        script).
+      - **D4 — PR title convention (minor, cosmetic).** v1 title `Fix: salute(name, title) includes the
+        title honorific (#31)` follows the v1 `--title "Fix: <summary> (#<issue-number>)"` shape
+        ([`SKILL.md:885`](../../../skills/github-issue-resolver/SKILL.md)); v2 echoed the issue title verbatim
+        (`Bug: salute() ignores the title honorific (S10 scenario 1 twin-B)`) — no `Fix:`-shaped summary and
+        no `(#N)` reference. Free-prose title (schema-allowed to differ), but v2's `create-pr` title
+        discipline drifts from v1's convention. Low severity; folds into the same theme as D2 (v2's fresh-open
+        title/link discipline is under-specified).
+
+**Verdict:** **FAIL — blocked on D2 (filed defect).** The v2 leg reproduces v1 on every judgment/gate
+dimension (clean audit, plan consumed, one-line fix, `/review` APPROVE with 0 items, **0 = 0** operator
+gates, ≤1 state-assembly call, schema-valid forward handoff) **and is the more faithful leg on the DoD
+projection** (it applied `(closed by commit 61bd8e3)`; v1's run skipped it — D1). But v2's central output,
+the PR, is **not Closes-linked** (`closingIssuesReferences: []`) because the v2 spine dropped the `Fixes/Closes
+#<issue>` keyword v1 mandates — an artifact-level regression that breaks issue auto-close and the downstream
+evaluator's issue-resolution (D2). No PRD § relaxes this, so it is a filed defect, not an explained
+divergence, and the scenario does **not** pass until the spine (and the S1 Artifacts-written table) carry the
+fresh-open closing keyword and the leg is re-run. D1 is an explained v1 non-determinism (v2 faithful); D3/D4
+are the known mechanism cutover + a cosmetic title drift.
 
 ### Scenario 2 — Continue-mode re-entry
 
