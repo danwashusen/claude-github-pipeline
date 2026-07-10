@@ -465,6 +465,38 @@ rather than `open-pr-yours` because a genuine in-flight multi-phase PR *is* a dr
         health: ✅ at <sha> · merge: not run` (populated because the review loop + §8 gate ran at that
         commit, per v1 SKILL.md:1011). **Verdict not self-certified as fixed** — record the divergence;
         re-run confirms the rendering after the doc fix.
+
+        **RULING (post-observation, evaluated against the contract — original observation above left
+        intact, not rewritten):** the sketch above ("populate `review: APPROVE at <sha> · health: ✅ at
+        <sha>`") is **not** what the contract supports and was **not** implemented. Read
+        `handoff-format.md`'s actual field definitions: `review:` is defined project-wide as the
+        **evaluator's** posted GitHub review verdict (`APPROVE` / `COMMENT (soft-reject)` / …), and
+        `health:` is the **evaluator's** branch-health gate result — not "did the resolver's own
+        `/review` loop or §8 gate run." The resolver's own S1 capture makes this explicit and is frozen
+        prior truth, not something authored for this fix:
+        [`docs/specs/examples/handoff-resolver.md`](../examples/handoff-resolver.md) states "the
+        `review:`/`health:`/`merge:` markers on the `PR:` line are all `not run` here because the
+        resolver never runs the evaluator's checks itself — those fields populate only once the
+        evaluator has acted" — and that rule is not forward-exit-scoped in the capture's own prose,
+        only in v2's (buggy) intro paraphrase of it. A mid-phases re-route hasn't reached the evaluator
+        either, so the identical rule applies: **v2's `review: not run · health: not run` was the
+        conformant rendering all along; v1's `✓` is the true off-contract value**, not an "also valid,
+        just glyph-wrong" stand-in for a real APPROVE/health-check value — v1 never ran the evaluator on
+        that PR, so no evaluator verdict or health-cache SHA existed to legitimately populate those
+        fields with. **Fix applied:** `handoff-renderings.md`'s intro is rewritten to state the `not
+        run` rule unconditionally (forward exits *and* every re-route, explicitly including the
+        mid-phases continue-mode case), and the off-closed-set `✓` glyph is removed from all three
+        worked examples that carried it (the multi-phase non-final re-route, the terminal-with-action
+        operator-phase shape, and — found by the same audit — the last-planned-phase-shipped *forward*
+        shape, which had the identical bug independent of forward/re-route framing). `standard.md`'s
+        Handoff section now states the same rule inline for its multi-phase bullet, closing the gap
+        where a routed playbook depended entirely on the reference getting it right. **No closed-set
+        value was added** — the fix is internal consistency (worked examples ↔ intro ↔ contract), not a
+        contract change. **Scenario-4 guidance:** the operator's scenario-4 run (which emits the same
+        re-route shape) should expect and confirm `review: not run · health: not run` on every
+        resolver-authored `PR:` line pre-evaluator; that is the ruled-conformant rendering, not a
+        regression to fix further. Regression-guarded by
+        `tests/test_resolver_routing.py::ReRouteHandoffMarkerTests`.
       - **D2 — `prior_pr_row: draft` vs the scenario's `open-pr-yours` wording (EXPLAINED; not a defect).**
         The scenario target says `prior_pr = your own open/draft PR`; a genuine in-flight *multi-phase* PR is
         a **draft** (the resolver flips it ready only at the last phase), so prep classifies the row as
@@ -496,8 +528,10 @@ phase's `closes-dod` bullet onto the issue body (`(closed by phase 2, commit <sh
 **Re-route — multi-phase, non-final** `## Handoff` back to the resolver. v2 confirmed the crux offline (`prep`
 returned `mode: continue` from the `draft` continue row, `workspace.branch` = the PR head branch at the PR
 head SHA) and startup = **1** successful state-assembly call. The sole persisted-handoff divergence (D1) is a
-filed, low-severity marker-rendering underspecification; D2–D5 are wording/cutover/architecture/environment,
-each explained. No unexplained divergence.
+filed, low-severity marker-rendering underspecification — **ruled, and fixed, in D1's own annotation above:
+v2's `not run` was the contract-conformant rendering; the underlying self-consistency bug in
+`handoff-renderings.md` (not v2's behavior) is what needed fixing, and is fixed**. D2–D5 are
+wording/cutover/architecture/environment, each explained. No unexplained divergence.
 
 ### Scenario 3 — Comment-only
 

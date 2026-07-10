@@ -7,9 +7,16 @@ vocabulary live in [`../../_shared/handoff-format.md`](../../_shared/handoff-for
 renders them at point of use, it does not restate the schema.
 
 Next-command skills are the v2 pipeline names (`evaluator`, `planner`, `drafter`, `resolver`),
-namespaced `/github-pipeline:<name>`. The `PR:` line's `review:`/`health:`/`merge:` markers are all
-`not run` on a resolver forward exit because the resolver never runs the evaluator's checks itself —
-those populate only once the evaluator acts.
+namespaced `/github-pipeline:<name>`. **The `PR:` line's `review:`/`health:`/`merge:` markers are
+`not run` on every resolver-authored handoff whose PR hasn't reached the evaluator yet — forward exits
+AND every re-route (including a mid-phases continue-mode re-route back to the resolver itself).** Per
+`_shared/handoff-format.md`'s closed set, `review:` is the **evaluator's** posted GitHub review verdict
+(`APPROVE` / `COMMENT (soft-reject)` / …) and `health:` is the **evaluator's** branch-health gate result
+— neither field means "the resolver's own `/review` skill or §8 pre-push gate ran." The resolver runs
+both internally on every phase, but that is not what these two fields denote, so they stay `not run`
+until the evaluator has actually acted on the PR — even on a re-route where a phase's review loop and
+health gate passed cleanly. Never render an off-closed-set glyph (e.g. a bare `✓`) here; there is no
+value in the closed set for "ran internally, no formal verdict yet" — `not run` **is** that state.
 
 ## Forward — standard or story PR opened / updated
 
@@ -38,7 +45,7 @@ next session continues the same multi-phase resolution.
 ## Handoff
 
 **Issue:** #640 — Spike: Mitigate Gemini thinking-token truncation · open · feature · plan: ✓ (multi-phase: 2 of 4 phases shipped)
-**PR:** #649 — feat(llm): #640 spike harness · draft · base main · review: ✓ at 40f1d36 · health: ✓ at 40f1d36 · merge: not run
+**PR:** #649 — feat(llm): #640 spike harness · draft · base main · review: not run · health: not run · merge: not run
 
 **Next:** continue with the next phase in a fresh session.
 
@@ -56,7 +63,7 @@ action; surface it verbatim from the plan's `deliverable` so whoever runs it doe
 ## Handoff
 
 **Issue:** #640 — Spike: Mitigate Gemini thinking-token truncation · open · feature · plan: ✓ (multi-phase: 2 of 4 phases shipped)
-**PR:** #649 — feat(llm): #640 spike harness · draft · base main · review: ✓ at 40f1d36 · health: ✓ at 40f1d36 · merge: not run
+**PR:** #649 — feat(llm): #640 spike harness · draft · base main · review: not run · health: not run · merge: not run
 
 **Next:** run the operator phase, then return to the resolver.
 
@@ -84,7 +91,7 @@ post-flip state.
 ## Handoff
 
 **Issue:** #640 — Spike: Mitigate Gemini thinking-token truncation · open · feature · plan: ✓ (multi-phase: 4 of 4 phases shipped)
-**PR:** #649 — feat(llm): #640 spike harness · open · base main · review: ✓ at 9f0a112 · health: ✓ at 9f0a112 · merge: not run
+**PR:** #649 — feat(llm): #640 spike harness · open · base main · review: not run · health: not run · merge: not run
 
 **Phases:** all 4 planned phases shipped at 9f0a112; PR flipped to ready for the evaluator (`gh pr ready 649`).
 

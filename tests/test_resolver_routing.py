@@ -666,5 +666,108 @@ class QuestionTypeHandoffVariantTests(unittest.TestCase):
         self.assertIn("non-PR resolution", text)
 
 
+class ReRouteHandoffMarkerTests(unittest.TestCase):
+    """Filed defect (S10 live parity, scenario 2 D1 — docs/specs/parity/resolver.md): the multi-phase
+    re-route worked example (and two siblings) carried an off-closed-set `✓` glyph on the PR-line
+    `review:`/`health:` markers, contradicting the reference's own forward-scoped intro. RULING (per
+    _shared/handoff-format.md's actual field definitions, evaluator-owned — see the D1 annotation):
+    `not run` is the conformant value on EVERY resolver-authored handoff, forward or re-route alike,
+    because those two fields denote the evaluator's posted verdict / health-cache result, never "the
+    resolver's own /review loop or §8 gate ran." These tests assert every rendered PR-line in
+    handoff-renderings.md stays on the closed set, and that the intro states the unconditional scope."""
+
+    RENDERINGS = REFERENCES_DIR / "handoff-renderings.md"
+    STANDARD = PLAYBOOKS_DIR / "standard.md"
+
+    @staticmethod
+    def _fenced_blocks(path, fence="```"):
+        text = path.read_text(encoding="utf-8")
+        blocks, cur, inb = [], [], False
+        for line in text.splitlines():
+            if line.strip() == fence:
+                if inb:
+                    blocks.append("\n".join(cur))
+                    cur = []
+                    inb = False
+                else:
+                    inb = True
+                continue
+            if inb:
+                cur.append(line)
+        return blocks
+
+    def test_no_pr_line_carries_an_off_closed_set_review_or_health_glyph(self):
+        # The closed set has no bare-checkmark value for either field (handoff-format.md:52-53) --
+        # every rendered PR: line's review:/health: segment must be one of the defined values, never
+        # a raw ✓/✗ glyph standing in for "ran, no formal verdict."
+        off_vocab = re.compile(r"\b(review|health):\s*[✓✗]")
+        for block in self._fenced_blocks(self.RENDERINGS):
+            if "**PR:**" not in block:
+                continue
+            self.assertNotRegex(
+                block,
+                off_vocab,
+                "an off-closed-set ✓/✗ glyph on review:/health: survives in a rendered PR: line: %r"
+                % block,
+            )
+
+    def test_every_resolver_authored_pr_line_before_evaluator_action_is_not_run(self):
+        # Every PR: line rendered by a shape that fires BEFORE the evaluator has acted (forward opens,
+        # every re-route) must carry review: not run / health: not run. The two shapes that legitimately
+        # carry an evaluator-populated value (the plan-currency re-route, which CAN carry a value the
+        # evaluator posted on a PRIOR pass) are the only exception, and even there review: stays not run
+        # in the frozen worked example -- so this asserts the floor: review: not run appears on every
+        # PR: line in the file (a stricter, always-true invariant this reference's worked examples
+        # satisfy today).
+        text = self.RENDERINGS.read_text(encoding="utf-8")
+        pr_lines = [
+            line for block in self._fenced_blocks(self.RENDERINGS)
+            for line in block.splitlines() if line.strip().startswith("**PR:**")
+        ]
+        self.assertTrue(pr_lines, "expected at least one rendered PR: line")
+        for line in pr_lines:
+            self.assertIn(
+                "review: not run",
+                line,
+                "every resolver-authored PR: line must carry review: not run (the evaluator hasn't "
+                "acted yet on any resolver exit): %r" % line,
+            )
+        self.assertIn(
+            "not run",
+            text,
+            "handoff-renderings.md must still document the not-run rule",
+        )
+
+    def test_intro_states_the_unconditional_not_run_scope(self):
+        # Regression guard for the root cause: the intro must not scope the not-run rule to forward
+        # exits only -- it must explicitly cover every re-route too (including mid-phases continue).
+        text = self.RENDERINGS.read_text(encoding="utf-8")
+        self.assertIn(
+            "every resolver-authored handoff",
+            text,
+            "the intro must state the not-run rule unconditionally, not forward-exit-scoped",
+        )
+        self.assertIn(
+            "AND every re-route",
+            text,
+            "the intro must explicitly cover re-routes, including the mid-phases continue-mode case",
+        )
+        self.assertNotIn(
+            'on a resolver forward exit because the resolver never runs',
+            text,
+            "the old forward-scoped phrasing (the root-cause ambiguity) must not survive",
+        )
+
+    def test_standard_playbook_states_the_rule_inline_for_multiphase_shapes(self):
+        # The routed playbook must not depend entirely on the reference getting the rule right --
+        # restate it inline for the multi-phase bullet, where the D1 defect actually surfaced.
+        text = self.STANDARD.read_text(encoding="utf-8")
+        self.assertIn(
+            "review: not run · health: not run",
+            text,
+            "standard.md's multi-phase bullet must restate the not-run rule inline",
+        )
+
+
 if __name__ == "__main__":
     unittest.main()

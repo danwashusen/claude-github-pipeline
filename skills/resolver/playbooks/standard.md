@@ -21,7 +21,10 @@ outcome to its rubric:
 - **Multi-phase** — pick **non-final code phase pushed** (`plan: ✓ (multi-phase: K of M …)`, PR stays
   draft, `Next: /github-pipeline:resolver #<N>`), **operator/decision-only next phase** (surface the
   `deliverable` + the `<!-- operator-phase-complete: <N> -->` marker verbatim), or **last planned phase
-  shipped** (PR flipped ready, `Next: /github-pipeline:evaluator #<PR>`).
+  shipped** (PR flipped ready, `Next: /github-pipeline:evaluator #<PR>`). **Every one of these three
+  shapes still carries `review: not run · health: not run`** — the review loop and the §8 gate ran
+  internally this session, but that is not what those two fields mean (they are the evaluator's,
+  populated only once it acts); do not render an off-closed-set glyph for "ran internally."
 - **Re-route → planner** (plan drift / thread-supersedes-plan): `plan: stale`, `Next:
   /github-pipeline:planner revise #<N>`; `Why:` quotes the locked decision + `file:line`.
 - **Re-route → drafter** (audit blocker or doc conflict): `Next: /github-pipeline:drafter revise #<N>`;
