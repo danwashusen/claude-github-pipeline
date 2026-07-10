@@ -373,15 +373,131 @@ Expected v2: the distiller runs, the S2 audit is **skipped** (continue mode), th
 draft (non-final phase) → re-route handoff `/github-pipeline:resolver #<N>` (or last-phase → flip ready +
 forward to the evaluator).
 
-- [ ] v1 run captured.
-- [ ] v2 run captured (audit skipped on continue mode; phase-tracker read as the routing signal).
-- [ ] Artifacts schema-identical (per-phase DoD projection `(closed by phase <N>, commit <short-sha>)`,
-      `## Phase tracker` tick, PR stays draft on a non-final phase).
-- [ ] Continue-mode is parameterization, not a fifth flow (same playbook, `vector.mode` drives it).
-- [ ] Gates match; handoff schema-valid; ≤1 state-assembly call.
-- [ ] Divergences.
+**Fixture (twins on `danwashusen/gh-pipeline-sandbox`).** Scenario 1's twins are single-phase bug-fixes,
+so this scenario seeds **fresh** twins in the in-flight multi-phase state a prior resolver run would leave
+(the parity doc doesn't chain it off Scenario 1). A 3-phase (`format_currency` → `format_percent` →
+`format_date`) planned `bug`+`planned` issue over `src/formatter_{a,b}.py` (the `_a`/`_b` twin split; buggy
+stubs seeded on `main@d92dc12`), each with a 3-bullet `## Definition of done` and a verified 3-phase
+`<!-- implementation-plan:v1 -->` plan (`## Phases`, one `closes-dod` bullet each; `## Coverage gap` =
+`(none)` — the `src/` surface has no test harness, so the `compileall` fast-check is the mechanical gate).
+**Phase 1 is pre-shipped** to simulate the prior run: per twin a branch carries the phase-1
+`format_currency` fix, an **open draft PR** (base `main`, `Fixes #<issue>` first line, `## Phase tracker`
+with Phase 1 `- [x] (commit <sha>)` / Phases 2–3 `- [ ]`, `## Plan` link, `## Doc grounding`) sits on it,
+and the issue body's DoD bullet 1 is projected `(closed by phase 1, commit <sha>)`. **#35** (twin-A → v1
+`github-issue-resolver`, branch `35-formatter-helpers-a`, draft **PR #37**, phase-1 seed `b03ee51`) and
+**#36** (twin-B → v2 `resolver`, branch `36-formatter-helpers-b`, draft **PR #38**, phase-1 seed `55df1e6`).
+Headless recipe per Scenario 1 (`claude -p "/github-pipeline:<skill> <issue>" --plugin-dir <this branch>
+--model opus --permission-mode bypassPermissions`, fresh sandbox clone per run). The resolver never merges,
+so `main` stays `d92dc12` and the two draft PRs sit on independent branches (no contention).
 
-**Verdict:** _TODO — operator-gated._
+**Pre-flight (the continue-mode crux).** `prep_resolver.py 36` (one call) returned `status: ok`,
+`vector.type: standard`, `vector.mode: **continue**`, `vector.prior_pr_row: **draft**`, `prior_pr` = **PR
+#38** (draft, `author: danwashusen` = me, `headRefName: 36-formatter-helpers-b`), `suggested_playbook:
+standard.md`, `phases` = 3, `audit_ref: main`, `open_questions_gate.blocked: false`, and the
+`distiller_bundle` staged paths. Critically `workspace.branch: **36-formatter-helpers-b**` (the PR head
+branch — **not** a fresh `<issue>-<slug>` name; the `branch` fresh-mode fact is `null` in continue mode)
+at `workspace.sha: 55df1e6` (**the existing PR head, not `main`**) — proving the 7-row table drove
+`continue` and that the existing branch is reused at the PR head, not recreated. `prior_pr_row` is `draft`
+rather than `open-pr-yours` because a genuine in-flight multi-phase PR *is* a draft — both are the two
+`_CONTINUE_ROWS` (`prep_resolver.py:225`) and both yield `mode: continue`, so the expected outcome holds
+(see D-row on the row nuance).
+
+- [ ] v1 run captured — #35 → **PR #37** (draft, base `main`, head `35-formatter-helpers-a`). Continue mode
+      (in-flight PR; "plan already consumed and binding"); **audit skipped**. Read PR #37's `## Phase
+      tracker`, shipped **Phase 2 — Fix `format_percent`** (`return "%d%%" % round(ratio * 100)`) as commit
+      **`17e07eb`** onto the existing branch (no new branch, no PR create). §8 gate: `compileall` green,
+      test-selection `(none)`. Ticked Phase 2 in PR #37's tracker; projected issue #35 DoD bullet 2 `(closed
+      by phase 2, commit 17e07eb)`. `/review` **APPROVE, 0 addressable items** (iter 1). **0** operator
+      gates. PR stayed **draft**. Re-route `## Handoff` → `/github-pipeline:github-issue-resolver #35`
+      (`multi-phase: 2 of 3 phases shipped`; PR line `review: ✓ at 17e07eb · health: ✓ at 17e07eb · merge:
+      not run`). 32 turns / $4.58 / ~9 min. Sub-agents: `github-ops` (`GATHER_ISSUE`) + test-selection
+      `Explore` + review-loop `general-purpose` (state distilled **inline** in the main loop — no separate
+      distiller sub-agent).
+- [ ] v2 run captured (audit skipped on continue mode; phase-tracker read as the routing signal) —
+      **startup = 1 successful `prep_resolver.py 36` call** (the sole state-assembly call ✓; a first
+      wrong-path guess errored with no facts — D4). Router confirmed `suggested standard.md`, read the shared
+      spine; **S2 audit skipped** (`"continue mode"` / `"Audit skipped"` logged, **no fitness-audit
+      sub-agent dispatched**). Judgment sub-agents = **state-distiller** `Explore` (`Distill issue #36 state`,
+      fed from the `distiller_bundle` staged paths) + test-selection `Explore` + review-loop
+      `general-purpose` — none is state-assembly. Read PR #38's `## Phase tracker`, shipped **Phase 2 — Fix
+      `format_percent`** (`return "%d%%" % round(ratio * 100)`) as commit **`909005d`** onto the existing
+      branch via `git push` (no `create-pr`, no `gh pr create`, no `gh pr ready`). §8 gate: `compileall`
+      green, test-selection `(none)`. Writes = `gh_persist.py edit-body` ×2 (issue #36 DoD + PR #38 tracker,
+      each self-confirmed with `body_sha256`). `/review` **APPROVE, 0 addressable items**. **0** operator
+      gates. PR stayed **draft**. Re-route `## Handoff` → `/github-pipeline:resolver #36`. 52 turns / $4.50 /
+      ~12 min.
+- [ ] Artifacts schema-identical (per-phase DoD projection `(closed by phase <N>, commit <short-sha>)`,
+      `## Phase tracker` tick, PR stays draft on a non-final phase) — **YES.** *DoD projection:* both ticked
+      **only** bullet 2 as `- [x] … (closed by phase 2, commit <sha>)` (v1 `17e07eb`, v2 `909005d`),
+      byte-matching the frozen S1 capture form; bullet 1 (phase 1) unchanged, bullet 3 left `- [ ]`
+      (exact-coverage — no over-tick, no sticky-veto re-tick). *Phase tracker:* both are `- [x] Phase 1 …
+      (commit <sha>)` / `- [x] Phase 2 … (commit <sha>)` / `- [ ] Phase 3 …` on the PR body. *Draft state:*
+      both PRs `isDraft: true`, `OPEN`, same head branch, exactly **2 commits** (phase-1 seed + phase-2), and
+      **no duplicate PR** (a `<issue> in:body` search returns only the one PR per twin). Divergence is on the
+      *handoff PR-line markers* only (D1).
+- [ ] Continue-mode is parameterization, not a fifth flow (same playbook, `vector.mode` drives it) — **YES.**
+      v2 routed to `standard.md` → the shared `resolve-spine.md` (the same playbook a fresh standard issue
+      loads); `vector.mode: continue` + `prior_pr` + the reused branch drove the continue behavior (audit
+      skip, phase-tracker routing, push-onto-existing-branch) **inside** that playbook — no fifth flow, no
+      `continue`-specific playbook read.
+- [ ] Gates match; handoff schema-valid; ≤1 state-assembly call — **0 = 0** operator gates on both legs;
+      both handoffs are valid **Re-route — multi-phase, non-final** `## Handoff` blocks (`Issue:` + `PR:` +
+      `Next:` + `Why:`, `Next:` = `/github-pipeline:{github-issue-resolver|resolver} #<issue>`); v2 startup =
+      **1** successful `prep_resolver.py` state-assembly call, 0 sub-agents for state assembly.
+- [ ] Divergences (each traced to a PRD § / cutover, or filed as a defect):
+      - **D1 — re-route handoff PR-line `review`/`health` markers diverge (FILED DEFECT, low severity).**
+        v1 rendered `review: ✓ at 17e07eb · health: ✓ at 17e07eb`; v2 rendered `review: not run · health: not
+        run`. The shared closed set ([`../../../skills/_shared/handoff-format.md:52-53`](../../../skills/_shared/handoff-format.md))
+        is `review ∈ {APPROVE, COMMENT (soft-reject), …, not run}` and `health ∈ {✅ at <sha>, ❌ at <sha>,
+        not run}` — **`✓` is off-vocabulary for both** (v1's glyph), so v1's markers are non-conformant, while
+        v2's `not run` tokens are schema-valid but *under-report* (the resolver's `/review` loop **did**
+        approve and the §8 health gate **did** pass at the phase-2 commit). **Root cause:** an ambiguity in
+        v2's [`references/handoff-renderings.md`](../../../skills/resolver/references/handoff-renderings.md) —
+        its intro (lines 10-12) says the `review`/`health`/`merge` markers are all `not run` "on a resolver
+        **forward** exit" (forward-scoped), but the **Re-route — multi-phase, non-final** worked example
+        (line 41) shows `review: ✓ at 40f1d36 · health: ✓ at 40f1d36`, using the off-closed-set `✓` glyph and
+        contradicting the intro; the model followed the intro's rule and emitted `not run`. Neither leg
+        rendered the intended `review: APPROVE at <sha> · health: ✅ at <sha>` (v1 SKILL.md:1011 prescribes
+        `review: APPROVE at <sha>` from the refreshed `pr-state.json`). Cosmetic marker-level only — both
+        re-route to the resolver, PR stays draft, Phase 2 projected — but it is a real, filed underspecification.
+        *Fix:* scope the intro's "all `not run`" to the forward-to-evaluator exits, and correct the
+        multi-phase-re-route example's PR line to the shared closed-set values `review: APPROVE at <sha> ·
+        health: ✅ at <sha> · merge: not run` (populated because the review loop + §8 gate ran at that
+        commit, per v1 SKILL.md:1011). **Verdict not self-certified as fixed** — record the divergence;
+        re-run confirms the rendering after the doc fix.
+      - **D2 — `prior_pr_row: draft` vs the scenario's `open-pr-yours` wording (EXPLAINED; not a defect).**
+        The scenario target says `prior_pr = your own open/draft PR`; a genuine in-flight *multi-phase* PR is
+        a **draft** (the resolver flips it ready only at the last phase), so prep classifies the row as
+        `draft`, not `open-pr-yours`. Both are the two `_CONTINUE_ROWS` (`prep_resolver.py:225`) → both yield
+        `mode: continue`; the row name only selects which (if any) gate card would show, and neither continue
+        row gates. The expected outcome (continue mode, branch reused at PR head) holds exactly.
+      - **D3 — state-assembly + write mechanism (EXPLAINED; known v1→v2 cutover).** v1 gathers via the
+        `github-ops` `GATHER_ISSUE` sub-agent and writes via raw `gh issue edit` / `gh pr edit` / `git push`
+        in its main loop; v2 assembles via the deterministic `prep_resolver.py` (one facts block) and writes
+        via `gh_persist.py edit-body` staged-body writes (+ `git push`). Same artifacts (identical DoD tick,
+        phase-tracker tick, phase-2 commit); the mechanism change is the documented cutover. Not a defect.
+      - **D4 — distiller seam (EXPLAINED; known v1→v2 architecture).** v1 distills current state **inline** in
+        the main loop (no separate sub-agent); v2 dispatches a dedicated **state-distiller** `Explore` fed
+        from prep's `distiller_bundle` staged paths (`resolve-spine.md` S1). Both then classify and read the
+        PR `## Phase tracker` as the routing signal. Architecture, not a defect.
+      - **D5 — v2's first `prep_resolver.py` call used a wrong path (EXPLAINED; benign headless artifact).**
+        v2's initial invocation was `…/skills/resolver/scripts/prep_resolver.py 36` (a `${CLAUDE_PLUGIN_ROOT}`
+        path-construction fumble) → exit 1, **no facts assembled**; the model `find`-corrected and the second
+        call to the real `…/scripts/prep_resolver.py 36` returned the `status: ok` facts block. Exactly **one
+        successful state-assembly call** drove routing, so the ≤1-state-assembly criterion holds; the failed
+        guess produced no state. A headless path-resolution artifact, not a skill-contract divergence.
+
+**Verdict:** **PASS (both legs) — one filed low-severity defect (D1, handoff PR-line marker rendering).**
+Both re-enter the in-flight multi-phase PR in `continue` mode, **skip the S2 audit**, read the existing PR's
+`## Phase tracker` as the routing signal, ship the next planned phase (Phase 2 — `format_percent`) onto the
+**existing branch at the PR head** (no new branch, no `create-pr`, no duplicate PR), project **only** that
+phase's `closes-dod` bullet onto the issue body (`(closed by phase 2, commit <sha>)`; exact-coverage, bullet
+3 untouched), tick it on the PR tracker, leave the PR **draft**, run **0 operator gates**, and emit a valid
+**Re-route — multi-phase, non-final** `## Handoff` back to the resolver. v2 confirmed the crux offline (`prep`
+returned `mode: continue` from the `draft` continue row, `workspace.branch` = the PR head branch at the PR
+head SHA) and startup = **1** successful state-assembly call. The sole persisted-handoff divergence (D1) is a
+filed, low-severity marker-rendering underspecification; D2–D5 are wording/cutover/architecture/environment,
+each explained. No unexplained divergence.
 
 ### Scenario 3 — Comment-only
 
