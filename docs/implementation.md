@@ -359,7 +359,7 @@ forced-read workaround are retired.
 - [x] A seeded in-scope-blocked issue is refused with the gate (live).
 - [x] Every gate/judgment step in `specs/resolver.md` present or PRD-justified.
 - [x] Grep gates and pins as S7.
-- [ ] Parity runs recorded: fresh bug-fix end-to-end; continue-mode re-entry; comment-only;
+- [x] Parity runs recorded: fresh bug-fix end-to-end; continue-mode re-entry; comment-only;
       multi-phase tick projection.
 - [x] Router + largest playbook line count recorded in `docs/specs/parity/resolver.md` and is
       at most half the v1 `SKILL.md` count in `baseline.md` ([prd.md §10](prd.md)).

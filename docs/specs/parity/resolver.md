@@ -689,17 +689,124 @@ Target: a multi-phase planned issue, fresh start. Expected v2: the fresh PR open
 `## Phase tracker` mirroring the plan's `## Phases`; the first phase ships; only that phase's `closes-dod`
 bullets flip on the issue body (`(closed by phase <N>, commit <short-sha>)`) — never a bullet the phase
 doesn't claim, never a sticky-vetoed bullet; the PR stays draft; re-route handoff to the resolver for the
-next phase.
+next phase. To exercise the **whole** multi-phase arc — including the last-phase draft→ready flip — the
+fixture is a **2-code-shipping-phase** plan run to completion: two resolver sessions per twin — session 1
+(fresh → Phase 1, draft PR, re-route) and session 2 (continue → Phase 2, the **last** phase → `gh pr
+ready` flip, forward to the evaluator). The resolver ships one phase per session (spine S4), so two phases
+is the minimal fixture that reaches both the mid-phase re-route and the last-phase flip.
 
-- [ ] v1 run captured.
-- [ ] v2 run captured (draft PR + `## Phase tracker`; exact-coverage projection).
-- [ ] Artifacts schema-identical (`## Phase tracker` shape, per-phase DoD annotation, draft PR state).
-- [ ] Projection is exact-coverage (`expected_set − (ticked ∪ rejected)`); no over-tick, no
-      sticky-veto re-tick.
-- [ ] Gates match; handoff schema-valid; ≤1 state-assembly call.
-- [ ] Divergences.
+**Fixture (twins on `danwashusen/gh-pipeline-sandbox`).** Fresh twins seeded on `main@3db6044`: two buggy
+display-helper modules `src/helpers_{a,b}.py` (the `_a`/`_b` twin split), each with two independent
+one-line-stub bugs (`to_fahrenheit` returns raw Celsius; `pluralize` never adds the suffix). Each twin is
+a `bug`+`planned` issue naming its **own** module, carrying a 2-bullet `## Definition of done` and a
+verified 2-phase `<!-- implementation-plan:v1 -->` plan (`## Phases`: Phase 1 `closes-dod: 1` →
+`to_fahrenheit`, Phase 2 `closes-dod: 2` → `pluralize`; `## Coverage gap` = `(none)`, no-harness carve-out
+— the `compileall` fast-check is the mechanical gate): **#43** (twin-A → v1 `github-issue-resolver`,
+`src/helpers_a.py`) and **#44** (twin-B → v2 `resolver`, `src/helpers_b.py`). Distinct filenames keep the
+audit surface unambiguous (avoids the Scenario-1-re-run D5 four-identical-copies ambiguity). Headless
+recipe per Scenarios 1–3 (`claude -p "/github-pipeline:<skill> <issue>" --plugin-dir <this branch>
+--model opus --permission-mode bypassPermissions --output-format stream-json --verbose`, **fresh sandbox
+clone per session**). Neither leg merges, so `main` stayed `3db6044` across all four sessions and the
+twins never contended.
 
-**Verdict:** _TODO — operator-gated._
+**Pre-flight.** `prep_resolver.py 44` (one call) returned `status: ok`, `vector.type: standard`,
+`vector.mode: fresh`, `prior_pr_row: no-prior-pr`, `comment_only: false`, `suggested_playbook:
+standard.md`, `plan.present: true` at `3db6044` (no plan-vs-code drift), `phases` = 2 (both
+`code-shipping`, `closes-dod` [1] / [2]), `dod` = 2 unticked bullets, `open_questions_gate.blocked:
+false`, `workspace.branch: 44-bug-helpers-b-…` at base `main` — the fresh multi-phase standard start the
+scenario needs.
+
+- [x] v1 run captured — #43 → **draft PR #45** (session 1), flipped ready (session 2). **Session 1:**
+      fitness audit **clean**, consumed the 2-phase plan, shipped **Phase 1 — `to_fahrenheit`**
+      (`celsius * 9 / 5 + 32`) as commit **`dd686ca`**, opened the PR via hand-rolled `gh pr create
+      --body-file … --base main --head issue-43-fix-helpers-a --draft` (the Rule-7 divergence — D3),
+      `## Phase tracker` `- [x] Phase 1 … (commit dd686ca)` / `- [ ] Phase 2 …`, projected issue #43 DoD
+      bullet 1 `(closed by phase 1, commit dd686ca)`; `/review` **APPROVE, 0 items**; **0** operator
+      gates; re-route `## Handoff` → `/github-pipeline:github-issue-resolver #43` (PR line `review: ✓ at
+      dd686ca · health: ✓ at dd686ca · merge: not run` — the off-closed-set `✓` glyph, D1). **Session 2**
+      (continue, **audit skipped**): shipped **Phase 2 — `pluralize`** (`word + "s" if count != 1 else
+      word`) as **`31abbec`**, ticked Phase 2 on the tracker, projected DoD bullet 2 `(closed by phase 2,
+      commit 31abbec)`, **flipped PR #45 draft → ready** (`gh pr ready 45`), forward `## Handoff` →
+      `/github-pipeline:github-pr-evaluator #45`. 2 commits (one per phase).
+- [x] v2 run captured (draft PR + `## Phase tracker`; exact-coverage projection) — #44 → **draft PR #46**
+      (session 1), flipped ready (session 2). **Each session = 1 `prep_resolver.py` call** (the sole
+      state-assembly call ✓); judgment sub-agents = state-distiller + fitness-audit (session 1 only) +
+      test-selection + review-loop `general-purpose` — none is state-assembly. **Session 1:** audit **0
+      findings**, shipped **Phase 1 — `to_fahrenheit`** as **`0465de0`**, opened the PR through the single
+      write path **`gh_persist.py create-pr … --base main --head 44-bug-helpers-b-… --draft`** (`--draft`
+      because multi-phase — D3), projected DoD bullet 1 `(closed by phase 1, commit 0465de0)`, re-route
+      `## Handoff` → `/github-pipeline:resolver #44` (PR line `review: not run · health: not run · merge:
+      not run` — conformant). **Session 2** (continue, **audit skipped**): shipped **Phase 2 —
+      `pluralize`** as **`775890b`**, projected DoD bullet 2 `(closed by phase 2, commit 775890b)`, **`gh
+      pr ready 46`** flip, forward `## Handoff` → `/github-pipeline:evaluator #46`. All writes via
+      `gh_persist.py` (`create-pr` ×1, `edit-body`, `comment`); **no** raw `gh pr create` / `gh issue
+      create`.
+- [x] Artifacts schema-identical (`## Phase tracker` shape, per-phase DoD annotation, draft PR state) —
+      **YES.** *DoD projection:* both issue bodies carry `- [x] … (closed by phase 1, commit <sha>)` /
+      `- [x] … (closed by phase 2, commit <sha>)` — **byte-identical annotation form** (the S1-frozen
+      contract; only the 7-char SHA values differ, v1 `dd686ca`/`31abbec` vs v2 `0465de0`/`775890b`).
+      *Phase tracker:* both `- [x] Phase 1 — Fix … (commit <sha>)` / `- [x] Phase 2 — Fix … (commit
+      <sha>)` (D4 = a trivial helper-name backtick delta only). *Draft PR state:* both opened `isDraft:
+      true` on session 1 with only shipped phases ticked, both flipped `isDraft: false` on the last
+      phase; final state `OPEN`, base `main`, `closingIssuesReferences: [<issue>]` (v1 `Closes #43`, v2
+      `Fixes #44` — both linked; the S1-fixed close-link holds in the multi-phase path). PR title on both
+      is the mandated `Fix: <summary> (#<issue>)` shape.
+- [x] Projection is exact-coverage (`expected_set − (ticked ∪ rejected)`); no over-tick, no sticky-veto
+      re-tick — **YES, both legs.** Session 1 ticked **only** bullet 1 (Phase 1's `closes-dod: 1`),
+      leaving bullet 2 `- [ ]`; session 2 ticked **only** bullet 2 (Phase 2's `closes-dod: 2`). Never a
+      bullet the phase didn't claim; no evaluator ran, so there was no sticky veto to respect (trivially
+      satisfied). Each `## Phase tracker` entry ticked only on the push that shipped its phase.
+- [x] Gates match; handoff schema-valid; ≤1 state-assembly call — **0 = 0** operator gates on all four
+      sessions (audit clean/skipped, plan present, `/review` APPROVE with 0 items; v2's session-1 review
+      loop auto-handled a cheap-fix cleanup with no gate). All four handoffs are schema-valid — session 1
+      the **Re-route — multi-phase, non-final** shape, session 2 the **Forward — multi-phase, last
+      planned phase shipped** shape (`Issue:` + `PR:` + `**Phases:**` + `Next:` + load-bearing `Why:`). v2
+      startup = **1** `prep_resolver.py` call per session, 0 sub-agents for state assembly.
+- [x] Divergences (each traced to a PRD § / cutover, or ruled):
+      - **D1 — handoff PR-line `review`/`health` markers (v1 `✓` vs v2 `not run`) — RULED (Scenario-2 D1);
+        v2 conformant, v1 off-contract; this run live-confirms the S2 fix.** v1 rendered `review: ✓ at
+        <sha> · health: ✓ at <sha>` on the session-1 re-route (and `review: ✓ at 31abbec` on the session-2
+        forward); v2 rendered `review: not run · health: not run · merge: not run` on both. Per Scenario 2's
+        D1 ruling and its explicit **Scenario-4 guidance** — `review:`/`health:` are the **evaluator's**
+        posted-verdict / branch-health-gate fields, `not run` until the evaluator acts, on forward exits
+        *and* every re-route; `✓` is off the shared closed set — v2's rendering is the contract-conformant
+        one and v1's `✓` is the true off-contract value. This scenario is the live confirmation the
+        Scenario-2 fix (`handoff-renderings.md` intro + worked examples, guarded by
+        `ReRouteHandoffMarkerTests`) predicted: v2 emits `not run` on the multi-phase re-route **and** the
+        last-phase forward. **Not a v2 defect.**
+      - **D2 — v2 added a `.gitignore`/pycache-cleanup commit (EXPLAINED; non-deterministic review-loop
+        housekeeping, not a defect).** v2's session-1 review loop (iteration 1) caught 12
+        `src/__pycache__/*.pyc` artifacts swept in by a broad `git add -A` after the `compileall`
+        fast-check, removed them, and added a `.gitignore` (commit `acd8763`) — so PR #46 has 3 commits vs
+        v1's 2. Benign: phase attribution is unaffected (Phase 1 = the functional commit `0465de0`, tracked
+        on the tracker + DoD; the cleanup commit carries no phase). A model-execution artifact of the review
+        loop doing its job — not a contract or projection divergence.
+      - **D3 — PR-open + write mechanism (EXPLAINED; known v1→v2 cutover).** v1 hand-rolls `gh pr create
+        --body-file … --draft` (the Rule-7 divergence the resolver spec flags); v2 opens through the single
+        write path `gh_persist.py create-pr … --draft` with explicit `--base`/`--head` (no cwd inference).
+        Same draft-PR intent, `--draft` on both because multi-phase; the mechanism change is the documented
+        cutover (as in Scenarios 1/2). Not a defect.
+      - **D4 — free-prose formatting deltas (EXPLAINED; within the protocol's free-prose latitude).** (a)
+        `## Phase tracker` helper name: v1 backticks it (``Fix `to_fahrenheit` ``), v2 leaves it plain (`Fix
+        to_fahrenheit`) — the plan's phase title had no backticks; both are the same `- [x] Phase <N> — Fix
+        <helper> (commit <7-sha>)` structured code form. (b) PR-body narration: v1 adds `## Phase N — what
+        changed` + `## Verification` sections, v2 folds the phase descriptions into the intro; both carry
+        the required closing keyword (first line) + `## Plan` link + `## Doc grounding` + `## Phase tracker`.
+        No frozen capture governs these sections (Renderings table), so prose may differ. Plus the expected
+        next-command rename `github-pr-evaluator` → `evaluator`.
+
+**Verdict:** **PASS (both legs).** Both open a **draft** PR carrying a `## Phase tracker` mirroring the
+plan's 2 `## Phases`, ship **one code-shipping phase per session** onto that PR, project **only** the
+shipped phase's `closes-dod` bullet onto the issue body in the **byte-identical** `(closed by phase <N>,
+commit <7-sha>)` form (exact-coverage — no over-tick, no sticky-veto re-tick), keep the PR draft on the
+non-final phase with a **Re-route — multi-phase, non-final** handoff back to the resolver, and on the
+**last** planned phase flip the PR **draft → ready** via `gh pr ready` before a **Forward —
+last-phase-shipped** handoff to the evaluator. v2 ran on **1** `prep_resolver.py` state-assembly call per
+session, wrote every artifact through the single `gh_persist.py` path (`create-pr --draft` on the
+multi-phase open), and fired **0** operator gates. The four divergences are all explained or ruled: D1
+(v2's `not run` markers are the conformant rendering — this run live-confirms the Scenario-2 fix; v1's `✓`
+is the off-contract value), D2 (v2's benign review-loop `.gitignore` cleanup), D3 (the known `create-pr`
+mechanism cutover), D4 (free-prose formatting). No unexplained divergence.
 
 ### Scenario 5 (box 3) — Seeded in-scope-blocked issue is refused with the gate (live)
 
@@ -755,7 +862,12 @@ live refusal; the full v1↔v2 schema-identical comparison is not a box-3 requir
 
 ## Go/no-go (S-step input)
 
-- [ ] All four parity scenarios + the box-3 live refusal pass with **zero unexplained divergences**.
-- [ ] Result summary (accepted / blocking finding + remediation step): _TODO._ **No outstanding
-      prerequisite** — the PR-create write path (`gh_persist.py create-pr`) landed within S10, so all
-      four scenarios plus the box-3 refusal are runnable once a live sandbox session is available.
+- [x] All four parity scenarios + the box-3 live refusal pass with **zero unexplained divergences**.
+- [x] Result summary — **Accepted.** All four live parity scenarios recorded **PASS** (Scenario 1 fresh
+      bug-fix, post-`db2ca73` re-run; Scenario 2 continue-mode re-entry; Scenario 3 comment-only; Scenario 4
+      multi-phase tick projection) plus the box-3 live in-scope-blocked refusal (Scenario 5, v2 leg). Every
+      divergence traces to a known v1→v2 cutover (write-path mechanism, next-command rename), a ruled
+      contract-conformance point (the handoff PR-line `not run` markers — v2 conformant, filed + fixed under
+      Scenario 2 D1 and live-confirmed by Scenario 4), a non-deterministic v1-execution miss (Scenario 1 D1,
+      v2 the faithful leg), a fixture artifact (Scenario 1 D5), or benign free-prose/housekeeping — **no
+      unexplained divergence, no open v2 defect**. S10 DoD box 6 (parity runs recorded) is closed.
