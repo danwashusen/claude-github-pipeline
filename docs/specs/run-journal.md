@@ -561,8 +561,8 @@ sandbox, or delete anything outside the working tree and the sandbox.
 
 ### S12 — `prep_planner.py` — ACCEPTED (2026-07-10)
 
-- **Commit:** _backfilled post-commit_ (`S12: prep_planner.py — planner facts + reference-filter
-  fix + reader promotion`).
+- **Commit:** `27ab53b` (`S12: prep_planner.py — planner facts + reference-filter fix + reader
+  promotion`).
 - **DoD:** all 4 boxes ticked, verified this session (reviewer PASS ×2 rounds, 0 actionable).
 - **Deliverables:** `scripts/prep_planner.py` (revise detection; the **full 6-row plan-ref table**
   — v1's 5 rows with row 5 split into independently-testable bootstrap/no-parent facts; open-PR-head
