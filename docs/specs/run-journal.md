@@ -527,7 +527,7 @@ sandbox, or delete anything outside the working tree and the sandbox.
 
 ### S11 — Sub-agent exception unification — ACCEPTED (2026-07-10)
 
-- **Commit:** _backfilled post-commit_ (`S11: unify sub-agent exceptions on architecture §3`).
+- **Commit:** `7b4c3ef` (`S11: unify sub-agent exceptions on architecture §3`).
 - **DoD:** all 4 boxes ticked, verified this session.
 - **Deliverables:** the four S10-carried resolver sub-agent prompts converged on §3 — **surgical**:
   only `state-distiller-prompt.md` needed edits (two citation surfaces → `architecture.md §3`; its
