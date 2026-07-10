@@ -353,7 +353,67 @@ the missing standard/story closing-keyword row (the S1 capture gap D2's root-cau
 Regression-guarded by `tests/test_resolver_routing.py::PrCreateContractTests` (spine-mandate greps +
 an end-to-end `create-pr --dry-run` proof). **Verdict pending an operator re-run of this scenario** —
 this record does not self-certify a live PASS; re-run twin-B against the fixed spine and confirm
-`closingIssuesReferences: [<issue>]` populates before flipping the verdict below.
+`closingIssuesReferences: [<issue>]` populates before flipping the verdict below. **→ Re-run completed
+2026-07-10 (see the SUPERSEDING record below); verdict flipped to PASS.**
+
+**SUPERSEDING re-run (post-`db2ca73`) — VERDICT: PASS.** Fresh twins on
+`danwashusen/gh-pipeline-sandbox` (the consumed #31/#32/PRs #33/#34 were **not** reused): two new
+buggy `salute(name, title)` copies `src/salute_c.py` / `src/salute_d.py` seeded on `main@ccfb9fb`
+(the `_c`/`_d` twin split — same recipe as the original `_a`/`_b`), each with an identical `bug`+`planned`
+issue carrying a 2-bullet single-phase `## Definition of done` and a verified single-phase
+`<!-- implementation-plan:v1 -->` plan (`## Coverage gap` = `(none)`, no-harness carve-out): **#39**
+(twin-A → v1 `github-issue-resolver`) and **#40** (twin-B → v2 `resolver`). Same headless recipe
+(fresh sandbox clone per leg, `claude -p "/github-pipeline:<skill> <issue>" --plugin-dir <this branch>
+--model opus --permission-mode bypassPermissions --output-format stream-json --verbose`). Neither leg
+merges, so `main` stayed `ccfb9fb` across both (confirmed post-run) and the twins never contended.
+
+- **v1** #39 → **PR #41** (`Fix: salute() now includes the title honorific (#39)`, base `main`, head
+  `issue-39-salute-title`), body first line **`Fixes #39`** → `closingIssuesReferences: [39]`; **0**
+  operator gates; audit clean (0 blockers); forward `## Handoff` → `/github-pipeline:github-pr-evaluator
+  #41` (PR line `review: not run · health: not run · merge: not run`). **v1 again skipped its own
+  single-phase DoD projection** (issue #39's two bullets stayed `- [ ]` — D1, the same non-deterministic
+  miss as the original run). 29 turns / $5.25 / ~13 min.
+- **v2** #40 → **PR #42** — **startup = 1 `prep_resolver.py 40` call** (the sole state-assembly call ✓);
+  judgment sub-agents = state-distiller + fitness-audit + test-selection + one review-loop `general-purpose`
+  — none is state-assembly. PR opened via `gh_persist.py create-pr … --base main --head
+  40-bug-salute-…` (single write path, explicit base/head). **0** `AskUserQuestion` operator gates.
+
+**D2 — GONE (the fix's purpose, verified live).** PR #42's body **first line is `Fixes #40`** →
+`closingIssuesReferences: [40]` (populated) — the issue↔PR auto-link + auto-close-on-merge that the
+pre-fix run dropped now work, and the downstream evaluator's `closingIssuesReferences` gate would no
+longer trip. **D4 — GONE.** PR #42's title is `Fix: salute() includes the title honorific (#40)`, the
+mandated `Fix: <summary> (#<issue-number>)` shape (v1 SKILL.md:885), no longer the verbatim issue
+title. **DoD projection — v2 faithful.** Issue #40's two bullets both `- [x] … (closed by commit
+f96cc39)`, byte-matching the frozen S1 capture form; v1 skipped it again (D1), so a clean both-legs DoD
+comparison is again moot (v2 is the faithful leg, as offline `ArtifactRenderingByteCompatTests` already
+proves). **Forward handoff — schema-valid.** `/github-pipeline:evaluator #42`, `Issue:`+`PR:`+`Next:`+
+load-bearing `Why:`, PR line `review: not run · health: not run · merge: not run` (the contract-conformant
+pre-evaluator rendering — Scenario 2 D1 ruling); diverges from v1 only in the expected
+`github-pr-evaluator` → `evaluator` next-command rename. **Gates: 0 = 0** `AskUserQuestion` on both legs.
+42 turns / $5.30 / ~14 min.
+
+- **D5 — v2 fitness audit raised a dim-6 BLOCKER, auto-overridden (EXPLAINED; fixture-induced, not a
+  defect; NEW this re-run).** v2's audit flagged that issue #40's body names `salute(name, title)` but no
+  target module, and **four** identical buggy copies now exist on `main` (`src/salute_{a,b,c,d}.py`) —
+  a genuine implementation-readiness ambiguity. It **overrode with reason** (the verified plan names
+  `src/salute_d.py`; dimension-7 confirmed that file still carries the exact buggy shape) and emitted a
+  `## Audit override` PR-body section (a documented section that renders "when it fires"). **Root cause is
+  the fixture, not v2:** the original run left the consumed `salute_a`/`salute_b` on `main`, so this
+  re-run's tree carries four identical copies instead of the intended two, widening the ambiguity surface
+  past the blocker threshold (the original run had only `_a`/`_b` and a clean audit). v1's audit didn't
+  flag it (the audit is a judgment sub-agent, non-deterministic on the borderline). **Honesty caveat:** in
+  *interactive* mode this §4.5 BLOCKER would surface as one operator gate (Revise / Override / Abort);
+  headless `bypassPermissions` auto-recorded the override, so the literal `AskUserQuestion` count is
+  `0 = 0` but v2 encountered a gate condition v1 did not — a fixture artifact, orthogonal to D2/D4, and
+  the PR was opened correctly against the plan-named file regardless. A maximally-clean re-run would drop
+  the stale `_a`/`_b` copies to isolate the audit path; it would not change the D2/D4 certification.
+
+**Verdict: PASS (re-run, post-`db2ca73`).** The re-run's sole purpose — confirm the D2/D4 fix live — is
+met unambiguously: v2's PR is `Fixes`-linked (`closingIssuesReferences: [40]`), correctly titled, projects
+the single-phase DoD byte-faithfully, emits a schema-valid forward handoff, runs on **1** state-assembly
+call, and fires **0** operator gates. Remaining divergences are all explained and none is a v2 defect: D1
+(v1's own non-deterministic DoD-projection miss; v2 faithful), D3 (the known `create-pr` mechanism
+cutover), and D5 (the fixture-induced audit override above).
 
 **Prior verdict (pre-fix, superseded by the re-run above):** **FAIL — blocked on D2 (filed defect).**
 The v2 leg reproduced v1 on every judgment/gate dimension (clean audit, plan consumed, one-line fix,
