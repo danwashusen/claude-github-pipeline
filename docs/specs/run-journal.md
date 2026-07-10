@@ -413,12 +413,51 @@ sandbox, or delete anything outside the working tree and the sandbox.
   → 2 remediation rounds (fix + authorized guard) → 1 opus reviewer (CHANGES REQUIRED, 1
   actionable + 5 advisories) → fix round → re-verify (**PASS**). Ticks all 6 S9 boxes.
 
-### S10 — Resolver skill rewrite — PARTIAL (automatable work done + committed; live legs PENDING) (2026-07-09)
+### S10 — Resolver skill rewrite — ACCEPTED (automatable 2026-07-09; live legs 2026-07-10)
 
-- **Commit:** `806f883` (`S10: skills/resolver/ — resolver cutover + create-pr write path`).
-- **Status:** **5 of 7 DoD boxes ticked** (1, 2, 4, 5, 7). **Box 3 (live in-scope-blocked refusal)
-  and box 6 (the four live parity runs) are operator-gated and REMAIN unticked** — the run's second
-  hard stop. S11 does not start until they close.
+- **Commits:** `806f883` (automatable build) + the operator-run live legs `fef7f6e` (scenario 5 —
+  blocked refusal, **box 3**), `b41da89` (scenario 3 — comment-only), `b7b6d7a` (scenario 1 — FAIL,
+  superseded), `0bc3fed` (scenario 2 — continue re-entry), `e9f3297` (scenario 1 re-run — PASS),
+  `ed01de4` (scenario 4 — multi-phase + **box 6**), with two in-flight fix rounds `db2ca73` and
+  `c47ada6` (below).
+- **Status:** **7 of 7 DoD boxes ticked.** All five live legs recorded in
+  `docs/specs/parity/resolver.md` with a filled Go/no-go (**Accepted**): scenario 1 fresh bug-fix
+  (FAIL → fix → superseding re-run **PASS**), scenario 2 continue re-entry **PASS**, scenario 3
+  comment-only **PASS**, scenario 4 multi-phase tick projection **PASS**, scenario 5 in-scope-blocked
+  refusal **PASS** (v2-only by box-3 scope). Verified this session (2026-07-10) from the committed
+  parity doc + `git log`: 7× `[x]`, five PASS verdicts, Go/no-go Accepted, tree clean at `ed01de4`.
+- **Live-parity defects found + fixed under review (the parity protocol working as designed —
+  three were invisible offline):**
+  - **D2 scenario-1 (blocking):** fresh-PR body omitted the v1-mandated closing keyword
+    (SKILL.md:888) → `closingIssuesReferences: []`, evaluator gate would trip. Fixed in `db2ca73`
+    (spine S5 mandate + the S1 spec's missing standard/story closing-keyword row — a reviewer-ruled
+    legitimate capture-gap correction + 3 regression tests). Live-certified by the scenario-1
+    re-run (`Fixes #40` → `[40]`).
+  - **D4 scenario-1 (fidelity, filed cosmetic):** v1 SKILL.md:885 mandates
+    `--title "Fix: <summary> (#N)"`; spine made faithful in `db2ca73`; live-certified.
+  - **D1 scenario-3 (low):** missing question-type terminal handoff variant (per
+    `_shared/handoff-format.md:33`); fixed in `db2ca73`.
+  - **D1 scenario-2 (low → RULED):** re-route `PR:`-line `review:`/`health:` markers — ruled from
+    the contract (+ the frozen S1 capture `handoff-resolver.md:25-26`): **`not run` is conformant on
+    every resolver-authored PR line** (the markers are the evaluator's verdict/gate); v1's bare `✓`
+    was the off-contract rendering. Fixed in `c47ada6` (intro made unconditional; THREE off-vocab
+    worked examples corrected; standard.md inline restatement, story.md via delegation; 4
+    fence-scoped tests). Live-confirmed by scenario 4 on both the re-route and last-phase forward.
+  - Scenario-1's first-run D1 was **v1** flaking its own single-phase projection (v2 faithful);
+    scenario-1-re-run's D5 was fixture-induced (stale salute copies → v2's audit caught a dim-6
+    ambiguity v1 missed and auto-overrode via the verified plan — honestly disclosed as a gate
+    condition headless mode auto-records).
+- **Scenario-4 live certifications:** draft PR + `## Phase tracker` both legs (v2 via
+  `create-pr --draft`); per-phase DoD projection **byte-identical** to the S1-frozen form;
+  exact-coverage (b1←p1, b2←p2, no over-tick, no sticky-veto re-tick); last-phase
+  **`gh pr ready` draft→ready flip** (the §10 third executor) before the forward handoff;
+  close-links populated; ≤1 state-assembly call per session; 0 = 0 gates.
+- **Final suite state:** 656/656 on macOS and Linux. Census 83, zero drops.
+- **Carried advisories:** interleaving grep is partial (S13/S15–S19 briefs must not treat green
+  grep as proof-of-absence); `gh_persist.py` full `build_*` retrofit deferred to a future scripts
+  step; `_shared/handoff-format.md`'s question-type rule labeled "(drafter only)" — relabel
+  "drafter and resolver" on the next legitimate `_shared` touch; the ReRouteHandoffMarkerTests
+  off-vocab regex covers U+2713/U+2717 only (broaden if the reference grows).
 - **Deliverables:** `skills/resolver/` authored from scratch — `SKILL.md` router (128 lines; §9
   sections; visible `vector → playbook` table; `model: opus` / `effort: xhigh` pins verbatim) +
   `playbooks/` (**4 routable + 1 shared spine**: `resolve-spine.md` 177 read by standard + story
@@ -499,37 +538,17 @@ of truth; a **freshly started** resumed session will pick them up by name and ca
 
 ## Handback log
 
-### 2026-07-09 handback — STOP at S10's live legs (second operator gate) — OPEN
+### 2026-07-09 handback — STOP at S10's live legs (second operator gate) — CLOSED 2026-07-10
 
-The run is stopped at **S10 boxes 3 + 6** (per the stop conditions: parity runs are operator-owned).
-Everything automatable through S10 is accepted and committed on `rewrite/v2-implementation`
-(**unpushed**; S7→S10 all green, 646 offline tests on macOS + Linux).
-
-**Operator actions (all scaffolded in [`docs/specs/parity/resolver.md`](parity/resolver.md)):**
-1. **Box 6 — four parity scenarios** on `danwashusen/gh-pipeline-sandbox`, v1
-   `/github-pipeline:github-issue-resolver` vs v2 `/github-pipeline:resolver`, twin fixtures per
-   scenario: fresh bug-fix end-to-end; continue-mode re-entry; comment-only; multi-phase tick
-   projection. Same headless recipe as S7 (`claude -p "/github-pipeline:<skill> <issue>"
-   --plugin-dir <this branch> --model opus --permission-mode bypassPermissions`, fresh clone per
-   run; auto-mode blocks nested runs — drive via `!`). Record per-scenario results + divergences in
-   the parity doc; every divergence traces to a PRD § or is filed as a defect.
-2. **Box 3 — the live in-scope-blocked refusal** (Scenario 5 in the parity doc, with its full
-   seeding recipe): seed a sandbox issue with an `<!-- open-question-links:v1 -->`
-   `in-scope (blocked)` entry + an open `question` tracker + native `blocked_by`; run the v2
-   resolver; it must REFUSE code work with the gate (comment-only path naming the blocking `#Q`),
-   no worktree, no PR.
-3. Tick boxes 3 and 6 in `docs/implementation.md` (and only those) when the runs pass with no
-   unexplained divergence; commit locally (don't push), per the S7 flow.
-4. Resume the orchestrator on `rewrite/v2-implementation` — it re-derives state, flips S10 to
-   ACCEPTED, and proceeds **S11 → S12 → S13 → …** (S11 sub-agent exception unification is next;
-   the S10 sub-agent prompts deliberately carry v1's exception protocol verbatim for it).
-
-**Context the runs need:** the sandbox's config blocks are canonical since `ae283af`; the
-`create-pr` op is new in this branch (the resolver's PR-opens go through it — a v1-vs-v2
-divergence in *mechanism*, not artifact, expected in scenarios 1/2/4); the S7-era gotchas
-(closingIssuesReferences on non-default-base PRs needs the base-swap trick; GitHub auto-ticks
-task-list checkboxes on issue close; self-authored PRs 422 on approve) are recorded in the S7
-parity doc + your memory notes.
+**Superseded; retained as a pointer.** The operator completed all five live legs across six
+scenario commits (see the S10 acceptance entry above for the full leg/fix-round record): scenario 5
+closed box 3 (`fef7f6e`); scenarios 3 → 1(FAIL) → 2 → 1-re-run → 4 ran with two orchestrated
+in-flight fix rounds (`db2ca73` D2/D4/D1-s3, `c47ada6` D1-s2 marker ruling); scenario 4 closed
+box 6 and filled the Go/no-go (**Accepted**) at `ed01de4`. S10 flipped to ACCEPTED above. The full
+original handback text is in git history at `47d3107`. The run resumes at **S11** (sub-agent
+exception unification — the S10 sub-agent prompts deliberately carry v1's exception protocol
+verbatim for it); the next planned operator gate is **S13's parity** (or any earlier stop
+condition).
 
 ### 2026-07-04 handback — STOP at S7's live parity (first operator gate) — CLOSED 2026-07-09
 
