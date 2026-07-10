@@ -212,3 +212,44 @@ playbook rule this frozen requirement backs is: *emit `**Open questions:**` when
 posted in this session carries an `## Open questions` section, and render `(not filed)` only when
 the tracker search (Bug (a)'s mechanism) found no candidate or an existing candidate was explicitly
 rejected as not-the-same-question* — never as a default absence.
+
+**Bug (c) — bare-digit `in:body` search false-positives (newly discovered, not captured at S1
+freeze).**
+
+Requirement: *`plan_ref`'s open-PR-head row (Step 4.5) must only fire for a PR that genuinely
+references the issue being planned; it must never ground a plan on a stranger PR's branch.*
+
+Falsifiable test: given an issue `#N` with **no** open PR referencing it, but at least one *other*
+open PR whose body happens to contain the bare digit `N` in unrelated prose (a `## Phase tracker`
+entry, an unrelated issue number sharing digits), `plan_ref` selection must resolve via whichever
+row actually applies (default branch / epic branch / parent-epic branch) — never
+`open-pr-head` pointing at that stranger's branch.
+
+Real occurrence (live, read-only, against the sandbox repo, 2026-07-11): running S12's
+`prep_planner.py` against sandbox story `#2` and epic `#1` — neither of which has any open PR
+referencing it — both resolved `plan_ref_row: open-pr-head` at branch `issue-43-fix-helpers-a`, a
+PR for **issue #43** with no relationship to `#2`/`#1` whatsoever. Root cause, confirmed directly:
+`gh pr list --search "2 in:body"` returns four open PRs, none of which reference issue `#2` — each
+merely contains the literal text `"Phase 2"` in its `## Phase tracker` section (a section present
+on nearly every multi-phase PR in the sandbox). A parallel control run, `gh pr list --search "#2
+in:body"` (the hash-prefixed form `_search_parent_epic`'s query already uses), returned the
+**identical** four false positives — proving GitHub's server-side full-text search does not anchor
+on the `#` at all; the query *form* provides no protection, only a client-side filter does.
+
+Scope: this is not planner-specific — the same `--search "<N> in:body"` construction is
+`gh_gather.py`'s `_fetch_open_prs` (feeding both this skill's `plan_ref` row 1 and the resolver's
+prior-PR row), `prep_resolver.py`'s `_search_closed_prs`, and the `_search_parent_epic` search both
+this skill and the resolver run (its `#N in:body` form making no real difference per the control
+run above). v1's `gh-gather.sh` and `github-ops.md` carry the identical construction and are
+therefore exposed to the identical false-positive class — **this is a real v1-inherited defect not
+captured at S1 freeze**, discovered only once S12's live smoke exercised a repo state where a
+stranger PR's incidental digit collided with a real target.
+
+**Current state:** v2 closes this in the same round S12 discovered it (`gh_gather.references_issue`
+— a digit-boundary-guarded `#<N>` match, or membership in `closingIssuesReferences`, applied as a
+client-side post-filter on the search's already-necessarily-loose candidate set). v1 does **not**
+carry this fix — `gh-gather.sh`'s open-PR/closed-PR/parent-epic searches remain exposed. This is
+therefore an **expected, explained parity divergence**: an S13/S15 (or any later) parity run
+comparing v1 against v2 on a repo state with an incidental digit collision will legitimately see v2
+route differently (correctly) from v1 (which inherits the false positive) — the divergence is the
+fix working as intended, not a v2 regression to chase down.

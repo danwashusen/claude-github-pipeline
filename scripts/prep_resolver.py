@@ -115,8 +115,9 @@ _FALLBACK_TEST_TARGET_MARKER = "pr-evaluator-test-target"
 
 # Candidate config files, in priority order — same discovery list prep_evaluator.py /
 # workspace.py's `_candidate_hook_files` already use (COMMANDS.md, CLAUDE.md, then one level of
-# `@`-include from either).
-_CONFIG_CANDIDATE_FILES = ("COMMANDS.md", "CLAUDE.md")
+# `@`-include from either). `config_block.read_block_anywhere` (S12 promotion) defaults to this
+# exact tuple, so this module no longer carries its own copy of the discovery loop — see
+# "Gate-config discovery" below.
 
 ROOT_MAIN_BRANCH = "main"
 
@@ -258,6 +259,14 @@ def _search_closed_prs(repo, issue_number, cwd=None):
     `gh pr list --state closed --search "<N> in:body"`). Returns `(prs, decision_or_none)`; each
     PR dict carries `number`/`state`/`mergedAt` (`state == "MERGED"` classifies resolved, since a
     merged PR referencing the issue closed it — v1's "closed PR that resolved the issue" row).
+
+    The raw search result is filtered through `gh_gather.references_issue` before being returned
+    (a fix authorized/scoped alongside S12: `--search "<N> in:body"` is a GitHub full-text search,
+    not a literal-string containment check — live evidence against the sandbox repo showed it
+    returning PRs whose body merely contains the digit `<N>` in unrelated prose, e.g. "Phase 2",
+    never referencing issue `#<N>` at all; see `gh_gather.py`'s module docstring "Open-PR search
+    false-positive fix" for the full evidence and `docs/specs/resolver.md`'s "Known bugs/gaps" for
+    the newly-discovered v1-inherited defect this closes).
     """
     result = process.run(
         [
@@ -271,7 +280,7 @@ def _search_closed_prs(repo, issue_number, cwd=None):
             "--search",
             "%s in:body" % issue_number,
             "--json",
-            "number,title,author,state,mergedAt,headRefName,url,updatedAt",
+            "number,title,author,state,mergedAt,headRefName,url,updatedAt,body,closingIssuesReferences",
         ],
         cwd=cwd,
     )
@@ -287,7 +296,7 @@ def _search_closed_prs(repo, issue_number, cwd=None):
     if result.returncode != 0:
         sys.stderr.write(result.stderr)
         sys.exit(1)
-    return json.loads(result.stdout), None
+    return gh_gather._filter_and_strip_reference_fields(json.loads(result.stdout), issue_number), None
 
 
 def _classify_prior_pr_row(open_prs, current_user, closed_prs, issue_state):
@@ -442,7 +451,17 @@ def _discover_epic_branch(root, epic_number, epic_title):
 def _search_parent_epic(repo, story_number, cwd=None):
     """Story parent-epic search (docs/specs/resolver.md; SKILL.md's "gh issue list --label epic
     --state all --search '#<N> in:body'"). Returns `(matches, decision_or_none)` where `matches`
-    is the raw `gh issue list` result list (empty on zero matches)."""
+    is the `gh issue list` result list, filtered (empty on zero genuine matches).
+
+    Filtered through `gh_gather.references_issue` — live evidence (see `gh_gather.py`'s module
+    docstring) showed `--search "#<N> in:body"` (the hash-prefixed form this call already uses)
+    returns the SAME false-positive set as the bare-digit form on a `gh pr list` search; GitHub's
+    server-side full-text search does not use `#` as an anchor either way. This repo's current
+    sandbox data never manifested a false positive here only because it has a single epic-labelled
+    issue whose body happens to contain no stray digits — the underlying exposure is identical to
+    the PR searches, so the same client-side filter applies here too (docs/specs/resolver.md's
+    "Known bugs/gaps").
+    """
     result = process.run(
         [
             "gh",
@@ -457,7 +476,7 @@ def _search_parent_epic(repo, story_number, cwd=None):
             "--search",
             "#%s in:body" % story_number,
             "--json",
-            "number,title,state",
+            "number,title,state,body",
         ],
         cwd=cwd,
     )
@@ -473,7 +492,7 @@ def _search_parent_epic(repo, story_number, cwd=None):
     if result.returncode != 0:
         sys.stderr.write(result.stderr)
         sys.exit(1)
-    matches = json.loads(result.stdout)
+    matches = gh_gather._filter_and_strip_reference_fields(json.loads(result.stdout), story_number)
     if len(matches) <= 1:
         return matches, None
     return None, needs_decision(
@@ -525,50 +544,6 @@ def compute_branch_name(root, issue_number, slug):
 # ---------------------------------------------------------------------------
 
 
-def _find_includes_one_level(file_path):
-    path = Path(file_path)
-    if not path.is_file():
-        return []
-    text = path.read_text(encoding="utf-8")
-    return [
-        tok
-        for tok in re.findall(r"@([A-Za-z0-9._/-]+)", text)
-        if re.search(r"(/|\.[A-Za-z0-9]+$)", tok)
-    ]
-
-
-def _candidate_config_files(root):
-    root_path = Path(root)
-    candidates = [root_path / name for name in _CONFIG_CANDIDATE_FILES]
-    for root_file in list(candidates):
-        for inc in _find_includes_one_level(root_file):
-            inc_path = Path(inc)
-            candidates.append(inc_path if inc_path.is_absolute() else root_path / inc)
-    return candidates
-
-
-def _read_block_anywhere(root, marker_name):
-    """Read the first well-formed block matching `marker_name` across the candidate config files
-    — composes `config_block`'s own non-emitting scan primitives directly (never its CLI/
-    `sys.exit` surface), mirroring `prep_evaluator._read_block_anywhere` exactly. Returns
-    `(present, interior_lines, source_file_or_none)`.
-    """
-    for candidate in _candidate_config_files(root):
-        lines = config_block._read_lines_or_empty(str(candidate))
-        open_count, close_count, open_index, close_index = config_block._scan_marker(
-            lines, marker_name
-        )
-        if open_count == 0:
-            continue
-        if open_count > 1 or close_count > 1:
-            continue
-        if open_count != close_count or close_index < open_index:
-            continue
-        interior = lines[open_index : close_index - 1]
-        return True, interior, str(candidate)
-    return False, [], None
-
-
 def _read_gate_config(root):
     """Read the resolver's three gate-config blocks, applying the spec's fallback chain
     (docs/specs/resolver.md §P3.1): `issue-resolver-fast-checks` -> (no fallback; static checks
@@ -583,31 +558,33 @@ def _read_gate_config(root):
     """
     notices = []
 
-    fast_present, fast_lines, fast_source = _read_block_anywhere(root, _FAST_CHECKS_MARKER)
+    fast_present, fast_lines, fast_source = config_block.read_block_anywhere(
+        root, _FAST_CHECKS_MARKER
+    )
     if not fast_present:
-        fast_present, fast_lines, fast_source = _read_block_anywhere(
+        fast_present, fast_lines, fast_source = config_block.read_block_anywhere(
             root, _FALLBACK_STATIC_CHECKS_MARKER
         )
         if fast_present:
             notices.append("FAST_CHECKS_FALLBACK_STATIC_CHECKS")
     if not fast_present:
-        fast_present, fast_lines, fast_source = _read_block_anywhere(
+        fast_present, fast_lines, fast_source = config_block.read_block_anywhere(
             root, _FALLBACK_HEALTH_CHECKS_MARKER
         )
         if fast_present:
             notices.append("FAST_CHECKS_FALLBACK_LEGACY_HEALTH_CHECKS")
 
-    test_target_present, test_target_lines, test_target_source = _read_block_anywhere(
+    test_target_present, test_target_lines, test_target_source = config_block.read_block_anywhere(
         root, _TEST_TARGET_MARKER
     )
     if not test_target_present:
-        test_target_present, test_target_lines, test_target_source = _read_block_anywhere(
+        test_target_present, test_target_lines, test_target_source = config_block.read_block_anywhere(
             root, _FALLBACK_TEST_TARGET_MARKER
         )
         if test_target_present:
             notices.append("TEST_TARGET_FALLBACK_PR_EVALUATOR")
 
-    canonical_present, canonical_lines, canonical_source = _read_block_anywhere(
+    canonical_present, canonical_lines, canonical_source = config_block.read_block_anywhere(
         root, _CANONICAL_SUITE_MARKER
     )
     if not canonical_present:
@@ -615,7 +592,7 @@ def _read_gate_config(root):
         # prep surfaces the raw fallback block for the playbook to extract the labelled line from
         # (this module does not parse `full-suite-command:` out of free-form prose; see the
         # function docstring).
-        canonical_present, canonical_lines, canonical_source = _read_block_anywhere(
+        canonical_present, canonical_lines, canonical_source = config_block.read_block_anywhere(
             root, _FALLBACK_TEST_TARGET_MARKER
         )
         if canonical_present:

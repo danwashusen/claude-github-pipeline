@@ -402,12 +402,12 @@ facts; revise facts (PR phase tracker); **the deterministic question-registry se
 keyword candidates in facts — the S1 bug (a) fix); grounding-doc inventory at the pinned SHA.
 
 **DoD**
-- [ ] Plan-ref fixtures: single issue no-PR, single issue open-PR, story-under-epic, epic — each
+- [x] Plan-ref fixtures: single issue no-PR, single issue open-PR, story-under-epic, epic — each
       yields the expected ref and workspace SHA fact.
-- [ ] The seeded tracker-match fixture returns the matching question issue in
+- [x] The seeded tracker-match fixture returns the matching question issue in
       `open_question_candidates` (bug (a) regression).
-- [ ] Revise facts include prior plan body path + phase tracker.
-- [ ] Conformance + call budget as S6.
+- [x] Revise facts include prior plan body path + phase tracker.
+- [x] Conformance + call budget as S6.
 
 **Testing:** shim-backed unit tests including the seeded OQ case; read-only live smoke on an epic story.
 

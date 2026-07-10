@@ -559,6 +559,65 @@ sandbox, or delete anything outside the working tree and the sandbox.
   1 opus reviewer (**PASS, 0 actionable**, 2 advisories: one trace-completeness nit; the
   `_REF_ARITH` inheritance note). **0 fix rounds.**
 
+### S12 — `prep_planner.py` — ACCEPTED (2026-07-10)
+
+- **Commit:** _backfilled post-commit_ (`S12: prep_planner.py — planner facts + reference-filter
+  fix + reader promotion`).
+- **DoD:** all 4 boxes ticked, verified this session (reviewer PASS ×2 rounds, 0 actionable).
+- **Deliverables:** `scripts/prep_planner.py` (revise detection; the **full 6-row plan-ref table**
+  — v1's 5 rows with row 5 split into independently-testable bootstrap/no-parent facts; open-PR-head
+  wins unconditionally per v1 precedence; each row yields `plan_ref` + a **read-only** grounding
+  workspace `{path, ref, sha}` — the planner never gets a work workspace; the `@<short-sha>` derives
+  at the RESULT ref) + epic facts (stories + live states, delivery-log + epic-plan staging) +
+  JIT-story facts (`## Story contracts` staged) + revise facts (prior plan staged path + parsed
+  `## Phase tracker`, both SHAs no-judgment) + **the Bug (a) mechanism**: `open_question_candidates`
+  — a deterministic `--label question` tracker search (query = the OQ's own id per
+  `open-question-detection.md` §Matching) for every body entry recorded `(not filed)`, plus an
+  unmissable attention line, closing the frozen falsifiable requirement (specs/planner.md:141-168) —
+  + grounding-doc inventory inside the read workspace + `suggested_playbook` proposal
+  (`standard`/`epic`/`story`, mode as an overlay; `vector.{type,mode,plan_ref_row}` is the real S13
+  contract). `tests/test_prep_planner.py` (63 tests) + 15 fixture dirs.
+- **Authorized shared-layer round 1 — the reader promotion (S9-carried advisory closed):**
+  `config_block.read_block_anywhere` (+ `candidate_config_files`/`find_includes_one_level`/
+  `DEFAULT_CONFIG_CANDIDATE_FILES`) is the one shared multi-file config-block reader;
+  `prep_evaluator` (5 call sites) + `prep_resolver` (7) refactored to it — pure call-site swaps,
+  their test files unmodified and green (byte-identity). Home ruled correct (`pipelib` would
+  invert the layer direction).
+- **Authorized shared-layer round 2 — the bare-digit `in:body` false-positive fix (live-smoke
+  catch, newly-discovered v1 defect):** GitHub's search tokenizes bare digits AND the `#` prefix
+  gives **zero** protection (live-verified: both query forms returned the same four false hits for
+  issue #2 — PRs containing "Phase 2" prose), so the smoke's `plan_ref` grounded on a stranger's
+  branch. Fixed with `gh_gather.references_issue` — a digit-and-word-boundary-guarded `#N` body
+  match (`(?<![\w#])#N(?![0-9A-Za-z])`, hex-color/`#2abc`-proof after the review round) or a
+  `closingIssuesReferences` hit — post-filtering all four search sites (gh_gather open-PR;
+  resolver closed-PR; both parent-epic searches); filter-only fields stripped so envelopes stay
+  byte-identical. ~60 fixture updates (S6-labels class), a stranger/genuine mixed regression
+  fixture, 16 filter unit tests. **Spec addenda (capture-gap class, reviewer-approved):** planner
+  Bug (c) + a resolver Known-bugs bullet record the v1-inherited defect and mark v2's filtering an
+  **expected parity divergence** for S13/S15 runs (`gh-gather.sh:80` remains the documented
+  still-exposed v1 site).
+- **Post-fix smoke:** story #2 → `story-no-open-parent-epic`/`main`; epic #1 →
+  `epic-as-target-bootstrap`/`main`; resolver on #44 still `open-pr-yours`/`continue` (true
+  positives preserved). Sandbox seed gaps noted for S13 parity prep: epic #1 has **no `## Stories`
+  section** (+ the known #2/#3 back-reference gap).
+- **Call budget:** canonical exactly **3** gh calls (two-sided); revise-with-open-PR 4; epic +2/story;
+  JIT-story 7 (full-gather reuse precedent); Bug (a) +1 per `(not filed)` entry.
+- **Reviewer rulings of record:** local `## Stories`/`## Phase tracker` regex scans acceptable (no
+  parse.py grammar exists; raw bodies staged as fallback); promotion home correct; spec addenda
+  legitimate; `open_prs[0]` without author-priority acceptable (author classification is the
+  resolver's concern); the 3-name playbook proposal adequate — the vector fields carry S13
+  regardless of names.
+- **Carries into the S13 brief:** (i) the Bug (a) prep-search covers only body-recorded
+  `(not filed)` entries — the planner prompt must still tracker-search any OQ it newly detects
+  mid-plan; (ii) `plan_ref` rides **bare** — S13's footer rendering owns the `origin/` prefix for
+  the default branch (never emit a bare `main@<sha>` footer); (iii) hybrid epic+story detection
+  (Bug (b)'s scenario) is derivable from the facts; (iv) the sandbox epic needs a `## Stories`
+  section seeded for the epic parity leg.
+- **Dual-platform:** **747/747** on macOS and Linux. Census untouched (no skills/ edits).
+- **Process:** 1 sonnet implementor → live smoke **caught the search defect** → orchestrator-ruled
+  blocking + authorized fix round → 1 opus reviewer (PASS, 0 actionable, 4 advisories) →
+  advisory-1 guard tightening → reviewer re-verify (**PASS holds, stronger**). **2 fix rounds.**
+
 ### Session-mechanics note (the 2026-07-04 session)
 
 The `.claude/agents/{implementor,reviewer}.md` definitions committed in setup are **not hot-loaded**

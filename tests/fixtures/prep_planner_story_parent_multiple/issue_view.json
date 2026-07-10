@@ -1,0 +1,1 @@
+{"number": 700, "title": "Story with two candidate parents", "body": "Body.", "state": "OPEN", "labels": [{"name": "story"}], "author": {"login": "alice"}, "createdAt": "2026-01-01T00:00:00Z", "updatedAt": "2026-01-02T00:00:00Z", "assignees": [], "milestone": null, "url": "https://github.com/octo/widgets/issues/700", "blockedBy": {"nodes": []}, "blocking": {"nodes": []}}

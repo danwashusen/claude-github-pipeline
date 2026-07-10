@@ -1,1 +1,1 @@
-[{"number": 60, "title": "Partial fix for the widget", "author": {"login": "erin"}, "state": "MERGED", "mergedAt": "2026-05-01T00:00:00Z", "headRefName": "erin-partial-fix", "url": "https://github.com/octo/widgets/pull/60", "updatedAt": "2026-05-01T00:00:00Z"}]
+[{"number": 60, "title": "Partial fix for the widget", "author": {"login": "erin"}, "state": "MERGED", "mergedAt": "2026-05-01T00:00:00Z", "headRefName": "erin-partial-fix", "url": "https://github.com/octo/widgets/pull/60", "updatedAt": "2026-05-01T00:00:00Z", "body": "Fixes #100\n\nClosed PR."}]

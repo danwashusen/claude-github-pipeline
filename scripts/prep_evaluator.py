@@ -83,8 +83,9 @@ _LEGACY_HEALTH_CHECKS_MARKER = "pr-evaluator-health-checks"
 # `_candidate_hook_files` already uses for the worktree-setup/teardown blocks (COMMANDS.md,
 # CLAUDE.md, then one level of `@`-include from either) — the docs/specs/evaluator.md config
 # blocks are discovered identically ("Scan COMMANDS.md and CLAUDE.md ... and any file either
-# @-includes").
-_CONFIG_CANDIDATE_FILES = ("COMMANDS.md", "CLAUDE.md")
+# @-includes"). `config_block.read_block_anywhere` (S12 promotion) defaults to this exact tuple, so
+# this module no longer needs its own copy of the discovery loop — see the "Gate-config discovery"
+# section below.
 
 # CI rollup classification terminal-state vocabulary (docs/specs/evaluator.md §5.3, preserved
 # verbatim from v1's classification rule).
@@ -151,59 +152,13 @@ def _forward_decision(decision, notices=None):
 # trust"). `--root` IS already the root main checkout (architecture.md §6: "project root ...
 # always clean main"); prep reads these blocks directly from the root working tree rather than
 # from any PR-head copy, and records the root SHA the read was pinned at.
+#
+# The multi-file candidate-discovery loop itself (COMMANDS.md, CLAUDE.md, one-level `@`-include,
+# first well-formed block wins) is `config_block.read_block_anywhere` (S12 promotion) — this module
+# used to carry its own copy (byte-identical to prep_resolver.py's), duplicated a third time by
+# prep_planner.py; both preps now compose the shared, tested helper directly (architecture.md §2's
+# in-process composition) instead.
 # ---------------------------------------------------------------------------
-
-
-def _find_includes_one_level(file_path):
-    """One-level `@`-include scan, matching workspace.py's `_find_includes` (module-private there,
-    re-derived here as a tiny local helper rather than importing a private function across module
-    boundaries for a two-line regex scan)."""
-    path = Path(file_path)
-    if not path.is_file():
-        return []
-    text = path.read_text(encoding="utf-8")
-    return [
-        tok
-        for tok in re.findall(r"@([A-Za-z0-9._/-]+)", text)
-        if re.search(r"(/|\.[A-Za-z0-9]+$)", tok)
-    ]
-
-
-def _candidate_config_files(root):
-    root_path = Path(root)
-    candidates = [root_path / name for name in _CONFIG_CANDIDATE_FILES]
-    for root_file in list(candidates):
-        for inc in _find_includes_one_level(root_file):
-            inc_path = Path(inc)
-            candidates.append(inc_path if inc_path.is_absolute() else root_path / inc)
-    return candidates
-
-
-def _read_block_anywhere(root, marker_name):
-    """Read the first well-formed ``<!-- marker_name -->`` block across the candidate config
-    files (same discover-first-match-wins rule workspace.py's hook blocks use). Composes
-    ``config_block``'s own non-emitting scan primitives directly — never its CLI/``sys.exit``
-    surface (``run_read``) and never re-implements the marker scan (S6 brief: "you may also call
-    their non-emitting helper functions directly, as workspace.py already composes config_block's
-    _scan_marker in-process").
-
-    Returns ``(present, interior_lines, source_file_or_none)``.
-    """
-    for candidate in _candidate_config_files(root):
-        lines = config_block._read_lines_or_empty(str(candidate))
-        open_count, close_count, open_index, close_index = config_block._scan_marker(
-            lines, marker_name
-        )
-        if open_count == 0:
-            continue
-        if open_count > 1 or close_count > 1:
-            continue  # ambiguous in this file — try the next candidate, matching workspace.py's rule
-        if open_count != close_count or close_index < open_index:
-            continue  # unterminated/inverted in this file — try the next candidate
-        interior = lines[open_index:close_index - 1]
-        return True, interior, str(candidate)
-    return False, [], None
-
 
 _COMMAND_LIST_ITEM_RE = re.compile(r"^\s*-\s*`([^`]*)`")
 _MERGE_POLICY_LINE_RE = re.compile(r"^\s*-\s*([A-Za-z][A-Za-z0-9_-]*)\s*:\s*(ask|auto)\s*$")
@@ -251,17 +206,19 @@ def _read_gate_config(root):
     """
     notices = []
 
-    static_present, static_lines, static_source = _read_block_anywhere(root, _STATIC_CHECKS_MARKER)
-    test_target_present, test_target_lines, test_target_source = _read_block_anywhere(
+    static_present, static_lines, static_source = config_block.read_block_anywhere(
+        root, _STATIC_CHECKS_MARKER
+    )
+    test_target_present, test_target_lines, test_target_source = config_block.read_block_anywhere(
         root, _TEST_TARGET_MARKER
     )
-    escalation_present, escalation_lines, _escalation_source = _read_block_anywhere(
+    escalation_present, escalation_lines, _escalation_source = config_block.read_block_anywhere(
         root, _ESCALATION_LABELS_MARKER
     )
-    merge_policy_present, merge_policy_lines, _merge_policy_source = _read_block_anywhere(
+    merge_policy_present, merge_policy_lines, _merge_policy_source = config_block.read_block_anywhere(
         root, _MERGE_POLICY_MARKER
     )
-    legacy_present, legacy_lines, legacy_source = _read_block_anywhere(
+    legacy_present, legacy_lines, legacy_source = config_block.read_block_anywhere(
         root, _LEGACY_HEALTH_CHECKS_MARKER
     )
 

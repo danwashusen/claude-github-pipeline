@@ -110,6 +110,13 @@ _VALID_MARKER_NAME_RE = re.compile(r"^[A-Za-z0-9:_-]+$")
 # regex's own anchors doing the trimming — see `_scan_all_marker_lines`).
 _DELIMITER_LINE_RE = re.compile(r"^<!--\s*(/?)([A-Za-z0-9:_-]+)\s*-->$")
 
+# Default multi-file candidate list for `read_block_anywhere` (below): `COMMANDS.md`, `CLAUDE.md`,
+# then one level of `@`-include from either — the discovery order every config-block consumer in
+# this repo shares (workspace.py's worktree-setup/teardown blocks; prep_resolver.py's/
+# prep_evaluator.py's gate-config blocks). A caller with a genuinely different candidate set (none
+# exists today) may override via `read_block_anywhere`'s `candidate_filenames` kwarg.
+DEFAULT_CONFIG_CANDIDATE_FILES = ("COMMANDS.md", "CLAUDE.md")
+
 
 def _die_usage(parser):
     parser.print_usage(sys.stderr)
@@ -173,6 +180,75 @@ def _scan_marker(lines, name):
             if close_index == 0:
                 close_index = i
     return open_count, close_count, open_index, close_index
+
+
+# ---------------------------------------------------------------------------
+# Multi-file candidate-block discovery (S12 promotion) — the "scan COMMANDS.md, CLAUDE.md, then
+# one level of `@`-include from either, first well-formed block wins" loop three consumers
+# (workspace.py's worktree-hook blocks; prep_resolver.py's/prep_evaluator.py's gate-config blocks)
+# independently reimplemented before this promotion. Public (no leading underscore) so a caller
+# outside this module composes it directly (architecture.md §2's in-process composition), the same
+# way workspace.py already composes `_read_lines_or_empty`/`_scan_marker` in-process. Only
+# prep_resolver.py and prep_evaluator.py are refactored to call this as of S12 — workspace.py's own
+# `_candidate_hook_files`/`_read_hook_block_from_file` are a similar but distinctly-shaped read
+# (they return `(present, interior_lines)`, no source-file tracking, and are tolerant of a
+# malformed block in one candidate the way `read_block_anywhere` also is) and are left as-is here;
+# folding them in too is future, unauthorized-for-this-step surgery, not a correctness gap.
+# ---------------------------------------------------------------------------
+
+
+def find_includes_one_level(file_path):
+    """Return the `@`-included paths (one level) found in `file_path` — matches a token that looks
+    like a file path (has a slash or a dotted extension), which excludes bare `@mentions`.
+    Existence is re-checked by the caller (`candidate_config_files`), so a stray match here is
+    harmless.
+    """
+    path = Path(file_path)
+    if not path.is_file():
+        return []
+    text = path.read_text(encoding="utf-8")
+    return [
+        tok
+        for tok in re.findall(r"@([A-Za-z0-9._/-]+)", text)
+        if re.search(r"(/|\.[A-Za-z0-9]+$)", tok)
+    ]
+
+
+def candidate_config_files(root, candidate_filenames=DEFAULT_CONFIG_CANDIDATE_FILES):
+    """Ordered candidate list for config-block discovery: `candidate_filenames` (default
+    `COMMANDS.md`, `CLAUDE.md`), then every file either one `@`-includes (one level)."""
+    root_path = Path(root)
+    candidates = [root_path / name for name in candidate_filenames]
+    for root_file in list(candidates):
+        for inc in find_includes_one_level(root_file):
+            inc_path = Path(inc)
+            candidates.append(inc_path if inc_path.is_absolute() else root_path / inc)
+    return candidates
+
+
+def read_block_anywhere(root, marker_name, candidate_filenames=DEFAULT_CONFIG_CANDIDATE_FILES):
+    """Read the first well-formed `<!-- marker_name -->` block across the candidate config files
+    (`candidate_config_files`) — first present, well-formed block wins. Composes this module's own
+    non-emitting scan primitives (`_read_lines_or_empty`, `_scan_marker`) directly — never the
+    CLI/`sys.exit` surface (`run_read`), matching how `workspace.py` already composes them
+    in-process. A malformed block (duplicate/unterminated) in one candidate file is treated exactly
+    like an absent one — try the next candidate — matching every existing caller's own graceful-
+    degradation rule (the closed decision-code set has no malformed-block code).
+
+    Returns `(present, interior_lines, source_file_or_none)`.
+    """
+    for candidate in candidate_config_files(root, candidate_filenames=candidate_filenames):
+        lines = _read_lines_or_empty(str(candidate))
+        open_count, close_count, open_index, close_index = _scan_marker(lines, marker_name)
+        if open_count == 0:
+            continue
+        if open_count > 1 or close_count > 1:
+            continue
+        if open_count != close_count or close_index < open_index:
+            continue
+        interior = lines[open_index : close_index - 1]
+        return True, interior, str(candidate)
+    return False, [], None
 
 
 def _read_body_lines(body_path):

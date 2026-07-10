@@ -39,10 +39,32 @@ Behavior preserved from v1 (see module-level comments at each step below for the
 Every ``gh`` call passes ``--repo <owner/repo>`` explicitly — this module never relies on ambient
 cwd (S21 brief's cwd-discipline advisory), so it behaves identically regardless of where the
 caller (a prep script, S6+) is sitting.
+
+**Open-PR search false-positive fix (S12 follow-up round).** ``_fetch_open_prs``'s ``--search "<N>
+in:body"`` query is a GitHub full-text search, not a literal-string match — live evidence against
+the sandbox repo (``gh pr list --search "2 in:body"``) showed it returning PRs whose body merely
+contains the digit ``2`` as part of unrelated prose (``"## Phase tracker\n- [x] Phase 2 — ..."``,
+present in nearly every multi-phase PR body), never referencing issue ``#2`` at all — and a second
+control run with ``--search "#2 in:body"`` (the hash-prefixed form) returned the **identical**
+false-positive set, proving GitHub's server-side search does not use the ``#`` as an anchor either
+(the query *form* does not protect against this; only a client-side post-filter does). This module
+now fetches ``body``/``closingIssuesReferences`` alongside the search results and filters them
+through :func:`references_issue` before returning — a genuine ``#<N>`` reference (boundary-guarded
+on both sides, matching GitHub's own autolink semantics: ``#2`` never matches ``#20``/``#12`` (a
+longer shared-prefix number) or ``#2abc``/``#2E8B57`` (a hex color or any other alphanumeric token
+glued onto the digits — a false positive the S12 acceptance review reproduced directly), and prose
+like "Phase 2"/"issue 2" with no ``#`` never matches) or membership in ``closingIssuesReferences``.
+The returned ``open_prs`` payload shape is
+unchanged (``body``/``closingIssuesReferences`` are stripped back off after filtering) — this is a
+correctness fix to *which* PRs are returned, not a facts-block schema change. See
+``docs/specs/resolver.md`` / ``docs/specs/planner.md`` "Known bugs/gaps" for the newly-discovered
+v1-inherited defect this closes (v1's ``gh-gather.sh`` has the identical false-positive exposure;
+v2 fixes it here, an intentional, explained parity divergence).
 """
 
 import argparse
 import json
+import re
 import sys
 from pathlib import Path
 
@@ -193,20 +215,71 @@ def _normalize_comment(raw):
     }
 
 
+# The false-positive fix (see module docstring): fetched ONLY to filter, then stripped back off so
+# the returned PR objects' field set is unchanged from before this fix.
+_OPEN_PR_SEARCH_FIELDS = "number,title,author,isDraft,headRefName,url,updatedAt,body,closingIssuesReferences"
+_REFERENCE_FILTER_ONLY_FIELDS = ("body", "closingIssuesReferences")
+
+
+def references_issue(body_text, issue_number, closing_issue_numbers=None):
+    """True iff `body_text` contains a genuine `#<issue_number>` reference, or `issue_number` is a
+    member of `closing_issue_numbers` (a PR's `closingIssuesReferences` number set — the "matches
+    via GitHub's own close-linkage even though the literal `#N` string is absent from the body
+    text" case, e.g. a PR whose body says "Closes this" with the link established some other way).
+
+    The `#<N>` match is boundary-guarded on both sides, matching GitHub's own autolink semantics (a
+    genuine reference needs a word boundary immediately after the digits, not just "not another
+    digit"): `#2` never matches `#20`/`#12` (a longer number sharing the same leading digits),
+    never matches `#2abc`/`#2E8B57` (a hex color or any other alphanumeric token glued onto the
+    digits — reviewer-reproduced false positive), and is never fooled by a preceding word character
+    or another `#` (so an adjacent token like `foo#2` doesn't count). A genuine reference followed
+    by whitespace, punctuation, or end-of-string (`"#2 "`, `"#2)"`, `"#2,"`, `"#2"` at EOL) still
+    matches. Bare-digit prose with no `#` at all (`"Phase 2"`, `"issue 2"`) never matches — the `#`
+    is required, exactly as a real GitHub issue reference always carries one. See the module
+    docstring's "Open-PR search false-positive fix" for the live evidence this function closes:
+    `--search "<N> in:body"` is a GitHub full-text search that returns any PR whose body merely
+    contains the digit `<N>` (a "Phase 2" line, an unrelated "#12"), never a literal-string
+    containment check — this function is the actual reference-correctness gate, applied client-side
+    after the (necessarily loose) server-side search returns its candidate set.
+    """
+    issue_number = int(issue_number)
+    if closing_issue_numbers:
+        if issue_number in {int(n) for n in closing_issue_numbers if n is not None}:
+            return True
+    pattern = re.compile(r"(?<![\w#])#%d(?![0-9A-Za-z])" % issue_number)
+    return bool(pattern.search(body_text or ""))
+
+
+def _filter_and_strip_reference_fields(items, issue_number):
+    """Apply :func:`references_issue` to each item's `body`/`closingIssuesReferences`, keep only
+    the genuine matches, then strip those two filter-only fields back off — the returned shape is
+    exactly what callers already assert against (this fix changes WHICH items are returned, not
+    the shape of each returned item)."""
+    filtered = []
+    for item in items:
+        closing_numbers = [c.get("number") for c in (item.get("closingIssuesReferences") or [])]
+        if references_issue(item.get("body"), issue_number, closing_issue_numbers=closing_numbers):
+            filtered.append({k: v for k, v in item.items() if k not in _REFERENCE_FILTER_ONLY_FIELDS})
+    return filtered
+
+
 def _fetch_open_prs(issue, repo, env):
     """Returns ``(prs, None)`` on success or ``(None, result)`` on failure — see
-    ``_fetch_paginated_comments``'s docstring for the failure-result convention."""
+    ``_fetch_paginated_comments``'s docstring for the failure-result convention. The raw search
+    result is filtered through :func:`references_issue` before being returned (module docstring's
+    "Open-PR search false-positive fix") — a PR search hit whose body/closing-links don't actually
+    reference `issue` is dropped, never surfaced to a caller as a genuine prior/competing PR."""
     result = process.run(
         [
             "gh", "pr", "list", "--repo", repo, "--state", "open",
             "--search", "%s in:body" % issue,
-            "--json", "number,title,author,isDraft,headRefName,url,updatedAt",
+            "--json", _OPEN_PR_SEARCH_FIELDS,
         ],
         env=env,
     )
     if result.returncode != 0:
         return None, result
-    return json.loads(result.stdout), None
+    return _filter_and_strip_reference_fields(json.loads(result.stdout), issue), None
 
 
 def _fetch_extra_json(issue, repo, fields, env):

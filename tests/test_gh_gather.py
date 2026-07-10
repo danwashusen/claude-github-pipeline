@@ -671,5 +671,90 @@ class RepoPassedExplicitlyNeverAmbientCwdTests(unittest.TestCase):
         self.assertEqual(envelope["number"], 42)
 
 
+class ReferencesIssueTests(unittest.TestCase):
+    """`gh_gather.references_issue` — the false-positive fix's pure filter function (S12
+    follow-up round). Live evidence recorded in the module docstring / docs/specs/resolver.md +
+    docs/specs/planner.md "Known bugs/gaps": `--search "<N> in:body"` (bare digit OR `#N` form —
+    both proven identical against the sandbox repo) is a GitHub full-text search, not a
+    literal-string containment check, so a client-side post-filter is the actual correctness gate.
+    """
+
+    def test_hash_reference_matches(self):
+        self.assertTrue(gh_gather.references_issue("Fixes #2 today", 2))
+
+    def test_longer_number_sharing_the_leading_digit_does_not_match(self):
+        # "#20" must never match a search for issue 2.
+        self.assertFalse(gh_gather.references_issue("See #20 for details", 2))
+
+    def test_hash_two_is_not_found_inside_hash_twelve(self):
+        # "#12" must never match a search for issue 2 (no "#2" substring is even present).
+        self.assertFalse(gh_gather.references_issue("See #12 for details", 2))
+
+    def test_bare_phase_number_prose_does_not_match(self):
+        # The exact live false positive: "## Phase tracker\n- [x] Phase 2 — ..." with no "#".
+        self.assertFalse(gh_gather.references_issue("## Phase tracker\n- [x] Phase 2 — harness", 2))
+
+    def test_bare_issue_word_prose_does_not_match(self):
+        self.assertFalse(gh_gather.references_issue("this mentions issue 2 casually", 2))
+
+    def test_trailing_punctuation_after_the_reference_still_matches(self):
+        self.assertTrue(gh_gather.references_issue("Fixes #2.", 2))
+
+    def test_closing_issue_numbers_matches_even_when_the_body_lacks_the_keyword(self):
+        # A PR whose body never spells out "#2" but whose closingIssuesReferences names it.
+        self.assertTrue(gh_gather.references_issue("no keyword in here at all", 2, closing_issue_numbers=[2]))
+
+    def test_closing_issue_numbers_present_but_for_a_different_issue_is_false(self):
+        self.assertFalse(gh_gather.references_issue("no keyword in here at all", 2, closing_issue_numbers=[20]))
+
+    def test_none_body_text_with_no_closing_numbers_is_false(self):
+        self.assertFalse(gh_gather.references_issue(None, 2))
+
+    def test_adjacent_word_character_before_the_hash_does_not_match(self):
+        self.assertFalse(gh_gather.references_issue("seeR#2 tracked separately", 2))
+
+    def test_trailing_alpha_glued_to_the_digits_does_not_match(self):
+        # S12 acceptance-review advisory: the trailing guard must reject alphanumeric glued onto
+        # the digits, not just another digit.
+        self.assertFalse(gh_gather.references_issue("see #2abc for the ticket", 2))
+
+    def test_hex_color_glued_to_the_digits_does_not_match(self):
+        # The reviewer-reproduced false positive: a hex color code starting with the issue number.
+        self.assertFalse(gh_gather.references_issue("color: #2E8B57", 2))
+
+    def test_reference_immediately_followed_by_close_paren_still_matches(self):
+        self.assertTrue(gh_gather.references_issue("(see #2)", 2))
+
+    def test_reference_immediately_followed_by_comma_still_matches(self):
+        self.assertTrue(gh_gather.references_issue("blocks #2, #3", 2))
+
+    def test_reference_at_end_of_string_still_matches(self):
+        self.assertTrue(gh_gather.references_issue("Fixes #2", 2))
+
+
+class OpenPrFalsePositiveFilterIntegrationTests(unittest.TestCase):
+    """`_fetch_open_prs` (via `run()`) applies the reference filter end-to-end: a stranger PR
+    (body only contains "Phase 2" prose, never "#2") is excluded from `open_prs`; a genuine PR
+    survives alongside it."""
+
+    def test_stranger_pr_excluded_genuine_pr_survives(self):
+        env = shimenv.intercepted_env(base_env=os.environ, fixture_case="gh_gather_open_pr_false_positive")
+        result = _run_script(["2", "o/r"], env=env)
+        envelope = _parse_envelope(result)
+        numbers = [pr["number"] for pr in envelope["open_prs"]]
+        self.assertEqual(numbers, [46])  # only the genuine "Fixes #2" PR, never the stranger
+
+    def test_filtered_out_fields_are_stripped_from_the_returned_shape(self):
+        env = shimenv.intercepted_env(base_env=os.environ, fixture_case="gh_gather_open_pr_false_positive")
+        result = _run_script(["2", "o/r"], env=env)
+        envelope = _parse_envelope(result)
+        pr = envelope["open_prs"][0]
+        self.assertNotIn("body", pr)
+        self.assertNotIn("closingIssuesReferences", pr)
+        self.assertEqual(
+            sorted(pr.keys()), sorted(["number", "title", "author", "isDraft", "headRefName", "url", "updatedAt"])
+        )
+
+
 if __name__ == "__main__":
     unittest.main()

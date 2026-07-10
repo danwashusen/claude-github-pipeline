@@ -319,3 +319,27 @@ Every explicit `AskUserQuestion` decision point, exhaustively:
   the triage can search for (or skip searching for) the wrong bucket of tests. This is inherent to
   the design (the ladder trusts the selection sub-agent's own accounting) rather than a discrete
   reported incident, but is worth flagging as a latent precision dependency.
+- **Bare-digit `in:body` search false-positives (newly discovered, not captured at S1 freeze).**
+  Requirement: the step-5 prior-PR table's `gh pr list --search "<N> in:body"` search (SKILL.md's
+  documented convention, also `_search_closed_prs`'s identical construction) must only surface a PR
+  that genuinely references issue `<N>` — never a stranger PR whose body merely contains the digit
+  `<N>` as unrelated prose. Falsifiable test: given an issue with no PR referencing it but another
+  open PR whose body contains `<N>` incidentally (e.g. a `## Phase tracker` entry reading "Phase
+  2"), the prior-PR row must classify as `no-prior-pr`, never treat that stranger PR as the row.
+  Real occurrence (live, read-only, against the sandbox repo, 2026-07-11, discovered while
+  live-smoking S12's `prep_planner.py`): `gh pr list --search "2 in:body"` returned four open PRs
+  referencing issues #35/#36/#43/#44, **none** referencing issue #2 — each merely contains the
+  literal text `"Phase 2"` in its `## Phase tracker` section. A control run with the hash-prefixed
+  form, `gh pr list --search "#2 in:body"` (the form `_search_parent_epic` already uses), returned
+  the **identical** false-positive set — GitHub's server-side full-text search does not anchor on
+  `#`, so the query form itself is not a mitigation; a client-side filter is required. Scope: this
+  construction is shared by `gh_gather.py`'s `_fetch_open_prs` (this resolver's prior-PR row AND
+  `github-issue-planner`'s `plan_ref` open-PR-head row — see `docs/specs/planner.md`'s "Known
+  bugs/gaps" Bug (c) for the full evidence and root-cause writeup), `prep_resolver.py`'s
+  `_search_closed_prs`, and both skills' `_search_parent_epic`. v1's `gh-gather.sh` carries the
+  identical exposure and is not fixed by this record — v2 fixes it via
+  `gh_gather.references_issue` (a digit-boundary-guarded `#<N>` match, or `closingIssuesReferences`
+  membership, applied as a client-side post-filter). This is therefore an **expected, explained
+  parity divergence**: a parity run against a repo state with an incidental digit collision will
+  legitimately see v2 route differently (correctly) from v1 (which inherits the false positive) —
+  not a v2 regression.
