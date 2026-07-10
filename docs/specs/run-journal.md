@@ -525,6 +525,40 @@ sandbox, or delete anything outside the working tree and the sandbox.
     labeled "(drafter only)"; a second emitter now exists — relabel on the next legitimate
     `_shared` touch.
 
+### S11 — Sub-agent exception unification — ACCEPTED (2026-07-10)
+
+- **Commit:** _backfilled post-commit_ (`S11: unify sub-agent exceptions on architecture §3`).
+- **DoD:** all 4 boxes ticked, verified this session.
+- **Deliverables:** the four S10-carried resolver sub-agent prompts converged on §3 — **surgical**:
+  only `state-distiller-prompt.md` needed edits (two citation surfaces → `architecture.md §3`; its
+  three codes were already §3-verbatim); issue-audit / review-loop / test-selection were already
+  conformant (byte-untouched, reviewer-verified against their S10 state). The review-loop's
+  lowercase `decision_request` kinds ruled a **separate protocol** (the rich card the main loop
+  renders), correctly out of §3 scope. `skills/_shared/subagent-decision-signal.md` carries the
+  superseded-for-v2 breadcrumb (body verbatim; five v1 citers byte-untouched and still functional
+  until S20).
+- **The drift-check validator** (`tests/test_subagent_prompts.py`, 11 tests — the S13/S15/S16/S18
+  binder): parses §3's closed set from `architecture.md` (slice-scoped so the `DEPS_UNSUPPORTED`
+  notice provably can't leak); **discovers v2 prompts by `playbooks/`-subdir presence** (the §9
+  anatomy no v1 dir has) — today that's **five** prompts (4 resolver + the evaluator's carried
+  test-selection, which passes), auto-binding future cutovers the moment they land while correctly
+  excluding the still-v1 question-status reader until S18; asserts codes ⊆ §3 + no old-doc citation
+  + no fence-scoped ref-arithmetic; deliberate-violation traces exercise the real predicates (and
+  the citation guard fired on a real file during the round — the implementor's first breadcrumb
+  draft — proving it bites).
+- **Box 4 live smoke (orchestrator-run, read-only):** `prep_resolver.py` against sandbox issue #44
+  (continue-mode scenario-4 twin; plan at `3db6044`, 2 phases, bundle staged) → two context-blind
+  sonnet dispatches. **Distiller:** full conformant brief (evidence-cited, thread-vs-plan
+  `confirms`, phases parsed, no exception). **Audit:** conformant shape with two dimension-2
+  BLOCKERs that are **correct judgment** (at `main` the twin's helpers are still buggy — the fixes
+  live on unmerged PR #46 — while the DoD cites commits unreachable at the audit ref); the
+  text-side and code-side reads corroborated across the read-type seam exactly as spec'd. Reviewer
+  verified the record against the prompts' own return-shape definitions.
+- **Dual-platform:** **667/667** on macOS and Linux. Census 83, zero drops (stash-diff proof).
+- **Process:** 1 opus implementor → orchestrator sanity (both platforms) + orchestrator-run smoke →
+  1 opus reviewer (**PASS, 0 actionable**, 2 advisories: one trace-completeness nit; the
+  `_REF_ARITH` inheritance note). **0 fix rounds.**
+
 ### Session-mechanics note (the 2026-07-04 session)
 
 The `.claude/agents/{implementor,reviewer}.md` definitions committed in setup are **not hot-loaded**

@@ -1,5 +1,12 @@
 # Sub-agent decision signal — shared reference
 
+> **Superseded for v2.** The v2 skills unify on [architecture.md §3](../../docs/architecture.md)'s
+> closed decision-code set — the one decision-code vocabulary across scripts *and* judgment
+> sub-agents (e.g. `skills/resolver/`). This file remains the source of truth for the **v1** skills
+> that still cite it (`github-issue-planner`, `github-issue-drafter`, `github-issue-resolver`,
+> `agents/github-ops.md`, and the standalone tools) until S20 retires them. Do **not** extend this
+> file for v2 — extend §3. The body below is preserved verbatim so those v1 callers keep parsing it.
+
 A judgment sub-agent (one spawned via the `Agent` tool) cannot call `AskUserQuestion` — see [`asking-the-user.md`](asking-the-user.md). When a gate, ambiguity, or blocker arises during its work, it must return a structured **decision-needed signal** to the calling skill's main loop, which renders the gate (or emits a re-route handoff) and, where applicable, re-dispatches with the answer. This file is the single source of truth for that signal's closed-set vocabulary.
 
 ## The signal

@@ -378,12 +378,12 @@ removal happens in S20). The question-status reader converges in S18 with the re
 question pair.
 
 **DoD**
-- [ ] No v2 sub-agent prompt takes a ref as input or cites the old signal doc.
-- [ ] A drift-check validator compares prompt code sets to
+- [x] No v2 sub-agent prompt takes a ref as input or cites the old signal doc.
+- [x] A drift-check validator compares prompt code sets to
       [architecture.md §3](architecture.md); this committed validator binds later prompt authors
       (S13, S15, S16, S18).
-- [ ] Old signal doc carries the superseded breadcrumb; v1 callers still function.
-- [ ] Resolver live smoke re-run green (distiller + audit round-trip).
+- [x] Old signal doc carries the superseded breadcrumb; v1 callers still function.
+- [x] Resolver live smoke re-run green (distiller + audit round-trip).
 
 **Testing:** prompt validators + the smoke re-run.
 

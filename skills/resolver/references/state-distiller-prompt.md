@@ -7,8 +7,9 @@ paths** in the prep facts block's `distiller_bundle` (`issue_body_path`, `thread
 `plan_marker_path`) — prep always stages them to files, so the sub-agent always `Read`s a path rather
 than choosing between a path and inline content — and the integration-target input is the **bare**
 `facts.audit_ref` name. The exception protocol (`THREAD_SUPERSEDED_PLAN` / `PHASES_MALFORMED` /
-`AMBIGUOUS`), the read-type seam, and the evidence bar are unchanged (S11 unifies the exception-code
-vocabulary across all judgment sub-agents; do not rewrite it here).
+`AMBIGUOUS`), the read-type seam, and the evidence bar are unchanged; S11 converged the
+exception-code citation on architecture.md §3's closed decision-code set — the one vocabulary across
+scripts and judgment sub-agents (the v1 signal doc it previously cited is superseded for v2).
 
 This is the resolver's `Explore`-type state-distiller, dispatched from the spine's S1 (and re-dispatched
 after a fitness-audit routes a body fix through the drafter). The orchestrator fills the `<<...>>`
@@ -98,7 +99,7 @@ Raise:
 - `PHASES_MALFORMED` — the plan has a `## Phases` section but it can't be parsed (missing required keys, free-form prose under the header, `closes-dod` references that don't resolve to DoD bullets).
 - `AMBIGUOUS` — the thread is too contradictory or sparse to determine a single current direction. The orchestrator will fall back to reading the raw thread.
 
-These codes are a closed set — use the exact tokens, no synonyms (see [`../../_shared/subagent-decision-signal.md`](../../_shared/subagent-decision-signal.md)).
+These codes are a closed set — use the exact tokens, no synonyms. They are architecture.md §3's closed decision-code set: the single decision-code vocabulary shared across scripts and judgment sub-agents.
 
 Notes:
 - `plan: absent` is a **normal report, not an exception** — emit the normal shape with `plan: absent`. Whether a missing plan matters is the resolver's plan-gate judgment (it depends on triviality and existing-PR signals you don't have), so don't raise an exception for it.
