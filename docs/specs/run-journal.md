@@ -620,8 +620,7 @@ sandbox, or delete anything outside the working tree and the sandbox.
 
 ### S13 — Planner skill rewrite — PARTIAL (automatable work done + committed; live parity PENDING) (2026-07-10)
 
-- **Commit:** _backfilled post-commit_ (`S13: skills/planner/ — planner cutover + edit-labels/
-  close-pr ops`).
+- **Commit:** `d28d87c` (`S13: skills/planner/ — planner cutover + edit-labels/close-pr ops`).
 - **Status:** **2 of 6 DoD boxes ticked** (box 2 zero-ref-arithmetic; box 6 line-count record —
   the wholly-offline boxes). **Boxes 1/3/4/5 carry explicit parity language and remain unticked**
   — the run's third hard stop. S14 does not start until the four planner parity scenarios close
