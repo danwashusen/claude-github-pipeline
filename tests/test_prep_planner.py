@@ -157,7 +157,7 @@ class HappyPathFactsSchemaTests(PrepPlannerSandboxTestCase):
         self.assertEqual(envelope["vector"]["type"], "standard")
         self.assertEqual(envelope["vector"]["mode"], "fresh")
         self.assertEqual(envelope["vector"]["plan_ref_row"], prep_planner.PLAN_REF_ROW_DEFAULT)
-        self.assertEqual(envelope["suggested_playbook"], "standard.md")
+        self.assertEqual(envelope["suggested_playbook"], "single.md")
 
     def test_planner_never_gets_a_work_workspace(self):
         # architecture.md §6 / prd §8.4: grounding is read-only; the planner never has a `workspace`
@@ -235,7 +235,7 @@ class PlanRefRowTests(PrepPlannerSandboxTestCase):
         self.assertEqual(envelope["story"]["epic_branch"]["branch"], "epic/100-sandbox-fixture")
         self.assertTrue(envelope["story"]["epic_plan"]["present"])
         self.assertTrue(envelope["story"]["epic_delivery_log"]["present"])
-        self.assertEqual(envelope["suggested_playbook"], "story.md")
+        self.assertEqual(envelope["suggested_playbook"], "story-jit.md")
 
     def test_row_epic_as_target_branch_found(self):
         self._push_branch("epic/300-sandbox-epic")
@@ -319,6 +319,38 @@ class OpenQuestionTrackerSearchTests(PrepPlannerSandboxTestCase):
         self.assertEqual(len(envelope["open_questions"]), 1)
         self.assertEqual(envelope["open_question_candidates"], [])
         self.assertEqual(envelope["attention"], [])
+
+
+class OqQueryOneShotTests(PrepPlannerSandboxTestCase):
+    """S13 authorized additive `--oq-query` mode: the one-shot tracker de-dup lookup a playbook runs
+    for an OQ it detects ANEW during grounding (not in the issue body). Fast path — one `gh issue
+    list` call, no facts assembly, conformant envelope."""
+
+    def test_oq_query_emits_candidates_without_full_facts(self):
+        result = self._run(
+            ["400", "octo/widgets", "--oq-query", "cache eviction policy"],
+            fixture_case="prep_planner_oq_query",
+        )
+        self.assertEqual(result.returncode, 0, msg="stderr: %s" % result.stderr)
+        envelope = _parse_one_envelope(result.stdout)
+        envelope_asserts.assert_full_envelope_conformance(envelope)
+        self.assertEqual(envelope["status"], "ok")
+        # It is the one-shot payload, NOT a full facts block (no vector / suggested_playbook).
+        self.assertNotIn("vector", envelope)
+        self.assertNotIn("suggested_playbook", envelope)
+        self.assertIn("oq_query_candidates", envelope)
+        groups = envelope["oq_query_candidates"]
+        self.assertEqual(len(groups), 1)
+        self.assertEqual(groups[0]["query"], "cache eviction policy")
+        self.assertEqual(groups[0]["candidates"][0]["number"], 88)
+        self.assertEqual(groups[0]["candidates"][0]["state"], "OPEN")
+
+    def test_oq_query_empty_list_makes_no_call(self):
+        # Zero queries -> empty candidate list, no gh call (build core, no network).
+        payload, notices, decision = prep_planner.build_oq_query("octo/widgets", [], cwd=None)
+        self.assertIsNone(decision)
+        self.assertEqual(payload, {"repo": "octo/widgets", "oq_query_candidates": []})
+        self.assertEqual(notices, [])
 
 
 class MarkerDetectionVariantTests(PrepPlannerSandboxTestCase):
@@ -643,9 +675,23 @@ class PureHelperUnitTests(unittest.TestCase):
         self.assertEqual(prep_planner._parse_phase_tracker("no tracker here"), [])
 
     def test_suggested_playbook_by_type(self):
-        self.assertEqual(prep_planner._suggested_playbook("epic"), "epic.md")
-        self.assertEqual(prep_planner._suggested_playbook("story"), "story.md")
-        self.assertEqual(prep_planner._suggested_playbook("standard"), "standard.md")
+        # The four real S13 playbook names, keyed on (type, mode, parent_epic_open).
+        self.assertEqual(prep_planner._suggested_playbook("epic", "fresh"), "epic.md")
+        self.assertEqual(prep_planner._suggested_playbook("standard", "fresh"), "single.md")
+        # A story under an OPEN parent epic -> story-jit (owns both fresh and revise).
+        self.assertEqual(
+            prep_planner._suggested_playbook("story", "fresh", parent_epic_open=True), "story-jit.md"
+        )
+        self.assertEqual(
+            prep_planner._suggested_playbook("story", "revise", parent_epic_open=True), "story-jit.md"
+        )
+        # A story with no open parent epic -> the single-issue path (v1 "Everything else").
+        self.assertEqual(
+            prep_planner._suggested_playbook("story", "fresh", parent_epic_open=False), "single.md"
+        )
+        # revise mode short-circuits to revise.md for a standalone issue or an epic.
+        self.assertEqual(prep_planner._suggested_playbook("standard", "revise"), "revise.md")
+        self.assertEqual(prep_planner._suggested_playbook("epic", "revise"), "revise.md")
 
     def test_extract_plan_sha_from_header_line(self):
         body = "**Implementation plan** — #1 x — planned 2026-01-01T00:00:00Z at `main@abc1234`\n"

@@ -423,14 +423,14 @@ comment's planned-at SHA is the workspace SHA fact.
 **DoD**
 - [ ] Plan comment diffs clean against S1 captures; planned-at SHA equals the facts workspace SHA
       in parity runs.
-- [ ] Zero ref arithmetic in prompts (grep).
+- [x] Zero ref arithmetic in prompts (grep).
 - [ ] Open-question lines render in every handoff shape; the exact bug-(b) composite scenario has
       a rendering example and a parity check.
 - [ ] Playbook rule (falsifiable): an OQ may be recorded "(not filed)" only when the facts
       candidate list is empty or each candidate was explicitly rejected; parity-checked (bug (a)).
 - [ ] Gates from `specs/planner.md` present; grep gates + pins; parity recorded: plan-new
       single issue, plan-new epic, JIT story, revise.
-- [ ] Router + largest playbook line count recorded in `docs/specs/parity/planner.md` and is at
+- [x] Router + largest playbook line count recorded in `docs/specs/parity/planner.md` and is at
       most half the v1 `SKILL.md` count in `baseline.md` ([prd.md §10](prd.md)).
 
 **Testing:** offline routing + rendering fixtures; the four live parity scenarios.

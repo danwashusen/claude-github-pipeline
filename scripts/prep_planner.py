@@ -45,6 +45,7 @@ prep-owned direct calls.
 Usage::
 
     prep_planner.py <issue-number> <owner/repo> [--root PATH] [--scratch-dir PATH] [--refresh]
+    prep_planner.py <issue-number> <owner/repo> --oq-query "<topic>" [--oq-query "<topic>" ...]
 
 ``--root`` defaults to ``.`` (the project root — architecture.md §6's read-only trust vantage).
 ``--scratch-dir`` defaults to ``/tmp/gh-planner-<issue-number>`` (CLAUDE.md's ``/tmp/gh-<skill>-
@@ -108,7 +109,10 @@ needed). Entries whose `question` field is already `#N` are NOT re-searched (alr
 as `open_question_candidates: [{"oq_id", "query", "candidates": [{"number","title","state","labels"},
 ...]}, ...]` — the planner's own prompt can therefore never silently record "(not filed)" for an
 entry this fact lists without first consulting it; :func:`_build_attention` also surfaces an
-unmissable `attention` line per non-empty candidate group.
+unmissable `attention` line per non-empty candidate group. For an OQ the plan detects **anew
+during grounding** (never in the issue body, so absent from the body-driven search above), the
+``--oq-query`` one-shot mode (:func:`build_oq_query`) runs the identical search on demand — the
+S13-authorized additive extension that keeps the raw `gh issue list` out of the playbook prompt.
 
 **The shared config-block reader promotion (S9-carried advisory, authorized for S12).**
 `_read_block_anywhere` (plus its `_candidate_config_files`/`_find_includes_one_level` helpers) was
@@ -665,6 +669,26 @@ def _build_open_question_candidates(issue_body, repo, cwd=None):
     return entries, candidates, None
 
 
+def build_oq_query(repo, queries, cwd=None):
+    """One-shot tracker de-dup lookup for open-question topics the plan **newly detects during
+    grounding** — OQs that are NOT already in the issue body's `## Open questions` section, so
+    `_build_open_question_candidates` (body-driven) never searched them. Runs the identical
+    deterministic `gh issue list --state all --label question --search "<query>"` Bug (a) names,
+    once per `--oq-query` text. This is the authorized in-flow mechanism the playbook consults
+    before recording a newly-detected OQ as `(not filed)`, so the raw `gh issue list` stays banned
+    in the prompt (docs/specs/planner.md Bug (a); architecture.md §7 write discipline / §6 "no
+    ref/gh in prompts"). Additive: it never runs on the default facts path. Returns `(payload,
+    notices, decision_or_none)`.
+    """
+    results = []
+    for query in queries:
+        matches, decision = _search_question_tracker(repo, query, cwd=cwd)
+        if decision is not None:
+            return None, [], decision
+        results.append({"query": query, "candidates": matches})
+    return {"repo": repo, "oq_query_candidates": results}, [], None
+
+
 # ---------------------------------------------------------------------------
 # Revise facts (mode == "revise")
 # ---------------------------------------------------------------------------
@@ -721,25 +745,36 @@ def _build_revise_facts(issue_envelope, open_prs, plan_sha, grounding_sha, repo,
 # ---------------------------------------------------------------------------
 
 
-def _suggested_playbook(issue_type):
-    """Map `issue_type` to the suggested playbook filename (architecture.md §5: "Prep proposes;
-    the router confirms"). THE S13 CONTRACT PROPOSAL (S13 is not authored yet — see the
-    implementor report's "Summary" for the full rationale): three names, one per shape —
-    `standard.md` (bug/feature/incomplete/multi-phase/standalone-story), `epic.md` (epic-as-
-    target), `story.md` (story-under-open-epic / Just-in-time story planning) — mirroring
-    `prep_resolver.py`'s / `prep_evaluator.py`'s identical three-name convention. `vector.mode`
-    (`fresh`/`revise`) differentiates WITHIN a playbook rather than selecting a fourth/fifth
-    playbook name, matching how the resolver's own `mode` (`continue`/`gated`/`fresh`) never
-    changes `suggested_playbook` either — v1's "Revise mode" section is an overlay across every
-    shape (a standalone issue, an epic, or a story all have their own revise variant described
-    inline), not a distinct flow with different ACTIONS at the shape level (architecture.md §5:
-    "a playbook exists only for flows that differ in actions taken").
+def _suggested_playbook(issue_type, mode, parent_epic_open=False):
+    """Map `(issue_type, mode, parent_epic_open)` to the suggested playbook filename
+    (architecture.md §5: "Prep proposes; the router confirms"). The four real S13 playbook names
+    (`docs/specs/planner.md`; `skills/planner/SKILL.md` §2's routing table):
+
+      - ``revise.md`` — ``mode == "revise"`` (a prior plan comment on the TARGET issue), for a
+        standalone issue OR an epic; revise is its own flow parameterized by the type FACTS
+        (architecture.md §5 "revise is a distinct action flow: reconcile old-vs-new plan +
+        projected-DoD, diff-show, SOFT/HARD gate, ## Predecessor").
+      - ``story-jit.md`` — a story under an OPEN parent epic. Owns BOTH the fresh and the revise
+        path for such a story (v1 SKILL.md:72's "don't branch to Revise mode here — it's handled
+        by Just-in-time story planning"), so it wins over `revise.md` even when the story already
+        has a plan.
+      - ``epic.md`` — a fresh epic-as-target run.
+      - ``single.md`` — everything else fresh: a standalone bug/feature/incomplete/multi-phase
+        issue, or a story with no open parent epic (v1 SKILL.md:92's "Everything else …
+        continue with Steps 4–10").
+
+    ``mode`` is the `fresh`/`revise` value `build_facts` already derived; ``parent_epic_open`` is
+    whether a story's parent epic was found OPEN (``False`` for every non-story type). The
+    ordering encodes the precedence: the story-under-open-epic short-circuit runs before the
+    revise check, matching v1's Step-2 exception.
     """
+    if issue_type == "story" and parent_epic_open:
+        return "story-jit.md"
+    if mode == "revise":
+        return "revise.md"
     if issue_type == "epic":
         return "epic.md"
-    if issue_type == "story":
-        return "story.md"
-    return "standard.md"
+    return "single.md"
 
 
 def _build_attention(open_question_candidates, epic_facts, story_facts):
@@ -852,6 +887,7 @@ def build_facts(issue_number, repo, root=".", scratch_dir=None, refresh=False, c
     epic_branch_name = None
     epic_facts = None
     story_facts = None
+    parent_epic_open = False
 
     if issue_type == "epic":
         epic_branch_facts, decision = _discover_epic_branch(root, issue_number)
@@ -905,6 +941,7 @@ def build_facts(issue_number, repo, root=".", scratch_dir=None, refresh=False, c
             return None
         parent_epic = matches[0] if len(matches) == 1 else None
         parent_open = parent_epic is not None and (parent_epic.get("state") or "").upper() == "OPEN"
+        parent_epic_open = parent_open
 
         epic_branch_facts = None
         jit_epic_plan = None
@@ -1006,7 +1043,7 @@ def build_facts(issue_number, repo, root=".", scratch_dir=None, refresh=False, c
         if _forward_decision(revise_decision):
             return None
 
-    suggested_playbook = _suggested_playbook(issue_type)
+    suggested_playbook = _suggested_playbook(issue_type, mode, parent_epic_open)
     vector = {"type": issue_type, "mode": mode, "plan_ref_row": plan_ref_row}
 
     facts = {
@@ -1084,7 +1121,25 @@ def main(argv):
         "use, provided for test-injection — mirrors prep_resolver.py's / prep_evaluator.py's "
         "identical --cwd knob",
     )
+    parser.add_argument(
+        "--oq-query",
+        action="append",
+        default=None,
+        metavar="TEXT",
+        help="one-shot tracker de-dup lookup for a newly-detected open-question topic (repeatable) "
+        "— runs the deterministic question-tracker search and emits `oq_query_candidates`, without "
+        "assembling the full facts block; the playbook consults it before recording a NEWLY-"
+        "detected OQ as (not filed) (docs/specs/planner.md Bug (a))",
+    )
     args = parser.parse_args(argv)
+
+    if args.oq_query:
+        payload, notices, decision = build_oq_query(args.repo, args.oq_query, cwd=args.cwd)
+        if decision is not None:
+            emit_needs_decision(decision, notices=notices)
+            return EXIT_OK
+        emit_ok(payload=payload, notices=notices)
+        return EXIT_OK
 
     facts = build_facts(
         args.issue,

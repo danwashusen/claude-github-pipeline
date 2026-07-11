@@ -618,6 +618,60 @@ sandbox, or delete anything outside the working tree and the sandbox.
   blocking + authorized fix round → 1 opus reviewer (PASS, 0 actionable, 4 advisories) →
   advisory-1 guard tightening → reviewer re-verify (**PASS holds, stronger**). **2 fix rounds.**
 
+### S13 — Planner skill rewrite — PARTIAL (automatable work done + committed; live parity PENDING) (2026-07-10)
+
+- **Commit:** _backfilled post-commit_ (`S13: skills/planner/ — planner cutover + edit-labels/
+  close-pr ops`).
+- **Status:** **2 of 6 DoD boxes ticked** (box 2 zero-ref-arithmetic; box 6 line-count record —
+  the wholly-offline boxes). **Boxes 1/3/4/5 carry explicit parity language and remain unticked**
+  — the run's third hard stop. S14 does not start until the four planner parity scenarios close
+  them.
+- **Deliverables:** `skills/planner/` from scratch — `SKILL.md` router (129; pins `opus`/`xhigh`
+  verbatim) + **spine + four routable playbooks** (`single`/`epic`/`story-jit`/`revise` — the
+  plan's mandated names; all four read the spine; story-under-open-epic short-circuits to
+  story-jit BEFORE the revise check per v1's Step-2 exception, parentless story → single) +
+  `references/` (plan-schema **carried verbatim, byte-identical to the S1 capture**; the reviewer
+  prompt rewritten to read-workspace paths — S11-validator-bound and green; handoff renderings
+  with the footer rule [`origin/main`-prefixed default branch / bare epic branch + the grounding
+  workspace short-SHA] and the **bug-(b) composite epic+story worked example**; revise
+  reconciliation on v2 write paths) + `tests/test_planner_routing.py` (36) +
+  `docs/specs/parity/planner.md` (metrics + 4 operator scenarios + sandbox seeding notes).
+  **The two falsifiable rules:** bug-(a) "(not filed)" only on empty/rejected candidates (both
+  search paths named); bug-(b) OQ line in every gated handoff shape.
+- **Authorized script touches:** `prep_planner._suggested_playbook` aligned to the four real names
+  (+ `parent_epic_open` arg); additive `--oq-query` one-shot candidate lookup (mechanism (ii) for
+  newly-detected OQs — option (i) rejected: the planner must not rewrite the drafter's body
+  section); **`gh_persist.py` gained `edit-labels` + `close-pr`** (the S10 create-pr precedent;
+  additive, 16 new tests, six pre-existing ops byte-identical) — `edit-labels` for the `planned`
+  label (docstring names S15/S16 as future consumers), `close-pr` for the HARD-revise close with
+  the **byte-faithful `Re-plan superseded this PR` supersession marker staged to the close
+  comment**, firing only after v1's preserved three-way gate.
+- **Latent v1 bug discovered (the third of the run):** v1's predecessor-PR detection **never
+  fires** — its query fetches `--json …,body` only while the marker it filters for lives in the
+  close comment (source-derived: v1 SKILL.md:873-878 vs revise-reconciliation.md:49). Recorded as
+  an authorized capture-gap addendum in `docs/specs/resolver.md` (row-134 † + a falsifiable
+  Known-bugs bullet; reviewer-verified citations; the "never fires" claim confirmed exact). Any
+  future v2 predecessor consumer must read close comments, never `--json body`.
+- **Review (1 opus reviewer, 1 fix round + 1 authorized micro-round):** CHANGES REQUIRED — **1
+  actionable**: a stale pre-extension gap-note in handoff-renderings.md contradicted revise.md
+  (would have told the operator to close an already-closed PR); fixed + re-verified, zero stale
+  notes remain. Rulings of record: the exactly-at-the-bar budget **251 ≤ 251** is compliant
+  (methodology per S10) but **zero-headroom — any future SKILL.md/plan-spine.md line must be
+  offset** (test-pinned); `--oq-query` clean; close-pr's comment-as-argv within the §12 invariant
+  (the race surface is the prompt boundary — the file crosses as a path); **the S12 filter ×
+  S9 predecessor-search contract survives** (filter selects by body issue-ref; marker match reads
+  comments — orthogonal); routing precedence v1-faithful; edit-labels no-op semantics correct.
+- **Carried advisories:** (i) the resolver-spec addendum has one wording nit (line-878 sentence
+  says "filters that fetched body for the marker"; the precise defect is a query/filter data
+  mismatch — conclusion + remediation correct as written); (ii) the 251/251 budget pin;
+  (iii) S15/S16 reuse `edit-labels`, don't re-propose; (iv) future predecessor consumers read
+  close comments.
+- **Census:** 83 → **85** (+`github-pipeline:researcher`, +`§6.5`; zero drops). **Dual-platform:**
+  **801/801** macOS + Linux. S11 validator green over the new prompt.
+- **Process:** 1 opus implementor → gap report (two missing write ops) → orchestrator-authorized
+  extensions → orchestrator sanity (801 both platforms) → 1 opus reviewer (CHANGES REQUIRED, 1
+  actionable + 4 advisories) → fix round + authorized spec addendum → re-verify (**PASS**).
+
 ### Session-mechanics note (the 2026-07-04 session)
 
 The `.claude/agents/{implementor,reviewer}.md` definitions committed in setup are **not hot-loaded**
@@ -630,6 +684,32 @@ of truth; a **freshly started** resumed session will pick them up by name and ca
 ---
 
 ## Handback log
+
+### 2026-07-10 handback — STOP at S13's live parity (third operator gate) — OPEN
+
+The run is stopped at **S13 boxes 1/3/4/5's parity halves** (stop condition: parity runs are
+operator-owned). Everything automatable through S13 is accepted and committed on
+`rewrite/v2-implementation` (**unpushed**; 801 offline tests green on macOS + Linux).
+
+**Operator actions (all scaffolded in [`docs/specs/parity/planner.md`](parity/planner.md)):**
+1. **Four parity scenarios** on `danwashusen/gh-pipeline-sandbox` — v1
+   `/github-pipeline:github-issue-planner` vs v2 `/github-pipeline:planner`, twins per scenario:
+   **plan-new single issue; plan-new epic; JIT story; revise.** Same headless recipe as S7/S10
+   (fresh clone per run; drive the nested `claude -p` runs via `!`).
+2. **Per-scenario parity halves to confirm** (each scenario's checklist binds them):
+   plan comment schema-identical + **planned-at SHA equals the facts grounding-workspace SHA**
+   (box 1); the **bug-(b) composite** epic+story handoff renders the `Open questions:` line
+   (box 3, scenario 3); the **bug-(a) rule** — no "(not filed)" with a non-empty unconsulted
+   candidate list (box 4); all recorded with divergences traced (box 5).
+3. **Sandbox seeding first:** epic #1 has **no `## Stories` section** and never references #2/#3 —
+   the epic + JIT scenarios need a properly-seeded epic (recipe in the parity doc's seeding
+   notes). **Expected divergences already on record:** Bug (c) (v2's reference filter vs v1's
+   fuzzy search); v2 applies the `planned` label via `edit-labels` (same artifact, new mechanism);
+   HARD-revise closes the PR via `close-pr` with the supersession close comment (v1's own
+   predecessor detection is latently broken — see the resolver-spec addendum — so do not expect
+   v1 to consume the marker).
+4. Tick boxes 1/3/4/5 in `docs/implementation.md` when their parity halves pass; commit locally
+   (never push); resume the orchestrator — it flips S13 to ACCEPTED and proceeds **S14 → S15 → …**
 
 ### 2026-07-09 handback — STOP at S10's live legs (second operator gate) — CLOSED 2026-07-10
 

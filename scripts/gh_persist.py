@@ -2,21 +2,24 @@
 """gh_persist.py — the single write path for GitHub issue/PR persistence (architecture.md §7),
 ported from ``gh-persist.sh`` (v1) under the architecture.md §3 envelope.
 
-Subcommands (unchanged surface from v1 — same names, same flags, same positional order):
+Subcommands (unchanged surface from v1 — same names, same flags, same positional order — plus
+``create-pr``/``edit-labels``/``close-pr``, additive-only v2 extensions, see below):
 
-    gh_persist.py create     <repo> <body_path> --title <title> [--label L]...
-                              [--blocked-by <nums/urls>] [--blocking <nums/urls>] [--dry-run]
-    gh_persist.py create-pr  <repo> <body_path> --title <title> --base <ref> --head <ref>
-                              [--draft]                                        [--dry-run]
-    gh_persist.py edit-body  <repo> <issue>     <body_path>                      [--dry-run]
-    gh_persist.py link       <repo> <issue>
-                              [--add-blocked-by N]... [--remove-blocked-by N]...
-                              [--add-blocking N]...   [--remove-blocking N]...     [--dry-run]
-    gh_persist.py comment    <repo> <target> <id> <body_path>
-                              [--review-action approve|comment|request-changes]
-                              [--delete-marker-id <id>]                            [--dry-run]
-    gh_persist.py close      <repo> <issue> [--reason completed|"not planned"]     [--dry-run]
-    gh_persist.py reopen     <repo> <issue>                                        [--dry-run]
+    gh_persist.py create      <repo> <body_path> --title <title> [--label L]...
+                               [--blocked-by <nums/urls>] [--blocking <nums/urls>] [--dry-run]
+    gh_persist.py create-pr   <repo> <body_path> --title <title> --base <ref> --head <ref>
+                               [--draft]                                        [--dry-run]
+    gh_persist.py edit-body   <repo> <issue>     <body_path>                      [--dry-run]
+    gh_persist.py edit-labels <repo> <issue>     [--add L]... [--remove L]...     [--dry-run]
+    gh_persist.py link        <repo> <issue>
+                               [--add-blocked-by N]... [--remove-blocked-by N]...
+                               [--add-blocking N]...   [--remove-blocking N]...     [--dry-run]
+    gh_persist.py comment     <repo> <target> <id> <body_path>
+                               [--review-action approve|comment|request-changes]
+                               [--delete-marker-id <id>]                            [--dry-run]
+    gh_persist.py close       <repo> <issue> [--reason completed|"not planned"]     [--dry-run]
+    gh_persist.py close-pr    <repo> <pr>     [--comment-file <path>]               [--dry-run]
+    gh_persist.py reopen      <repo> <issue>                                        [--dry-run]
 
 ``<target>`` for ``comment`` is one of: issue | pr | pr-review. ``--review-action`` is required
 when target=pr-review and forbidden otherwise.
@@ -50,6 +53,42 @@ sanctioned raw-``gh`` PR-state toggle (architecture.md §10), unaffected by this
 dependency support (``--blocked-by``/``--blocking``) is added to ``create-pr``: GitHub's issue-
 dependency feature is a construct on **issues**, not PRs — the resolver's PR-open write never sets
 one.
+
+``edit-labels`` and ``close-pr`` (added S13, additive-only — the same architecture.md §2 "if a
+needed operation has no script, extend a script" precedent ``create-pr`` established at S10) close
+the two v1-write-path gaps the planner cutover surfaced: v1's ``planned``-label apply
+(``skills/github-issue-planner/SKILL.md:402``, ``gh issue edit --add-label``) and the HARD-revise
+predecessor-PR close (``skills/github-issue-planner/references/revise-reconciliation.md``'s "Start
+fresh", ``gh pr close --comment``). Both are additive: every existing op's behavior, argv shape, and
+envelope are byte-identical, and no existing test changed.
+
+- ``edit-labels`` is **bodyless** (no ``--body-file``, no empty-body gate — mirrors
+  ``close``/``reopen``, not ``comment``): a label add/remove is a relationship edit, not a body
+  write. ``--add``/``--remove`` are each repeatable; at least one of the two is required (a usage
+  error otherwise, mirroring ``link``'s "at least one relationship flag" rule) so a caller can never
+  mistake a no-op invocation for a successful edit. No client-side idempotency special-casing —
+  same discipline as ``close``/``reopen``: ``gh issue edit --add-label`` on an already-present label,
+  and ``--remove-label`` on a label the issue doesn't carry, are themselves ``gh``/GitHub-API no-op
+  successes (this script performs no "is it already set" pre-check), so a re-run of a partially-
+  applied edit is always safe. Known future consumers (not this step's callers): S15 (drafter) and
+  S16 (researcher, the ``researched`` label) — recorded here so a later cutover doesn't re-propose
+  this op from scratch.
+- ``close-pr`` closes a PR with an **optional** staged comment. ``gh pr close`` has no
+  ``--body-file``/``--comment-file`` flag of its own (unlike every body-bearing op above) — the
+  script reads the staged ``--comment-file`` itself and forwards its bytes as ``gh pr close``'s
+  ``--comment <text>`` value, so the comment still crosses the *prompt* boundary as a path (the
+  #626/#627 discipline), even though it crosses the *gh-argv* boundary as text (`gh` has no file
+  form here to delegate to). The empty-body gate applies **only when** ``--comment-file`` is given
+  (an included comment must be non-empty); omitting the flag is a bodyless close, exactly like
+  ``close``. **The comment text is a cross-skill contract, not free prose**: this op's staged text
+  becomes the PR's **close comment** (``gh pr close --comment``, a genuine comment, never the PR
+  body/description) — the resolver's predecessor-PR detection greps a closed PR's close comment for
+  the literal phrase ``Re-plan superseded this PR`` to find the branch a HARD re-plan superseded, for
+  its ``-vN`` fresh-branch suffixing (``docs/specs/resolver.md`` "Deterministic steps": "Predecessor-PR
+  detection"). The planner's HARD-revise flow (``skills/planner/playbooks/revise.md``) stages that
+  exact phrase, byte-faithful, before calling this op — this script does not itself construct or
+  validate the phrase (it is a generic bodyless-optional-comment PR close), the same way ``comment``
+  does not validate marker-prefix conventions on the bodies it posts.
 
 ``create --blocked-by/--blocking`` and ``link`` set GitHub's NATIVE issue dependencies (gh >= 2.95
 + the repo feature enabled). They are capability-gated by ATTEMPTING the real write and classifying
@@ -327,6 +366,46 @@ def _cmd_edit_body(args):
     return EXIT_OK
 
 
+# ---- edit-labels ----
+
+
+def _cmd_edit_labels(args, parser):
+    # Bodyless relationship edit — no empty-body gate (mirrors close/reopen, not comment/edit-body:
+    # see the module docstring's edit-labels paragraph). At least one of --add/--remove is required,
+    # the same "don't silently no-op" usage-error rule `link` applies to its own relationship flags.
+    if not args.add and not args.remove:
+        parser.error("edit-labels requires at least one --add/--remove flag")
+
+    cmd = ["gh", "issue", "edit", args.issue, "--repo", args.repo]
+    for label in args.add or []:
+        cmd += ["--add-label", label]
+    for label in args.remove or []:
+        cmd += ["--remove-label", label]
+
+    if args.dry_run:
+        emit_ok(payload={
+            "op": "edit-labels", "issue": args.issue, "dry_run": True,
+            "added": list(args.add or []), "removed": list(args.remove or []),
+            "would_run": _quote_cmd(cmd),
+        })
+        return EXIT_OK
+
+    result = process.run(cmd, cwd=args.cwd)
+    if result.auth_required:
+        emit_needs_decision(_auth_decision(result))
+        return EXIT_OK
+    if result.returncode != 0:
+        sys.stderr.write(result.stderr)
+        return 1
+
+    emit_ok(payload={
+        "op": "edit-labels", "issue": args.issue, "dry_run": False,
+        "added": list(args.add or []), "removed": list(args.remove or []),
+        "url": result.stdout.strip(),
+    })
+    return EXIT_OK
+
+
 # ---- link ----
 
 
@@ -482,6 +561,55 @@ def _cmd_close(args):
     return EXIT_OK
 
 
+# ---- close-pr ----
+
+
+def _cmd_close_pr(args):
+    # The comment is OPTIONAL: --comment-file given -> the empty-body gate applies to that staged
+    # file (an included comment must be non-empty, per the standard body-bearing-write discipline);
+    # --comment-file omitted -> bodyless close, exactly like `close` (module docstring: "close-pr
+    # closes a PR with an optional staged comment").
+    comment_text = None
+    if args.comment_file:
+        gate = _verify_body_file(args.comment_file)
+        if gate is not None:
+            emit_needs_decision(gate)
+            return EXIT_OK
+        comment_text = Path(args.comment_file).read_text(encoding="utf-8")
+
+    cmd = ["gh", "pr", "close", args.pr, "--repo", args.repo]
+    if comment_text is not None:
+        # `gh pr close` has no --body-file of its own; the staged comment crosses the gh-argv
+        # boundary as text (it already crossed the prompt boundary as a path — see module
+        # docstring). The caller is responsible for staging the exact byte-faithful text a
+        # downstream reader (e.g. the resolver's predecessor-PR detection) may grep for.
+        cmd += ["--comment", comment_text]
+
+    if args.dry_run:
+        payload = {"op": "close-pr", "pr": args.pr, "dry_run": True, "would_run": _quote_cmd(cmd)}
+        if args.comment_file:
+            payload.update(_write_receipt_fields(args.comment_file))
+        emit_ok(payload=payload)
+        return EXIT_OK
+
+    result = process.run(cmd, cwd=args.cwd)
+    if result.auth_required:
+        emit_needs_decision(_auth_decision(result))
+        return EXIT_OK
+    if result.returncode != 0:
+        sys.stderr.write(result.stderr)
+        return 1
+
+    payload = {
+        "op": "close-pr", "pr": args.pr, "dry_run": False, "closed": True,
+        "commented": comment_text is not None,
+    }
+    if args.comment_file:
+        payload.update(_write_receipt_fields(args.comment_file))
+    emit_ok(payload=payload)
+    return EXIT_OK
+
+
 def _cmd_reopen(args):
     # Sibling of _cmd_close for the reentrant case where a prematurely-closed question must be
     # reopened before its decision is revised. No --reason, no empty-body gate.
@@ -549,6 +677,13 @@ def _build_parser():
     p_edit.add_argument("body_path")
     p_edit.add_argument("--dry-run", action="store_true")
 
+    p_edit_labels = sub.add_parser("edit-labels")
+    p_edit_labels.add_argument("repo")
+    p_edit_labels.add_argument("issue")
+    p_edit_labels.add_argument("--add", action="append", default=[])
+    p_edit_labels.add_argument("--remove", action="append", default=[])
+    p_edit_labels.add_argument("--dry-run", action="store_true")
+
     p_link = sub.add_parser("link")
     p_link.add_argument("repo")
     p_link.add_argument("issue")
@@ -575,6 +710,12 @@ def _build_parser():
     p_close.add_argument("--reason", choices=["completed", "not planned"], default=None)
     p_close.add_argument("--dry-run", action="store_true")
 
+    p_close_pr = sub.add_parser("close-pr")
+    p_close_pr.add_argument("repo")
+    p_close_pr.add_argument("pr")
+    p_close_pr.add_argument("--comment-file", default=None)
+    p_close_pr.add_argument("--dry-run", action="store_true")
+
     p_reopen = sub.add_parser("reopen")
     p_reopen.add_argument("repo")
     p_reopen.add_argument("issue")
@@ -585,9 +726,11 @@ def _build_parser():
             "create": p_create,
             "create-pr": p_create_pr,
             "edit-body": p_edit,
+            "edit-labels": p_edit_labels,
             "link": p_link,
             "comment": p_comment,
             "close": p_close,
+            "close-pr": p_close_pr,
             "reopen": p_reopen,
         }
     )
@@ -604,6 +747,9 @@ def main(argv):
         return _cmd_create_pr(args)
     if args.subcommand == "edit-body":
         return _cmd_edit_body(args)
+    if args.subcommand == "edit-labels":
+        # Pass edit-labels' own sub-parser for its .error() call, same rationale as link below.
+        return _cmd_edit_labels(args, subparsers_by_name["edit-labels"])
     if args.subcommand == "link":
         # Pass the link sub-parser (not the top-level one) for its .error() calls, so a usage
         # error (e.g. "no relationship flags given") reports link's own usage line, not the
@@ -613,6 +759,8 @@ def main(argv):
         return _cmd_comment(args, subparsers_by_name["comment"])
     if args.subcommand == "close":
         return _cmd_close(args)
+    if args.subcommand == "close-pr":
+        return _cmd_close_pr(args)
     return _cmd_reopen(args)
 
 

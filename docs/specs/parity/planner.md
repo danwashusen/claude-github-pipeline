@@ -1,0 +1,339 @@
+# Parity — planner (v1 `github-issue-planner` → v2 `planner`)
+
+> Records the [implementation.md](../../implementation.md) **S13** parity run per the
+> [parity protocol](../../implementation.md) (`## The parity protocol`) and [prd.md §9.5](../../prd.md).
+> The offline work (router + four playbooks + spine + references + tests + the `prep_planner`
+> alignment) landed in S13's implementor pass; the **four live scenarios below are operator-gated** —
+> run them on the sandbox ([SANDBOX.md](../../../tests/SANDBOX.md)) and fill each result section. A v1
+> skill directory is deleted only after its v2 replacement passes this protocol (S20).
+
+## Line-count metric ([prd.md §10](../../prd.md); S13 DoD box 6)
+
+The success metric: the prompt a session loads (router + the one playbook it executes) is **at most
+half** the v1 `SKILL.md` line count. v1 `github-issue-planner/SKILL.md` = **503 lines**
+([baseline.md](../baseline.md) §1) → bar = **251**.
+
+| File | Lines |
+|---|---:|
+| `skills/planner/SKILL.md` (router) | 129 |
+| `skills/planner/playbooks/plan-spine.md` (the shared spine — largest playbook) | 122 |
+| `skills/planner/playbooks/revise.md` | 67 |
+| `skills/planner/playbooks/story-jit.md` | 48 |
+| `skills/planner/playbooks/epic.md` | 40 |
+| `skills/planner/playbooks/single.md` | 37 |
+| **router + largest playbook (the loaded set)** | **251** |
+
+**251 ≤ 251** ✅ (exactly at the bar — `revise.md` grew when the S13 second pass wired the `edit-labels`/
+`close-pr` ops in place of the write-path-gap prose notes; the spine was trimmed to hold the line).
+Router **129 ≤ 150** ✅ (architecture.md §9 size bar). References are read on demand and are not part of
+the loaded-prompt metric; recorded for completeness: `plan-reviewer-prompt.md` 263 (carried logic,
+tool-use rewritten for the read workspace), `handoff-renderings.md` 215, `revise-reconciliation.md` 124,
+`plan-schema.md` 139 (carried verbatim — the frozen prd §7 artifact).
+
+Every routed session loads the router (129) + the spine (122) + exactly one thin routed playbook
+(37–67). The DoD's metric is *router + largest playbook* = 251; each individual document still fits one
+default `Read`.
+
+## Playbook split (the §5-bar decision the Work records)
+
+architecture.md §5 "parameterize before you playbook": a playbook exists only for flows that differ in
+**actions taken**, not in values. For the planner the ground→draft→verify→persist flow is identical
+across every shape *up to facts* (which `plan_ref`, which schema sections, which reviewer dimension
+set); only the **pre-draft reconnaissance and the post-persist handoff actions** diverge. The split:
+
+- **`playbooks/plan-spine.md`** — the author-and-verify-a-plan flow every route runs (classify → ground
+  at the read workspace → deviation/decision gates → draft against the schema → pre-flight hedge sweep →
+  verify loop → show → persist plan + pointer). Type is a fact here, never a branch. All four routes
+  open by reading it.
+- **`playbooks/single.md`** — a standalone issue: standard schema, `## Coverage gap` for a bug, `## Phases`
+  when multi-phase (a fact); dimensions 1,2,3,4,6 (+9 bug, +7 multi-phase); forward handoff to the resolver.
+- **`playbooks/epic.md`** — the epic-level plan: `## Story breakdown`/`## Story contracts`/`##
+  Integration strategy` instead of `## Phases`; Dimension 5; **stop before per-story fan-out**; route to
+  the planner on the first story, or the drafter when stories aren't filed.
+- **`playbooks/story-jit.md`** — a story under an open epic: **inline epic-plan bootstrap** when absent
+  (the composite epic+story session), delivery-log-vs-contract reconciliation (the epic-plan feedback
+  edge), `## Epic contract` + the `**Epic:**` backlink, Dimension 8; story handoff (the bug-(b)
+  composite OQ line).
+- **`playbooks/revise.md`** — the reconcile-old-vs-new-plan flow: SOFT/HARD classification + DoD-tick
+  reconciliation, diff-show, `## Predecessor`; parameterized by the type facts, not a type branch.
+
+Why a spine + four thin variants rather than one self-contained file per route (which would each restate
+the whole author-verify flow) or a single file with `if epic … else …` (banned by §5)? The
+author-verify flow is identical across shapes up to *facts*; only the reconnaissance and handoff diverge.
+The four variants contain **zero cross-route conditionals** — the route *is* the branch — verified by
+`tests/test_planner_routing.py::PlaybookInterleavingGrepTests` (patterns broadened to the planner's route
+set per the S10 carried advisory).
+
+## The `prep_planner._suggested_playbook` alignment (authorized script touch)
+
+S12 shipped `prep_planner._suggested_playbook` proposing the three placeholder names
+`standard`/`epic`/`story` (its own docstring flagged this as the "S13 contract proposal" to be
+finalized here). S13 aligned it to the four real playbook names, keyed on `(issue_type, mode,
+parent_epic_open)`:
+
+- `story` + open parent epic (any mode) → `story-jit.md` (owns fresh **and** revise for such a story —
+  v1 SKILL.md:72's Step-2 exception; the short-circuit runs before the revise check).
+- `mode: revise` (standalone issue or epic) → `revise.md`.
+- `epic` fresh → `epic.md`.
+- everything else fresh (`standard`, or a `story` with no open parent epic) → `single.md`.
+
+The S12 reviewer pre-ruled these names non-contractual, so this is a surgical rename + a new
+`parent_epic_open` argument (threaded from the already-computed `parent_open` fact), plus updated
+fixtures/tests (`tests/test_prep_planner.py`). **Note the one parenthetical deviation from the brief's
+"mode revise → revise.md regardless of type; else type→name":** a story under an open epic in revise
+mode routes to `story-jit.md`, not `revise.md`, because v1's Step-2 exception makes just-in-time story
+planning own both modes; and a parentless/closed-parent story routes to `single.md` per v1's "Everything
+else" path rather than `story-jit.md`. Both are spec-faithful refinements of the brief's shorthand.
+
+## The newly-detected-OQ search mechanism (option ii — the authorized additive `--oq-query` flag)
+
+Bug (a)'s frozen requirement is that a genuinely-filed `question` issue is never recorded `(not
+filed)`. Prep's `open_question_candidates` pre-searches only the entries the **issue body** already
+records. For an OQ the plan detects **anew during grounding** (never in the body), the playbook needs the
+same tracker search — but a raw `gh issue list` in a playbook is banned (architecture.md §7). Of the two
+clean options the brief names, S13 chose **(ii): an additive `prep_planner.py --oq-query "<topic>"`
+one-shot lookup** — option (i) (write the new OQ into the issue body first, then `--refresh`) was
+rejected because the planner must **not** rewrite the body's `## Open questions` section (v1 SKILL.md:100
+"you never rewrite the body section" — that is the drafter's / open-questions sweep's artifact). The
+`--oq-query` flag runs the identical deterministic search, emits `oq_query_candidates`, assembles no
+facts, and is additive (never on the default path). Covered by
+`tests/test_prep_planner.py::OqQueryOneShotTests` and the routing test's `BugARuleTests`.
+
+## Contract-token census ([global DoD](../../implementation.md) skill-cutover clause)
+
+The S1 baseline census ([baseline.md](../baseline.md) §2) was re-run against the identical command after
+this cutover. Result: **zero drops vs baseline**; every addition is a legitimate `skills/planner/`
+contract token — the markers the skill reads/writes (`<!-- implementation-plan:v1 -->`,
+`<!-- epic-delivery-log:v1 -->`, `<!-- issue-research:v1 -->`, `<!-- open-question-links:v1 -->`,
+`<!-- question-decision:v1 -->`) plus the v2 handoff namespace strings `github-pipeline:planner` /
+`github-pipeline:resolver` / `github-pipeline:drafter` / `github-pipeline:researcher` and the skill's own
+`§`-anchors / doc-section refs. New `skills/planner/` files introduce **no** `github-ops`, **no**
+`GATHER_*`/`PERSIST_*` op names, **no** `github-pipeline:github-*` v1 namespace strings, and **no** `§P`
+IDs.
+
+**Deliberate-retirement note (deferred to S20).** No v1 token retires at S13 — the v1
+`skills/github-issue-planner/` directory is untouched and still contributes all its baseline census rows
+(`GATHER_ISSUE`/`GATHER_EPIC`/`PERSIST_COMMENT`/`PERSIST_BODY`, `github-pipeline:github-ops`, its
+`§`-anchors, the `github-pipeline:github-issue-*` handoff strings). Those retire when S20 deletes the v1
+directory after this v2 replacement passes the live parity below.
+
+## Grep gates (S13 DoD box 2) — recorded green
+
+Run over `skills/planner/`:
+- `github-ops` — **0 hits**.
+- Old skill-invocation namespace (`github-pipeline:github-*`) — **0 hits**.
+- v1 op names (`GATHER_*` / `PERSIST_*`) — **0 hits**.
+- Ref arithmetic in code fences (`git show <ref>:<path>` / `git grep <ref>`) — **0 hits**
+  (`ContractTokenGateTests::test_no_ref_arithmetic_in_code_fences`; the reviewer prompt reads the
+  grounding read workspace by path, never a ref).
+- Raw `gh` persist/gather writes, fenced or not (`gh issue|pr create|edit|comment|review|close|reopen`)
+  — **0 hits, anywhere in `skills/planner/`.** The reviewer prompt's `gh issue view` is a read
+  (self-fetch, not a write) and does not match. Both v1 write-path gaps below are now real
+  `gh_persist.py` ops — no raw-`gh` prose workaround remains.
+- `§P` IDs (resolver-local; must not appear) — **0 hits**.
+
+**Two v1 write-path gaps — resolved in-step, not deferred.** The two v1 writes flagged in this step's
+first implementor pass as having no authorized v2 script op are now real, additive `gh_persist.py`
+subcommands (S13 second pass, authorized per architecture.md §2 "if a needed operation has no script,
+extend a script" — the same precedent S10's `create-pr` established). Every pre-existing `gh_persist.py`
+op's argv shape and envelope are byte-identical; the S21-ported test suite (`tests/test_gh_persist.py`'s
+67 pre-existing tests) is unmodified and green.
+
+- **The `planned` label** (v1 SKILL.md:402) → **`gh_persist.py edit-labels <repo> <issue> --add
+  planned`** — a new, bodyless (no empty-body gate), additive op. `--add`/`--remove` are each
+  repeatable; at least one is required. No client-side idempotency special-casing: an already-present
+  add / an absent remove are `gh`'s own no-op successes, matching the `close`/`reopen` discipline.
+  Wired into `plan-spine.md` S8, replacing the v1-pass gap note. Tests: `tests/test_gh_persist.py::
+  EditLabelsTests` (8 cases — happy path add/remove/combined, usage error, add-present and
+  remove-absent idempotency, dry-run, AUTH_REQUIRED) +
+  `tests/test_planner_routing.py::PlaybookPersistDryRunTests::test_planned_label_apply_edit_labels_dry_run`.
+  Known future consumers (not this step's callers, recorded in the script's own docstring): S15
+  (drafter) and S16 (researcher, the `researched` label).
+- **The HARD-revise PR-close** (v1 `revise-reconciliation.md`, `gh pr close --comment "Re-plan superseded
+  this PR. …"`) → **`gh_persist.py close-pr <repo> <pr> [--comment-file <path>]`** — a new op that closes
+  a PR with an *optional* staged comment. `gh pr close` has no `--body-file` of its own, so the script
+  reads the staged `--comment-file` itself and forwards its bytes as `gh pr close`'s `--comment <text>`
+  value — the comment still crosses the *prompt* boundary as a path; the empty-body gate applies only
+  when `--comment-file` is given. **Cross-skill contract, byte-faithful:** the resolver's predecessor-PR
+  detection (`docs/specs/resolver.md` "Deterministic steps": "Predecessor-PR detection … filtered to
+  `Re-plan superseded this PR` bodies") greps a closed PR's **close comment** for the literal phrase
+  `Re-plan superseded this PR` for its `-vN` fresh-branch suffixing (`gh pr close --comment` posts a
+  genuine PR comment, never the PR body/description — the op's own staged text IS that close comment) —
+  `revise.md`'s HARD "Start fresh" path (and `revise-reconciliation.md`'s worked example) now stage that
+  exact phrase, byte-faithful, before calling `close-pr`. **The gate is unchanged**: the close runs only
+  after the user has already picked **Start fresh** at the S8 three-way confirm (`Start fresh
+  (recommended)` / `Apply in place anyway` / `Cancel`) — the op executes the already-gated decision, it
+  adds no new gate and removes none. Tests: `tests/test_gh_persist.py::ClosePrTests` (8 cases — bodyless
+  close, close-with-comment write-receipt + marker-text forwarding, missing/empty `--comment-file` →
+  `EMPTY_BODY_FILE`, dry-run with/without comment, AUTH_REQUIRED) +
+  `tests/test_planner_routing.py::PlaybookPersistDryRunTests::test_hard_revise_close_pr_with_supersession_marker_dry_run`.
+
+  **Finding — v1's own predecessor-PR detection reads the wrong field (latent v1 bug, not a v2
+  regression).** `docs/specs/resolver.md`'s "Deterministic steps" row phrases the target as "…filtered
+  to `Re-plan superseded this PR` **bodies**" — but v1's actual implementation
+  (`skills/github-issue-resolver/SKILL.md:873-878`) fetches `gh pr list … --json
+  number,headRefName,closedAt,body` (the PR's **body**/description field only) and then greps that
+  fetched `body` for the marker. The marker itself, however, is posted by the planner's HARD-revise as a
+  **close comment** (`skills/github-issue-planner/references/revise-reconciliation.md:49`, `gh pr close
+  --comment "Re-plan superseded this PR. …"` — `--comment` posts a genuine PR comment, it does not edit
+  the PR's body/description). So v1's own filter greps a field the marker was never written into: **v1's
+  predecessor-PR detection is latently broken** (marker lives in a close comment; v1's filter reads only
+  the body) — it would never actually find a predecessor PR, silently falling through to the "no
+  predecessor" branch (unsuffixed `<issue>-<slug>` branch name) even after a genuine HARD re-plan. v2's
+  `close-pr` posts the byte-faithful marker to the close comment as specified (correct per the marker's
+  actual home); a future v2 consumer of this detection (not built this step — no v2 resolver code reads
+  it yet) must read PR **comments**, not `--json body`, to actually find it. Not fixed here — `docs/
+  specs/resolver.md` is out of scope for this step's authorization; recorded for the orchestrator to
+  authorize a spec addendum at acceptance if this reading is confirmed a genuine defect.
+
+## Operator-gate coverage (S13 DoD box 5)
+
+Every operator gate in [planner.md](../planner.md) "## Operator gates" is present in the v2 skill:
+
+| S1-spec gate | v2 home |
+|---|---|
+| Latest-decision-direction confirmation | spine S1 (freeform) |
+| External sources | spine S2 (freeform) |
+| Deviation from docs/precedent | spine S4 (`header: "Deviation"`) |
+| Genuine design decision (Decision gate) | spine S4 (`header: "Decision"`) |
+| Review-notes disposition (dim-4 BLOCKER → no "Post as-is") | spine S7 (`header: "Review notes"`) |
+| Review-notes disposition (dims 1/2/3/5/6 only) | spine S7 (`header: "Review notes"`) |
+| Show plan before posting (opt-in) | spine S8 ("unless the user said don't post yet") |
+| Revise reconciliation confirm (SOFT) | `revise.md` (**Apply** / **Cancel**) |
+| Revise reconciliation confirm (HARD) | `revise.md` (**Start fresh (recommended)** / **Apply in place anyway** / **Cancel**) |
+
+Verified by `tests/test_planner_routing.py::OperatorGateCoverageTests`. No gate's absence traces to a
+PRD § — all present.
+
+## Sandbox seeding notes (read before running the scenarios)
+
+- **The seeded epic needs a `## Stories` section AND the epic body must reference each story `#N`.**
+  S12's live smoke found the base-seed epic (`SANDBOX.md` §5) has only `## Summary` + `## Definition of
+  done` and never lists or references its stories — so `prep_planner._parse_stories_section` returns `[]`
+  (breaking the epic scenario's `## Story breakdown` reconciliation) and `_search_parent_epic` (which
+  looks for the epic whose **body** contains `#<story> in:body`) finds no parent (breaking the JIT-story
+  scenario's routing to `story-jit.md`). For the epic + JIT scenarios, seed a **properly-shaped epic**
+  on a throwaway fixture for the run: give the epic body a `## Stories` section listing each filed story
+  as `- [ ] #<S> — <title>` (which both makes `stories_filed` true **and** puts each `#<S>` in the epic
+  body so the parent-epic search resolves), e.g.:
+
+  ```
+  ## Summary
+  Parity-fixture epic with two stories.
+
+  ## Stories
+  - [ ] #<S1> — First slice
+  - [ ] #<S2> — Second slice
+
+  ## Definition of done
+  - [ ] Story A ships
+  - [ ] Story B ships
+  ```
+
+  This keeps the base seed minimal (per SANDBOX.md's "constructed for the run, not folded back") while
+  giving the epic/JIT scenarios a parent the planner can actually discover.
+- **Bug (c) is an expected v1↔v2 divergence, not a regression.** v2's `gh_gather.references_issue`
+  digit-boundary reference filter (landed in S12's round) means a `plan_ref` open-PR-head row only fires
+  for a PR that genuinely references the target issue. v1's `gh-gather.sh` inherits the bare-digit
+  `in:body` false-positive. On a sandbox state where a stranger PR's incidental digit collides with the
+  target, v1 will route `plan_ref_row: open-pr-head` at that stranger's branch while v2 routes correctly
+  — **the divergence is the fix working, not a v2 regression to chase.**
+- **The `planned` label + HARD-revise PR-close are both real v2 writes now** (resolved in-step, above)
+  — v1 and v2 both apply the label and close the superseded PR; no divergence to record for either.
+
+---
+
+## Live parity scenarios (operator-gated — TODO)
+
+Run each per the [parity protocol](../../implementation.md) steps 1–5 on the sandbox: construct the
+target state, run **v1** `github-issue-planner` capturing every GitHub write / gate / handoff / turn
+count, reset (or use a twin — the epic/JIT flows mutate a shared parent, so **twin the epic subtree**),
+run **v2** `planner` on the same state, then compare: the persisted **plan comment** schema-identical
+(same marker first line, section/heading set + order, structured fields, footer — confirmed by
+cross-consumption with the resolver/evaluator readers); planned-at SHA equals the facts grounding
+workspace SHA (box 1); the bug-(a) candidate consultation observed (box 4); the bug-(b) composite OQ line
+rendered (box 3); same genuine decisions gated; handoff validates against the shared schema; startup ≤
+one state-assembly call. List divergences; each must trace to a PRD requirement, an explained gap above,
+or be a filed defect. **Unexplained divergence fails the run.**
+
+### Scenario 1 — Plan-new, single issue (bug or feature)
+
+Target: a standalone `bug` issue (base `main`, no open PR, no prior plan). Expected v2: one
+`prep_planner.py` call, grounding at `origin/main@<sha>`, plan posted via `gh_persist.py comment` with
+the marker first line and the `origin/main@<sha>` footer (`<sha>` = `read_workspaces.grounding.sha`),
+issue-body pointer via `edit-body`, forward handoff to `/github-pipeline:resolver #<N>`. For a bug, a
+`## Coverage gap` section + Dimension 9. Box-1 check: the footer's `@<short-sha>` == the facts grounding
+SHA.
+
+- [ ] v1 run captured (writes / gates / handoff / turns).
+- [ ] v2 run captured (state-assembly call count = 1).
+- [ ] Plan comment schema-identical (marker line, heading set + order, footer); cross-consumed by the
+      resolver/evaluator plan readers.
+- [ ] **Box 1 parity:** planned-at SHA == `read_workspaces.grounding.sha`.
+- [ ] Gates match; handoff schema-valid.
+- [ ] Divergences (each traced to a PRD § / an explained gap above / a filed defect).
+
+### Scenario 2 — Plan-new epic
+
+Target: a properly-seeded epic (see the seeding note — `## Stories` present, story `#N`s in the body).
+Expected v2: grounding at the `epic/<N>-<slug>` branch (or `origin/main` on bootstrap), the epic plan
+with `## Story breakdown` / `## Story contracts` / `## Integration strategy` (no `## Phases`), Dimension
+5, **no per-story fan-out**, forward handoff to `/github-pipeline:planner #<first-story>` (stories filed)
+or `/github-pipeline:drafter` (stories not filed).
+
+- [ ] v1 run captured.
+- [ ] v2 run captured (epic sections present; no per-story plans authored).
+- [ ] Plan comment schema-identical (epic sections + footer).
+- [ ] **Box 1 parity:** planned-at SHA == the grounding SHA.
+- [ ] Handoff routes to the first story / the drafter per `stories_filed`.
+- [ ] Divergences.
+
+### Scenario 3 — JIT story (composite epic+story; bug-(b) check)
+
+Target: a `story` under an **open** epic that has **no** plan yet (the composite case), whose story plan
+carries an `## Open questions` entry with a `(not filed)` companion. Expected v2: routes to
+`story-jit.md`, bootstraps the epic plan inline (both grounded at `origin/main`), posts the story plan
+with the `**Epic:**` backlink first after the marker + a `## Epic contract` section, Dimension 8, and a
+**story handoff whose `**Open questions:**` line renders** `(not filed) (audience:…) provisional-default`
+(bug (b) — the line is not dropped despite the composite shape).
+
+- [ ] v1 run captured.
+- [ ] v2 run captured (epic plan bootstrapped inline; story plan posted).
+- [ ] **Box 3 parity:** the composite handoff carries the `**Open questions:**` line (bug (b)).
+- [ ] **Box 4 parity:** the `(not filed)` claim was checked against the tracker before it was recorded
+      (`--oq-query` for the newly-detected OQ, or `open_question_candidates` for a body-recorded one);
+      a genuinely-filed companion is cited by `#N`, never `(not filed)` (bug (a)).
+- [ ] Plan comment(s) schema-identical; `## Epic contract` cross-consumed by the evaluator/Dimension-8.
+- [ ] Divergences.
+
+### Scenario 4 — Revise
+
+Target: an issue with a prior `<!-- implementation-plan:v1 -->` plan (a SOFT case: only doc-grounding /
+un-shipped phases changed; and, if a draft PR with shipped phases exists, a HARD case for the reconcile
+path). Expected v2: `mode: revise` → `revise.md`, re-ground focused on what changed, reconcile the DoD
+ticks against `facts.revise.phase_tracker`, diff-show + the SOFT (**Apply** / **Cancel**) or HARD
+(**Start fresh** / **Apply in place anyway** / **Cancel**) gate, repost via `--delete-marker-id`, refresh
+the pointer URL. On HARD Start-fresh: `## Predecessor` posted, DoD un-ticked to the predecessor form, and
+the superseded PR closed via `gh_persist.py close-pr` with the staged `Re-plan superseded this PR` marker
+comment (the S13 second-pass op — the gate already fired at the three-way confirm above; this executes
+the already-gated decision).
+
+- [ ] v1 run captured (SOFT and/or HARD).
+- [ ] v2 run captured (reconciliation diff computed; correct SOFT/HARD gate offered).
+- [ ] Reposted plan schema-identical; stale comment deleted via `--delete-marker-id`; pointer URL
+      refreshed.
+- [ ] **Box 1 parity:** the refreshed plan's planned-at SHA == the new grounding SHA.
+- [ ] HARD path (if exercised): `## Predecessor` + predecessor-annotated DoD; superseded PR closed with
+      the byte-exact `Re-plan superseded this PR` marker, posted as the PR's **close comment** (confirm
+      via `gh pr view <PR#> --json comments` or the GitHub UI — not `--json body`, per the latent-v1-bug
+      finding above; no v2 resolver code reads this detection yet, so there is nothing to cross-consume
+      here this step — the check is that `close-pr` posted the marker to the right field).
+- [ ] Divergences.
+
+## Go/no-go (recorded, not decided)
+
+To be filled by the operator after the four scenarios run. Go criteria: (1) all four scenarios recorded
+with zero unexplained divergences; (2) validators + census green (compileall, `tests/run.py`,
+shellcheck, the contract-token census, `tests/test_subagent_prompts.py`); (3) the offline halves of
+boxes 1/3/4 met (plan schema byte-clean, the bug-(b) example present, the bug-(a) rule written +
+grep-tested).

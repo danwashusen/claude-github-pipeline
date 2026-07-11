@@ -1112,6 +1112,219 @@ class DryRunNeverInvokesGhTests(unittest.TestCase):
             self.assertEqual(env["body_sha256"], hashing.sha256_hex(body_bytes))
 
 
+class EditLabelsTests(unittest.TestCase):
+    """gh_persist.py edit-labels (added S13, additive per architecture.md §2) — bodyless label
+    add/remove (module docstring's edit-labels paragraph). No empty-body gate; at least one of
+    --add/--remove required; no client-side idempotency special-casing (the shim fixture models
+    gh's own no-op-on-repeat behavior, mirroring CloseReopenIdempotencyTests)."""
+
+    def test_add_single_label_emits_ok_with_added_echo(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            cmd = ["issue", "edit", "42", "--repo", "o/r", "--add-label", "planned"]
+            _write_stdout_file(tmp, "url.txt", b"https://github.com/o/r/issues/42\n")
+            _write_manifest(tmp, [{"argv": cmd, "stdout_file": "url.txt", "exit_code": 0}])
+            result = _run_script(["edit-labels", "o/r", "42", "--add", "planned"], fixtures_dir=tmp)
+            self.assertEqual(result.returncode, 0, msg=result.stderr)
+            env = _parse_envelope(result)
+            envelope_asserts.assert_full_envelope_conformance(env)
+            self.assertEqual(env["op"], "edit-labels")
+            self.assertEqual(env["added"], ["planned"])
+            self.assertEqual(env["removed"], [])
+            self.assertEqual(env["url"], "https://github.com/o/r/issues/42")
+            self.assertNotIn("body_bytes", env)
+            self.assertNotIn("body_sha256", env)
+
+    def test_remove_single_label_emits_ok_with_removed_echo(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            cmd = ["issue", "edit", "42", "--repo", "o/r", "--remove-label", "stale"]
+            _write_manifest(tmp, [{"argv": cmd, "exit_code": 0}])
+            result = _run_script(["edit-labels", "o/r", "42", "--remove", "stale"], fixtures_dir=tmp)
+            self.assertEqual(result.returncode, 0, msg=result.stderr)
+            env = _parse_envelope(result)
+            self.assertEqual(env["removed"], ["stale"])
+            self.assertEqual(env["added"], [])
+
+    def test_add_and_remove_combined_forward_both_flag_sets(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            cmd = ["issue", "edit", "42", "--repo", "o/r", "--add-label", "planned",
+                   "--add-label", "researched", "--remove-label", "triage"]
+            _write_manifest(tmp, [{"argv": cmd, "exit_code": 0}])
+            result = _run_script(
+                ["edit-labels", "o/r", "42", "--add", "planned", "--add", "researched",
+                 "--remove", "triage"],
+                fixtures_dir=tmp,
+            )
+            self.assertEqual(result.returncode, 0, msg=result.stderr)
+            env = _parse_envelope(result)
+            self.assertEqual(env["added"], ["planned", "researched"])
+            self.assertEqual(env["removed"], ["triage"])
+
+    def test_no_add_or_remove_flags_is_a_usage_error(self):
+        result = _run_script(["edit-labels", "o/r", "42"])
+        self.assertEqual(result.returncode, 2)
+        self.assertEqual(result.stdout, "")
+
+    def test_add_present_label_is_still_a_no_op_success(self):
+        # gh's own semantics: --add-label on an already-present label is idempotent (no error).
+        # This script performs no client-side "is it already set" pre-check -- the fixture models
+        # gh's own no-op success, and re-running the same call twice proves no special-casing
+        # rejects the repeat (mirrors CloseReopenIdempotencyTests's close-on-closed pattern).
+        with tempfile.TemporaryDirectory() as tmp:
+            cmd = ["issue", "edit", "42", "--repo", "o/r", "--add-label", "planned"]
+            _write_manifest(tmp, [{"argv": cmd, "exit_code": 0}])
+            first = _run_script(["edit-labels", "o/r", "42", "--add", "planned"], fixtures_dir=tmp)
+            second = _run_script(["edit-labels", "o/r", "42", "--add", "planned"], fixtures_dir=tmp)
+            self.assertEqual(first.returncode, 0, msg=first.stderr)
+            self.assertEqual(second.returncode, 0, msg=second.stderr)
+            self.assertEqual(_parse_envelope(first)["added"], ["planned"])
+            self.assertEqual(_parse_envelope(second)["added"], ["planned"])
+
+    def test_remove_absent_label_is_still_a_no_op_success(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            cmd = ["issue", "edit", "42", "--repo", "o/r", "--remove-label", "never-there"]
+            _write_manifest(tmp, [{"argv": cmd, "exit_code": 0}])
+            first = _run_script(["edit-labels", "o/r", "42", "--remove", "never-there"], fixtures_dir=tmp)
+            second = _run_script(["edit-labels", "o/r", "42", "--remove", "never-there"], fixtures_dir=tmp)
+            self.assertEqual(first.returncode, 0, msg=first.stderr)
+            self.assertEqual(second.returncode, 0, msg=second.stderr)
+
+    def test_dry_run_previews_command_and_makes_no_live_call(self):
+        # No manifest/fixtures_dir -- any live gh call would MISS the shim.
+        result = _run_script(["edit-labels", "o/r", "42", "--add", "planned", "--dry-run"])
+        self.assertEqual(result.returncode, 0, msg=result.stderr)
+        env = _parse_envelope(result)
+        envelope_asserts.assert_full_envelope_conformance(env)
+        self.assertTrue(env["dry_run"])
+        self.assertIn("would_run", env)
+        self.assertEqual(env["added"], ["planned"])
+        self.assertNotIn("url", env)
+
+    def test_surfaces_auth_required_as_needs_decision(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            cmd = ["issue", "edit", "42", "--repo", "o/r", "--add-label", "planned"]
+            _write_manifest(tmp, [{"argv": cmd, "exit_code": 4}])
+            result = _run_script(["edit-labels", "o/r", "42", "--add", "planned"], fixtures_dir=tmp)
+            self.assertEqual(result.returncode, 0, msg=result.stderr)
+            env = _parse_envelope(result)
+            self.assertEqual(env["decision"]["code"], "AUTH_REQUIRED")
+
+
+class ClosePrTests(unittest.TestCase):
+    """gh_persist.py close-pr (added S13, additive per architecture.md §2) — closes a PR with an
+    OPTIONAL staged comment (module docstring's close-pr paragraph). The comment crosses the
+    prompt boundary as a staged-file path but the gh-argv boundary as text (`gh pr close` has no
+    --body-file of its own)."""
+
+    def test_close_without_comment_is_bodyless(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            cmd = ["pr", "close", "287", "--repo", "o/r"]
+            _write_manifest(tmp, [{"argv": cmd, "exit_code": 0}])
+            result = _run_script(["close-pr", "o/r", "287"], fixtures_dir=tmp)
+            self.assertEqual(result.returncode, 0, msg=result.stderr)
+            env = _parse_envelope(result)
+            envelope_asserts.assert_full_envelope_conformance(env)
+            self.assertEqual(env["op"], "close-pr")
+            self.assertTrue(env["closed"])
+            self.assertFalse(env["commented"])
+            self.assertNotIn("body_bytes", env)
+            self.assertNotIn("body_sha256", env)
+
+    def test_close_with_comment_forwards_staged_text_as_comment_flag(self):
+        # The exact byte-faithful supersession marker text a HARD-revise close stages
+        # (docs/specs/resolver.md's "Predecessor-PR detection": greps a closed PR body for the
+        # literal phrase `Re-plan superseded this PR`).
+        comment_text = (
+            "Re-plan superseded this PR. See updated plan at "
+            "https://github.com/o/r/issues/142#issuecomment-999. A new branch and PR will open "
+            "at the next `/github-pipeline:resolver #142` run."
+        )
+        with tempfile.TemporaryDirectory() as tmp:
+            comment_path = Path(tmp) / "close-comment.md"
+            comment_path.write_text(comment_text, encoding="utf-8")
+
+            cmd = ["pr", "close", "287", "--repo", "o/r", "--comment", comment_text]
+            _write_manifest(tmp, [{"argv": cmd, "exit_code": 0}])
+            result = _run_script(
+                ["close-pr", "o/r", "287", "--comment-file", str(comment_path)], fixtures_dir=tmp
+            )
+            self.assertEqual(result.returncode, 0, msg=result.stderr)
+            env = _parse_envelope(result)
+            envelope_asserts.assert_full_envelope_conformance(env)
+            envelope_asserts.assert_write_receipt_shape(env)
+            self.assertTrue(env["closed"])
+            self.assertTrue(env["commented"])
+            self.assertEqual(env["body_bytes"], len(comment_text.encode("utf-8")))
+            self.assertEqual(env["body_sha256"], hashing.sha256_hex(comment_text.encode("utf-8")))
+
+    def test_close_with_missing_comment_file_returns_empty_body_file_decision(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            missing_path = str(Path(tmp) / "does-not-exist.md")
+            result = _run_script(
+                ["close-pr", "o/r", "287", "--comment-file", missing_path], fixtures_dir=tmp
+            )
+            self.assertEqual(result.returncode, 0, msg=result.stderr)
+            env = _parse_envelope(result)
+            envelope_asserts.assert_full_envelope_conformance(env)
+            self.assertEqual(env["status"], "needs_decision")
+            self.assertEqual(env["decision"]["code"], "EMPTY_BODY_FILE")
+
+    def test_close_with_zero_byte_comment_file_returns_empty_body_file_decision(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            empty_path = Path(tmp) / "empty.md"
+            empty_path.write_bytes(b"")
+            result = _run_script(
+                ["close-pr", "o/r", "287", "--comment-file", str(empty_path)], fixtures_dir=tmp
+            )
+            self.assertEqual(result.returncode, 0, msg=result.stderr)
+            env = _parse_envelope(result)
+            self.assertEqual(env["decision"]["code"], "EMPTY_BODY_FILE")
+            self.assertEqual(env["decision"]["context"]["reason"], "zero bytes")
+
+    def test_empty_body_gate_never_calls_gh_at_all(self):
+        # No manifest/fixtures_dir -- any live gh call would MISS the shim and fail the test.
+        with tempfile.TemporaryDirectory() as tmp:
+            missing_path = str(Path(tmp) / "does-not-exist.md")
+            result = _run_script(["close-pr", "o/r", "287", "--comment-file", missing_path])
+            self.assertEqual(result.returncode, 0, msg=result.stderr)
+            env = _parse_envelope(result)
+            self.assertEqual(env["status"], "needs_decision")
+
+    def test_dry_run_without_comment_previews_bodyless_command(self):
+        result = _run_script(["close-pr", "o/r", "287", "--dry-run"])
+        self.assertEqual(result.returncode, 0, msg=result.stderr)
+        env = _parse_envelope(result)
+        envelope_asserts.assert_full_envelope_conformance(env)
+        self.assertTrue(env["dry_run"])
+        self.assertIn("would_run", env)
+        self.assertNotIn("closed", env)
+        self.assertNotIn("body_bytes", env)
+
+    def test_dry_run_with_comment_previews_command_and_receipt_with_no_live_call(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            comment_path = Path(tmp) / "close-comment.md"
+            comment_bytes = b"Re-plan superseded this PR.\n"
+            comment_path.write_bytes(comment_bytes)
+            # No manifest/fixtures_dir -- any live gh call would MISS the shim.
+            result = _run_script(
+                ["close-pr", "o/r", "287", "--comment-file", str(comment_path), "--dry-run"]
+            )
+            self.assertEqual(result.returncode, 0, msg=result.stderr)
+            env = _parse_envelope(result)
+            self.assertTrue(env["dry_run"])
+            self.assertIn("Re-plan superseded this PR", env["would_run"])
+            self.assertEqual(env["body_bytes"], len(comment_bytes))
+            self.assertEqual(env["body_sha256"], hashing.sha256_hex(comment_bytes))
+
+    def test_surfaces_auth_required_as_needs_decision(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            cmd = ["pr", "close", "287", "--repo", "o/r"]
+            _write_manifest(tmp, [{"argv": cmd, "exit_code": 4}])
+            result = _run_script(["close-pr", "o/r", "287"], fixtures_dir=tmp)
+            self.assertEqual(result.returncode, 0, msg=result.stderr)
+            env = _parse_envelope(result)
+            self.assertEqual(env["decision"]["code"], "AUTH_REQUIRED")
+
+
 class UsageErrorTests(unittest.TestCase):
     """architecture.md §3: exit 2, no envelope, for a malformed invocation."""
 

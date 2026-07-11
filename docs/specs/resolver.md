@@ -131,7 +131,7 @@ Every explicit `AskUserQuestion` decision point, exhaustively:
 | Story-branch drift check | `git rev-list --count <story-branch>..origin/<base-branch>` → merge-vs-rebase-vs-nothing recommendation |
 | Known-issue triage partition | Failing-test set × selection sub-agent's own diff-transiting rationale → diff-transiting vs. seemingly-unrelated partition |
 | Adaptive cheap-fix rule | Failing-test sets across two runs → strictly-changed vs. sticky classification |
-| Predecessor-PR detection | `gh pr list --state closed --search "<N> in:body"` filtered to `Re-plan superseded this PR` bodies → predecessor branch name (for `-vN` suffixing) |
+| Predecessor-PR detection | `gh pr list --state closed --search "<N> in:body"` filtered to `Re-plan superseded this PR` bodies → predecessor branch name (for `-vN` suffixing) (†latent defect in this read target — see "Known bugs / gaps") |
 
 ## Invariants (with the WHY)
 
@@ -343,3 +343,24 @@ Every explicit `AskUserQuestion` decision point, exhaustively:
   parity divergence**: a parity run against a repo state with an incidental digit collision will
   legitimately see v2 route differently (correctly) from v1 (which inherits the false positive) —
   not a v2 regression.
+- **Predecessor-PR detection reads the wrong field — a latent v1 bug (source-derived, not observed as
+  a live incident; discovered while authoring the planner cutover, S13).** Requirement: the fresh-PR
+  branch-detection step (SKILL.md:871-880) must find a closed PR carrying the HARD-revise supersession
+  marker so a re-entrant fresh-PR open picks the correct `-vN` suffix rather than colliding with the
+  predecessor's branch. Falsifiable test: given a closed PR whose HARD-revise close comment contains
+  the literal text `Re-plan superseded this PR`, the detection query must surface that PR as the
+  predecessor. Real occurrence (read directly off the frozen source, not a live run): the detection
+  query (SKILL.md:873-876) is `gh pr list --repo <owner/repo> --state closed --search "<issue-number>
+  in:body" --json number,headRefName,closedAt,body --limit 5` — it fetches the PR's **`body`** field
+  only — and SKILL.md:878 then filters that fetched `body` for the marker text. But the marker is
+  posted by `github-issue-planner`'s HARD-revise as a **PR close comment**, never the PR body:
+  `references/revise-reconciliation.md:49`'s `gh pr close <PR#> --repo <owner/repo> --comment
+  "Re-plan superseded this PR. …"` — `gh pr close --comment` posts a genuine PR comment; it does not
+  edit the PR's body/description. So the detection greps a field the marker was never written into —
+  **it can never match**, and silently falls through to the "no predecessor" branch (unsuffixed
+  `<issue>-<slug>`) even after a genuine HARD re-plan, so the `-vN` collision-avoidance mechanic this
+  step exists to drive never actually fires in v1. **v2 consequence**: v2's `gh_persist.py close-pr`
+  op (the planner cutover, S13) preserves the marker byte-faithfully in the PR's close comment — its
+  actual, correct home — rather than reproducing this bug; any future v2 mid-flow consumer of
+  predecessor-PR detection must read PR **close comments**, never `--json body`, to actually find the
+  marker (see the Deterministic-steps table's "Predecessor-PR detection" row above, marked †).
