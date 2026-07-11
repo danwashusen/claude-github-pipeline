@@ -265,13 +265,83 @@ issue-body pointer via `edit-body`, forward handoff to `/github-pipeline:resolve
 `## Coverage gap` section + Dimension 9. Box-1 check: the footer's `@<short-sha>` == the facts grounding
 SHA.
 
-- [ ] v1 run captured (writes / gates / handoff / turns).
-- [ ] v2 run captured (state-assembly call count = 1).
+**Run (2026-07-11).** Twin fixture: one shared groundable bug seeded on `main` — `src/initials.py`'s
+`initials(full_name)` returns `full_name` unchanged instead of the uppercase initials its docstring
+promises (`initials("Ada Lovelace") -> "AL"`). Seeded onto sandbox `main` at **`12fa50d`** (commit
+`12fa50de6a93a27f1656a7deb2c063d7fb6912f4`), the grounding base for both legs. Two equivalent unplanned
+`bug` issues (identical bodies, `bug` label only): **#47** (twin-A → v1 `github-issue-planner`) and
+**#48** (twin-B → v2 `planner`). Headless recipe as S7/S10 (`claude -p "/github-pipeline:<skill>
+<issue>" --plugin-dir <this branch> --model opus --permission-mode bypassPermissions`, **fresh sandbox
+clone per leg**). Neither leg touches code or `main`, so `main` stayed `12fa50d` across both sessions.
+
+- [ ] v1 run captured (writes / gates / handoff / turns) — #47 grounded at `origin/main@12fa50d`; plan
+      posted as [comment `4941018980`](https://github.com/danwashusen/gh-pipeline-sandbox/issues/47#issuecomment-4941018980)
+      (byte-for-byte self-confirmed), issue-body pointer added, **`planned` label applied** (final labels
+      `bug,planned`). **0 operator gates** (`AskUserQuestion` ×0 — "no deviation gate and no
+      design-decision gate fired"); verify loop **1 pass** (0 blockers, 0 suggestions, 1 silently-folded
+      NIT). Reproduced the buggy output during grounding (Dimension 9). Sub-agents: `github-ops` ×3
+      (`GATHER_ISSUE` "Gather issue #47" = the sole **state-assembly** call, `PERSIST_COMMENT` "Post plan
+      comment", `PERSIST_BODY` "Ensure body plan pointer") + one `Explore` reviewer ("Plan review pass 1").
+      Forward `## Handoff` → `/github-pipeline:github-issue-resolver #47` (Issue / Grounding / Next / Why;
+      no `## Open questions` line — none present). ~53 assistant turns.
+- [ ] v2 run captured (state-assembly call count = 1) — **exactly one** real `prep_planner.py 48
+      danwashusen/gh-pipeline-sandbox` invocation (the router's sole state-assembly call; the other
+      `prep_planner.py` strings in the transcript are the router-prose `--oq-query`/usage examples loaded
+      into context, not calls). Facts: `vector.type=standard · mode=fresh · plan_ref_row=no-open-pr-default-branch`,
+      `plan_ref=main`, `suggested_playbook=single.md`, `plan.present=false`, `open_question_candidates=[]`
+      (no OQ → no `--oq-query`, bug-(a) path not exercised this scenario). Routed `single.md` via the
+      shared spine. Writes = `gh_persist.py comment` + `edit-body` + `edit-labels` (the three writes;
+      `planned` label via `edit-labels` — final labels `bug,planned`). **0 operator gates**
+      (`AskUserQuestion` ×0); reviewer (one isolated `Explore`, "Plan reviewer for issue 48") cleared
+      dimensions **1,2,3,4,6,9** (0 blockers, 1 applied nit). Forward `## Handoff` →
+      `/github-pipeline:resolver #48`. ~54 assistant turns.
 - [ ] Plan comment schema-identical (marker line, heading set + order, footer); cross-consumed by the
-      resolver/evaluator plan readers.
-- [ ] **Box 1 parity:** planned-at SHA == `read_workspaces.grounding.sha`.
-- [ ] Gates match; handoff schema-valid.
-- [ ] Divergences (each traced to a PRD § / an explained gap above / a filed defect).
+      resolver/evaluator plan readers — **YES.** Both open `<!-- implementation-plan:v1 -->` then the
+      planned-at line `**Implementation plan** — #<N> … — planned <ts> at `origin/main@12fa50d``, then the
+      **identical section set in identical order**: `## Approach` · `## Doc grounding` · `## Architecture
+      decisions` · `## Changes (file-level)` · `## Test plan` · **`## Coverage gap`** (the bug section) ·
+      `## Risks & watchpoints`, and close with an italic `_Authored by … verified in 1 review pass_`
+      footer — a normalized skeleton diff (twin title / timestamp / short-sha masked) is **empty**. Only
+      free prose differs. *Cross-consumption:* the resolver's plan reader (`prep_resolver.py`, fresh clone
+      per issue) parses **both** comments identically — `plan.present=true`, `plan.sha=12fa50d`,
+      `comment_id` = 4941018980 (v1) / 4941083907 (v2) — and routes `standard/fresh → standard.md`, i.e. the
+      downstream resolver consumes the v2 artifact byte-for-byte as it does the v1.
+- [ ] **Box 1 parity:** planned-at SHA == `read_workspaces.grounding.sha` — **YES, exact.** The v2 facts'
+      `read_workspaces.grounding.sha` = `12fa50de6a93a27f1656a7deb2c063d7fb6912f4`; the plan footer records
+      `origin/main@12fa50d`; `12fa50d` is the 7-hex prefix. (v1's footer records the same `12fa50d`, its own
+      grounding SHA.)
+- [ ] Gates match; handoff schema-valid — **YES.** **0 = 0** operator gates (both `AskUserQuestion` ×0; a
+      clean bug with no deviation and no genuine design decision). Both handoffs are valid forward-planner
+      `## Handoff` blocks (Issue / Grounding / Next / Why; `## Open questions` line correctly omitted — no
+      OQ). The `Next:` command differs **by design** (v1 → `/github-pipeline:github-issue-resolver`, v2 →
+      `/github-pipeline:resolver`) — each routes to its own generation's resolver (see D2).
+- [ ] Divergences (each traced to a PRD § / an explained gap above / a filed defect):
+      - **D1 — state-assembly + write mechanism (EXPLAINED; the documented v1→v2 cutover).** v1 assembles
+        state via the `github-ops` `GATHER_ISSUE` sub-agent and writes via `PERSIST_COMMENT` / `PERSIST_BODY`
+        + a `planned`-label apply; v2 assembles via one deterministic `prep_planner.py` facts block and writes
+        via `gh_persist.py comment` / `edit-body` / **`edit-labels`**. Same three persisted artifacts (plan
+        comment, body pointer, `planned` label). The `planned`-label-via-`edit-labels` mechanism swap is the
+        divergence pre-recorded in this doc ("v2 applies the `planned` label via `edit-labels` — same
+        artifact, new mechanism") and the S13 handback. Not a defect.
+      - **D2 — handoff `Next:` namespace (EXPLAINED; by design).** v1 hands to
+        `/github-pipeline:github-issue-resolver #47`; v2 to `/github-pipeline:resolver #48`. Each generation
+        routes to its own resolver skill; the v2 namespace is correct per the plugin's baked-in naming. Not a
+        divergence to chase.
+      - **D3 — footer/pointer author self-attribution reads `github-issue-planner` on *both* legs
+        (COSMETIC; identical, no parser reads it).** v2's italic plan footer and the issue-body pointer both
+        emit "Authored by `github-issue-planner`" (the v1 skill name) rather than `planner`. Because v1 emits
+        the identical string, this is **not** a v1↔v2 schema divergence — the skeletons match — and no
+        consumer parses the author label (the resolver plan reader keys on the marker + `comment_id`, not the
+        attribution). Recorded only as an optional future v2 self-attribution cleanup; not run-failing.
+
+**Verdict: PASS (both legs) — zero unexplained divergences.** Both ground a standalone unplanned bug at
+`origin/main@12fa50d`, post a schema-identical `<!-- implementation-plan:v1 -->` plan (same marker,
+planned-at line, seven-section set + order incl. `## Coverage gap`, footer) with the byte-exact
+`origin/main@12fa50d` footer, add the body pointer, apply the `planned` label, gate **0** decisions, and
+emit a valid forward handoff to the resolver. **Box 1** holds exactly (footer `12fa50d` ==
+`read_workspaces.grounding.sha` `12fa50de6…`); **v2 startup = 1** `prep_planner.py` state-assembly call;
+the resolver plan reader cross-consumes both artifacts identically. D1–D3 are cutover / by-design /
+cosmetic, each explained. (Boxes left unticked — operator-owned.)
 
 ### Scenario 2 — Plan-new epic
 
