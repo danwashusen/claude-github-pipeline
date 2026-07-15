@@ -232,6 +232,15 @@ PRD § — all present.
 
   This keeps the base seed minimal (per SANDBOX.md's "constructed for the run, not folded back") while
   giving the epic/JIT scenarios a parent the planner can actually discover.
+- **Never pre-check `prep_planner.py` inside a leg's run clone — it dirties the root and the real run
+  then hits `ROOT_DIRTY`.** A `prep_planner.py` call builds its read workspace under the root's
+  `.worktrees/` and writes a `.gitignore` containing `.worktrees/`, leaving the clone with an untracked
+  file. The v2 leg's own prep then exits `needs_decision`/`ROOT_DIRTY` and the run stalls before any
+  write (the planner treats the root as a read-only `main` vantage and won't commit/stash/discard it) —
+  cost S13 scenario 2 a wasted v2 leg. Fixture pre-checks are worth running (they catch a mis-seeded
+  epic before ~$5–10 of live run), but run each in its **own throwaway clone**, one call per clone: a
+  second `prep_planner.py` call in the same clone hits `ROOT_DIRTY` from the first call's artifacts.
+  Same rule for cross-consumption checks after a run.
 - **Bug (c) is an expected v1↔v2 divergence, not a regression.** v2's `gh_gather.references_issue`
   digit-boundary reference filter (landed in S12's round) means a `plan_ref` open-PR-head row only fires
   for a PR that genuinely references the target issue. v1's `gh-gather.sh` inherits the bare-digit
@@ -351,12 +360,133 @@ with `## Story breakdown` / `## Story contracts` / `## Integration strategy` (no
 5, **no per-story fan-out**, forward handoff to `/github-pipeline:planner #<first-story>` (stories filed)
 or `/github-pipeline:drafter` (stories not filed).
 
-- [ ] v1 run captured.
-- [ ] v2 run captured (epic sections present; no per-story plans authored).
-- [ ] Plan comment schema-identical (epic sections + footer).
-- [ ] **Box 1 parity:** planned-at SHA == the grounding SHA.
-- [ ] Handoff routes to the first story / the drafter per `stories_filed`.
-- [ ] Divergences.
+**Run (2026-07-15).** Twin fixture: two independent epic subtrees seeded per the seeding note — each
+epic body carries a `## Stories` section (`- [ ] #<S> — <title>`), which both makes `stories_filed` true
+and puts each `#<S>` in the epic body. Both epics propose the same work against the sandbox's existing
+`src/` helpers: a `src/salutations.py` facade (`register`/`render`) that the six in-scope greeting
+helpers then delegate to — story A delivers the facade, story B consumes it (a real cross-story seam for
+`## Story contracts` + Dimension 5). **Twin-C** → v1 `github-issue-planner`: epic **#55**, stories
+**#56**/**#57**. **Twin-D** → v2 `planner`: epic **#58**, stories **#59**/**#60**. Neither epic has an
+`epic/<N>-<slug>` branch, so **both legs took the bootstrap row** (`vector.plan_ref_row:
+epic-as-target-bootstrap`, `plan_ref: main`) and grounded at **`origin/main@12fa50d`** — `main` was
+untouched by both sessions (neither leg writes code). Headless recipe as S7/S10/S13-scenario-1 (`claude
+-p "/github-pipeline:<skill> <epic>" --plugin-dir <this branch> --model opus --permission-mode
+bypassPermissions`, **fresh sandbox clone per leg**).
+
+- [ ] v1 run captured — #55 grounded at `origin/main@12fa50d`; epic plan posted as [comment
+      `4976042286`](https://github.com/danwashusen/gh-pipeline-sandbox/issues/55#issuecomment-4976042286),
+      issue-body pointer added, **`planned` label applied** (final labels `epic,planned`). **0 operator
+      gates** (`AskUserQuestion` ×0); verify loop **3 passes**. Sub-agents ×7: `github-ops` ×4
+      (`GATHER_ISSUE` "Gather issue 55" = the sole state-assembly call, `GATHER_EPIC` "Gather epic 55
+      stories", `PERSIST_COMMENT` "Post epic plan to issue 55", `PERSIST_BODY` "Add plan pointer to issue
+      55 body") + 3 `Explore` reviewers. The `planned` label went via a **raw `gh issue edit 55
+      --add-label planned`** in the main loop — v1's documented write-path gap. Forward `## Handoff` →
+      `/github-pipeline:github-issue-planner #56`. ~184 assistant turns, $9.94.
+- [ ] v2 run captured (epic sections present; no per-story plans authored) — **exactly one**
+      `prep_planner.py 58 danwashusen/gh-pipeline-sandbox` invocation (the router's sole state-assembly
+      call). Facts: `vector.type=epic · mode=fresh · plan_ref_row=epic-as-target-bootstrap`,
+      `plan_ref=main`, `suggested_playbook=epic.md`, `plan.present=false`, `epic.stories_filed=true`,
+      `epic.stories=[#59 OPEN, #60 OPEN]` (both `live_title`-resolved), `epic.branch.match_count=0`,
+      `epic.delivery_log.present=false`, `open_question_candidates=[]`. Routed `epic.md` via the shared
+      spine. Writes = `gh_persist.py comment` + `edit-body` + `edit-labels --add planned` (final labels
+      `epic,planned`). **0 operator gates**; 3 `Explore` reviewer passes, **0** gather/persist sub-agents
+      (scripts called directly). Forward `## Handoff` → `/github-pipeline:planner #59`. ~118 assistant
+      turns, $5.42. **No per-story fan-out on either leg** — stories #56/#57 and #59/#60 all carry **0**
+      `<!-- implementation-plan:v1 -->` comments.
+- [ ] Plan comment schema-identical (epic sections + footer) — **YES.** Both open `<!-- implementation-plan:v1 -->`
+      then the planned-at line ``**Implementation plan** — #<N> … — planned <ts> at `origin/main@12fa50d` ``,
+      then the **identical section set in identical order**: `## Approach` · **`## Story breakdown`** ·
+      **`## Story contracts`** · **`## Integration strategy`** · `## Doc grounding` · `## Architecture
+      decisions` · `## Changes (file-level)` · `## Test plan` · `## Risks & watchpoints`, closing with the
+      italic `_Authored by … verified in 3 review pass(es)_` footer. **No `## Phases` on either leg**
+      (correct for an epic). A normalized skeleton diff (twin title / timestamp / short-sha / issue
+      numbers masked) is **empty** but for free footer prose ("3 review passes" vs "3 review pass(es)").
+      `## Story breakdown` renders the `- #<story> "<title>" — <scope>` grammar and `## Story contracts`
+      the `- #<story> — delivers: … — consumes: …` grammar on both, each dependency-ordered facade→
+      migration with the head story's `consumes: (none)`. *Cross-consumption:* `prep_planner.py` run on
+      each twin's head story (fresh clone per call) reads **both** epic plans identically —
+      `story.parent_epic={number: 55|58, state: OPEN}`, `parent_epic_open=true`,
+      `story.epic_plan.present=true` (body inline), `epic_branch.match_count=0` → routes `story-jit.md`,
+      i.e. the downstream just-in-time story reader consumes the v2 epic artifact as it does the v1.
+- [ ] **Box 1 parity:** planned-at SHA == the grounding SHA — **YES, exact.** The v2 facts'
+      `read_workspaces.grounding.sha` = `12fa50de6a93a27f1656a7deb2c063d7fb6912f4`; the plan footer records
+      `origin/main@12fa50d`; `12fa50d` is the 7-hex prefix. (v1's footer records the same `12fa50d`, its own
+      grounding SHA.) **Row recorded: bootstrap** (`epic-as-target-bootstrap`) — no `epic/55-*` or
+      `epic/58-*` branch existed, so `plan_ref` fell back to `main` on both legs.
+- [ ] Handoff routes to the first story / the drafter per `stories_filed` — **YES.** `stories_filed=true`
+      on both, so both take the stories-filed branch and route to the **head of `## Story breakdown`**:
+      v1 → `/github-pipeline:github-issue-planner #56`, v2 → `/github-pipeline:planner #59` (namespace by
+      design, D2). Both handoffs are valid epic-plan `## Handoff` blocks with the `Epic:` line (`plan: ✓`
+      + comment URL), the `Stories:` line (`#56, #57` / `#59, #60` — "2 filed, dependency-ordered,
+      contracts pinned · plans authored just-in-time"), `Grounding:` (`read at origin/main@12fa50d` + the
+      grounding-doc detail), `Next:`, and a `Why:` that both independently name just-in-time planning
+      against epic HEAD. `**Open questions:**` correctly omitted on both (no OQ; neither plan carries an
+      `## Open questions` section).
+- [ ] Divergences (each traced to a PRD § / an explained gap above / a filed defect):
+      - **D1 — state-assembly + write mechanism (EXPLAINED; the documented v1→v2 cutover).** v1 assembles
+        state via the `github-ops` `GATHER_ISSUE` + `GATHER_EPIC` sub-agents and writes via
+        `PERSIST_COMMENT` / `PERSIST_BODY` + a **raw `gh issue edit --add-label planned`**; v2 assembles via
+        one deterministic `prep_planner.py` facts block and writes via `gh_persist.py comment` / `edit-body`
+        / **`edit-labels`**. Same three persisted artifacts (plan comment, body pointer, `planned` label).
+        This is the same pre-recorded mechanism swap as scenario 1's D1; the v1 leg's raw-`gh` label call is
+        the v1 write-path gap this step's `edit-labels` op closes. Not a defect.
+      - **D2 — handoff `Next:` namespace (EXPLAINED; by design).** v1 → `/github-pipeline:github-issue-planner
+        #56`; v2 → `/github-pipeline:planner #59`. Each generation routes to its own planner skill. Not a
+        divergence to chase.
+      - **D3 — footer/pointer author self-attribution reads `github-issue-planner` on *both* legs
+        (COSMETIC; identical, no parser reads it).** Reproduces scenario 1's D3 verbatim on the epic route:
+        v2's italic footer and body pointer emit "Authored by `github-issue-planner`" rather than `planner`.
+        Identical on both legs ⇒ not a v1↔v2 schema divergence; no consumer parses the attribution. Same
+        optional future v2 self-attribution cleanup; not run-failing.
+      - **D4 — `prep_planner` `plan_ref_row` mislabels a bootstrap story (FILED DEFECT; v2-only fact, no
+        artifact divergence).** Surfaced by this scenario's cross-consumption check, not by either leg's
+        artifact. For a story under an **open** parent epic that has **no epic branch yet**, the same facts
+        block reports `parent_epic.state: OPEN` + `parent_epic_open: true` **and**
+        `vector.plan_ref_row: "story-no-open-parent-epic"` — self-contradictory. Root cause:
+        `scripts/prep_planner.py`'s `_select_plan_ref` keys its `PLAN_REF_ROW_STORY_NO_PARENT` row on
+        `epic_branch_name` being falsy,
+        not on the parent's open-ness, so the bootstrap case (open parent, `match_count == 0`) falls into the
+        row whose constant is named for the *closed/absent*-parent case; the module docstring's row 5 gloss
+        ("story with no parent epic, or a closed one") documents the intended semantics, which the code does
+        not implement. **Behaviour is correct today** — `plan_ref: main` is right for a bootstrap story, and
+        `_suggested_playbook` keys on `(issue_type, mode, parent_epic_open)` rather than the row, so routing
+        still lands `story-jit.md` (live-confirmed on **both** twins, #56 and #59). The defect is the label:
+        the router's own invariant is "consume every fact as **data** — never re-derive", so a skill reading
+        the row name literally would conclude there is no open parent epic. Reproduces identically on both
+        twins ⇒ parity-neutral for this scenario. Needs either a row-name split (a distinct
+        `story-under-open-epic-bootstrap` row) or a docstring/semantics correction — **scenario 3 (JIT story)
+        runs straight through this row**, so resolve before that run.
+
+**Verdict: PASS (both legs) — zero unexplained divergences.** Both ground a properly-seeded, unplanned
+epic at `origin/main@12fa50d` on the **bootstrap row**, post a schema-identical
+`<!-- implementation-plan:v1 -->` epic plan (same marker, planned-at line, nine-section set + order incl.
+`## Story breakdown` / `## Story contracts` / `## Integration strategy`, no `## Phases`, footer) with the
+byte-exact `origin/main@12fa50d` footer, add the body pointer, apply the `planned` label, **stop before
+per-story fan-out**, gate **0** decisions, run 3 reviewer passes, and emit a valid epic `## Handoff`
+routing to the head story per `stories_filed`. **Box 1** holds exactly (footer `12fa50d` ==
+`read_workspaces.grounding.sha` `12fa50de6…`); **v2 startup = 1** `prep_planner.py` state-assembly call;
+the just-in-time story reader cross-consumes both epic artifacts identically. D1–D3 are cutover /
+by-design / cosmetic; **D4 is a filed prep_planner defect to resolve before scenario 3**. (Boxes left
+unticked — operator-owned.)
+
+**Harness finding — operator gates are not exercisable headlessly (affects this scenario's gate check).**
+The first attempt at this scenario (2026-07-15, twins A/B: epics #49/#52, stories #50/#51 and #53/#54)
+seeded an epic whose DoD bullet 3 ("No caller constructs a greeting string outside `src/salutations.py`")
+was unsatisfiable by its own stories — `src/salute_c.py`/`salute_d.py` (S10 scenario-1 fixtures left on
+`main`) also build greeting strings and no story migrated them. **Both legs independently detected the
+identical scope gap** (strong judgment parity), but diverged on what to do without a gate tool: v1
+**stalled**, ending its turn asking the question in prose after 37 turns with **zero writes**; v2 recorded
+the call in the plan and proceeded to post, stating outright that "`AskUserQuestion` isn't available in
+this session, so the `salute_c`/`salute_d` scope call is recorded in the plan as a reversible decision
+rather than gated to you up front." Cause: **`claude -p` exposes no `AskUserQuestion` tool**, so any
+fixture that fires a genuine decision gate cannot be compared this way — v1 blocks, v2 routes around.
+Every scenario passed so far (S7/S10/S13-1) happened to be 0-gate, which is why this never surfaced. The
+protocol's "same genuine decisions gated" check is therefore **only meaningful on a 0-gate fixture** under
+this harness; **gate parity for the planner (the nine gates in the coverage table above) needs a different
+harness or an interactive run** and is *not* evidenced by any headless scenario. The re-seeded twins C/D
+pin the scope explicitly (in-scope helpers named; `salute_c`/`salute_d` declared out of scope in both the
+epic and story bodies), which is what makes the recorded run gate-free. Twins A/B are left in the sandbox
+as-is; #52 carries v2's posted plan from the aborted attempt.
 
 ### Scenario 3 — JIT story (composite epic+story; bug-(b) check)
 
