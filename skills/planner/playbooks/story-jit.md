@@ -5,7 +5,9 @@ fresh and the revise path for such a story (a prior story plan just refreshes in
 story now — not up front with its siblings — is what keeps it current: it grounds against the epic
 branch HEAD *after* every predecessor has landed. `facts.plan_ref` is the parent epic's
 `epic/<N>-<slug>` branch (row `story-under-open-epic`), or the story's own open PR head when one exists
-(row `open-pr-head` wins), or `main` on the bootstrap case below.
+(row `open-pr-head` wins), or `main` when the parent's integration branch hasn't bootstrapped yet (row
+`story-parent-epic-bootstrap` — the branch is created only once the resolver implements the first
+story; independent of whether the epic *plan* itself already exists, see the next bullet).
 
 **Run the spine first.** Read [`plan-spine.md`](plan-spine.md) and execute it end to end. The deltas
 this route supplies:

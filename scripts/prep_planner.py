@@ -67,7 +67,7 @@ an operator gate — grounding is always safe (a detached, read-only view), unli
 work worktree, which can impersonate another author's in-flight branch.
 
 **`plan_ref` selection — the FULL v1 table (docs/specs/planner.md Step 4.5), moved into code.**
-Five distinct facts (:func:`_select_plan_ref`), collapsing to the same v1 table (whose row 5
+Six distinct facts (:func:`_select_plan_ref`), collapsing to the same v1 table (whose row 5
 bundles two cases this module reports as two distinct, independently-testable facts) — precedence
 is fixed: when more than one row applies (a story under an open epic that ALSO has an open PR),
 the open-PR-head row always wins (v1's documented rationale: that head is a strict superset of the
@@ -78,10 +78,23 @@ epic branch, and is what the resolver actually continues on):
   2. ``PLAN_REF_ROW_EPIC_BRANCH`` — epic-as-target, `epic/<N>-<slug>` branch discovered -> that
      branch.
   3. ``PLAN_REF_ROW_EPIC_BOOTSTRAP`` — epic-as-target, zero `git ls-remote` matches -> `main`.
-  4. ``PLAN_REF_ROW_STORY_PARENT_BRANCH`` — story under an OPEN parent epic -> the parent epic's
-     branch.
-  5. ``PLAN_REF_ROW_STORY_NO_PARENT`` — story with no parent epic, or a closed one -> `main`.
-  6. ``PLAN_REF_ROW_DEFAULT`` — everything else (standalone bug/feature/incomplete/multi-phase,
+  4. ``PLAN_REF_ROW_STORY_PARENT_BRANCH`` — story under an OPEN parent epic, `epic/<N>-<slug>`
+     branch discovered -> that branch.
+  5. ``PLAN_REF_ROW_STORY_PARENT_BOOTSTRAP`` — story under an OPEN parent epic, zero
+     `git ls-remote` matches (the parent epic itself hasn't bootstrapped its integration branch
+     yet — no story has been resolved for it) -> `main`. **Added post-S13 (D4 fix):** the story
+     branch of :func:`_select_plan_ref` previously collapsed this case into row 6 below by keying
+     on branch ABSENCE alone (`epic_branch_name is None`), which is truthful for `plan_ref` itself
+     (both rows fall back to `main`) but produces a self-contradictory `vector.plan_ref_row` label
+     when `story.parent_epic_open` is simultaneously `true` — a fact the row name flatly denies
+     ("story-no-open-parent-epic" while the parent IS open). `plan_ref`/routing behavior is
+     UNCHANGED by this fix (`main`; `_suggested_playbook` keys on `parent_epic_open`, never on the
+     row name — see that function); only the row's truthfulness is fixed, per architecture.md §4's
+     "facts are data, never re-derived" invariant applied to the row label itself.
+  6. ``PLAN_REF_ROW_STORY_NO_PARENT`` — story with NO parent epic found, or a CLOSED one -> `main`.
+     Distinguished from row 5 by `parent_epic_open` (`False` here, `True` there) — both still ride
+     the same `plan_ref` (`main`), but the row now says which reality produced it.
+  7. ``PLAN_REF_ROW_DEFAULT`` — everything else (standalone bug/feature/incomplete/multi-phase,
      no open PR) -> `main`.
 
 Every row (:func:`build_facts`) ends the same way regardless of which fired: an unconditional
@@ -557,17 +570,23 @@ PLAN_REF_ROW_OPEN_PR_HEAD = "open-pr-head"
 PLAN_REF_ROW_EPIC_BRANCH = "epic-as-target"
 PLAN_REF_ROW_EPIC_BOOTSTRAP = "epic-as-target-bootstrap"
 PLAN_REF_ROW_STORY_PARENT_BRANCH = "story-under-open-epic"
+PLAN_REF_ROW_STORY_PARENT_BOOTSTRAP = "story-parent-epic-bootstrap"
 PLAN_REF_ROW_STORY_NO_PARENT = "story-no-open-parent-epic"
 PLAN_REF_ROW_DEFAULT = "no-open-pr-default-branch"
 
 
-def _select_plan_ref(issue_type, epic_branch_name, open_pr_headref):
-    """Pure lookup table: `(issue_type, epic_branch_name, open_pr_headref)` -> `(plan_ref,
-    plan_ref_row)`. `epic_branch_name` is the discovered branch (or `None` on bootstrap/no-parent);
-    `open_pr_headref` is the target issue's own first open PR's `headRefName`, or `None`. Checked
-    in table order — the open-PR-head check runs FIRST and unconditionally, so the "open-PR-head
-    wins when more than one row applies" precedence rule (docs/specs/planner.md Step 4.5) falls out
-    of the ordering rather than needing a separate conflict check.
+def _select_plan_ref(issue_type, epic_branch_name, open_pr_headref, parent_epic_open=False):
+    """Pure lookup table: `(issue_type, epic_branch_name, open_pr_headref, parent_epic_open)` ->
+    `(plan_ref, plan_ref_row)`. `epic_branch_name` is the discovered branch (or `None` on
+    bootstrap/no-parent); `open_pr_headref` is the target issue's own first open PR's
+    `headRefName`, or `None`; `parent_epic_open` (story only — ignored for every other
+    `issue_type`) distinguishes row 5 (D4 fix: an open parent whose branch hasn't bootstrapped yet)
+    from row 6 (no parent, or a closed one) — both still resolve `plan_ref` to `main`, but the row
+    LABEL must say which reality produced it (architecture.md §4: facts are data, never
+    re-derived — including the row name itself, not just the ref value). Checked in table order —
+    the open-PR-head check runs FIRST and unconditionally, so the "open-PR-head wins when more than
+    one row applies" precedence rule (docs/specs/planner.md Step 4.5) falls out of the ordering
+    rather than needing a separate conflict check.
     """
     if open_pr_headref:
         return open_pr_headref, PLAN_REF_ROW_OPEN_PR_HEAD
@@ -578,6 +597,8 @@ def _select_plan_ref(issue_type, epic_branch_name, open_pr_headref):
     if issue_type == "story":
         if epic_branch_name:
             return epic_branch_name, PLAN_REF_ROW_STORY_PARENT_BRANCH
+        if parent_epic_open:
+            return ROOT_MAIN_BRANCH, PLAN_REF_ROW_STORY_PARENT_BOOTSTRAP
         return ROOT_MAIN_BRANCH, PLAN_REF_ROW_STORY_NO_PARENT
     return ROOT_MAIN_BRANCH, PLAN_REF_ROW_DEFAULT
 
@@ -1001,7 +1022,9 @@ def build_facts(issue_number, repo, root=".", scratch_dir=None, refresh=False, c
         }
 
     # 5) plan_ref selection (docs/specs/planner.md Step 4.5's FULL table — see module docstring).
-    plan_ref, plan_ref_row = _select_plan_ref(issue_type, epic_branch_name, open_pr_headref)
+    plan_ref, plan_ref_row = _select_plan_ref(
+        issue_type, epic_branch_name, open_pr_headref, parent_epic_open=parent_epic_open
+    )
 
     # 6) Root freshness + the ONE read workspace this skill ever gets, grounded at plan_ref
     #    (architecture.md §6/prd §8.4: the planner never gets a work workspace). Skipped on

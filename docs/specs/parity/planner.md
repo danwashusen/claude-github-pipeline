@@ -85,6 +85,31 @@ mode routes to `story-jit.md`, not `revise.md`, because v1's Step-2 exception ma
 planning own both modes; and a parentless/closed-parent story routes to `single.md` per v1's "Everything
 else" path rather than `story-jit.md`. Both are spec-faithful refinements of the brief's shorthand.
 
+**The `plan_ref_row` table — 6 → 7 rows (D4 fix, landed post-scenario-2).** `_select_plan_ref`'s row
+constants are a *separate* fact from `suggested_playbook` (above) — `plan_ref_row` records **why**
+`plan_ref` resolved the way it did, purely as data; no consumer keys routing on it. Scenario 2's live
+parity run filed **D4**: a story under an OPEN parent epic whose integration branch hadn't bootstrapped
+yet reported the self-contradictory pair `story.parent_epic_open: true` +
+`vector.plan_ref_row: "story-no-open-parent-epic"` — a truthful `plan_ref` (`main`) wearing a label that
+denies the parent is open. Fixed by splitting what was one row (keyed on branch absence alone) into two
+(keyed on branch absence **and** the parent's open-ness), both still resolving to `main`:
+
+| # | `plan_ref_row` | Fires when | `plan_ref` |
+|---|---|---|---|
+| 1 | `open-pr-head` | an open PR already exists for this issue | that PR's `headRefName` |
+| 2 | `epic-as-target` | epic-as-target, `epic/<N>-<slug>` branch discovered | that branch |
+| 3 | `epic-as-target-bootstrap` | epic-as-target, zero `git ls-remote` matches | `main` |
+| 4 | `story-under-open-epic` | story, OPEN parent epic, its branch discovered | that branch |
+| 5 | `story-parent-epic-bootstrap` **(new, D4)** | story, OPEN parent epic, zero `git ls-remote` matches for its branch | `main` |
+| 6 | `story-no-open-parent-epic` | story, no parent found, or a CLOSED one | `main` |
+| 7 | `no-open-pr-default-branch` | everything else (standalone, no open PR) | `main` |
+
+Rows 5 and 6 are the split: row 5 is new; row 6's semantics narrowed to exactly what its name always
+claimed (the module docstring's pre-fix row-5 gloss — "story with no parent epic, or a closed one" — the
+code just didn't implement it). Neither `suggested_playbook` (which keys on `(issue_type, mode,
+parent_epic_open)`) nor any playbook keys on the row name, so routing is unaffected by the split — see
+the D4 resolution note under scenario 2 below for the full fix + test citations.
+
 ## The newly-detected-OQ search mechanism (option ii — the authorized additive `--oq-query` flag)
 
 Bug (a)'s frozen requirement is that a genuinely-filed `question` issue is never recorded `(not
@@ -456,6 +481,26 @@ bypassPermissions`, **fresh sandbox clone per leg**).
         twins ⇒ parity-neutral for this scenario. Needs either a row-name split (a distinct
         `story-under-open-epic-bootstrap` row) or a docstring/semantics correction — **scenario 3 (JIT story)
         runs straight through this row**, so resolve before that run.
+
+        **RESOLVED (post-scenario-2, pre-scenario-3).** Row-name split, per the row-name-split option this
+        bullet named: `scripts/prep_planner.py` gained `PLAN_REF_ROW_STORY_PARENT_BOOTSTRAP =
+        "story-parent-epic-bootstrap"` (mirrors the epic-bootstrap naming), and `_select_plan_ref` now
+        takes `parent_epic_open` as an explicit input so the story branch picks this row (not
+        `PLAN_REF_ROW_STORY_NO_PARENT`) whenever `epic_branch_name` is absent AND the parent is open —
+        `PLAN_REF_ROW_STORY_NO_PARENT` now fires only for the genuinely-parentless/closed-parent case,
+        matching the module docstring's row-5 gloss the code previously didn't implement. `plan_ref`
+        (`main`) and routing (`story-jit.md`, keyed on `parent_epic_open` alone, never on the row name —
+        confirmed unaffected) are unchanged; only the label's truthfulness is fixed. See "The
+        `prep_planner._suggested_playbook` alignment" section above for the full row table (now 6 → 7
+        rows) and both the pure-function unit tests
+        (`tests/test_prep_planner.py::PureHelperUnitTests::test_select_plan_ref_story_parent_bootstrap_row`,
+        `::test_select_plan_ref_story_parent_open_but_no_branch_never_yields_no_parent_row`) and the new
+        live-fixture regression
+        (`tests/test_prep_planner.py::PlanRefRowTests::test_row_story_under_open_epic_bootstrap` — story
+        under an open parent, zero `git ls-remote` matches for the epic branch, asserting the new row
+        label + `plan_ref: main` + `read_workspaces.grounding` at `main` + `suggested_playbook:
+        story-jit.md`). This entry records the fix landing, not a self-certification of scenario 3 — the
+        operator still runs and records that scenario's live parity separately.
 
 **Verdict: PASS (both legs) — zero unexplained divergences.** Both ground a properly-seeded, unplanned
 epic at `origin/main@12fa50d` on the **bootstrap row**, post a schema-identical

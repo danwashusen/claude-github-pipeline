@@ -237,6 +237,33 @@ class PlanRefRowTests(PrepPlannerSandboxTestCase):
         self.assertTrue(envelope["story"]["epic_delivery_log"]["present"])
         self.assertEqual(envelope["suggested_playbook"], "story-jit.md")
 
+    def test_row_story_under_open_epic_bootstrap(self):
+        # D4 regression fixture: story under an OPEN parent epic, but zero `git ls-remote` matches
+        # for that epic's integration branch (the epic itself hasn't bootstrapped a branch yet --
+        # no sibling story has been resolved for it). Deliberately does NOT push an epic branch.
+        envelope = self._envelope(issue="203", fixture_case="prep_planner_row_story_parent_bootstrap")
+        self.assertEqual(envelope["vector"]["type"], "story")
+        self.assertEqual(
+            envelope["vector"]["plan_ref_row"], prep_planner.PLAN_REF_ROW_STORY_PARENT_BOOTSTRAP
+        )
+        # The row must be truthful, never the "no open parent" label a self-contradictory D4 run
+        # produced (parent_epic_open: true alongside a row name that denies it).
+        self.assertNotEqual(
+            envelope["vector"]["plan_ref_row"], prep_planner.PLAN_REF_ROW_STORY_NO_PARENT
+        )
+        self.assertEqual(envelope["plan_ref"], "main")
+        self.assertEqual(envelope["read_workspaces"]["grounding"]["ref"], "main")
+        self.assertEqual(len(envelope["read_workspaces"]["grounding"]["sha"]), 40)
+        self.assertEqual(envelope["story"]["parent_epic"]["number"], 101)
+        self.assertTrue(envelope["story"]["parent_epic_open"])
+        self.assertEqual(envelope["story"]["epic_branch"]["match_count"], 0)
+        self.assertIsNone(envelope["story"]["epic_branch"]["branch"])
+        self.assertFalse(envelope["story"]["epic_plan"]["present"])
+        self.assertFalse(envelope["story"]["epic_delivery_log"]["present"])
+        # Routing is UNCHANGED by the D4 fix: story + parent_epic_open -> story-jit.md regardless
+        # of which of the two "no branch" rows fired.
+        self.assertEqual(envelope["suggested_playbook"], "story-jit.md")
+
     def test_row_epic_as_target_branch_found(self):
         self._push_branch("epic/300-sandbox-epic")
         envelope = self._envelope(issue="300", fixture_case="prep_planner_row_epic")
@@ -626,10 +653,32 @@ class PureHelperUnitTests(unittest.TestCase):
         )
 
     def test_select_plan_ref_story_no_parent_row(self):
+        # parent_epic_open defaults False -> the genuinely-parentless/closed-parent row.
         self.assertEqual(
             prep_planner._select_plan_ref("story", None, None),
             ("main", prep_planner.PLAN_REF_ROW_STORY_NO_PARENT),
         )
+        self.assertEqual(
+            prep_planner._select_plan_ref("story", None, None, parent_epic_open=False),
+            ("main", prep_planner.PLAN_REF_ROW_STORY_NO_PARENT),
+        )
+
+    def test_select_plan_ref_story_parent_bootstrap_row(self):
+        # D4 fix: an OPEN parent whose integration branch hasn't bootstrapped yet gets its own
+        # truthful row -- same plan_ref (main) as STORY_NO_PARENT, but a label that doesn't
+        # contradict a simultaneously-true `story.parent_epic_open` fact.
+        self.assertEqual(
+            prep_planner._select_plan_ref("story", None, None, parent_epic_open=True),
+            ("main", prep_planner.PLAN_REF_ROW_STORY_PARENT_BOOTSTRAP),
+        )
+
+    def test_select_plan_ref_story_parent_open_but_no_branch_never_yields_no_parent_row(self):
+        # Direct regression guard for D4: parent_epic_open=True must NEVER produce the
+        # "no-open-parent-epic" row label, regardless of branch presence.
+        plan_ref, row = prep_planner._select_plan_ref("story", None, None, parent_epic_open=True)
+        self.assertNotEqual(row, prep_planner.PLAN_REF_ROW_STORY_NO_PARENT)
+        self.assertEqual(row, prep_planner.PLAN_REF_ROW_STORY_PARENT_BOOTSTRAP)
+        self.assertEqual(plan_ref, "main")
 
     def test_select_plan_ref_open_pr_head_wins_over_epic_branch(self):
         # docs/specs/planner.md Step 4.5: "the open-PR-head row wins" when more than one applies.
