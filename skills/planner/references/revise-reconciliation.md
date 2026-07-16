@@ -62,32 +62,27 @@ ${CLAUDE_PLUGIN_ROOT}/scripts/gh_persist.py edit-body <owner/repo> <issue> \
   "<facts.scratch>/issue-body-reconciled.md"
 ```
 
-### HARD-path: Start fresh
+### HARD-path: Start fresh — close, re-ground, then post
 
-When the user picks **Start fresh (recommended)** at S8's three-way confirm:
+When the user picks **Start fresh (recommended)** at S8's three-way confirm, this order is load-bearing:
+the plan drafted so far was grounded at `facts.plan_ref`, the open-PR-head row selected *before* this
+revise started — the very PR this decision is about to close. Posting that draft as-is (footer,
+precedent citations, everything) would cite a branch nothing can read the moment it closes. So the close
+happens **first**, `plan_ref` is **re-selected** off the row table against a fresh prep call, and only
+**then** is the plan finalized against the new ground truth and posted — never the reverse (see
+[`../playbooks/revise.md`](../playbooks/revise.md)'s HARD sequence for the full narrative):
 
-1. **Add a `## Predecessor` section to the new plan comment**, inserted immediately after `## Approach`:
+1. **Capture the closed-PR number/branch (`facts.revise.open_pr`), the old plan's comment id
+   (`facts.plan`), and the ticked-bullet/phase-tracker state (`facts.revise.phase_tracker`)** — from
+   the facts already in hand, before step 3 replaces `facts` with a fresh envelope.
 
-   ```
-   ## Predecessor
-
-   This plan supersedes a prior plan that drove PR #<closed-PR> (closed <YYYY-MM-DD>) after a HARD
-   re-plan. The closed PR's branch (`<branch-name>`) is preserved for audit and should be deleted by the
-   user after the new PR lands. The brief reason for starting fresh: <one-line rationale>.
-   ```
-
-2. **Un-tick the issue body's DoD bullets** that were ticked under the old plan, each to the predecessor
-   annotation `- [ ] <text> (previously claimed by phase X, commit <sha> on closed PR #<M>)` (per
-   `../../_shared/dod-annotations.md`; an evaluator-rejection annotation is rewritten to this predecessor
-   form — the closed PR makes the rejection no longer load-bearing). Stage to
-   `<facts.scratch>/issue-body-reconciled.md` and apply via `gh_persist.py edit-body`.
-
-3. **Close the superseded PR, with the byte-faithful supersession marker staged first.** This is
+2. **Close the superseded PR, with the byte-faithful supersession marker staged first.** This is
    required so the resolver's fresh-PR path fires on the next run: it detects the closed predecessor PR
-   + branch by greping closed-PR bodies for the literal phrase `Re-plan superseded this PR`
-   (`docs/specs/resolver.md` "Deterministic steps": "Predecessor-PR detection … filtered to `Re-plan
-   superseded this PR` bodies") and computes the next `-vN` branch suffix from it — so the phrase is a
-   cross-skill contract, not free prose; stage it verbatim. Stage the close comment to
+   + branch by greping the closed PR's **close comment** for the literal phrase `Re-plan superseded this
+   PR` (`docs/specs/resolver.md` "Deterministic steps": "Predecessor-PR detection … filtered to `Re-plan
+   superseded this PR` bodies" — the marker `close-pr --comment-file` posts, per `gh pr close
+   --comment`) and computes the next `-vN` branch suffix from it — so the phrase is a cross-skill
+   contract, not free prose; stage it verbatim. Stage the close comment to
    `<facts.scratch>/close-comment.md`:
 
    ```
@@ -102,9 +97,33 @@ When the user picks **Start fresh (recommended)** at S8's three-way confirm:
      --comment-file "<facts.scratch>/close-comment.md"
    ```
 
-   This step runs only after the user has already picked **Start fresh** at the S8 three-way confirm —
-   the op executes that already-gated decision, it does not gate anything itself. Leave the branch in
-   place (the `## Predecessor` reminder is the user's cue to clean up after the new PR lands).
+3. **Re-run `prep_planner.py` in the same clone** — safe now that the D6 fix moved the `.worktrees/`
+   bootstrap write to `info/exclude`, so a second prep can never trip its own `ROOT_DIRTY`. With the PR
+   closed, the open-PR-head row no longer fires; `plan_ref` re-selects deterministically off the row
+   table (`main` for a standalone issue, the parent epic's branch for a story) — never hardcoded.
+
+4. **Re-ground at the fresh `facts.read_workspaces.grounding` workspace, finalize the plan body against
+   that ref, then post.** Re-verify every precedent citation still resolves there. Insert a
+   `## Predecessor` section immediately after `## Approach` (built from step 1's captured facts):
+
+   ```
+   ## Predecessor
+
+   This plan supersedes a prior plan that drove PR #<closed-PR> (closed <YYYY-MM-DD>) after a HARD
+   re-plan. The closed PR's branch (`<branch-name>`) is preserved for audit and should be deleted by the
+   user after the new PR lands. The brief reason for starting fresh: <one-line rationale>.
+   ```
+
+   Post the plan (footer pinned to `<new plan_ref>@<new grounding SHA>`) through the single write path,
+   then un-tick the issue body's DoD bullets that were ticked under the old plan (from step 1's captured
+   tracker state), each to the predecessor annotation `- [ ] <text> (previously claimed by phase X,
+   commit <sha> on closed PR #<M>)` (per `../../_shared/dod-annotations.md`; an evaluator-rejection
+   annotation is rewritten to this predecessor form — the closed PR makes the rejection no longer
+   load-bearing). Stage to `<facts.scratch>/issue-body-reconciled.md` and apply via `gh_persist.py
+   edit-body`.
+
+Leave the closed PR's branch in place — the `## Predecessor` reminder is the user's cue to clean it up
+after the new PR lands.
 
 ### Worked examples
 
@@ -112,13 +131,16 @@ When the user picks **Start fresh (recommended)** at S8's three-way confirm:
 Phase 4 `closes-dod: 3`. Phase 1 shipped at `abc1234`; Phase 4 hasn't. Body bullet 3 reads `- [x]
 Document the export format (closed by phase 1, commit abc1234)`. SOFT reconciliation un-ticks it to
 `- [ ] Document the export format (resolver claimed phase 1, commit abc1234; evaluator rejected: re-plan
-reassigned to phase 4, awaiting its ship)`.
+reassigned to phase 4, awaiting its ship)`. The footer stays pinned at the open PR head throughout — a
+SOFT revise never closes that PR, so nothing forces a re-ground.
 
 *HARD — shipped phase's `ships` changed:* old Phase 1 `ships: PR commits implementing a service-layer
 abstraction`; new Phase 1 `ships: PR commits implementing protocol-based dependency injection`. Phase 1
 shipped at `abc1234`; the shipped diff doesn't match the new `ships`. Classify HARD, recommend Start
-fresh: post the new plan with `## Predecessor` naming PR #287 + branch `142-add-csv-export`, un-tick the
-three ticked DoD bullets to `- [ ] <text> (previously claimed by phase 1, commit abc1234 on closed PR
-#287)`, and close PR #287 via `close-pr` with the staged `Re-plan superseded this PR. See updated plan
-at …` comment. The next resolver run detects the closed predecessor and opens a PR on branch
-`142-add-csv-export-v2`.
+fresh: close PR #287 via `close-pr` with the staged `Re-plan superseded this PR. See updated plan at …`
+comment, re-run `prep_planner.py` (the open-PR-head row is gone now that #287 is closed, so `plan_ref`
+re-selects `main`), re-ground there, then post the new plan — footer `origin/main@<fresh-sha>`, not
+`142-add-csv-export@<stale-sha>` — with `## Predecessor` naming PR #287 + branch `142-add-csv-export`,
+and un-tick the three ticked DoD bullets to `- [ ] <text> (previously claimed by phase 1, commit
+abc1234 on closed PR #287)`. The next resolver run detects the closed predecessor and opens a fresh PR
+on branch `142-add-csv-export-v2`, based on `main` — matching the plan it just read.

@@ -17,21 +17,23 @@ half** the v1 `SKILL.md` line count. v1 `github-issue-planner/SKILL.md` = **503 
 |---|---:|
 | `skills/planner/SKILL.md` (router) | 129 |
 | `skills/planner/playbooks/plan-spine.md` (the shared spine — largest playbook) | 122 |
-| `skills/planner/playbooks/revise.md` | 67 |
+| `skills/planner/playbooks/revise.md` | 97 |
 | `skills/planner/playbooks/story-jit.md` | 48 |
 | `skills/planner/playbooks/epic.md` | 40 |
 | `skills/planner/playbooks/single.md` | 37 |
 | **router + largest playbook (the loaded set)** | **251** |
 
-**251 ≤ 251** ✅ (exactly at the bar — `revise.md` grew when the S13 second pass wired the `edit-labels`/
-`close-pr` ops in place of the write-path-gap prose notes; the spine was trimmed to hold the line).
-Router **129 ≤ 150** ✅ (architecture.md §9 size bar). References are read on demand and are not part of
-the loaded-prompt metric; recorded for completeness: `plan-reviewer-prompt.md` 263 (carried logic,
-tool-use rewritten for the read workspace), `handoff-renderings.md` 215, `revise-reconciliation.md` 124,
-`plan-schema.md` 139 (carried verbatim — the frozen prd §7 artifact).
+**251 ≤ 251** ✅ (exactly at the bar; unaffected by `revise.md`'s later growth — the spine stays the
+largest playbook at 122, and `revise.md` at 97 is still well under it. `revise.md` grew across two
+post-scenario fixes: the S13 second pass wired `edit-labels`/`close-pr` in place of the write-path-gap
+prose notes, then the scenario-4 D4 fix reordered the HARD "Start fresh" sequence to close → re-prep →
+re-ground → post). Router **129 ≤ 150** ✅ (architecture.md §9 size bar). References are read on demand
+and are not part of the loaded-prompt metric; recorded for completeness: `plan-reviewer-prompt.md` 263
+(carried logic, tool-use rewritten for the read workspace), `handoff-renderings.md` 220,
+`revise-reconciliation.md` 146, `plan-schema.md` 139 (carried verbatim — the frozen prd §7 artifact).
 
 Every routed session loads the router (129) + the spine (122) + exactly one thin routed playbook
-(37–67). The DoD's metric is *router + largest playbook* = 251; each individual document still fits one
+(37–97). The DoD's metric is *router + largest playbook* = 251; each individual document still fits one
 default `Read`.
 
 ## Playbook split (the §5-bar decision the Work records)
@@ -743,6 +745,31 @@ scenario 2 filed, and the precondition that entry set for this run.
         check) **cannot be settled headlessly** — v1 blocks and v2 proceeds either way. Flagged for the
         operator, not resolved here.
 
+        **ADJUDICATED.** Operator ruling: **tighten v2's gate rule.** v1's read is the correct one — the
+        `[prd.md §2]` citation supports only the no-timestamp half of the choice, and v2 named no rejected
+        alternative anywhere in that section, unlike every other decision it pinned. v2 must never
+        silently resolve a genuine design decision on a partial citation. Fix landed in
+        `skills/planner/playbooks/plan-spine.md`'s S4 (deviation/decision-gate step): a new **falsifiable
+        citation-completeness rule** — a citation pins a choice only when it covers the WHOLE choice, never
+        one facet of it; genuinely-silent or partial-only grounding routes to the S4 Decision gate, or an
+        explicit provisional pin whose `## Architecture decisions` rationale names the rejected
+        alternative(s) and why. Binds to the **existing** plan-schema.md citation grammar and S5's "name
+        the rejected one" convention (checked against `references/plan-schema.md` before writing the fix)
+        — no new schema section invented, per the operator's own framing. Checkable post-hoc, in the same
+        register as bug (a): a pinned choice with a partial citation and no named alternative is a defect.
+        Tests: `tests/test_planner_routing.py::CitationCompletenessRuleTests` (5 cases — the rule is
+        falsifiable and fence-scoped/prose-only, names the whole-choice condition, names both the
+        Decision-gate and provisional-pin alternatives, binds to the existing `## Architecture decisions`
+        grammar rather than a new field, and is checkable post-hoc as a named defect). Budget: the spine
+        sits at the router+largest-playbook bar with zero headroom (251 ≤ 251); the new rule's ~5 net
+        lines were offset by compressing S1/S5/S6/S7/S8 elsewhere **in the spine itself** (de-duplicating
+        the footer-render explanation against `references/handoff-renderings.md`, which already carries
+        it in full; tightening the `planned`-label and coverage-gap sentences) — the spine holds at
+        exactly 122 lines, unchanged from before this fix. This entry records the fix landing and its
+        offline test coverage — **the recorded scenario-3 run above stands as the honest pre-fix record**
+        (v2's dict pin with the partial citation genuinely happened as described); this is not a
+        self-certification of a live re-run under the tightened rule.
+
 **Verdict: recorded, not decided — the operator owns the go/no-go on D5/D8.** What is established: both
 legs, on the composite case, ground at `origin/main@46888c2` on the **`story-parent-epic-bootstrap` row**,
 bootstrap the epic plan inline, post **schema-identical** epic + story plans (empty skeleton diffs, both
@@ -902,6 +929,36 @@ scenario 3 a leg no longer reproduces.
         playbook selects. **Filed for the operator** — behaviour is correct today (v2's plan is sound and it
         flagged the base explicitly), only the footer's ref is debatable. Reproduces only on a HARD revise
         with an open PR (this scenario's exact shape).
+
+        **RESOLVED (post-scenario-4).** Landed **stronger** than either filed option: not a footer-string
+        re-pin (option (i)), but an actual re-ground-and-re-verify — `skills/planner/playbooks/revise.md`'s
+        HARD "Start fresh" sequence now runs **close → re-prep → re-ground → post**, never the reverse. The
+        plan drafted against the session-start `plan_ref` (the `open-pr-head` row, selected before the
+        revise even started) is *never posted as-is*: after the user picks **Start fresh**, the superseded
+        PR is closed first (with the byte-faithful `Re-plan superseded this PR` marker staged into its
+        close comment, unchanged from this run); `prep_planner.py` is then **re-run in the same clone**
+        (safe now — the D6 fix moved the `.worktrees/` bootstrap write to `info/exclude`, so a second prep
+        can never trip its own `ROOT_DIRTY`, closing the exact gap D6 itself surfaced); with the PR now
+        closed, the `open-pr-head` row no longer fires and `plan_ref` **re-selects deterministically off the
+        row table** — `main` for a standalone issue (matching v1's judgment call on this very scenario,
+        now reached mechanically rather than by a routing-table override) **or the parent epic's branch for
+        a story**, never hardcoded either way. The plan is then re-grounded at the fresh read workspace —
+        every precedent citation the diff-shown draft made is re-verified against the NEW ref, not just the
+        footer string — before it is finally posted, with `## Predecessor` (built from facts captured
+        *before* the re-prep call replaced them) and the DoD un-tick applied afterward. The SOFT path is
+        untouched: its footer correctly stays pinned at the open PR head, since a SOFT revise never closes
+        that PR and the next resolver run is a `continue` on the same branch. Tests (all fence/line-order
+        structural asserts, `tests/test_planner_routing.py::HardReviseSequenceTests`, 6 cases): close-pr
+        precedes the `prep_planner.py` re-run precedes the post step, in both `revise.md` and
+        `revise-reconciliation.md`; the SOFT-immediate/HARD-deferred persist split is stated explicitly;
+        the D6 citation (`ROOT_DIRTY` / `info/exclude`) is present as the "why a second prep is safe"
+        rationale; `plan_ref` re-selection is stated as row-table-driven and hardcoding is explicitly
+        ruled out; the HARD footer explicitly rules out the closed PR's head as its ground (in both
+        `revise.md` and `references/handoff-renderings.md`); the pre-re-prep fact capture is stated. This
+        entry records the fix landing and its offline test coverage — **the run recorded above (grounded
+        at `44-…@775890b`, now closed) stands as the honest pre-fix record**, not something to retroactively
+        edit, and this annotation is not a self-certification of a live re-run of this scenario against the
+        fixed sequence — the operator owns that confirmation separately if/when scenario 4 is re-run.
       - **D5 — v1 gated twice (coverage-gap §6.5 + three-way HARD), v2 gated once (three-way only)
         (EXPLAINED by judgment; NOT comparable under this harness).** Per scenario 2's harness finding,
         `claude -p` exposes no `AskUserQuestion`, so every gate is a prose stall and gate *count* is not a
@@ -968,3 +1025,21 @@ scenario 3 recorded (operator owns D5/D8), scenario 4 PASS.** Go criteria status
 **Recommendation: GO**, conditioned on the operator's call on scenario 3 D5/D8 and scenario 4 D4 (all
 three are recorded judgment/harness-limit items, none a schema/box-1 regression). Decision is the
 operator's.
+
+### Go/no-go closure (orchestrator, 2026-07-17) — all three conditions resolved; GO stands unconditional
+
+- **Scenario 3 D5** — RULED (orchestrator): a v1 structural defect, not a harness artifact — recorded as
+  `specs/planner.md` **Bug (d)** (source-verified + live-observed; composite gate counts are
+  non-comparable *by v1's defect*). No open call remains.
+- **Scenario 3 D8** — ADJUDICATED (operator, 2026-07-17): **tighten v2's gate rule.** Landed as the
+  falsifiable citation-completeness rule in `plan-spine.md` S4 (whole-choice citations only; silent or
+  partial grounding → Decision gate or a provisional pin naming the rejected alternative(s));
+  `CitationCompletenessRuleTests` pin it. The D8 annotation above records the ruling.
+- **Scenario 4 D4** — RESOLVED (stronger than the re-pin this summary's item 1 sketches, which is
+  superseded): the HARD "Start fresh" path now closes first, re-runs prep (safe post-D6), re-grounds at
+  the row-table-re-selected ref, and posts with the fresh footer — `HardReviseSequenceTests` pin the
+  sequence. The recorded scenario-4 run's PR-head footer stands as the honest pre-fix record.
+
+Criterion 2's at-acceptance re-confirmation: `compileall` OK, `tests/run.py` **822/822** (macOS +
+Linux container), `shellcheck` clean, `tests/test_subagent_prompts` green — orchestrator-run,
+2026-07-17. **GO.**

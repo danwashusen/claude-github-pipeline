@@ -618,7 +618,40 @@ sandbox, or delete anything outside the working tree and the sandbox.
   blocking + authorized fix round → 1 opus reviewer (PASS, 0 actionable, 4 advisories) →
   advisory-1 guard tightening → reviewer re-verify (**PASS holds, stronger**). **2 fix rounds.**
 
-### S13 — Planner skill rewrite — PARTIAL (automatable work done + committed; live parity PENDING) (2026-07-10)
+### S13 — Planner skill rewrite — ACCEPTED (automatable 2026-07-10; live parity closed 2026-07-17)
+
+- **Parity (operator-run, four scenarios, all PASS):** `f5df2e7` scenario 1 (plan-new single — box-1
+  SHA equality exact; the resolver's plan reader cross-consumed both legs), `9e8e598` scenario 2
+  (plan-new epic — bootstrap row; filed D4-s2), `3b61d97` scenario 3 (JIT story + the bug-(b)
+  composite — **boxes 3+4 both legs; the bug-(a) trap defeated twice**; bug (b) did NOT reproduce:
+  v1's worked-example half was already fixed by `9e4222e`, so box 3 is a clean both-legs pass),
+  `3b12ec3` scenario 4 (revise — HARD path with `close-pr` + the byte-exact supersession close
+  comment; **boxes 1/3/4/5 ticked by the operator**; D6 live-confirmed). Go/no-go **GO**, closed
+  unconditional 2026-07-17 (closure block in the parity doc).
+- **In-flight fix rounds (each reviewed + re-verified):** `387efa9` D4-s2 (truthful
+  `story-parent-epic-bootstrap` row — the facts no longer self-contradict); `33bbf4b` D6 (the
+  `.worktrees/` exclusion moved to `info/exclude` via `--git-common-dir` — preps re-runnable in one
+  clone, guard keeps its teeth, §6 amended) + the **Bug (d)** addendum (v1's composite session
+  structurally stalls: its only bootstrap guidance is force-read at Step 12, unreachable at Step 3 —
+  source-verified AND live-observed, 2 operator resumes vs v2's 0 gates; composite gate counts
+  non-comparable by v1's defect); the final uncommitted round (in the acceptance commit): D4-s4
+  (HARD "Start fresh" now closes → re-preps → re-grounds at the row-table ref → posts — a revised
+  plan can no longer ground on a dead branch) + D8 per the **operator's adjudication ("tighten")**:
+  the falsifiable citation-completeness rule in plan-spine.md S4 (whole-choice citations only),
+  landed inside the zero-headroom budget via five precision-preserving in-spine compressions
+  (reviewer-verified, no dropped qualifier; spine held at exactly 122).
+- **Latent v1 bugs on the spec record from this parity:** Bug (d) above (the 4th of the run) — plus
+  the scenario-4 field confirmation that v1's predecessor detection never consumes its own marker.
+- **Harness learnings (parity-doc seeding notes):** operator gates are untestable under `claude -p`
+  (0-gate fixtures by construction); never pre-check prep inside the run clone.
+- **Carried:** the revise.md step-1 rationale says "step 2" where it means step 3 (one-word nit,
+  reviewer-specified — next legitimate revise.md touch); sandbox fixture defects queued pre-S15
+  (CLAUDE.md unit target points at `scripts/<module>.py` vs `src/`; a config block duplicated at
+  lines 9+37); D3 (both legs' footers self-attribute `github-issue-planner`) is **contract-correct**
+  byte-compat (S7 adjudication (a)) — never "clean it up".
+- **Final suite state:** **822/822** macOS + Linux. Census 85, zero drops.
+
+#### Original PARTIAL entry (2026-07-10, superseded by the acceptance above)
 
 - **Commit:** `d28d87c` (`S13: skills/planner/ — planner cutover + edit-labels/close-pr ops`).
 - **Status:** **2 of 6 DoD boxes ticked** (box 2 zero-ref-arithmetic; box 6 line-count record —
@@ -684,7 +717,14 @@ of truth; a **freshly started** resumed session will pick them up by name and ca
 
 ## Handback log
 
-### 2026-07-10 handback — STOP at S13's live parity (third operator gate) — OPEN
+### 2026-07-10 handback — STOP at S13's live parity (third operator gate) — CLOSED 2026-07-17
+
+**Superseded; retained as a pointer.** The operator ran all four planner scenarios (PASS ×4 across
+`f5df2e7`/`9e8e598`/`3b61d97`/`3b12ec3`, boxes 1/3/4/5 ticked at scenario 4) with three orchestrated
+in-flight fix rounds (`387efa9` D4-s2, `33bbf4b` D6+Bug (d), and the acceptance commit's D4-s4+D8
+round) and one operator adjudication (D8 → "tighten"). Go/no-go closed **GO** unconditional. S13
+flipped to ACCEPTED above. The run resumes at **S14 → S15 → …**; the next planned operator gate is
+**S15's parity** (drafter), with the queued sandbox-fixture fixes landing first.
 
 The run is stopped at **S13 boxes 1/3/4/5's parity halves** (stop condition: parity runs are
 operator-owned). Everything automatable through S13 is accepted and committed on

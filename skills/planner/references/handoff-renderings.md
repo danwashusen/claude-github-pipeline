@@ -196,9 +196,13 @@ answers), with a re-run breadcrumb. `plan: ✗`.
 ```
 
 **Revise mode — plan refreshed.** Same forward shape; the `Issue:` line carries the **new** comment URL
-(the stale one was deleted via `--delete-marker-id`). On a HARD "Start fresh", the skill itself closes
-the superseded PR via `gh_persist.py close-pr` with the staged `Re-plan superseded this PR` supersession
-comment (`revise.md`); `Why:` names the closed PR # and that it carries the supersession note.
+(the stale one was deleted via `--delete-marker-id`). The worked example below is the **SOFT / continue**
+shape — `Grounding:` still reads the open PR head (`142-add-csv-export@e5f6a7b`), correctly, since a SOFT
+revise never closes that PR. On a HARD "Start fresh" the skill closes the superseded PR via
+`gh_persist.py close-pr` with the staged `Re-plan superseded this PR` supersession comment, re-runs prep,
+and re-grounds *after* the close (`revise.md`'s HARD sequence) — so `Grounding:` instead reads the
+**re-selected** ref (`origin/main@<fresh-sha>` for a standalone issue, the epic branch for a story), never
+the closed branch; `Why:` names the closed PR # and that it carries the supersession note.
 
 ```
 ## Handoff

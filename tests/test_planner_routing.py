@@ -542,6 +542,56 @@ class BugARuleTests(unittest.TestCase):
         self.assertIn("--oq-query", proc.stdout + proc.stderr)
 
 
+class CitationCompletenessRuleTests(unittest.TestCase):
+    """Scenario-3 D8 operator adjudication (docs/specs/parity/planner.md): v2 must never silently
+    resolve a genuine design decision on a partial citation. Falsifiable rule, same register as
+    bug (a): a citation pins a choice only when it covers the WHOLE choice; genuinely-silent or
+    partial-only grounding routes to the S4 Decision gate or an explicit provisional pin naming the
+    rejected alternative(s) — binding to the EXISTING `## Architecture decisions` citation/"name the
+    rejected one" grammar (plan-schema.md), never a new schema section."""
+
+    def setUp(self):
+        self.spine = (PLAYBOOKS_DIR / SPINE).read_text(encoding="utf-8")
+
+    def test_rule_is_falsifiable_and_fence_scoped(self):
+        self.assertRegex(self.spine, r"Falsifiable\s+citation-completeness rule")
+        # Prose, not a code sample: the rule text must sit outside every ``` fence.
+        for i, line, in_fence in _fence_stripped_lines(PLAYBOOKS_DIR / SPINE):
+            if in_fence:
+                self.assertNotIn(
+                    "citation-completeness", line,
+                    "the citation-completeness rule must be prose, not inside a code fence (%d)" % i,
+                )
+
+    def test_rule_names_the_whole_choice_condition(self):
+        self.assertRegex(
+            self.spine, r"covers the WHOLE\s+choice",
+            "the rule must require the citation to cover the WHOLE choice, not one facet",
+        )
+        self.assertIn("facet", self.spine)
+
+    def test_rule_names_the_gate_or_provisional_pin_alternatives(self):
+        self.assertRegex(
+            self.spine, r"Decision gate .*or a provisional pin",
+            "silent/partial grounding must route to the Decision gate OR a provisional pin",
+        )
+
+    def test_rule_binds_to_the_existing_architecture_decisions_grammar_not_a_new_section(self):
+        self.assertRegex(
+            self.spine, r"`## Architecture decisions`\s+rationale names the rejected alternative"
+        )
+        self.assertIn("no new schema field", self.spine)
+        # The "name the rejected one" convention this rule cites must actually exist in S5, so the
+        # binding is to real prose, not an invented cross-reference.
+        self.assertIn("name the rejected one", self.spine)
+
+    def test_rule_is_checkable_post_hoc(self):
+        self.assertRegex(
+            self.spine, r"partial citation.*no named alternative.*(is a )?defect",
+            "a pinned choice with a partial citation and no named alternative must be a named defect",
+        )
+
+
 class OperatorGateCoverageTests(unittest.TestCase):
     """S13 DoD box 5 (offline half): the spec's operator gates are present in the v2 skill."""
 
@@ -560,6 +610,117 @@ class OperatorGateCoverageTests(unittest.TestCase):
     def test_revise_reconciliation_confirm_soft_and_hard(self):
         self.assertIn("**Apply** / **Cancel**", self.revise)
         self.assertIn("Start fresh (recommended)", self.revise)
+
+
+class HardReviseSequenceTests(unittest.TestCase):
+    """S13 scenario-4 D4 fix: on HARD "Start fresh", grounding must follow the close decision, never
+    precede it — a HARD-revised plan posted while still grounded at the open-PR-head row (selected
+    before the close) would cite a branch nothing can read once it's gone. Structural (line-order)
+    asserts over skills/planner/playbooks/revise.md + its reconciliation reference, pinning: close-pr
+    precedes the re-prep call precedes the repost; the re-selected-row language is present; the old
+    (closed) PR-head ref is explicitly ruled out as the HARD footer's ground."""
+
+    def setUp(self):
+        self.revise_path = PLAYBOOKS_DIR / "revise.md"
+        self.revise = self.revise_path.read_text(encoding="utf-8")
+        self.reconciliation_path = REFERENCES_DIR / "revise-reconciliation.md"
+        self.reconciliation = self.reconciliation_path.read_text(encoding="utf-8")
+
+    def _first_fenced_line_containing(self, text, needle):
+        """Return the 1-based line number of the first line inside a ``` fence containing `needle`,
+        or None."""
+        in_fence = False
+        for i, line in enumerate(text.splitlines(), 1):
+            if line.strip().startswith("```"):
+                in_fence = not in_fence
+                continue
+            if in_fence and needle in line:
+                return i
+        return None
+
+    def _first_line_containing(self, text, needle):
+        for i, line in enumerate(text.splitlines(), 1):
+            if needle in line:
+                return i
+        return None
+
+    def test_close_pr_fenced_command_precedes_the_reprep_mention_precedes_the_post_step(self):
+        # Per-file needle for the ACTUAL step-4 post action (not the section heading, which also
+        # contains the words "then post" earlier in the file, before the numbered sequence).
+        post_needle_by_label = {
+            "revise.md": "Then post through the single write path",
+            "revise-reconciliation.md": "Post the plan (footer pinned",
+        }
+        for text, label, path in (
+            (self.revise, "revise.md", self.revise_path),
+            (self.reconciliation, "revise-reconciliation.md", self.reconciliation_path),
+        ):
+            close_line = self._first_fenced_line_containing(text, "close-pr")
+            reprep_line = self._first_line_containing(text, "prep_planner.py")
+            post_line = self._first_line_containing(text, post_needle_by_label[label])
+            self.assertIsNotNone(close_line, "%s: no fenced close-pr command found" % label)
+            self.assertIsNotNone(reprep_line, "%s: no prep_planner.py re-run mention found" % label)
+            self.assertIsNotNone(post_line, "%s: no post-step action line found" % label)
+            self.assertLess(
+                close_line, reprep_line,
+                "%s:%d close-pr must precede the prep_planner.py re-run at :%d"
+                % (label, close_line, reprep_line),
+            )
+            self.assertLess(
+                reprep_line, post_line,
+                "%s:%d the prep_planner.py re-run must precede the post step at :%d"
+                % (label, reprep_line, post_line),
+            )
+
+    def test_soft_persist_runs_immediately_hard_persist_is_deferred(self):
+        self.assertIn("SOFT-Apply", self.revise)
+        self.assertRegex(self.revise, r"SOFT-Apply.*runs the spine's persist immediately")
+        self.assertRegex(
+            self.revise, r"HARD-Start-fresh does NOT run the spine's persist"
+        )
+
+    def test_reprep_cites_the_d6_fix_as_why_a_second_prep_is_safe(self):
+        for text, label in (
+            (self.revise, "revise.md"),
+            (self.reconciliation, "revise-reconciliation.md"),
+        ):
+            self.assertIn("ROOT_DIRTY", text, "%s must cite why a second prep is safe (D6)" % label)
+            self.assertIn("info/exclude", text, "%s must name the D6 fix mechanism" % label)
+
+    def test_plan_ref_re_selection_is_row_table_driven_never_hardcoded(self):
+        for text, label in (
+            (self.revise, "revise.md"),
+            (self.reconciliation, "revise-reconciliation.md"),
+        ):
+            self.assertRegex(
+                text, r"re-select(s|ed)?\s*\*{0,2}deterministically",
+                "%s must state plan_ref re-selects off the row table" % label,
+            )
+            self.assertIn(
+                "never hardcode", text.lower().replace("hardcoded", "hardcode"),
+                "%s must explicitly rule out hardcoding main" % label,
+            )
+
+    def test_hard_footer_explicitly_rules_out_the_closed_prs_head(self):
+        # The exact regression this fix closes: the HARD-revised plan's footer/Grounding must never
+        # cite the (about-to-be/now-)closed PR's branch.
+        self.assertRegex(
+            self.revise,
+            r"grounded on a branch this decision is closing|posting it as-is would leave the footer",
+        )
+        renderings = (REFERENCES_DIR / "handoff-renderings.md").read_text(encoding="utf-8")
+        self.assertRegex(
+            renderings, r"never\s+the closed branch",
+            "handoff-renderings.md must explicitly rule out the closed PR's branch as the HARD ground",
+        )
+
+    def test_predecessor_facts_captured_before_reprep_replaces_facts(self):
+        # Step 1's "capture before re-prep" ordering (## Predecessor / DoD un-tick need the OLD
+        # envelope's facts.plan / facts.revise, which a second prep_planner.py call replaces).
+        self.assertRegex(self.revise, r"[Cc]apture what `## Predecessor`")
+        self.assertRegex(self.revise, r"before\s+step 2 replaces `facts`")
+        self.assertIn("facts.revise.open_pr", self.revise)
+        self.assertIn("facts.plan", self.revise)
 
 
 if __name__ == "__main__":
