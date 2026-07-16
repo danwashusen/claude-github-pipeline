@@ -756,8 +756,8 @@ of truth; a **freshly started** resumed session will pick them up by name and ca
 
 ### S15 — Drafter skill rewrite — PARTIAL (automatable done + committed; live parity PENDING) (2026-07-17)
 
-- **Commit:** _backfilled post-commit_ (`S15: skills/drafter/ — drafter cutover + _shared relabel +
-  sandbox fixes`).
+- **Commit:** `c1fa3aa` (`S15: skills/drafter/ — drafter cutover + _shared relabel + sandbox
+  fixes`).
 - **Status:** **1 of 5 DoD boxes ticked** (box 5, wholly offline). Boxes 1–4 carry parity language —
   the run's fourth hard stop; S16 waits on the four drafter scenarios.
 - **Deliverables:** `skills/drafter/` from scratch — router 123 (pins `opus`/`high` verbatim; the
