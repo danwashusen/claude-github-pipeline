@@ -770,22 +770,201 @@ the superseded PR closed via `gh_persist.py close-pr` with the staged `Re-plan s
 comment (the S13 second-pass op — the gate already fired at the three-way confirm above; this executes
 the already-gated decision).
 
-- [ ] v1 run captured (SOFT and/or HARD).
-- [ ] v2 run captured (reconciliation diff computed; correct SOFT/HARD gate offered).
-- [ ] Reposted plan schema-identical; stale comment deleted via `--delete-marker-id`; pointer URL
-      refreshed.
-- [ ] **Box 1 parity:** the refreshed plan's planned-at SHA == the new grounding SHA.
-- [ ] HARD path (if exercised): `## Predecessor` + predecessor-annotated DoD; superseded PR closed with
-      the byte-exact `Re-plan superseded this PR` marker, posted as the PR's **close comment** (confirm
-      via `gh pr view <PR#> --json comments` or the GitHub UI — not `--json body`, per the latent-v1-bug
-      finding above; no v2 resolver code reads this detection yet, so there is nothing to cross-consume
-      here this step — the check is that `close-pr` posted the marker to the right field).
-- [ ] Divergences.
+**Run (2026-07-16).** Twin fixture: **reused S10 scenario 4's twins** (#43 twin-A → v1
+`github-issue-planner`, #44 twin-B → v2 `planner`) — the one seeded state that already carries the full
+HARD-revise precondition from real pipeline output, not hand-authoring: a genuine planner-authored
+**two-phase** `<!-- implementation-plan:v1 -->` plan (comment `4932852276`/`4932852413`), an **open PR**
+(#45/#46) whose `## Phase tracker` shows **both phases shipped** (commits `dd686ca`+`31abbec` /
+`0465de0`+`775890b`), and both DoD bullets ticked with real resolver `(closed by phase N, commit <sha>)`
+annotations. (Scenario 1's #47/#48 were rejected as the fixture: no PR, single-phase — they can only
+produce a SOFT no-op reconciliation, not the HARD reconcile path this box needs.) Scenario 1's #47/#48
+grounding-bug `docs/open-questions.md` etc. already sit on `main@46888c2` from scenario 3.
+
+**The changed circumstance (drives HARD, seeded byte-symmetric on both twins).** An operator decision
+comment (`2026-07-16 — reporting-layer review`, posted identically to #43 and #44) that reverses **both
+already-shipped phases**: `pluralize` must implement real English suffix rules (`-y`→`-ies`,
+`-s/-x/-ch/-sh`→`-es`, else `+s`) rather than the shipped naive `+ "s"`, and `to_fahrenheit` must
+`round(…, 1)`. The two DoD bullet texts were edited to match. That trips **two independent "Always HARD"
+rules** from [`../../skills/planner/references/revise-reconciliation.md`](../../skills/planner/references/revise-reconciliation.md):
+a tracker-shipped phase's `deliverable` changed **and** a ticked DoD bullet's text was edited — HARD is
+not a borderline judgment call here. Headless recipe as the prior scenarios (**fresh sandbox clone per
+leg**); each leg ran in segments because `claude -p` exposes no `AskUserQuestion` (the scenario-2 harness
+finding) — a gate manifests as a turn-ending prose question, answered on resume.
+
+**Pre-run verification (v2 leg, throwaway clone, one prep call).** `vector.type=standard · mode=revise ·
+plan_ref_row=open-pr-head`, `plan_ref=44-bug-helpers-b-utilities-return-raw-input-instead` (the open PR
+#46's `headRefName`), `plan.present=true` + `plan.comment_id=4932852413` (the `--delete-marker-id`
+target), `suggested_playbook=revise.md`, `read_workspaces.grounding.sha=775890b…` (the PR head),
+`revise.open_pr={number: 46, isDraft: false}`, `revise.phase_tracker=[{phase:1, checked:true,
+commit:0465de0}, {phase:2, checked:true, commit:775890b}]`, `open_question_candidates=[]`. **This is the
+first live exercise of the `open-pr-head` `plan_ref` row** — scenarios 1–3 all took `main` rows — and it
+is what makes divergence **D4** below possible.
+
+**D6 fix live-confirmed (bonus).** Scenario 3 recorded the `info/exclude` fix as landed-but-not-live-
+confirmed. In the throwaway clone, after one `prep_planner.py` call `git status --porcelain` is **empty**,
+`.worktrees/` sits in the repo's `info/exclude`, and a **second** `prep_planner.py` call in the *same
+clone* returns `status: ok` — the exact `ROOT_DIRTY`-on-self-authored-`.gitignore` symptom that cost
+scenario 3 a leg no longer reproduces.
+
+- [x] v1 run captured (SOFT and/or HARD) — **HARD; required two operator answers (see D5).** Ran in three
+      segments. Segment 1 (24 turns / $2.49) **stalled with zero writes** at a **§6.5 coverage-gap design
+      gate** — whether to add the repo's first test harness (`tests/test_helpers_a.py`, v1's recommended
+      **A**) or keep `Closed by: (none)` (**B**); v1 judged precedent genuinely balanced (`CLAUDE.md`
+      declares a `tests/test_<module>.py` unit target, yet no `src/` module has ever had a test) and gated
+      it. Answered **"A"** (v1's own recommendation — deliberately *not* v2's unaided choice, per scenario
+      3's D8 discipline). Segment 2 (16 turns / $4.77) verified the plan (3 review passes) then **stalled
+      again** at the **HARD three-way gate** (`Start fresh (recommended)` / `Apply in place anyway` /
+      `Cancel`, verbatim). Answered **"Start fresh."** Segment 3 (5 turns / $1.77) ran clean: plan reposted
+      to #43 as [comment `4996339111`](https://github.com/danwashusen/gh-pipeline-sandbox/issues/43#issuecomment-4996339111)
+      (stale `4932852276` deleted), body pointer refreshed + both DoD bullets un-ticked to `(previously
+      claimed by phase N, commit <sha> on closed PR #45)`, `planned` re-applied, and **PR #45 closed via a
+      raw `gh pr close 45 --comment "Re-plan superseded this PR. …"`** (v1's hand-rolled close — same
+      artifact v2's `close-pr` produces; the recorded latent-v1-bug is that v1's *own* predecessor
+      detection greps `--json body`, never this close comment). Grounded at **`origin/main@46888c2`**
+      (see D4). Sub-agents: `github-ops` ×several (gather/persist) + `Explore` reviewers. **Totals: 45
+      turns, $9.03, 2 prose-gates.**
+- [x] v2 run captured (reconciliation diff computed; correct SOFT/HARD gate offered) — **HARD; completed
+      on one operator answer.** Segment 1 (37 turns / $4.65) computed the reconciliation, classified
+      **HARD** on the two independent rules, and stalled at the three-way gate — while resolving the
+      coverage-gap to `Closed by: (none)` **unaided** (it judged precedent unambiguous: no `tests/` tree,
+      pytest absent on five interpreters, no manifest, CI runs no tests — so it did not gate that
+      decision, unlike v1). Answered **"A — Start fresh."** Segment 2 (16 turns / $2.54) landed **all four
+      writes**: plan reposted to #44 as [comment `4989271147`](https://github.com/danwashusen/gh-pipeline-sandbox/issues/44#issuecomment-4989271147)
+      via `gh_persist.py comment … --delete-marker-id 4932852413` (stale comment deleted), `edit-body`
+      (pointer refreshed to the new URL + both DoD bullets un-ticked to the predecessor form), `edit-labels
+      --add planned`, and **`gh_persist.py close-pr danwashusen/gh-pipeline-sandbox 46 --comment-file
+      <scratch>/close-comment.md`**. **v2 startup = exactly 1** `prep_planner.py 44` state-assembly call;
+      **0** gather/persist sub-agents (scripts called directly), `Explore` reviewers only; **0** `--oq-query`
+      (no OQ). Grounded at the PR head **`…@775890b`** (see D4). **Totals: 53 turns, $7.19, 1 prose-gate.**
+- [x] Reposted plan schema-identical; stale comment deleted via `--delete-marker-id`; pointer URL
+      refreshed — **YES.** Exactly **one** `<!-- implementation-plan:v1 -->` comment remains on each issue
+      (old `4932852276`/`4932852413` deleted, new `4996339111`/`4989271147` posted); each issue-body
+      pointer now resolves to its new comment URL. A normalized section-skeleton diff of the two new plans
+      (titles / timestamps / short-sha / issue numbers / PR numbers masked) shows an **identical 9-section
+      set in identical order** — `## Approach` · **`## Predecessor`** · `## Doc grounding` ·
+      `## Architecture decisions` · `## Changes (file-level)` · `## Test plan` · `## Coverage gap` ·
+      `## Phases` · `## Risks & watchpoints` — with **`## Predecessor` correctly inserted immediately after
+      `## Approach`** on both, and no `## Story*`/`## Epic` sections (correct for a standalone multi-phase
+      bug). The **only** section-set difference is v1 additionally carrying `## Deviations from project
+      docs` — present *because* the operator answered **A** (add a test harness, a deviation since pytest
+      isn't installed) where v2 chose `(none)`; operator-supplied content, same class as scenario 3's D8,
+      not a schema divergence. *Cross-consumption:* both new plans open `<!-- implementation-plan:v1 -->`
+      and parse cleanly.
+- [x] **Box 1 parity:** the refreshed plan's planned-at SHA == the new grounding SHA — **YES on both, by
+      each leg's own grounding ref.** v1's footer records `origin/main@46888c2` and v1 grounded at
+      `origin/main@46888c2`; v2's footer records `44-…@775890b` and v2's
+      `read_workspaces.grounding.sha=775890b…`. Each footer SHA equals *its own* leg's grounding SHA (box
+      1's literal invariant holds on both). The legs grounded at **different refs** — that is D4, a choice
+      divergence, not a footer-vs-grounding mismatch.
+- [x] HARD path: `## Predecessor` + predecessor-annotated DoD; superseded PR closed with the byte-exact
+      marker in the **close comment** — **YES on both.** Each new plan carries a `## Predecessor` section
+      naming the closed PR (#45 / #46), its branch, and the HARD reason. Each issue body's two DoD bullets
+      are un-ticked to `- [ ] … (previously claimed by phase N, commit <sha> on closed PR #<M>)`. **PR #45
+      and #46 are both `CLOSED`**, and the `Re-plan superseded this PR` marker is present in each PR's
+      **close comment** and **absent from each PR's `--json body`** (confirmed via `gh pr view … --json
+      comments` and `--json body` — the byte-faithful field the resolver's detection is *supposed* to read,
+      and the one v1's own filter doesn't). v2 posted it via `close-pr --comment-file`; v1 via raw `gh pr
+      close --comment` — same artifact, the pre-recorded mechanism/latent-bug divergence (D3/D5). No v2
+      resolver consumes this detection yet, so nothing to cross-consume this step.
+- [x] Divergences (each traced to a PRD § / an explained gap above / a filed defect):
+      - **D1 — state-assembly + write mechanism (EXPLAINED; the documented v1→v2 cutover).** Reproduces
+        scenarios 1/2/3's D1: v1 assembles via `github-ops` `GATHER_ISSUE`/`GATHER_PR` and writes via
+        `PERSIST_COMMENT` / `PERSIST_BODY` + a **raw `gh issue edit --add-label planned`** + a **raw `gh pr
+        close --comment`**; v2 assembles via one `prep_planner.py` facts block and writes via `gh_persist.py
+        comment` / `edit-body` / **`edit-labels`** / **`close-pr`**. Same persisted artifacts (plan comment,
+        body pointer, `planned` label, closed PR + supersession close comment). The `edit-labels` and
+        `close-pr` ops are exactly the two v1 write-path gaps this step closed. Not a defect.
+      - **D2 — handoff `Next:` namespace (EXPLAINED; by design).** v1 → `/github-pipeline:github-issue-resolver
+        #43`; v2 → `/github-pipeline:resolver #44`. Each generation routes to its own resolver. Not a
+        divergence to chase.
+      - **D3 — footer/pointer author self-attribution reads `github-issue-planner` on *both* legs
+        (COSMETIC; identical, no parser reads it).** Reproduces scenarios 1/2/3's D3 on the revise route.
+        Identical on both ⇒ not a v1↔v2 schema divergence. Same optional future cleanup; not run-failing.
+      - **D4 — grounding-ref choice on a HARD re-plan: v1 judgment-grounds at `origin/main`, v2
+        deterministically grounds at the `open-pr-head` row (RECORDED; both schema-valid, box 1 holds on
+        each; operator call).** `prep_planner._select_plan_ref` computes `plan_ref` at prep time — **before**
+        SOFT/HARD is known — so for an issue with an open PR it returns `plan_ref_row: open-pr-head` at that
+        PR's head (`775890b`, where the code is already *fixed*). v2 consumed that fact as data and pinned
+        its footer to `44-…@775890b`, then — on Start-fresh — closed that very PR; it flagged the tension
+        itself ("pins each helper's *target end state* rather than a delta, so it reads correctly against
+        [`main`]"). v1, reasoning that a HARD path discards the PR head and that the branch is 2 commits
+        behind `main` (missing `docs/open-questions.md`), **overrode** its own Step-4.5 open-PR row and
+        ground at `origin/main@46888c2` — the ref the next `-v2` branch will actually build from. Both
+        footers are schema-valid (the footer rule permits `origin/main` **or** the bare `headRefName`), and
+        **box 1 holds on each leg against its own grounding SHA**, so this is not a schema/box-1 failure —
+        it is a genuine judgment divergence the headless harness exposes but cannot settle: v1's choice is
+        arguably more correct for HARD-fresh, but it required v1 to *deviate from its own routing table*,
+        which v2 (correctly, per architecture.md's "consume every fact as data — never re-derive") will not
+        do. **The clean fix is prep-side:** on `mode: revise` the `open-pr-head` row is only right for a
+        SOFT *continue*; a HARD *close* wants `main`. But SOFT/HARD is a playbook-time judgment, not a prep
+        fact, so prep cannot know it. Options: (i) `revise.md` re-pins the footer ref to `main` when it
+        classifies HARD-fresh (a playbook rule, no script change); (ii) prep emits both refs and the
+        playbook selects. **Filed for the operator** — behaviour is correct today (v2's plan is sound and it
+        flagged the base explicitly), only the footer's ref is debatable. Reproduces only on a HARD revise
+        with an open PR (this scenario's exact shape).
+      - **D5 — v1 gated twice (coverage-gap §6.5 + three-way HARD), v2 gated once (three-way only)
+        (EXPLAINED by judgment; NOT comparable under this harness).** Per scenario 2's harness finding,
+        `claude -p` exposes no `AskUserQuestion`, so every gate is a prose stall and gate *count* is not a
+        comparable metric. v1 judged the coverage-gap (add-a-test-harness vs `(none)`) a genuine §6.5
+        decision — precedent balanced, user-visible consequence — and gated it; v2 resolved the identical
+        question to `(none)` from precedent unaided (no test infra anywhere) and gated only the three-way
+        HARD confirm. Both are defensible readings of spine S4 ("gate only when two approaches are equally
+        precedent-grounded AND the choice has a user-visible consequence"); the divergence is the same
+        class as scenario 3's D8 and cannot be settled headlessly. The extra v1 artifact it produced
+        (`## Deviations from project docs` + a `tests/` harness in `## Test plan`) is operator-supplied
+        (the **A** answer), sound for the schema comparison, and not evidence of a gate-parity failure.
+      - **D6 (fixture-quality note, not a skill divergence).** The seeded decision comment's
+        `to_fahrenheit(37) → 98.6 "not 98.60000000000001"` example is **wrong**: `37*9/5+32` is *exactly*
+        `98.6` in Python, so that example can't discriminate pre- from post-`round`. **Both legs caught
+        it** (strong parity): v2 pinned `0.1 → 32.2` / `36.6 → 97.9` as the discriminating pairs and flagged
+        the false-positive trap in its plan; v1 grounded its regression test on `36.6 → 97.9`, verified to
+        fail against both the stub and the shipped code. The rounding requirement is genuine (it bites on
+        fractional input), so **HARD stands on both** and the scenario is not compromised — recorded as a
+        fixture-authoring error, left unfixed mid-run to preserve twin byte-symmetry.
+      - **D7 — both legs independently audited the prior (S10-era hand-seeded) plan's grounding as partly
+        fabricated (RECORDED; a point *for* both planners, no divergence).** Both removed the old plan's
+        `docs/prd.md` "reporting layer renders these" citation (no such text at `main`) and its
+        `src/formatter_b.py` "single-helper-per-phase" precedent (that fix never landed — `formatter_b.py`
+        is still an unfixed stub), and both noted `helpers_a`/`helpers_b` have **zero importers**, dropping
+        the old plan's "the reporting layer calls them positionally" risk as unfounded. Identical judgment
+        on both legs ⇒ parity-neutral; it just confirms the revise re-grounding actually re-reads rather
+        than trusting the superseded plan.
+
+**Verdict: PASS (both legs) — zero unexplained divergences.** Both detect `mode: revise` → route
+`revise.md`, re-ground on what changed, classify the two-shipped-phase deliverable + DoD-text change as
+**HARD** on two independent rules, offer the correct three-way gate, and on **Start fresh** repost a
+schema-identical plan via `--delete-marker-id` (one plan comment remains, `## Predecessor` after
+`## Approach`), refresh the body pointer, un-tick both DoD bullets to the predecessor annotation, and
+close the superseded PR with the **byte-exact `Re-plan superseded this PR` marker in the close comment**
+(v2 via `close-pr`, v1 via raw `gh pr close --comment` — same artifact). **Box 1 holds on each leg
+against its own grounding SHA**; **v2 startup = 1** `prep_planner.py` call; this is the **first live
+exercise of the `open-pr-head` `plan_ref` row**. D1/D2/D3 are the familiar cutover / by-design / cosmetic
+trio; **D4** (grounding-ref choice on HARD re-plan) and **D5** (gate count, not comparable headlessly) are
+recorded for the operator; D6 is a caught fixture-authoring error; D7 is a shared re-grounding audit that
+favours both planners. (Boxes ticked — this run's parity is recorded; the go/no-go below is the operator's.)
 
 ## Go/no-go (recorded, not decided)
 
-To be filled by the operator after the four scenarios run. Go criteria: (1) all four scenarios recorded
-with zero unexplained divergences; (2) validators + census green (compileall, `tests/run.py`,
-shellcheck, the contract-token census, `tests/test_subagent_prompts.py`); (3) the offline halves of
-boxes 1/3/4 met (plan schema byte-clean, the bug-(b) example present, the bug-(a) rule written +
-grep-tested).
+**All four live parity scenarios now recorded (2026-07-11 → 2026-07-16): scenario 1 PASS, scenario 2 PASS,
+scenario 3 recorded (operator owns D5/D8), scenario 4 PASS.** Go criteria status:
+
+1. **All four scenarios recorded with zero *unexplained* divergences — MET.** Every divergence across the
+   four traces to the documented v1→v2 cutover (D1), by-design namespace (D2), the cosmetic
+   self-attribution (D3), a filed/recorded prep-or-judgment item (scenario 2 D4 *resolved*; scenario 3
+   D5/D6/D7/D8; scenario 4 D4/D5), a caught fixture-authoring error (scenario 4 D6), or a shared audit
+   that favours both legs (scenario 4 D7). **Two items are flagged for an explicit operator call** before
+   this is called unconditionally clean: scenario 3's **D5/D8** (gate parity is not comparable under the
+   headless harness; the tuple-vs-dict entry-shape judgment is unfalsifiable headlessly) and scenario 4's
+   **D4** (the HARD-revise grounding-ref choice — v2's deterministic `open-pr-head` footer vs v1's
+   judgment override to `main`; a `revise.md` re-pin is the clean fix if the operator wants byte-identical
+   footers). Neither is a schema or box-1 failure.
+2. **Validators + census green** — recorded green in the offline sections above (line-count metric, grep
+   gates, contract-token census). Re-confirm `compileall` / `tests/run.py` / `shellcheck` /
+   `tests/test_subagent_prompts.py` at acceptance.
+3. **Offline halves of boxes 1/3/4 met — MET** (plan schema byte-clean, the bug-(b) composite example
+   present, the bug-(a) `(not filed)` rule written + grep-tested), and each now has a **live** parity
+   confirmation (box 1 on all four scenarios; box 3 on scenario 3; box 4 on scenario 3).
+
+**Recommendation: GO**, conditioned on the operator's call on scenario 3 D5/D8 and scenario 4 D4 (all
+three are recorded judgment/harness-limit items, none a schema/box-1 regression). Decision is the
+operator's.
