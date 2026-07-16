@@ -689,6 +689,35 @@ scenario 2 filed, and the precondition that entry set for this run.
         story (the epic prep was an extra the playbook doesn't ask for; `story-jit.md` says to bootstrap
         "inline against `facts.story`"). Needs either an ignore of self-authored `.gitignore` dirt in the
         root check, a `.gitignore` write deferred out of the root, or an explicit re-runnable contract.
+
+        **RESOLVED (post-scenario-3, pre-scenario-4).** Root-cause fix, not a root-check workaround: the
+        `.worktrees/` exclusion no longer writes `<root>/.gitignore` (a working-tree file `git status
+        --porcelain` reports on) at all — `scripts/workspace.py`'s `_ensure_gitignore_entry` (renamed
+        `_ensure_worktrees_excluded`) now writes the repo's `info/exclude`, resolved via `git rev-parse
+        --git-common-dir` (never a hardcoded `.git/info/exclude` path, so it's correct whether `--root` is
+        the main checkout or itself a linked worktree — verified directly against real `git` behavior:
+        `--git-common-dir` from inside a linked worktree returns the shared main-repo `.git` dir, never
+        the worktree's own private per-worktree admin dir `--git-dir` would return). `info/exclude` lives
+        outside the working tree, under the git directory itself, so the idempotent bootstrap write can
+        never appear in `git status --porcelain` and root-freshness can never trip on it — the second
+        `prep_planner.py` call in one clone (this scenario's live symptom) now comes back `status: ok`
+        exactly like the first. Existing consuming-repo `.gitignore` files (including a stale
+        `.worktrees/` bootstrap line an earlier v2 run left behind) are read/migrated/removed by nothing —
+        left byte-for-byte alone. The `ROOT_DIRTY` guard itself is unweakened: a genuine user-authored
+        uncommitted file still trips it. `docs/architecture.md` §6 amended (content-only, anchors stable)
+        to describe `info/exclude` instead of `.gitignore`. Tests:
+        `tests/test_workspace.py::WorktreesExcludeMaintenanceTests` (11 cases, renamed from
+        `GitignoreMaintenanceTests`, now git-sandboxed since the function shells out to `git rev-parse`;
+        includes `test_git_common_dir_resolves_correctly_from_inside_a_linked_worktree`, the live
+        `--git-common-dir`-vs-`--git-dir` verification), plus the D6-specific regressions
+        `EnsureWorkTests::test_ensures_worktrees_excluded_via_info_exclude_after_create`,
+        `EnsureReadTests::test_ensure_read_root_freshness_check_survives_a_prior_ensure_in_the_same_clone`,
+        `EnsureReadTests::test_root_dirty_guard_keeps_its_teeth_after_info_exclude_write`, and — at the
+        prep-script level, mirroring the actual live-observed composite-session symptom —
+        `tests/test_prep_planner.py::RootDecisionPropagationTests::test_second_prep_planner_run_in_the_same_clone_is_not_root_dirty`.
+        This entry records the fix landing and its offline test coverage, not a self-certification of a
+        live re-run of scenario 3 (or the epic-prep-during-bootstrap path D6 actually hit) — the operator
+        still owns that confirmation separately if/when this scenario is re-run.
       - **D7 — `open_question_candidates` omits empty groups, so absence is ambiguous (RECORDED; no
         artifact divergence).** `_build_open_question_candidates` appends a group **only** when the search
         returns matches, so a body-recorded OQ with no candidate is indistinguishable in the facts block

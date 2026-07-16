@@ -94,7 +94,7 @@ from pipelib.envelope import EXIT_OK, emit_needs_decision, emit_ok  # noqa: E402
 
 ROOT_BRANCH = "main"
 DEFAULT_MAX_AGE_DAYS = 7
-GITIGNORE_ENTRY = ".worktrees/"
+WORKTREES_EXCLUDE_ENTRY = ".worktrees/"
 READ_WORKTREE_PREFIX = "ro-"
 
 # ---------------------------------------------------------------------------
@@ -225,28 +225,65 @@ def _read_path(root, ref):
 
 
 # ---------------------------------------------------------------------------
-# .gitignore maintenance — idempotent single-line append (architecture.md §6)
+# `.worktrees/` exclusion — idempotent single-line append to the repo's `info/exclude`
+# (architecture.md §6). D4/D6 fix (docs/specs/parity/planner.md): this used to write
+# `<root>/.gitignore` — a WORKING-TREE file, so `git status --porcelain` at root reported it as a
+# new untracked/modified file the instant it was written, and the NEXT root-freshness check (the
+# very next `ensure`/`root-status` call in the same clone/session) read that self-inflicted dirt as
+# `ROOT_DIRTY` — making a prep script that calls `ensure` more than once in one clone (e.g. the
+# planner's just-in-time composite epic+story session, which grounds twice) non-re-runnable, and
+# forcing the consuming repo to commit a plugin-authored `.gitignore` edit it never asked for.
+# `.git/info/exclude` has the identical ignore semantics as `.gitignore` (both are gitignore-syntax
+# pattern files git consults when computing untracked status) but lives OUTSIDE the working tree —
+# under the git directory itself — so writing to it can never appear in `git status --porcelain`
+# and root-freshness can never trip on our own write. It also already exists as the repo's own
+# "local, un-shared exclude list" convention (`git help gitignore`), so this isn't a novel
+# mechanism, just the correct one for a tool-authored exclusion no consuming repo should have to
+# commit.
 # ---------------------------------------------------------------------------
 
 
-def _ensure_gitignore_entry(root):
-    """Ensure ``<root>/.gitignore`` contains a line exactly ``.worktrees/``. Idempotent: if
-    already present, the file is left byte-for-byte untouched (not even rewritten) — the same
-    "changed:false means untouched on disk" discipline ``config_block.py`` uses for its own
-    idempotent writes. Creates ``.gitignore`` from scratch if absent. Returns ``True`` iff a write
-    happened."""
-    path = Path(root) / ".gitignore"
+def _git_common_dir(root):
+    """Resolve the repo's COMMON git directory (`git rev-parse --git-common-dir`), never
+    `--git-dir` — the two differ the moment `root` is itself a linked worktree (verified directly
+    against real `git` behavior, not assumed): `--git-dir` from inside a worktree resolves to that
+    worktree's PRIVATE per-worktree admin dir (`<main-repo>/.git/worktrees/<name>`), which has no
+    `info/exclude` of its own; `--git-common-dir` resolves to the ONE shared dir every linked
+    worktree (and the main checkout) points back at, so a write there is visible from all of them —
+    exactly the "applies to all linked worktrees" property this fix needs, since `.worktrees/`
+    itself lives under the MAIN checkout, not under any of the worktrees it names. The result may
+    be relative (bare `.git` when `root` is a plain, non-worktree clone) or absolute (when `root`
+    is itself a worktree) — `(Path(root) / result).resolve()` handles both: joining a `Path` with
+    an absolute second operand discards the first per POSIX path-join semantics, so the relative
+    case resolves against `root` and the absolute case passes through unchanged.
+    """
+    common_dir = _git_stdout(["rev-parse", "--git-common-dir"], root)
+    return (Path(root) / common_dir).resolve()
+
+
+def _ensure_worktrees_excluded(root):
+    """Ensure the repo's `info/exclude` (resolved via :func:`_git_common_dir`, never a hardcoded
+    `.git/info/exclude`) contains a line exactly `.worktrees/`. Idempotent: if already present, the
+    file is left byte-for-byte untouched (not even rewritten) — the same "changed:false means
+    untouched on disk" discipline `config_block.py` uses for its own idempotent writes. Creates
+    `info/exclude` (and its parent `info/` dir) from scratch if absent. Returns `True` iff a write
+    happened. Deliberately does NOT touch any `.gitignore` the consuming repo already carries
+    (including a pre-existing `.worktrees/` bootstrap line an earlier v2 run may have left there —
+    that line is harmless dead weight, not migrated or removed; this function only ever reads
+    `info/exclude`, never `.gitignore`, on the write path or the idempotency check)."""
+    path = _git_common_dir(root) / "info" / "exclude"
+    path.parent.mkdir(parents=True, exist_ok=True)
     if not path.exists():
-        path.write_text(GITIGNORE_ENTRY + "\n", encoding="utf-8")
+        path.write_text(WORKTREES_EXCLUDE_ENTRY + "\n", encoding="utf-8")
         return True
 
     text = path.read_text(encoding="utf-8")
-    if any(line.strip() == GITIGNORE_ENTRY.rstrip("/") + "/" for line in text.splitlines()):
+    if any(line.strip() == WORKTREES_EXCLUDE_ENTRY.rstrip("/") + "/" for line in text.splitlines()):
         return False  # already present — file left byte-for-byte untouched
 
     if text and not text.endswith("\n"):
         text += "\n"
-    text += GITIGNORE_ENTRY + "\n"
+    text += WORKTREES_EXCLUDE_ENTRY + "\n"
     path.write_text(text, encoding="utf-8")
     return True
 
@@ -576,7 +613,7 @@ def _build_ensure_work(root, branch, base):
                 sys.stderr.write(add_result.stderr)
                 sys.exit(1)
 
-    _ensure_gitignore_entry(root)
+    _ensure_worktrees_excluded(root)
 
     hook_result = _run_setup_hooks(root, str(target_path))
     if not hook_result["succeeded"]:
@@ -646,7 +683,7 @@ def _build_ensure_read(root, ref):
     target_path = _read_path(root, ref)
     remote_ref = "origin/%s" % ref
 
-    _ensure_gitignore_entry(root)
+    _ensure_worktrees_excluded(root)
 
     if target_path.is_dir():
         reset_result = _git(["reset", "--hard", remote_ref], str(target_path))

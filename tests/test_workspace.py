@@ -145,62 +145,115 @@ class WorkspaceHelperUnitTests(unittest.TestCase):
         self.assertEqual(workspace._tail_lines(None, 50), "")
 
 
-class GitignoreMaintenanceTests(unittest.TestCase):
-    """`.gitignore` idempotent maintenance (architecture.md §6, DoD: "`.gitignore` entry
-    idempotent")."""
+class WorktreesExcludeMaintenanceTests(unittest.TestCase):
+    """`.worktrees/` idempotent exclude maintenance (architecture.md §6, D6 fix: this now writes
+    the repo's `info/exclude` — resolved via `git rev-parse --git-common-dir`, never
+    `<root>/.gitignore` — so the write can never appear in `git status --porcelain` and can never
+    trip root-freshness's `ROOT_DIRTY` check on its own idempotent bootstrap write (the D6 defect:
+    a prep script calling `ensure` more than once in one clone, e.g. the planner's composite
+    epic+story session, fell off prep mid-run). `_ensure_worktrees_excluded` needs a real git repo
+    (it shells out to `git rev-parse`), so `setUp` runs a plain `git init` — no origin/clone needed
+    for these pure exclude-mechanics tests."""
 
     def setUp(self):
         import tempfile
         self._tmp_ctx = tempfile.TemporaryDirectory()
         self.tmp = Path(self._tmp_ctx.name).resolve()
         self.addCleanup(self._tmp_ctx.cleanup)
+        _git(["init", "-q"], self.tmp)
+        self.exclude_path = self.tmp / ".git" / "info" / "exclude"
 
-    def test_creates_gitignore_from_scratch_when_absent(self):
-        self.assertFalse((self.tmp / ".gitignore").exists())
-        changed = workspace._ensure_gitignore_entry(self.tmp)
+    def test_creates_exclude_from_scratch_when_info_dir_present(self):
+        # `git init` already creates `.git/info/exclude` (with template comments) by default —
+        # this asserts the append path, not the from-scratch-file-creation path (covered below by
+        # deleting it first).
+        changed = workspace._ensure_worktrees_excluded(self.tmp)
         self.assertTrue(changed)
-        self.assertEqual((self.tmp / ".gitignore").read_text(encoding="utf-8"), ".worktrees/\n")
+        self.assertIn(".worktrees/\n", self.exclude_path.read_text(encoding="utf-8"))
 
-    def test_appends_to_existing_gitignore_missing_the_entry(self):
-        _write(self.tmp / ".gitignore", "*.pyc\n")
-        changed = workspace._ensure_gitignore_entry(self.tmp)
+    def test_creates_exclude_and_info_dir_from_scratch_when_both_absent(self):
+        import shutil
+        shutil.rmtree(self.tmp / ".git" / "info")
+        self.assertFalse(self.exclude_path.exists())
+        changed = workspace._ensure_worktrees_excluded(self.tmp)
         self.assertTrue(changed)
-        self.assertEqual(
-            (self.tmp / ".gitignore").read_text(encoding="utf-8"), "*.pyc\n.worktrees/\n"
-        )
+        self.assertEqual(self.exclude_path.read_text(encoding="utf-8"), ".worktrees/\n")
+
+    def test_appends_to_existing_exclude_missing_the_entry(self):
+        _write(self.exclude_path, "*.pyc\n")
+        changed = workspace._ensure_worktrees_excluded(self.tmp)
+        self.assertTrue(changed)
+        self.assertEqual(self.exclude_path.read_text(encoding="utf-8"), "*.pyc\n.worktrees/\n")
 
     def test_appends_newline_first_when_file_has_no_trailing_newline(self):
-        _write(self.tmp / ".gitignore", "*.pyc")
-        workspace._ensure_gitignore_entry(self.tmp)
-        self.assertEqual(
-            (self.tmp / ".gitignore").read_text(encoding="utf-8"), "*.pyc\n.worktrees/\n"
-        )
+        _write(self.exclude_path, "*.pyc")
+        workspace._ensure_worktrees_excluded(self.tmp)
+        self.assertEqual(self.exclude_path.read_text(encoding="utf-8"), "*.pyc\n.worktrees/\n")
 
     def test_second_call_is_a_byte_level_noop_and_leaves_mtime_untouched(self):
-        workspace._ensure_gitignore_entry(self.tmp)
-        gi = self.tmp / ".gitignore"
-        mtime_before = gi.stat().st_mtime_ns
+        workspace._ensure_worktrees_excluded(self.tmp)
+        mtime_before = self.exclude_path.stat().st_mtime_ns
 
-        changed = workspace._ensure_gitignore_entry(self.tmp)
+        changed = workspace._ensure_worktrees_excluded(self.tmp)
         self.assertFalse(changed)
-        mtime_after = gi.stat().st_mtime_ns
+        mtime_after = self.exclude_path.stat().st_mtime_ns
         self.assertEqual(
             mtime_before, mtime_after,
             "an already-present entry must leave the file byte-for-byte untouched (not even mtime)",
         )
 
     def test_entry_present_anywhere_in_file_is_recognized_not_just_at_end(self):
-        _write(self.tmp / ".gitignore", ".worktrees/\n*.pyc\n")
-        changed = workspace._ensure_gitignore_entry(self.tmp)
+        _write(self.exclude_path, ".worktrees/\n*.pyc\n")
+        changed = workspace._ensure_worktrees_excluded(self.tmp)
         self.assertFalse(changed)
-        self.assertEqual(
-            (self.tmp / ".gitignore").read_text(encoding="utf-8"), ".worktrees/\n*.pyc\n"
-        )
+        self.assertEqual(self.exclude_path.read_text(encoding="utf-8"), ".worktrees/\n*.pyc\n")
 
     def test_tolerates_surrounding_whitespace_on_the_existing_line(self):
-        _write(self.tmp / ".gitignore", "  .worktrees/  \n")
-        changed = workspace._ensure_gitignore_entry(self.tmp)
+        _write(self.exclude_path, "  .worktrees/  \n")
+        changed = workspace._ensure_worktrees_excluded(self.tmp)
         self.assertFalse(changed)
+
+    def test_never_touches_gitignore_working_tree_file(self):
+        # D6's own regression: the write must land ONLY in info/exclude, never in a working-tree
+        # .gitignore this function could see or create.
+        changed = workspace._ensure_worktrees_excluded(self.tmp)
+        self.assertTrue(changed)
+        self.assertFalse((self.tmp / ".gitignore").exists())
+
+    def test_leaves_a_pre_existing_gitignore_bootstrap_line_untouched(self):
+        # A .gitignore an earlier (pre-fix) v2 run left behind is harmless dead weight — this
+        # function must not migrate, rewrite, or remove it (D6 fix constraint 2).
+        _write(self.tmp / ".gitignore", ".worktrees/\n")
+        changed = workspace._ensure_worktrees_excluded(self.tmp)
+        self.assertTrue(changed)  # info/exclude still gets its own entry
+        self.assertEqual(
+            (self.tmp / ".gitignore").read_text(encoding="utf-8"), ".worktrees/\n",
+            "a pre-existing .gitignore bootstrap line must be left byte-for-byte alone",
+        )
+
+    def test_git_common_dir_resolves_correctly_from_inside_a_linked_worktree(self):
+        # Verified live against real git behavior (not assumed): --git-common-dir from INSIDE a
+        # linked worktree resolves to the MAIN repo's shared .git dir (never the worktree's own
+        # private per-worktree admin dir, which --git-dir would return instead) — the property
+        # this fix relies on for "applies to all linked worktrees."
+        _git(["config", "user.email", "test@test.com"], self.tmp)
+        _git(["config", "user.name", "test"], self.tmp)
+        _write(self.tmp / "README.md", "seed\n")
+        _git(["add", "README.md"], self.tmp)
+        _git(["commit", "-q", "-m", "seed"], self.tmp)
+        wt_path = self.tmp / "wt"
+        _git(["worktree", "add", "-q", "-b", "feature-x", str(wt_path)], self.tmp)
+        self.addCleanup(lambda: _git(["worktree", "remove", "-f", str(wt_path)], self.tmp))
+
+        common_from_root = workspace._git_common_dir(self.tmp)
+        common_from_worktree = workspace._git_common_dir(wt_path)
+        self.assertEqual(common_from_root, common_from_worktree)
+        self.assertEqual(common_from_root, (self.tmp / ".git").resolve())
+
+        # A write from inside the worktree's context must land in the SAME shared file.
+        changed = workspace._ensure_worktrees_excluded(wt_path)
+        self.assertTrue(changed)
+        self.assertIn(".worktrees/\n", self.exclude_path.read_text(encoding="utf-8"))
 
 
 def _seed_repo_with_hooks(seed_dir, setup_block=None, teardown_block=None, in_file="CLAUDE.md"):
@@ -233,15 +286,10 @@ class WorkspaceGitSandboxTestCase(unittest.TestCase):
         self.clone = gitsandbox.mk_clone(self.origin)
         self.addCleanup(self.clone.cleanup)
         self.root = self.clone.path
-        # Pre-seed .gitignore so the very first ensure/root-freshness check in a test never trips
-        # ROOT_DIRTY on workspace.py's own idempotent .gitignore write (see the implementor
-        # report: a fresh consuming repo's first-ever ensure leaves .gitignore uncommitted by
-        # design — an operator commits it once; these tests seed it already-committed so each
-        # test can assert its OWN scenario without that one-time bootstrap noise).
-        _write(self.root / ".gitignore", ".worktrees/\n")
-        _git(["add", ".gitignore"], self.root)
-        _git(["commit", "-m", "seed gitignore"], self.root)
-        _git(["push", "origin", "HEAD:main"], self.root)
+        # No .gitignore pre-seed needed (D6 fix): the `.worktrees/` exclusion now lands in
+        # info/exclude, outside the working tree, so it can never appear in `git status
+        # --porcelain` and can never trip ROOT_DIRTY on its own idempotent write — a fresh clone's
+        # very first ensure/root-freshness check is clean with no bootstrap workaround required.
 
     def _run(self, args):
         rc, out, err = _run_cli(args + ["--root", str(self.root)])
@@ -376,11 +424,16 @@ class EnsureWorkTests(WorkspaceGitSandboxTestCase):
         self.assertEqual(envelope["decision"]["context"]["existing_path"], str(elsewhere))
         self.assertFalse((self.root / ".worktrees" / "feature-y").exists())
 
-    def test_ensures_gitignore_entry_present_after_create(self):
-        # Already seeded in setUp, so assert it is STILL present (not duplicated).
+    def test_ensures_worktrees_excluded_via_info_exclude_after_create(self):
+        # D6 fix: the exclusion lands in info/exclude, never <root>/.gitignore. Two ensures in a
+        # row (D6's own regression) must not duplicate the entry, and — the core of D6 — must not
+        # leave the working tree dirty (the self-inflicted-ROOT_DIRTY bug this replaces).
         self._envelope(["ensure", "--work", "feature-x", "--base", "main"])
-        text = (self.root / ".gitignore").read_text(encoding="utf-8")
+        self._envelope(["ensure", "--work", "feature-y", "--base", "main"])
+        text = (self.root / ".git" / "info" / "exclude").read_text(encoding="utf-8")
         self.assertEqual(text.count(".worktrees/"), 1)
+        self.assertFalse((self.root / ".gitignore").exists())
+        self.assertEqual(_git(["status", "--porcelain"], self.root), "", "root must stay clean")
 
     def test_root_not_on_main_short_circuits_before_any_worktree_op(self):
         _git(["checkout", "-b", "not-main"], self.root)
@@ -484,12 +537,32 @@ class EnsureReadTests(WorkspaceGitSandboxTestCase):
         envelope = self._envelope(["ensure", "--read", "main"])
         self.assertEqual(envelope["status"], "ok")
 
-    def test_ensure_read_also_maintains_gitignore(self):
-        import shutil
-        (self.root / ".gitignore").unlink()
-        self.assertFalse((self.root / ".gitignore").exists())
+    def test_ensure_read_also_maintains_worktrees_exclude(self):
         self._envelope(["ensure", "--read", "main"])
-        self.assertIn(".worktrees/", (self.root / ".gitignore").read_text(encoding="utf-8"))
+        text = (self.root / ".git" / "info" / "exclude").read_text(encoding="utf-8")
+        self.assertIn(".worktrees/", text)
+        self.assertFalse((self.root / ".gitignore").exists())
+
+    def test_ensure_read_root_freshness_check_survives_a_prior_ensure_in_the_same_clone(self):
+        # D6's own regression, at the ensure --read call site: `ensure --read` writes info/exclude
+        # (no root-freshness gate of its own), but a LATER `ensure --work`/`root-status` call in
+        # the SAME clone must not see that prior write as ROOT_DIRTY -- the exact composite-session
+        # symptom (a second prep call fell off prep onto gh_gather mid-run).
+        self._envelope(["ensure", "--read", "main"])
+        envelope = self._envelope(["ensure", "--work", "feature-x", "--base", "main"])
+        self.assertEqual(envelope["status"], "ok")
+        root_status = self._envelope(["root-status"])
+        self.assertEqual(root_status["status"], "ok")
+
+    def test_root_dirty_guard_keeps_its_teeth_after_info_exclude_write(self):
+        # The D6 fix must not weaken ROOT_DIRTY into a no-op: after a prior ensure --read has
+        # written info/exclude (which must NOT dirty root), a genuine USER-authored uncommitted
+        # working-tree file must still trip ROOT_DIRTY on the next freshness check.
+        self._envelope(["ensure", "--read", "main"])
+        _write(self.root / "user-dirty.txt", "a real uncommitted change\n")
+        envelope = self._envelope(["ensure", "--work", "feature-x", "--base", "main"])
+        self.assertEqual(envelope["status"], "needs_decision")
+        self.assertEqual(envelope["decision"]["code"], "ROOT_DIRTY")
 
 
 class RemoveWorkTests(WorkspaceGitSandboxTestCase):

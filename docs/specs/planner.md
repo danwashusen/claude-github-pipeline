@@ -253,3 +253,49 @@ therefore an **expected, explained parity divergence**: an S13/S15 (or any later
 comparing v1 against v2 on a repo state with an incidental digit collision will legitimately see v2
 route differently (correctly) from v1 (which inherits the false positive) — the divergence is the
 fix working as intended, not a v2 regression to chase down.
+
+**Bug (d) — composite epic+story session: v1's own JIT guidance can't reach its own routing
+decision (source-verified AND live-observed at S13's scenario-3 parity run — stronger evidence than
+Bug (c), which is source-only).**
+
+Requirement: *when this skill is invoked on a story whose open parent epic has no plan yet — the
+"composite" case — the guidance for what to do (bootstrap the epic plan inline, then continue to
+the story) must be in context at the point the routing decision is made, not only after.*
+
+Falsifiable test: given a story under an open parent epic with no epic plan yet, an **unaided**
+v1 session (no operator prompting) must reach the "bootstrap the epic plan inline, then continue"
+decision from its own in-context guidance at Step 3 ("Route by shape") — the point where it decides
+this is a Just-in-time-story-planning invocation — without stalling to ask the user what to do.
+
+Real occurrence, verified against the frozen v1 source and observed live: v1's "Just-in-time story
+planning" section opens by asserting its own precondition — `skills/github-issue-planner/
+SKILL.md:429`: *"the epic plan is already posted with its `## Story contracts`"* — a precondition
+the composite case, by definition, violates (the whole point of the composite case is that no epic
+plan exists yet). The section's own worked guidance for exactly this violated-precondition case —
+*"Bootstrapping the epic plan first ... is a reasonable judgment call, not a documented default
+path"* — lives in `references/handoff-renderings.md:56` (the "Epic-plus-story hybrid, one session"
+rendering's lead paragraph), a file that `SKILL.md:450` force-reads only *"before composing the
+handoff"* — i.e. at Step 12, the very last step of the run, long after Step 3's routing decision has
+already had to be made without it. So the one place in the v1 source that tells the model what to
+do when Step 3's precondition fails is structurally unreachable at Step 3 itself. Live-observed at
+S13's scenario-3 parity run (`docs/specs/parity/planner.md`, scenario 3, D5): an unaided v1 session
+invoked on a composite story stalled at routing, asking the operator what to do — **twice** (two
+operator resumes were required to complete the v1 leg) — while the v2 leg (`skills/planner/
+playbooks/story-jit.md`) completed the identical scenario with **zero** gates, because its
+bootstrap-when-absent guidance is authored directly inside the playbook the router reads *at route
+time*, not deferred to a handoff-composition reference read at the end of the run.
+
+**v2 consequence:** the composite epic+story session is a first-class, in-route-time-context case
+in v2 — `story-jit.md`'s "Bootstrap the epic plan when absent" bullet is read by the router before
+any routing/grounding decision is made, not force-read only at handoff time. The v1 "force a Read
+of a reference file at a specific step so its content reaches context regardless of where the
+initial skill load truncated" workaround class (`CLAUDE.md`'s own documented device, used
+repeatedly across v1 `SKILL.md`s) is retired for this case in v2: the guidance a routing decision
+needs lives where the routing decision is made, so no forced-read choreography is needed to get it
+there in time.
+
+**Parity-protocol consequence:** gate-count comparisons on a composite-session scenario are **not
+comparable** between v1 and v2 under this defect — a live v1 gate count on such a scenario measures
+this structural stall, not a genuine decision requiring a human, so a parity run's "same genuine
+decisions gated" check must treat v1's composite-case gates as explained by this defect rather than
+as evidence of a decision v2 silently skipped.

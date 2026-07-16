@@ -150,7 +150,7 @@ its §review-loop, its S6 DoD projection) that carry the same numbering v1 used,
 - **Don't nest worktrees or write the root.** The root is the read-only `main` vantage — never branch,
   commit, stash, or test there. All code work happens in `facts.workspace.path` (prep ensured it); when a
   second view is needed, read `facts.read_workspaces.audit.path`. Prep + `workspace.py` own worktree
-  creation, reuse, and the `.gitignore` entry — the prompt never runs `git worktree add`.
+  creation, reuse, and the `.worktrees/` exclusion — the prompt never runs `git worktree add`.
 - **Don't auto-clean worktrees.** A worktree may contain unpushed commits or in-flight edits. Cleanup is
   the evaluator's job (the only automatic remover) or the user's manual call — the resolver creates
   worktrees and never removes them.

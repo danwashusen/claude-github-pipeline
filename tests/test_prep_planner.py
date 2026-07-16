@@ -543,6 +543,29 @@ class RootDecisionPropagationTests(PrepPlannerSandboxTestCase):
         self.assertEqual(envelope["status"], "needs_decision")
         self.assertEqual(envelope["decision"]["code"], "ROOT_DIRTY")
 
+    def test_second_prep_planner_run_in_the_same_clone_is_not_root_dirty(self):
+        # D6 regression at the prep-script level: the live-observed symptom was a composite
+        # epic+story planner session's SECOND prep_planner.py call falling off prep onto gh_gather
+        # mid-run because the FIRST call's workspace.py ensure --read had written <root>/.gitignore
+        # (a working-tree file), which the second call's root-freshness check then read as
+        # ROOT_DIRTY. Fixed by moving that write to info/exclude (workspace.py's
+        # `_ensure_worktrees_excluded`) — two prep_planner.py runs against the same clone must both
+        # come back `status: ok`, never a self-inflicted ROOT_DIRTY on the second.
+        # (This harness's own setUp pre-seeds a COMMITTED .gitignore for an unrelated, still-valid
+        # reason — a fresh consuming repo's first-ever ensure previously left one uncommitted; that
+        # pre-seed predates this fix and stays harmless, so its presence here is expected, not a
+        # sign the fix regressed.)
+        gitignore_before = (self.root / ".gitignore").read_text(encoding="utf-8")
+        first = self._envelope(fixture_case="prep_planner_row_default")
+        self.assertEqual(first["status"], "ok")
+        second = self._envelope(fixture_case="prep_planner_row_default")
+        self.assertEqual(second["status"], "ok")
+        self.assertTrue(second["root"]["fresh"])
+        # The pre-seeded, already-committed .gitignore must be left byte-for-byte untouched by
+        # either run — the fix writes ONLY info/exclude, never this file.
+        self.assertEqual((self.root / ".gitignore").read_text(encoding="utf-8"), gitignore_before)
+        self.assertEqual(_git(["status", "--porcelain"], self.root), "", "root must stay clean")
+
 
 class RefreshModeTests(PrepPlannerSandboxTestCase):
     """--refresh re-derives volatile facts without re-running root freshness or re-ensuring the

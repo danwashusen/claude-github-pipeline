@@ -238,8 +238,15 @@ PR.
   silent discard), `gc`, `root-status`, `lint`, root freshness (verify root on `main` + clean →
   fetch → `--ff-only` → record SHA; failures are `ROOT_NOT_ON_MAIN` / `ROOT_DIRTY` /
   `ROOT_DIVERGED` decisions, never auto-fixed), hook execution (discovering
-  `<!-- worktree-setup/teardown -->` blocks via `config_block.py`), the `.gitignore` entry, and
-  branch-exclusivity handling (`BRANCH_IN_USE` when the branch is checked out elsewhere).
+  `<!-- worktree-setup/teardown -->` blocks via `config_block.py`), the `.worktrees/` exclusion, and
+  branch-exclusivity handling (`BRANCH_IN_USE` when the branch is checked out elsewhere). The
+  `.worktrees/` exclusion is maintained in the repo's `info/exclude` (resolved via `git rev-parse
+  --git-common-dir`, so it applies uniformly whether `--root` is the main checkout or itself a
+  linked worktree) — **never** a `<root>/.gitignore` edit: `info/exclude` lives under the git
+  directory, outside the working tree, so the idempotent bootstrap write can never surface in
+  `git status --porcelain` and can never trip root-freshness on its own write. This also means the
+  consuming repo is never asked to commit a plugin-authored `.gitignore` line; a pre-existing
+  `.worktrees/` line an earlier run left in a real `.gitignore` is inert and untouched.
 - **The single-workspace invariant**: a session's prompt-visible rule is "your workspace is
   `facts.workspace.path`" — every Read/Grep/Explore/test/command targets it by absolute path.
   When a flow needs a second view, prep hands out an additional *named* read workspace in the
