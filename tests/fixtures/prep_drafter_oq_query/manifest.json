@@ -1,0 +1,4 @@
+[
+  {"argv": ["issue", "list", "--repo", "octo/widgets", "--state", "all", "--label", "question", "--search", "cache eviction policy", "--json", "number,title,state,labels"],
+   "stdout_file": "question_search.json", "exit_code": 0}
+]

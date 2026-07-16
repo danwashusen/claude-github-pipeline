@@ -1,0 +1,4 @@
+[
+  {"argv": ["label", "list", "--repo", "octo/widgets", "--limit", "100", "--json", "name,description,color"],
+   "stdout_file": "labels.json", "exit_code": 0}
+]

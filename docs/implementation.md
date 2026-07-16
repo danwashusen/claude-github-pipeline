@@ -445,10 +445,10 @@ heuristic cue list; revise-mode gather (issue + plan pointer + PR list); epic-re
 staging conventions.
 
 **DoD**
-- [ ] Fixtures derive the vector for new, revise, and epic-revise correctly.
-- [ ] OQ candidate search fixtures: match and no-match.
-- [ ] Template/label inventory correct on present/absent fixtures.
-- [ ] Conformance + call budget.
+- [x] Fixtures derive the vector for new, revise, and epic-revise correctly.
+- [x] OQ candidate search fixtures: match and no-match.
+- [x] Template/label inventory correct on present/absent fixtures.
+- [x] Conformance + call budget.
 
 **Testing:** shim-backed unit tests; read-only live smoke.
 

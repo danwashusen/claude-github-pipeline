@@ -704,6 +704,46 @@ sandbox, or delete anything outside the working tree and the sandbox.
   extensions → orchestrator sanity (801 both platforms) → 1 opus reviewer (CHANGES REQUIRED, 1
   actionable + 4 advisories) → fix round + authorized spec addendum → re-verify (**PASS**).
 
+### S14 — `prep_drafter.py` — ACCEPTED (2026-07-17)
+
+- **Commit:** _backfilled post-commit_ (`S14: prep_drafter.py — drafter facts + oq_tracker
+  promotion`).
+- **DoD:** all 4 boxes ticked, verified this session (reviewer PASS, 0 actionable).
+- **Deliverables:** `scripts/prep_drafter.py` (three-mode vector `new`/`revise`/`epic-revise` —
+  spec-faithful: no `--issue` → new/type-null [freeform classification is the router's judgment];
+  epic target → epic-revise; else revise with question-type → `question.md`), repo-context
+  inventory (templates; labels; PRD 4-candidate-path search per v1 SKILL.md:168), the
+  `<!-- drafter-open-question-markers -->` block via the shared reader (+ `heuristics_active`
+  fallback), search-before-file OQ candidates + `--oq-query`, revise/epic-revise gathers
+  (`references_issue`-filtered; the drafter-specific `closedByPullRequestsReferences`/
+  `projectItems` extra-json), the epic-revise checkbox/live-state mismatch **attention** line
+  (reports, never reconciles). `tests/test_prep_drafter.py` (59) + 17 fixture dirs. Budget
+  two-sided: **new 1 < revise 5 < epic-revise 5+N**.
+- **Promotion (the third consumer rule, S12 precedent):** the OQ tracker search →
+  `scripts/oq_tracker.py` (single-purpose module; `pipelib` would invert layers); `prep_planner`
+  refactored byte-identically (its 69 tests unmodified, green; the `build_oq_query` alias +
+  `import parse` shim sanctioned by the tests-unmodified bar).
+- **Ruling of record — no root-freshness for the drafter (FAITHFUL):** §12's invariant ("gate
+  config read only at the recorded root main SHA, never from a PR head") has a threat model — a PR
+  weakening its own gates — that is structurally inapplicable to the root-only drafter (no PR head
+  is ever read; v1 grounds on the ambient, likely-dirty tree by design). `root` carries `{path,
+  sha}` only; `--refresh` deliberately omitted (nothing to skip). **§6 amended** (one-line
+  clarification: the pinning binds workspace-operating skills; anchors stable) so the prose no
+  longer contradicts the ruling.
+- **S15-authoring flags (carried into the S15 brief):** `config.oq_markers` is NOT trust-pinned
+  (ambient read — never treat it like resolver/evaluator gate blocks); the mismatch attention line
+  is report-only (the router owns any body write); `suggested_playbook` proposes
+  `new`/`revise`/`epic-split`/`question` (epic-split shared by fresh-epic + epic-revise; the real
+  contract is `vector.{mode,type}`); referenced-issue + story epic-backlink lookups are flow-time
+  (§1), not facts.
+- **Live smoke (read-only, 5 targets):** #4 → revise/standard, #5 → revise/question (→
+  `question.md`), #58 → epic-revise with both stories correctly state-reconciled, #1 → epic-revise
+  with `stories: []` (independently re-confirming the seed gap), new-mode → real block + 15 labels.
+- **Dual-platform:** **881/881** macOS + Linux. Census untouched.
+- **Process:** 1 sonnet implementor → orchestrator sanity (both platforms) → 1 opus reviewer
+  (**PASS, 0 actionable**, 3 advisories; five rulings all favorable) → reviewer-specified
+  micro-round (§6 line + dead import). **0 actionable rounds.**
+
 ### Session-mechanics note (the 2026-07-04 session)
 
 The `.claude/agents/{implementor,reviewer}.md` definitions committed in setup are **not hot-loaded**

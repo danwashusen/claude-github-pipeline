@@ -107,25 +107,43 @@ independently-derived sha. ``plan_ref`` itself always rides as a BARE branch nam
 S13's job (docs/specs/planner.md's "Read ref vs recorded ref"), not a fact this prep computes.
 
 **Bug (a) — the deterministic open-question tracker de-dup search
-(:func:`_build_open_question_candidates`).** docs/specs/planner.md's frozen falsifiable
-requirement: a genuinely-filed `question` issue must NEVER be recorded "(not filed)" in a posted
-plan. `open-question-detection.md` §Matching names the exact mechanism and its query-derivation
-rule: run `gh issue list --repo <owner/repo> --state all --label question --search "<query>"` for
-every entry the issue's own `## Open questions` section (`parse.parse_oq_links`) currently records
-as `question: (not filed)` — `<query>` is deterministically the entry's own `oq_id` (the
-backtick-quoted id/topic-phrase every `- OQ: `<id>` ...` line already carries; per the shared
-contract this is "the OQ's tracker id when it has one ... or its distinctive topic keywords when
-detection was heuristic" — either way, the SAME field, no separate keyword-extraction heuristic
-needed). Entries whose `question` field is already `#N` are NOT re-searched (already resolved; no
-"(not filed)" claim is being made). A repo/issue with no `## Open questions` section makes ZERO
-`gh` calls for this fact (this step's canonical call-budget fixture has none). Results ride verbatim
-as `open_question_candidates: [{"oq_id", "query", "candidates": [{"number","title","state","labels"},
-...]}, ...]` — the planner's own prompt can therefore never silently record "(not filed)" for an
-entry this fact lists without first consulting it; :func:`_build_attention` also surfaces an
-unmissable `attention` line per non-empty candidate group. For an OQ the plan detects **anew
-during grounding** (never in the issue body, so absent from the body-driven search above), the
-``--oq-query`` one-shot mode (:func:`build_oq_query`) runs the identical search on demand — the
-S13-authorized additive extension that keeps the raw `gh issue list` out of the playbook prompt.
+(now `oq_tracker.build_open_question_candidates`; see the "S14 promotion" paragraph below).**
+docs/specs/planner.md's frozen falsifiable requirement: a genuinely-filed `question` issue must
+NEVER be recorded "(not filed)" in a posted plan. `open-question-detection.md` §Matching names the
+exact mechanism and its query-derivation rule: run `gh issue list --repo <owner/repo> --state all
+--label question --search "<query>"` for every entry the issue's own `## Open questions` section
+(`parse.parse_oq_links`) currently records as `question: (not filed)` — `<query>` is
+deterministically the entry's own `oq_id` (the backtick-quoted id/topic-phrase every `- OQ: `<id>`
+...` line already carries; per the shared contract this is "the OQ's tracker id when it has one
+... or its distinctive topic keywords when detection was heuristic" — either way, the SAME field,
+no separate keyword-extraction heuristic needed). Entries whose `question` field is already `#N`
+are NOT re-searched (already resolved; no "(not filed)" claim is being made). A repo/issue with no
+`## Open questions` section makes ZERO `gh` calls for this fact (this step's canonical call-budget
+fixture has none). Results ride verbatim as `open_question_candidates: [{"oq_id", "query",
+"candidates": [{"number","title","state","labels"}, ...]}, ...]` — the planner's own prompt can
+therefore never silently record "(not filed)" for an entry this fact lists without first consulting
+it; :func:`_build_attention` also surfaces an unmissable `attention` line per non-empty candidate
+group. For an OQ the plan detects **anew during grounding** (never in the issue body, so absent
+from the body-driven search above), the ``--oq-query`` one-shot mode (now
+`oq_tracker.build_oq_query`, aliased below as :func:`build_oq_query`) runs the identical search on
+demand — the S13-authorized additive extension that keeps the raw `gh issue list` out of the
+playbook prompt.
+
+**S14 promotion.** `_search_question_tracker` / `_build_open_question_candidates` / `build_oq_query`
+were this module's own S12/S13 helpers until S14's `prep_drafter.py` needed the byte-identical
+mechanism for its own search-before-file companion-question de-dup (docs/specs/drafter.md Step
+3.5/R4 — the SAME deterministic query rule, not a similarly-shaped-but-distinct local `gh` call).
+Unlike this module's epic-branch/parent-epic/story-state helpers (which stay local per-prep because
+their shapes only coincidentally rhyme with a sibling prep's), this one **is** the literal same
+algorithm serving the same shared contract (`open-question-detection.md` §Matching, named by both
+`docs/specs/planner.md` and `docs/specs/drafter.md`) — so it is now `oq_tracker.py` (a new,
+single-purpose module; `scripts/pipelib/` is the wrong layer, since `pipelib` must never import a
+`scripts/*.py` sibling and this mechanism itself composes `parse.parse_oq_links`). This module was
+refactored to call `oq_tracker.build_open_question_candidates` in-process instead of carrying its
+own copy — its envelope is byte-identical (verified: `tests/test_prep_planner.py` is unmodified and
+green). `build_oq_query` is kept as a module-level alias (`build_oq_query = oq_tracker.build_oq_query`)
+so the one direct-call test line (`prep_planner.build_oq_query(...)`) and this module's own CLI
+`--oq-query` call site keep working unchanged.
 
 **The shared config-block reader promotion (S9-carried advisory, authorized for S12).**
 `_read_block_anywhere` (plus its `_candidate_config_files`/`_find_includes_one_level` helpers) was
@@ -150,7 +168,11 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 import config_block  # noqa: E402  (import after sys.path setup, by necessity; in-process composition)
 import gh_gather  # noqa: E402
 import gh_pr_gather  # noqa: E402
-import parse  # noqa: E402
+import oq_tracker  # noqa: E402
+import parse  # noqa: E402  (no longer called directly by this module's own code — kept as an
+# import so `prep_planner.parse` still resolves for tests/test_prep_planner.py's one direct
+# `prep_planner.parse.parse_oq_links(...)` call, matching the S14-promotion's "tests unmodified"
+# bar; `oq_tracker.py` is this module's own OQ-search composition path now)
 import workspace  # noqa: E402
 from pipelib import process  # noqa: E402
 from pipelib.decisions import AMBIGUOUS, AUTH_REQUIRED, MARKER_AMBIGUOUS, needs_decision  # noqa: E402
@@ -173,10 +195,6 @@ RESEARCH_MARKER = "<!-- issue-research:v1 -->"
 # planner, staged for both an epic-as-target run (its OWN delivery log, informational) and a
 # story-under-epic JIT run (the reconciliation input against the epic plan's pinned contracts).
 DELIVERY_LOG_MARKER = "<!-- epic-delivery-log:v1 -->"
-
-# The `question`-issue label (skills/_shared/question-issue.md) — the Bug (a) tracker search's
-# `--label` filter.
-QUESTION_LABEL = "question"
 
 ROOT_MAIN_BRANCH = "main"
 
@@ -604,110 +622,13 @@ def _select_plan_ref(issue_type, epic_branch_name, open_pr_headref, parent_epic_
 
 
 # ---------------------------------------------------------------------------
-# Bug (a) — the deterministic open-question tracker de-dup search (see module docstring).
+# Bug (a) — the deterministic open-question tracker de-dup search. S14-promoted to `oq_tracker.py`
+# (see the module docstring's "S14 promotion" paragraph) — `build_oq_query` is kept as a
+# module-level alias so `prep_planner.build_oq_query(...)` (this module's own CLI `--oq-query` call
+# site, and tests/test_prep_planner.py's one direct-call test line) keeps working unchanged.
 # ---------------------------------------------------------------------------
 
-
-def _search_question_tracker(repo, query, cwd=None):
-    """`gh issue list --repo <repo> --state all --label question --search "<query>"` — the exact
-    mechanism `skills/_shared/open-question-detection.md` §Matching names. Returns `(candidates,
-    decision_or_none)`; each candidate carries `number`/`title`/`state`/`labels`."""
-    result = process.run(
-        [
-            "gh",
-            "issue",
-            "list",
-            "--repo",
-            repo,
-            "--state",
-            "all",
-            "--label",
-            QUESTION_LABEL,
-            "--search",
-            query,
-            "--json",
-            "number,title,state,labels",
-        ],
-        cwd=cwd,
-    )
-    if result.auth_required:
-        return None, needs_decision(
-            AUTH_REQUIRED,
-            summary="gh authentication required",
-            context={"stderr": result.stderr, "returncode": result.returncode},
-            options=["run: gh auth login"],
-        )
-    if result.returncode != 0:
-        sys.stderr.write(result.stderr)
-        sys.exit(1)
-    raw = json.loads(result.stdout)
-    return [
-        {
-            "number": item.get("number"),
-            "title": item.get("title"),
-            "state": item.get("state"),
-            "labels": [label.get("name") for label in item.get("labels") or []],
-        }
-        for item in raw
-    ], None
-
-
-def _build_open_question_candidates(issue_body, repo, cwd=None):
-    """Parse the issue's `## Open questions` section (`parse.parse_oq_links`) and, for every entry
-    currently recorded `question: (not filed)`, run the deterministic tracker de-dup search — this
-    IS the Bug (a) fix (see module docstring for the full rationale + query-derivation rule).
-    Entries already carrying a `question: #N` are not re-searched (no "(not filed)" claim is being
-    made about them). Returns `(entries, candidates, decision_or_none)` — `entries` is the raw
-    parsed list (every OQ, regardless of question-field state); `candidates` is only the non-empty
-    tracker-match groups, keyed by `oq_id`.
-    """
-    try:
-        entries = parse.parse_oq_links(issue_body)
-    except parse._OqLinksMalformed as exc:  # noqa: SLF001 — same internal-signal reuse parse.py's
-        # own run_oq_links does; prep forwards the identical AMBIGUOUS decision rather than
-        # re-deriving it (parse.py names no dedicated OQ_LINKS_MALFORMED code).
-        return None, None, needs_decision(
-            AMBIGUOUS,
-            summary=exc.reason,
-            context={"line_number": exc.line_number, "raw_line": exc.raw_line},
-            options=[
-                "fix the entry by hand to match the schema in "
-                "skills/_shared/open-question-links.md, then re-run"
-            ],
-        )
-
-    candidates = []
-    for entry in entries:
-        if entry.get("question") != "(not filed)":
-            continue
-        query = entry["oq_id"]
-        matches, decision = _search_question_tracker(repo, query, cwd=cwd)
-        if decision is not None:
-            return None, None, decision
-        if matches:
-            candidates.append({"oq_id": entry["oq_id"], "query": query, "candidates": matches})
-
-    return entries, candidates, None
-
-
-def build_oq_query(repo, queries, cwd=None):
-    """One-shot tracker de-dup lookup for open-question topics the plan **newly detects during
-    grounding** — OQs that are NOT already in the issue body's `## Open questions` section, so
-    `_build_open_question_candidates` (body-driven) never searched them. Runs the identical
-    deterministic `gh issue list --state all --label question --search "<query>"` Bug (a) names,
-    once per `--oq-query` text. This is the authorized in-flow mechanism the playbook consults
-    before recording a newly-detected OQ as `(not filed)`, so the raw `gh issue list` stays banned
-    in the prompt (docs/specs/planner.md Bug (a); architecture.md §7 write discipline / §6 "no
-    ref/gh in prompts"). Additive: it never runs on the default facts path. Returns `(payload,
-    notices, decision_or_none)`.
-    """
-    results = []
-    for query in queries:
-        matches, decision = _search_question_tracker(repo, query, cwd=cwd)
-        if decision is not None:
-            return None, [], decision
-        results.append({"query": query, "candidates": matches})
-    return {"repo": repo, "oq_query_candidates": results}, [], None
+build_oq_query = oq_tracker.build_oq_query
 
 
 # ---------------------------------------------------------------------------
@@ -1044,9 +965,10 @@ def build_facts(issue_number, repo, root=".", scratch_dir=None, refresh=False, c
         grounding_envelope = None
         grounding_docs = []
 
-    # 7) Bug (a) — the deterministic open-question tracker de-dup search.
-    open_question_entries, open_question_candidates, oq_decision = _build_open_question_candidates(
-        issue_body, repo, cwd=cwd
+    # 7) Bug (a) — the deterministic open-question tracker de-dup search (S14-promoted; see module
+    #    docstring's "S14 promotion" paragraph).
+    open_question_entries, open_question_candidates, oq_decision = (
+        oq_tracker.build_open_question_candidates(issue_body, repo, cwd=cwd)
     )
     if _forward_decision(oq_decision):
         return None

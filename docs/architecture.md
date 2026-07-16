@@ -258,7 +258,11 @@ PR.
   names its workspace absolutely; no step depends on where the session happens to sit.
 - **Gate config is pinned to trust.** Test-target / checks / merge-policy / OQ-marker blocks are
   read by prep at the recorded root `main` SHA and embedded in facts — never from a PR head, and
-  never re-read ambiently mid-session.
+  never re-read ambiently mid-session. This pinning binds **workspace-operating** skills (resolver /
+  evaluator / planner — the ones that fork a PR-head or pinned-ref workspace off root); a
+  **root-only** skill (the drafter) reads its OQ-marker detection hint from the ambient checkout
+  instead (v1-faithful) — §12's threat model (a PR weakening its own gates) cannot apply where no
+  PR head is ever read.
 
 ## §7 GitHub I/O & write discipline
 
