@@ -468,7 +468,7 @@ open-question dispositions per `_shared`; filing via `gh_persist.py` with native
       matched tracker issue + disposition; parity-checked with a seeded doc OQ.
 - [ ] Gates from `specs/drafter.md` present; grep gates + pins; parity recorded: new bug draft,
       epic split, revise, question.
-- [ ] Router + largest playbook line count recorded in `docs/specs/parity/drafter.md` and is at
+- [x] Router + largest playbook line count recorded in `docs/specs/parity/drafter.md` and is at
       most half the v1 `SKILL.md` count in `baseline.md` ([prd.md §10](prd.md)).
 
 **Testing:** offline routing + dry-run suites; the four live parity scenarios.

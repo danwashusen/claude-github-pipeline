@@ -754,7 +754,54 @@ of truth; a **freshly started** resumed session will pick them up by name and ca
 
 ---
 
+### S15 — Drafter skill rewrite — PARTIAL (automatable done + committed; live parity PENDING) (2026-07-17)
+
+- **Commit:** _backfilled post-commit_ (`S15: skills/drafter/ — drafter cutover + _shared relabel +
+  sandbox fixes`).
+- **Status:** **1 of 5 DoD boxes ticked** (box 5, wholly offline). Boxes 1–4 carry parity language —
+  the run's fourth hard stop; S16 waits on the four drafter scenarios.
+- **Deliverables:** `skills/drafter/` from scratch — router 123 (pins `opus`/`high` verbatim; the
+  new-mode classification-override rule visible) + **spine + four routable playbooks**
+  (`new`/`revise`/`epic-split`/`question`; epic-split serves fresh-batch AND epic-revise, ruled
+  within the §5 bar) + carried judgment references (7-dimension reviewer prompt — S11-bound and
+  green; templates; renderings). Schemas **byte-identical** to the S1 captures (question-issue,
+  open-question-links). The falsifiable OQ-absorption rule with teeth (both search paths, closed
+  disposition set, native-dep wiring, "absorbing an untracked OQ silently is a defect").
+  `tests/test_drafter_routing.py` (43). Budget **270 ≤ 288** (v1 576).
+- **Authorized touches:** the S10-carried `_shared/handoff-format.md` relabel landed (question-type
+  rule → "(drafter and resolver)", exactly one line, zero census impact); the S13-queued sandbox
+  fixes landed (recipe `scripts/<module>.py` → `src/<module>.py` in both test-target blocks — the
+  "duplicated block" was the same wrong path in two distinct blocks, parser-refuted as a whole-block
+  dup — live re-seed pushed `6c5f669`, all 11 markers exactly-one-block verified).
+- **Ruling of record — the companion write-path refinement:** the v2 drafter patches **no**
+  companion `## Tracked in` (reused → a non-destructive `Related to #<build>` comment; newly-filed →
+  no back-link) — reviewer-traced as the CORRECT role split (`open-question-links.md:32` assigns
+  back-linking to the sweep; machine readers key on the build issue's native `blocked_by`); v1's
+  body-patch was an over-reach. Recorded in the parity doc as the expected scenario-4(b)
+  divergence. **Mental model for S16–S19: the drafter never back-links companions.**
+- **Dual-platform:** **924/924** macOS + Linux. Census 85, zero drops (additions all under
+  `skills/drafter/`).
+- **Process:** 1 opus implementor → orchestrator sanity (both platforms) → 1 opus reviewer
+  (CHANGES REQUIRED: one parity-doc record gap — the refinement was broader than the implementor's
+  own framing) → record fix → re-verify (**clean PASS**). **1 fix round (doc-only).**
+
 ## Handback log
+
+### 2026-07-17 handback — STOP at S15's live parity (fourth operator gate) — OPEN
+
+The run is stopped at **S15 boxes 1–4's parity halves**. Everything automatable through S15 is
+committed on `rewrite/v2-implementation` (**unpushed**; 924 offline tests green both platforms).
+
+**Operator actions (scaffolded in [`docs/specs/parity/drafter.md`](parity/drafter.md)):** the four
+scenarios — new bug draft; epic split (twins — it patches the epic); revise; question — v1
+`/github-pipeline:github-issue-drafter` vs v2 `/github-pipeline:drafter`, same headless recipe
+(fresh clone per run, 0-gate fixtures, drive via `!`). **Known expected divergences on record:**
+the companion write-path refinement (scenario 4(b) — v2 posts the `Related to #<build>` comment,
+never body-patches; confirm the breadcrumb, don't flag the deferral); Bug (c) (the reference
+filter); the v2 next-command renames. The sandbox's test-target blocks now point at
+`src/<module>.py` (fixed live, `6c5f669`). Tick boxes 1–4 when the scenarios pass; commit locally;
+never push; resume the orchestrator — it flips S15 to ACCEPTED and proceeds **S16 → S17 → S18 →
+S19 → S20**.
 
 ### 2026-07-10 handback — STOP at S13's live parity (third operator gate) — CLOSED 2026-07-17
 

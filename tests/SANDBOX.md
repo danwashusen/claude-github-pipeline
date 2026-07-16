@@ -118,7 +118,7 @@ cat >> CLAUDE.md <<'EOF'
 - wrapper: `python3 -m pytest`
 - targets:
   - `unit` (unit)
-    - naming: `tests/test_<module>.py` mirrors `scripts/<module>.py`
+    - naming: `tests/test_<module>.py` mirrors `src/<module>.py`
     - helpers-fallback: none
     - broad-change-fallback: `python3 -m pytest -q`
 <!-- /issue-resolver-test-target -->
@@ -146,7 +146,7 @@ cat >> CLAUDE.md <<'EOF'
 - full-suite-command: `python3 -m pytest -q`
 - targets:
   - `unit` (unit)
-    - naming: `tests/test_<module>.py` mirrors `scripts/<module>.py`
+    - naming: `tests/test_<module>.py` mirrors `src/<module>.py`
     - helpers-fallback: none
     - broad-change-fallback: `python3 -m pytest -q`
 <!-- /pr-evaluator-test-target -->
