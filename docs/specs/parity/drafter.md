@@ -127,7 +127,39 @@ template-conformant (built-in Bug template: Description / Steps / Expected / Act
 - [ ] **D1** — v1 and v2 file the same issue type + labels; both bodies template-conformant.
 - [ ] **D2** — handoff `Issue:` line + `Next: /github-pipeline:planner #<N>` (v2 skill name).
 - [ ] **D3** — no `## Open questions` section (no OQ in the source), no fabricated sections.
-- **Result:** _TODO (operator)_
+- **Result:** **PASS on the machine-relevant parity; two explained authoring divergences (boxes left
+  unticked — operator owns the tick + go/no-go).** Run 2026-07-17, branch `rewrite/v2-implementation`
+  (headless `claude -p --plugin-dir`, fresh clone per leg, operator-launched via `!`; GitHub was mid
+  "Partially Degraded Service" incident but every endpoint the new-mode path uses — `gh label list`,
+  `gh issue create/view`, `contents/*` — was live). **Fixture (identical both legs):** informal feedback
+  reporting a real defect — the `src/formatter_a.py` helpers (`format_currency`/`format_percent`/
+  `format_date`) are stub bodies returning raw input (`src/formatter_a.py:11,16,21`), no repo issue
+  template → built-in Bug fallback; the prompt pre-authorized filing so no gate stalls the headless run.
+  Twin A → v1 `/github-pipeline:github-issue-drafter` filed **#68**; Twin B → v2 `/github-pipeline:drafter`
+  filed **#69**. Logs: `scratchpad/v1.log`, `scratchpad/v2.log`.
+  - **Clean (machine-relevant):** same type + single label (`bug`/`bug`) — **D1 first half**. **v2 startup =
+    exactly one `prep_drafter.py` call** (the two `--oq-query` hits in the log are quoted skill text, not
+    invocations); **gates 0=0** both legs; v2's only sub-agent is the `Explore` reviewer (state-assembly is
+    the prep call, not a sub-agent). Forward route `Next: /github-pipeline:planner #69` with the v2 skill
+    rename and `plan: ✗` — **D2 substance**. No `## Open questions` section and no `**Open questions:**`
+    handoff line on either leg; no fabricated sections; **v2 correctly declined to absorb the register's
+    unrelated OQs** (`SBX-OQ-21/22` concern `audit_log.py`, not the formatter) — **D3**.
+  - **Div-1 (D1 — v1-side; v2 is the faithful leg).** Bodies are **not** section-set-identical. v2 #69
+    conforms to the shared built-in Bug template (`references/issue-templates.md`: Description / Steps /
+    Expected / Actual / Additional context; Environment omitted as N/A for a pure logic bug). v1 #68
+    embellished beyond it — renamed Description→`## Summary`, reordered, and added `## Root cause` +
+    `## Definition of done` (neither a Bug-template section). Both legs cite the same template; the
+    divergence is v1 opus authoring latitude, mirroring the S10-scenario-1 D1 "v1 opus diverged from its
+    own spec" precedent. Both issues are valid, cold-readable, identical type+label, no fabrication — no v2
+    regression.
+  - **Div-2 (D2 — v2-side rendering latitude against a correct prompt).** v1's handoff is schema-perfect
+    (`**Issue:** #68 — … · open · bug · plan: ✗` + indented fenced next-command). v2's deviates from the
+    shared handoff schema (`_shared/handoff-format.md`): heading `**Filed:**` (schema mandates one of
+    `Issue:`/`Epic:`/`Story:`), dropped the `open` state marker, added a `**Snapshot:**` block, and inlined
+    the `Next:` command instead of the fenced block. The v2 prompt (`references/handoff-renderings.md`)
+    prescribes the correct shape, so this is rendering-time non-determinism, not a prompt bug; the routing
+    substance (correct v2 skill name, copy-pasteable, `plan: ✗`) is intact. **A cheap v2-only re-run would
+    confirm reproducibility vs a systematic regression** before the operator ticks D2.
 
 ### Scenario 2 — epic split (twins, since it patches the epic)
 

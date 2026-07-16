@@ -784,6 +784,24 @@ of truth; a **freshly started** resumed session will pick them up by name and ca
 - **Process:** 1 opus implementor → orchestrator sanity (both platforms) → 1 opus reviewer
   (CHANGES REQUIRED: one parity-doc record gap — the refinement was broader than the implementor's
   own framing) → record fix → re-verify (**clean PASS**). **1 fix round (doc-only).**
+- **Live parity — Scenario 1 (new bug draft) run 2026-07-17 (operator-launched via `!`; boxes left
+  unticked — operator owns the tick).** Fixture: identical informal feedback on a real defect (the
+  `src/formatter_a.py` stub formatters, `:11,16,21`), built-in Bug fallback (no repo template),
+  filing pre-authorized so gates 0=0 headless. Twin A → v1 filed **#68**, Twin B → v2 filed **#69**,
+  both single `bug` label. **PASS on the machine-relevant parity:** v2 startup = 1 `prep_drafter.py`
+  call; gates 0=0 both legs; v2's only sub-agent the `Explore` reviewer; forward route
+  `Next: /github-pipeline:planner #69` (v2 rename) + `plan: ✗`; no `## Open questions`/no
+  `**Open questions:**` line + no fabrication on either (v2 correctly declined the register's unrelated
+  `SBX-OQ-21/22`). **Two explained authoring divergences** (details in
+  [`parity/drafter.md`](parity/drafter.md) Scenario-1 Result): **Div-1 (D1)** the bodies are not
+  section-set-identical — v2 conforms to the built-in Bug template, v1 embellished (`## Summary`
+  rename + added `## Root cause`/`## Definition of done`), a v1-side opus latitude divergence (S10-s1 D1
+  precedent), v2 the faithful leg; **Div-2 (D2)** v2's handoff rendered `**Filed:**`/dropped the `open`
+  state marker/added a `**Snapshot:**` block/inlined the `Next:` command — rendering-time latitude
+  against a correct `handoff-renderings.md` prompt, routing substance intact; a v2-only re-run would
+  confirm reproducibility vs a systematic regression before D2 is ticked. Scenarios 2–4 (epic split /
+  revise / question) still TODO. GitHub was mid "Partially Degraded Service" incident during the run;
+  the endpoints the new-mode path uses stayed live. Committed locally (unpushed).
 
 ## Handback log
 
