@@ -542,14 +542,192 @@ with the `**Epic:**` backlink first after the marker + a `## Epic contract` sect
 **story handoff whose `**Open questions:**` line renders** `(not filed) (audience:…) provisional-default`
 (bug (b) — the line is not dropped despite the composite shape).
 
-- [ ] v1 run captured.
-- [ ] v2 run captured (epic plan bootstrapped inline; story plan posted).
-- [ ] **Box 3 parity:** the composite handoff carries the `**Open questions:**` line (bug (b)).
+**Run (2026-07-16).** Twin fixture: two independent epic subtrees, **neither with a plan nor an
+`epic/<N>-<slug>` branch** — the composite case. Each epic proposes `src/audit_log.py`, an append-only
+trail, with two dependency-ordered stories: story A delivers `record(event, payload)` / `entries()`,
+story B instruments `src/greeter_a.py` + `src/initials.py` to consume it (a real cross-story seam for
+`## Story contracts` + Dimension 8). **Twin-E** → v1 `github-issue-planner`: epic **#62**, stories
+**#63**/**#64**. **Twin-F** → v2 `planner`: epic **#65**, stories **#66**/**#67**. Both legs invoked on
+**story A** (#63 / #66).
+
+Shared grounding seeded onto sandbox `main` at **`46888c2`** (`12fa50d..46888c2`): `docs/open-questions.md`
+— the register the sandbox's `<!-- drafter-open-question-markers -->` block has always named but which
+never existed — plus `docs/prd.md` §2 (audit trail) and `docs/architecture.md` §3 (module layout). Neither
+leg writes code, so `main` stayed `46888c2` across both. Headless recipe as S7/S10/S13-1/S13-2 (**fresh
+sandbox clone per leg**).
+
+**The OQ fixture (drives boxes 3 + 4).** Story A's body carries an `<!-- open-question-links:v1 -->`
+section with **two** `provisional-default` entries, both recorded `question: (not filed)`:
+- `SBX-OQ-21` (audience:developer) — **genuinely unfiled**. The tracker search returns nothing, so
+  `(not filed)` is truthful. This is the entry box 3 expects in the handoff line.
+- `SBX-OQ-22` (audience:architect) — **the bug-(a) trap**: the body's `(not filed)` is *stale*, because
+  question **#61** ("does the audit trail cap retention…", open, `question` + `audience:architect`)
+  genuinely exists and names it. A correct planner must cite `#61`, never `(not filed)`. Without this
+  trap the candidate list is empty either way and box 4 is unfalsifiable — an empty list cannot
+  distinguish "searched and found nothing" from "never searched".
+
+Pre-run verification (throwaway clone, one prep call): `vector.type=story · mode=fresh ·
+plan_ref_row=story-parent-epic-bootstrap`, `plan_ref=main`, `suggested_playbook=story-jit.md`,
+`story.parent_epic={65, OPEN}`, `parent_epic_open=true`, `story.epic_plan.present=false`,
+`epic_branch.match_count=0`, `epic_delivery_log.present=false`,
+`read_workspaces.grounding.sha=46888c28c…`, `open_question_candidates=[{oq_id: SBX-OQ-22 → [#61 OPEN]}]`,
+`attention=["open question 'SBX-OQ-22' has 1 tracker candidate(s) — do not record it as (not filed)"]`.
+**This is the first live sighting of the D4 row-split fix**: `plan_ref_row: story-parent-epic-bootstrap`
+now sits alongside `parent_epic_open: true` without contradicting it — the exact self-contradiction
+scenario 2 filed, and the precondition that entry set for this run.
+
+- [ ] v1 run captured — **required two operator answers to complete; see D5.** Ran in three segments:
+      the initial invocation **stalled at 36 turns / $1.36 with zero writes**, ending its turn asking in
+      prose which of three options to take, because epic #62 has no plan and v1's "Just-in-time story
+      planning" (SKILL.md:433) opens *"the epic plan is already posted with its `## Story contracts`"* —
+      it has **no routing-time path for the composite case**. Answered **"C"** (v1's own third option:
+      plan the epic and this story in one session). It then stalled a **second** time (13 turns / $1.17)
+      on a genuine §6.5 design-decision gate — the audit **entry shape**, tuple vs dict — which v2 never
+      fired (D5). Answered **"1"** (v1's own recommendation, tuple — deliberately *not* v2's dict, which
+      would have steered the comparison). It then ran clean: 141 turns / $8.04, both plans posted —
+      epic [comment `4988682690`](https://github.com/danwashusen/gh-pipeline-sandbox/issues/62#issuecomment-4988682690)
+      (3 verify passes), story [comment `4988736290`](https://github.com/danwashusen/gh-pipeline-sandbox/issues/63#issuecomment-4988736290)
+      (2 passes), both body pointers added, **`planned` applied via a raw `gh issue edit --add-label
+      planned`** ×2 (v1's documented write-path gap). Both grounded `origin/main@46888c2`. Sub-agents ×12:
+      `github-ops` ×7 (`GATHER_ISSUE` "Gather issue 63", `GATHER_EPIC` "Gather epic 62", "Gather question
+      61", `PERSIST_COMMENT` ×2, `PERSIST_BODY` ×2) + `Explore` ×5 reviewers. **Totals: ~190 assistant
+      turns, $10.57, 2 prose-gates.** No per-story fan-out (#64 carries 0 plan comments).
+- [ ] v2 run captured (epic plan bootstrapped inline; story plan posted) — **completed unaided, 0 gates.**
+      **One** `prep_planner.py 66 danwashusen/gh-pipeline-sandbox` state-assembly call; routed
+      `story-jit.md` via the shared spine, bootstrapped epic #65's plan inline, and continued to #66's
+      story plan in the same session. Both posted: epic [comment `4987685061`](https://github.com/danwashusen/gh-pipeline-sandbox/issues/65#issuecomment-4987685061),
+      story [comment `4987685385`](https://github.com/danwashusen/gh-pipeline-sandbox/issues/66#issuecomment-4987685385),
+      3 verify passes each. Writes = `gh_persist.py comment` ×2 + `edit-body` ×2 + `edit-labels --add
+      planned` ×2. Sub-agents ×6 — **all `Explore` reviewers, zero gather/persist** (scripts called
+      directly). Consulted `prep_planner.py … --oq-query "SBX-OQ-21"` (box 4). **~213 assistant messages
+      (`result.num_turns`=68), $10.40.** No per-story fan-out (#67 carries 0 plan comments).
+- [ ] **Box 3 parity:** the composite handoff carries the `**Open questions:**` line (bug (b)) —
+      **YES on BOTH legs; bug (b) did not reproduce.** v2:
+      `**Open questions:** (not filed) (audience:developer) provisional-default, #61 (audience:architect)
+      provisional-default — see the plan's ## Open questions`. v1:
+      `**Open questions:** #61 (audience:architect) provisional-default, (not filed) (audience:developer)
+      provisional-default — see the plan's ## Open questions`. Both match `handoff-renderings.md`'s
+      format (`#<N> | (not filed) (audience:…) <treatment>, … — <trailing summary>`), both in the
+      planner's own treatment vocabulary (`provisional-default`, never the drafter's set), both with the
+      trailing pointer. **Why v1 passed:** `9e4222e` had already landed the composite worked example in
+      v1's own `references/handoff-renderings.md:56` — the fix the
+      [[planner-handoff-oq-composite-gap]] note recorded as the "worked-example half". Entry **order**
+      differs (v1 `#61` first, v2 body-order) — the line is explicitly free-form, order is not
+      contractual. **Not an explained divergence — a clean parity pass.**
 - [ ] **Box 4 parity:** the `(not filed)` claim was checked against the tracker before it was recorded
       (`--oq-query` for the newly-detected OQ, or `open_question_candidates` for a body-recorded one);
-      a genuinely-filed companion is cited by `#N`, never `(not filed)` (bug (a)).
-- [ ] Plan comment(s) schema-identical; `## Epic contract` cross-consumed by the evaluator/Dimension-8.
-- [ ] Divergences.
+      a genuinely-filed companion is cited by `#N`, never `(not filed)` (bug (a)) — **YES on BOTH legs;
+      the trap was defeated twice.** Both cite `question: #61` for `SBX-OQ-22` and explicitly flag the
+      body's claim as stale; both keep `SBX-OQ-21` at `(not filed)`. **v2's evidence:** prep's
+      `open_question_candidates` surfaced the #61 group (forbidding `(not filed)` per spine S6) **and**
+      it ran `--oq-query "SBX-OQ-21"` for the entry prep reported no group for; its plan records *"a
+      tracker de-dup search for `SBX-OQ-21` returned no candidate on 2026-07-16"*. **v1's evidence:** it
+      named #61 in its **first** stall message, before any resume — i.e. it ran the SKILL.md:102 mandated
+      re-search unaided. Both also keep each `## Open questions` treatment consistent with its
+      `## Risks & watchpoints` entry (v2 says so per-entry), avoiding the secondary label-mismatch defect
+      [[planner-oq-tracker-search-miss]] recorded.
+- [ ] Plan comment(s) schema-identical; `## Epic contract` cross-consumed by the evaluator/Dimension-8 —
+      **YES.** A normalized skeleton diff (twin titles / timestamps / short-sha / issue numbers masked) is
+      **empty** for *both* pairs. Epic #62 vs #65 — identical ten-section set in identical order:
+      `## Approach` · **`## Story breakdown`** · **`## Story contracts`** · **`## Integration strategy`** ·
+      `## Doc grounding` · `## Architecture decisions` · `## Changes (file-level)` · `## Test plan` ·
+      `## Risks & watchpoints` · `## Open questions`; **no `## Phases`** on either (correct for an epic).
+      Story #63 vs #66 — identical eight-section set in identical order: `## Approach` ·
+      **`## Epic contract`** · `## Doc grounding` · `## Architecture decisions` · `## Changes (file-level)` ·
+      `## Test plan` · `## Risks & watchpoints` · `## Open questions`. Both stories put the
+      `**Epic:** #<N> — <title>` backlink as the **first line after the marker** (never above it), then
+      the planned-at line; both `## Epic contract`s are `[epic-plan: #<N>]`-cited with `Delivers` +
+      `Consumes: (none)` (head story, no delivery log yet). Footers are byte-identical but for the
+      review-pass count (v1 story 2, v2 story 3) — free prose. *Cross-consumption:* `prep_resolver.py`
+      (fresh clone per issue) parses **both** story plans identically — `plan.present=true`,
+      `plan.sha=46888c2`, `comment_id` = 4988736290 (v1) / 4987685385 (v2) — and routes `story/fresh →
+      story.md` on each, i.e. the downstream resolver consumes the v2 artifact as it does the v1.
+- [ ] **Box 1 parity** (not a listed box; recorded for completeness): planned-at SHA == the grounding SHA
+      — **YES, exact, on all four plans.** v2's `read_workspaces.grounding.sha` =
+      `46888c28c0921c1e4c0ce31b7938af96218115c0`; every footer (both legs, epic + story) records
+      `origin/main@46888c2`, the 7-hex prefix. **Row recorded: `story-parent-epic-bootstrap`** — no
+      `epic/62-*` or `epic/65-*` branch existed, so `plan_ref` fell back to `main` on both legs.
+- [ ] Divergences (each traced to a PRD § / an explained gap above / a filed defect):
+      - **D1 — state-assembly + write mechanism (EXPLAINED; the documented v1→v2 cutover).** Reproduces
+        scenarios 1/2's D1 verbatim on the composite route: v1 assembles via `github-ops` `GATHER_ISSUE` +
+        `GATHER_EPIC` and writes via `PERSIST_COMMENT` / `PERSIST_BODY` + a **raw `gh issue edit
+        --add-label planned`**; v2 assembles via one `prep_planner.py` facts block and writes via
+        `gh_persist.py comment` / `edit-body` / **`edit-labels`**. Same persisted artifacts. Not a defect.
+      - **D2 — handoff `Next:` namespace (EXPLAINED; by design).** v1 → `/github-pipeline:github-issue-resolver
+        #63`; v2 → `/github-pipeline:resolver #66`. Each generation routes to its own resolver. Not a
+        divergence to chase.
+      - **D3 — footer/pointer author self-attribution reads `github-issue-planner` on *both* legs
+        (COSMETIC; identical, no parser reads it).** Reproduces scenarios 1/2's D3 on the composite route.
+        Identical on both ⇒ not a v1↔v2 schema divergence. Same optional future cleanup; not run-failing.
+      - **D5 — v1 has no *routing-time* composite path: 2 prose-gates vs v2's 0 (EXPLAINED by the v2
+        playbook split; the gate check is NOT comparable under this harness).** v1's composite guidance
+        **does exist** — `references/handoff-renderings.md:56` states the inline epic-plan bootstrap
+        verbatim ("a reasonable judgment call, not a documented default path"). But SKILL.md:450 force-reads
+        that file only *"before composing the handoff"* (Step 12), so the instruction cannot inform the
+        **Step-3 routing decision it describes**: at routing time v1 has no guidance in context, so it
+        stops and asks. v2 fixed exactly this by placing the bootstrap in `story-jit.md` — the playbook
+        read *at route time* — which is why v2 routed unaided. This is the architecture change working, not
+        a v2 regression. **Consequence for the protocol's "same genuine decisions gated" check: 0 vs 2 is
+        not a comparable result.** Per scenario 2's harness finding, `claude -p` exposes no
+        `AskUserQuestion` (both legs' tool-call count is literally 0), so a v1 gate manifests as a
+        turn-ending prose question while v2 routes around — and here v1's *first* stall is **structural,
+        not fixture-induced**, so no 0-gate fixture can remove it. The v1 artifacts above exist only
+        because the operator supplied two answers v2 never needed; they are sound for the **schema/box-3/
+        box-4 comparisons** but they are **not** evidence of gate parity.
+      - **D6 — `prep_planner` is not re-runnable within one clone: its own `.gitignore` write trips its own
+        `ROOT_DIRTY` guard (FILED DEFECT; v2-side, hit the live leg).** `scripts/workspace.py`'s
+        `_ensure_gitignore_entry` (called at `workspace.py:579`/`:649`) creates `<root>/.gitignore`
+        containing `.worktrees/`; `workspace.py:281` then raises `ROOT_DIRTY` because `git status
+        --porcelain` is non-empty. So the **second** `prep_planner.py` call in a clone fails on dirt the
+        **first** call created. This is not just an operator gotcha (it is the one
+        [[s13-scenario2-epic-parity]] recorded) — **it changed a live leg's behaviour**: the v2 session
+        tried to prep epic #65 during the composite bootstrap, hit `ROOT_DIRTY`, and fell back to
+        `gh_gather.py` + raw `gh issue view` reads, reporting the cause itself in its handback. Verified
+        post-run: `clone-v2` still shows `?? .gitignore` containing `.worktrees/`. **Scope:** only bites a
+        consuming repo with no committed `.gitignore` (the sandbox has none). **Not run-failing** — v2's
+        artifacts are correct and the router's *sole* state-assembly call is still the one prep on the
+        story (the epic prep was an extra the playbook doesn't ask for; `story-jit.md` says to bootstrap
+        "inline against `facts.story`"). Needs either an ignore of self-authored `.gitignore` dirt in the
+        root check, a `.gitignore` write deferred out of the root, or an explicit re-runnable contract.
+      - **D7 — `open_question_candidates` omits empty groups, so absence is ambiguous (RECORDED; no
+        artifact divergence).** `_build_open_question_candidates` appends a group **only** when the search
+        returns matches, so a body-recorded OQ with no candidate is indistinguishable in the facts block
+        from one never searched. Spine S6 tells the playbook to consult `facts.open_question_candidates`
+        for body-recorded entries and `--oq-query` only for **newly-detected** ones — but v2, unable to
+        prove the empty case from the facts alone, ran `--oq-query "SBX-OQ-21"` for a **body-recorded**
+        entry anyway. That is defensively correct and satisfies the bug-(a) rule (which permits
+        `(not filed)` only on a search that returned nothing), but it is an extra call the spine's own
+        division of labour doesn't predict. Consider emitting empty groups (`candidates: []`) so
+        "searched, none found" is a positive fact.
+      - **D8 — entry shape tuple (v1) vs dict (v2) (BY CONSTRUCTION, operator-supplied; not a schema
+        divergence).** v1's plans pin the entry as a tuple `(event, payload)` because the operator answered
+        its gate with **"1"**, v1's own recommendation; v2's pin the dict `{"event": …, "payload": …}`,
+        chosen unaided. Free-prose content, identical schema — the skeleton diffs are empty. **The
+        underlying judgment divergence is the open question D5 leaves behind:** v1 held that precedent
+        cannot settle dict-vs-tuple and the choice is gate-worthy (factually right that precedent is
+        silent — no `src/*.py` module has module-level state, and `architecture.md` §3 fixes the module
+        shape but not the data shape); v2 pinned it and cited `[prd.md §2]`, but that citation supports
+        only the *no-timestamp* half and, unlike every other decision in the same section, names **no
+        rejected alternative**. Whether that is v2 correctly declining to gate an internal choice (spine S4
+        gates only a decision with a **user-visible** consequence; S5 makes pinning field shapes the
+        planner's job) or v2 silently resolving a genuine design decision (the mirror of Dimension 10's own
+        check) **cannot be settled headlessly** — v1 blocks and v2 proceeds either way. Flagged for the
+        operator, not resolved here.
+
+**Verdict: recorded, not decided — the operator owns the go/no-go on D5/D8.** What is established: both
+legs, on the composite case, ground at `origin/main@46888c2` on the **`story-parent-epic-bootstrap` row**,
+bootstrap the epic plan inline, post **schema-identical** epic + story plans (empty skeleton diffs, both
+pairs; `## Epic contract` + `**Epic:**` backlink correct; no `## Phases`; no per-story fan-out), add body
+pointers, apply `planned`, and emit a valid story `## Handoff`. **Box 3 passes on both** — bug (b) did not
+reproduce, `9e4222e` having already fixed v1's worked-example half. **Box 4 passes on both** — the
+bug-(a) trap was defeated twice, each citing `#61` over the body's stale `(not filed)`, v2 via
+`open_question_candidates` + `--oq-query` and v1 via its own mandated re-search. **Box 1** holds exactly on
+all four plans; **v2 startup = 1** `prep_planner.py` state-assembly call; the resolver reader
+cross-consumes both story artifacts identically. D1/D2/D3 are the familiar cutover / by-design / cosmetic
+trio. **Two items need an operator call before this scenario is called clean: D6** (a real, live-confirmed
+`prep_planner` defect) and **D5/D8** (gate parity is 0 vs 2 and *not comparable under this harness*, and
+the entry-shape judgment divergence it exposes is unfalsifiable headlessly). (Boxes left unticked —
+operator-owned.)
 
 ### Scenario 4 — Revise
 
