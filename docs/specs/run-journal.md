@@ -706,8 +706,7 @@ sandbox, or delete anything outside the working tree and the sandbox.
 
 ### S14 — `prep_drafter.py` — ACCEPTED (2026-07-17)
 
-- **Commit:** _backfilled post-commit_ (`S14: prep_drafter.py — drafter facts + oq_tracker
-  promotion`).
+- **Commit:** `f0167ba` (`S14: prep_drafter.py — drafter facts + oq_tracker promotion`).
 - **DoD:** all 4 boxes ticked, verified this session (reviewer PASS, 0 actionable).
 - **Deliverables:** `scripts/prep_drafter.py` (three-mode vector `new`/`revise`/`epic-revise` —
   spec-faithful: no `--issue` → new/type-null [freeform classification is the router's judgment];
