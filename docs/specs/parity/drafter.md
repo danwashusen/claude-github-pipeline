@@ -392,15 +392,98 @@ a tracked companion (a matched tracker issue via the de-dup search, or a freshly
 `## Open questions` (`<!-- open-question-links:v1 -->`) entry; `in-scope (blocked)` also sets the native
 `blocked by`; the handoff carries the `**Open questions:**` line.
 
-- [ ] **D1** — leg (a): v1 and v2 file the same question schema + audience label; both terminal handoffs
+- [x] **D1** — leg (a): v1 and v2 file the same question schema + audience label; both terminal handoffs
   carry the `**Audience:**` line and `(terminal — no follow-up skill)`.
-- [ ] **D2 (binds DoD box 3)** — leg (b): neither v1 nor v2 freezes the seeded OQ silently; both record an
+- [x] **D2 (binds DoD box 3)** — leg (b): neither v1 nor v2 freezes the seeded OQ silently; both record an
   `## Open questions` entry with a tracked companion + a closed-set disposition. A `question: (not filed)`
   appears only when the de-dup search returned no candidate.
-- [ ] **D3** — leg (b): an `in-scope (blocked)` disposition sets the native `blocked by`; on a
+- [x] **D3** — leg (b): an `in-scope (blocked)` disposition sets the native `blocked by`; on a
   deps-unsupported sandbox the `DEPS_UNSUPPORTED` prose fallback (`Blocked by #N` / `## Open questions` /
   `Related to #N`) is present.
-- **Result:** _TODO (operator)_
+- **Result:** **PASS — all three D-checks hold on both legs; the falsifiable bug-3 OQ-absorption trap is
+  defeated on both legs. The only divergences are prose/section-split authoring latitude, plus one
+  *narrower-than-predicted* companion-back-link divergence recorded below (boxes ticked — operator
+  authorized the tick + go/no-go in this run).** Run 2026-07-18, branch `rewrite/v2-implementation`
+  (headless `claude -p --plugin-dir … --model opus --permission-mode bypassPermissions --output-format
+  stream-json --verbose`, fresh clone per leg, operator-launched via `!`). **Seeded fixture (identical both
+  legs within each sub-leg, 0-gate / pre-authorized so no `AskUserQuestion` stalls the headless run):**
+  the sandbox's existing `docs/open-questions.md` register carries `SBX-OQ-22` (retention cap,
+  `audience:architect`) with a **matching open companion question #61**; `docs/prd.md` §2 describes the
+  audit trail and names both `SBX-OQ-21`/`SBX-OQ-22` as tracked, so the build issue *extends* the PRD (no
+  `## PRD impact` tension). **Leg (a):** a direct architect question about the trail's *structure/ownership*
+  (single global trail vs. per-module trails merged on read) — a deliberately **distinct, untracked** topic
+  (not the retention or repeat-name OQs). **Leg (b):** a build issue for the *retention cap*, the feedback
+  pre-stating **in-scope (blocked)** + **reuse the matching tracked question**. Pre-run baseline: #61 body
+  sha `03233c73…`, `## Tracked in` = `` `docs/open-questions.md` → SBX-OQ-22 ``, 0 comments; highest issue
+  #82. Twin A → v1 `/github-pipeline:github-issue-drafter`; Twin B → v2 `/github-pipeline:drafter`. Logs +
+  transcripts: `scratchpad/s15-scen4/*.jsonl`; captured artifacts: `scratchpad/s15-scen4/{v1,v2}-issue-*.json`.
+  - **Leg (a) — D1 (both legs pass; one authoring divergence).** v1 → **#83**, v2 → **#84** — both filed a
+    single `question` issue with the **identical label set** (`question` + `audience:architect`; the label
+    pre-existed, so **0 label-create** on either), both conform to the `_shared/question-issue.md` schema
+    (`## Question` / `## Audience` / `## Context` / `## References` / `## Why this matters`, `## Constraints`
+    correctly omitted — an unconstrained structural decision), and **both `## Handoff` blocks are
+    schema-perfect terminal-question shape**: `**Issue:** #N — … · open · question`, a `**Audience:**
+    architect` line, `**Next:** (terminal — no follow-up skill)`, real `**Why:**` — no drift form, **0
+    `AskUserQuestion`** either leg. **v2 process:** exactly **1 `prep_drafter.py` + 1 `gh_persist.py create`,
+    0 `github-ops`, 0 sub-agent besides the `Explore` reviewer**; v1's = `github-ops` + raw `gh` (the
+    expected v1 executor-delegation shape).
+    - **Div-a1 (D1 — tracker-id authoring latitude; both valid).** v2 (#84) **proactively minted a new
+      register id `SBX-OQ-23`**, titled the issue `SBX-OQ-23 — …`, and added a `## Tracked in` pointer
+      (`SBX-OQ-23`, to be added to the register); v1 (#83) filed the same structure question **bare** — no
+      id, no `## Tracked in` — and proposed an *untitled* register block in its paste-ready snippet. Both are
+      schema-conformant (`## Tracked in` is schema-optional, present only when a tracker id exists — v2
+      created one, v1 declined to). Same class as Scenario-1/2/3 Div-1 opus authoring latitude; no regression
+      — both are valid, cold-readable `audience:architect` questions.
+  - **Leg (b) — D2 + D3 (both legs pass; bug-3 trap defeated on both).** v2 → **#85**, v1 → **#86**. Because
+    both sub-legs file a build issue into the *same* repo and the drafter's de-dup search is `--state all`,
+    the two legs **collide** unless isolated — the first harness ran v2 first, so v1 correctly declined to
+    file a near-duplicate of v2's #85 (a *correct* drafter guardrail, and its transcript independently
+    confirmed #85's `blocked_by #61`). The standard **reset-between-legs** technique was applied: v2's #85 +
+    its #61 cross-link comment were captured to disk and deleted, restoring #61 to the pristine `03233c73…`
+    baseline, and **b-v1 was re-run in isolation** against that same clean slate. Both legs then:
+    - wrote the **`## Open questions` section byte-identically** (`diff` clean v1↔v2):
+      `<!-- open-question-links:v1 -->` + `- OQ: \`SBX-OQ-22\` (docs/open-questions.md register) — gates:
+      whether the audit trail caps retention and at what N — disposition: in-scope (blocked) — question: #61
+      — audience: audience:architect`. The companion is recorded as **`question: #61`, never `(not filed)`**,
+      even though the `prep_drafter.py … --oq-query` de-dup search **returned #61 as a live candidate on both
+      legs** — i.e. the **bug-(a)/bug-3 falsifiable trap** (a `(not filed)` written against a non-empty
+      candidate set) **is defeated on both legs** (**D2**, binds DoD box 3).
+    - set the **native `blocked by #61`** dependency (the sandbox reports deps supported — **no
+      `DEPS_UNSUPPORTED` fallback needed**), **and** carried the always-present prose fallback in
+      `## Related issues` (v2 `Related to #61`, v1 `Blocked by #61`) (**D3**).
+    - emitted a **schema-perfect `## Handoff`** carrying the `**Open questions:** #61 (audience:architect) —
+      1 blocked-by` line + forward-to-planner (`plan: ✗`); v2's `Next:` is the v2-renamed
+      `/github-pipeline:planner #85`, v1's the v1-name `/github-pipeline:github-issue-planner #86` — each
+      points at its own generation's planner, no drift form on either.
+    **v2 process:** **2 `prep_drafter.py` (startup + the `--oq-query` de-dup, confirming the candidate
+    consultation ran) + 3 `gh_persist.py`, 0 `github-ops`, 0 `AskUserQuestion`**, plus the `Explore` review
+    pass; v1's = `github-ops` GATHER/de-dup + `gh-persist create` + review — the expected v1 shape.
+    - **Div-b1 (D-adjacent — DoD-section-split authoring latitude; both valid).** v1 (#86) placed the
+      contingent retention criteria under an explicit `## Definition of done` header (3 checkboxes); v2 (#85)
+      folded the same contingent checkboxes into `## Background` and omitted a standalone `## Definition of
+      done` header. Both keep the identical criteria set (cap → last-N; oldest-evicted-first; append-order
+      preserved; both halves come from #61), both correctly frame every criterion as contingent on #61
+      resolving in favor of a cap. Authoring latitude, same class as Scenario-3 Div-1; the downstream
+      contract the resolver/evaluator parse is the `## Open questions` / native `blocked_by` (byte-identical
+      here), not the checkbox layout.
+  - **Expected-divergence axis — companion `## Tracked in` back-linking: predicted v1 body-patch did NOT
+    reproduce (recorded honestly; not a v2 defect).** The section below predicted v1 would *body-patch* #61's
+    `## Tracked in` (per v1 `SKILL.md:517` step 3) while v2 posts only a cross-link comment. **Observed:**
+    **v2 (#85)** posted the `Related to #85` **cross-link comment** on reused #61 (the interim breadcrumb —
+    **CONFIRMED present**) and left #61's body **byte-unchanged** (sha `03233c73…` across pre-b / post-b-v2)
+    — exactly the `draft-spine.md` Step-3.5 behavior. **v1 (#86)** left #61 **entirely untouched** — **no
+    `## Tracked in` patch *and* no comment** (sha `03233c73…` unchanged, 0 comments post-run): the headless
+    opus v1 run filed → byte-checked → handed off and **skipped its own §517 companion-patch step**. So the
+    anticipated divergence **narrowed**: not "v1 patches, v2 comments" but "**v2 leaves a cross-link comment
+    breadcrumb; v1 leaves nothing on the companion.**" This is v1 authoring-latitude non-reproduction (same
+    class as Scenario-1 Div-1, "v1 opus diverged from its own spec"), and it means the operator's diff will
+    show **no** v1 `## Tracked in` line to mis-read as a defect. **No v2 regression:** every machine consumer
+    keys on the **build** issue's native `blocked_by` + its own `## Open questions` (set **identically**
+    v1↔v2), never on the companion's `## Tracked in` (`open-question-links.md:32`) — and v2's breadcrumb
+    comment, the one thing the task asked to confirm, is present. **Sandbox end-state:** #83/#84 (questions)
+    + #86 (v1 build issue, `blocked by #61`) live; #85 (v2 build issue) deleted post-capture (evidence in
+    `scratchpad/s15-scen4/v2-issue-85.json` + the captured #61 cross-link comment); #61 body pristine, now
+    `blocking #86`.
 
 **Expected divergence — companion `## Tracked in` back-linking (read this before diffing leg (b)).** v1
 patches the companion question's `## Tracked in` section with the build issue's `#` at filing time
@@ -423,11 +506,29 @@ does not; record this as the expected, explained divergence above — not a defe
 that v2's `Related to #<build>` comment is present on the companion as the interim breadcrumb until the
 sweep runs.
 
+> **Observed at the 2026-07-18 run (see Scenario 4 Result, "Expected-divergence axis"):** the prediction
+> **narrowed** — v2 posted the `Related to #<build>` cross-link comment on reused #61 (breadcrumb confirmed)
+> and left the companion body byte-unchanged **as expected**, but v1 **did not** body-patch #61's
+> `## Tracked in` this run (the headless opus v1 run skipped its own §517 companion-patch step), leaving #61
+> entirely untouched. So the actual divergence is "v2 leaves a comment breadcrumb; v1 leaves nothing on the
+> companion," not "v1 patches, v2 comments." Still not a v2 defect — no machine consumer keys on the
+> companion's `## Tracked in`, and both build issues set the native `blocked_by` + `## Open questions`
+> identically.
+
 ## Go/no-go (operator)
 
-- [ ] All four scenarios PASS (or every divergence is adjudicated as an explained v1 defect / fixture
-  artifact, recorded above).
-- **Recommendation:** _TODO (operator)_
+- [x] All four scenarios PASS (or every divergence is adjudicated as an explained v1 defect / fixture
+  artifact, recorded above). Scenario 1 (new bug draft), 2 (epic split), 3 (revise), 4 (question + seeded
+  doc-OQ absorption) all PASS on the machine-relevant parity; every divergence is recorded above as v1
+  authoring latitude, a v2 enrichment, a harness-ordering artifact (leg-b de-dup collision, resolved by
+  reset-between-legs), or a narrowed-and-explained expected divergence — none a v2 regression. The
+  handoff-rendering-drift fix is now live-confirmed **0/6 legs** across Scenario 3 (both legs) + Scenario 4
+  (all four legs emitted schema-perfect `## Handoff` blocks, no drift form).
+- **Recommendation: GO.** v2 `drafter` reproduces v1 `github-issue-drafter`'s machine-relevant behavior
+  across all four routes (new / epic-split / revise / question) with a leaner process profile (1 prep +
+  direct `gh_persist.py`, no `github-ops`) and a real native-dependency graph. The falsifiable
+  OQ-absorption rule (DoD box 3) is defeated live on both legs. Remaining differences are authoring latitude
+  or deliberate v2 architecture (companion back-linking deferred to the sweep). Ready for S20 v1 removal.
 
 ## Seeding-fix record (S15, sandbox writes authorized)
 

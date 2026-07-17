@@ -461,12 +461,12 @@ carried (classification cues, PRD tension detection, adversarial review loop, st
 open-question dispositions per `_shared`; filing via `gh_persist.py` with native dependencies.
 
 **DoD**
-- [ ] Filed bodies are template-conformant; `open-question-links:v1` sections diff clean against
+- [x] Filed bodies are template-conformant; `open-question-links:v1` sections diff clean against
       S1 captures.
-- [ ] Epic split files stories and patches the epic's links (parity).
-- [ ] Falsifiable playbook rule: an unresolved source-doc OQ is never absorbed without a filed or
+- [x] Epic split files stories and patches the epic's links (parity).
+- [x] Falsifiable playbook rule: an unresolved source-doc OQ is never absorbed without a filed or
       matched tracker issue + disposition; parity-checked with a seeded doc OQ.
-- [ ] Gates from `specs/drafter.md` present; grep gates + pins; parity recorded: new bug draft,
+- [x] Gates from `specs/drafter.md` present; grep gates + pins; parity recorded: new bug draft,
       epic split, revise, question.
 - [x] Router + largest playbook line count recorded in `docs/specs/parity/drafter.md` and is at
       most half the v1 `SKILL.md` count in `baseline.md` ([prd.md §10](prd.md)).
