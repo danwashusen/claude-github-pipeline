@@ -802,6 +802,33 @@ of truth; a **freshly started** resumed session will pick them up by name and ca
   confirm reproducibility vs a systematic regression before D2 is ticked. Scenarios 2–4 (epic split /
   revise / question) still TODO. GitHub was mid "Partially Degraded Service" incident during the run;
   the endpoints the new-mode path uses stayed live. Committed locally (unpushed).
+- **Live parity — Scenario 2 (epic split — twins) run 2026-07-17 (operator-launched via `!`; boxes left
+  unticked — operator owns the tick).** Fixture: identical informal feedback that *explicitly asks for an
+  epic with child stories* (report-generation capability: reporting-core → locale/format-profile →
+  CSV/JSON export → personalized greeting header), grounded on the `src/` formatter + greeter helpers;
+  making the Epic scope the user's own call is the 0-gate design (no `Issue size` gate to stall the
+  headless run). Twin A → v1 filed **Epic #70 + stories #71–#75** (5); Twin B → v2 filed **Epic #76 +
+  stories #77–#80** (4). **PASS on the machine-relevant epic-split parity:** both filed one `epic` + N
+  `story` in one **hands-off batch** (gates 0=0 — split loop + body review stand in for the gate); both
+  **patched the Epic `## Stories` placeholders to real `#NN` links** (v2 via `gh_persist.py edit-body`),
+  both patched bodies diff **clean** (**D2**); every Story carries the `**Epic:** #<epic-#> — <title>`
+  first-line backlink (**D3**). v2 startup = **1 `prep_drafter.py` call**; write path = 5 `create` + 1
+  `edit-body`, **0 raw `gh`**; sub-agents = 2× `Explore` (split-mode + body reviewer, no `github-ops`);
+  router logged the **new-mode classification override** (`new.md` → `epic-split.md`, no size gate — the
+  epic-split single-playbook routing, S13-scenario-3 precedent). No `## Open questions` on any body (the
+  register's `SBX-OQ-21/22` are unrelated) + no fabrication. **Four explained divergences** (details in
+  [`parity/drafter.md`](parity/drafter.md) Scenario-2 Result): **Div-1 (D1)** story sets differ (5 vs 4) —
+  v1 grepped and filed a prerequisite `#71 fix-formatter-stubs` story + a different order; both
+  dependency-valid foundation-then-fan-out splits, opus split judgment on a correct prompt (S10-s1
+  precedent); **Div-2** v2 set the **native `blocked by #77`** graph on #78/#79/#80 (capability-gated;
+  sandbox `deps_available: true`, so no `DEPS_UNSUPPORTED` fallback) while v1 used prose/order only — a v2
+  enrichment, not a regression; **Div-3** v1's Epic added a `## PRD impact` note (extends-not-conflicts),
+  v2 omitted it (spine adds it only on genuine tension) — authoring latitude; **Div-4** v2's handoff again
+  **dropped the `open` state marker + restructured** the Epic-batch block (routing substance intact,
+  v2-renamed `/github-pipeline:planner #76`), **corroborating Scenario-1 Div-2 across 2 of 2 scenarios** —
+  reads as an opus handoff-rendering tendency, not a fixture artifact; operator call whether
+  `handoff-renderings.md` needs tightening. Scenarios 3–4 (revise / question) still TODO. Committed
+  locally (unpushed).
 
 ## Handback log
 

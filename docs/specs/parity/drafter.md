@@ -171,7 +171,70 @@ placeholders patched to `- [ ] #NN — <title>` links via `edit-body`, epic-batc
 - [ ] **D2 (binds parity: epic-split link patching)** — both patch the Epic `## Stories` bullets to real
   `#NN` links; the patched epic body diffs clean.
 - [ ] **D3** — each Story body carries the `**Epic:** #<epic-#> — <title>` backlink on its first line.
-- **Result:** _TODO (operator)_
+- **Result:** **PASS on the machine-relevant epic-split parity; four explained divergences (boxes left
+  unticked — operator owns the tick + go/no-go).** Run 2026-07-17, branch `rewrite/v2-implementation`
+  (headless `claude -p --plugin-dir`, fresh clone per leg, operator-launched via `!`). **Fixture
+  (identical both legs):** informal feedback that *explicitly asks for an epic with child stories* for a
+  report-generation capability (reporting-core → locale/formatting-profile → CSV/JSON export →
+  personalized greeting header), grounded on the existing `src/` formatter + greeter helpers. Making the
+  Epic scope the user's own stated call is the **0-gate design** — it keeps the `Issue size` gate from
+  stalling the headless run while leaving the split / coalescing / ordering judgment to the skill. Twin A
+  → v1 `/github-pipeline:github-issue-drafter` filed **Epic #70 + stories #71–#75** (5); Twin B → v2
+  `/github-pipeline:drafter` filed **Epic #76 + stories #77–#80** (4). Logs: `scratchpad/v1.log`,
+  `scratchpad/v2.log`.
+  - **Clean (machine-relevant, holds both legs):** each leg filed **one `epic`-labelled Epic + N
+    `story`-labelled child stories in one hands-off batch** (gates **0=0** both legs — the split loop +
+    per-story body review stand in for the confirmation, per E3). Both **patched the Epic's `## Stories`
+    placeholders to real `- [ ] #NN — <title>` links** (v2 via one `gh_persist.py edit-body`); both
+    patched bodies diff **clean** — no placeholder bullet survives on either (**D2**). Every Story carries
+    the `**Epic:** #<epic-#> — <Epic title>` backlink on its **first line** (**D3**). **v2 startup =
+    exactly one `prep_drafter.py` call** (0 `--oq-query`); v2's write path = **5 `gh_persist.py create` +
+    1 `edit-body`, 0 raw `gh`, 0 `link`**; v2's only sub-agents are **2× `Explore`** (the `split`-mode
+    reviewer + the body reviewer) — no `github-ops`. The router logged the **new-mode classification
+    override** (`suggested_playbook` `new.md` → `epic-split.md`, "No size gate needed: the user has
+    already made the Epic call"), i.e. the **epic-split single-playbook routing** (S13-scenario-3
+    precedent). No filed body carries an `## Open questions` section and no `**Open questions:**` handoff
+    line on either leg — the register's `SBX-OQ-21/22` gate `src/audit_log.py`, not this reporting work,
+    so both correctly declined to absorb them; no fabrication.
+  - **Div-1 (D1 — split judgment latitude; both legs valid).** The story **sets differ**: v1 = 5, v2 = 4,
+    so D1's literal "same story set post-coalescing in same dependency order" does not hold. Two causes,
+    both authoring judgment on a correct prompt, neither a schema regression: **(i)** v1 grepped the
+    codebase, found `src/formatter_a.py`'s three formatters are stubs returning raw input, and filed a
+    separate **prerequisite `#71 "Fix formatter_a stubs"`** foundation story; the feedback never stated
+    the formatters were broken, so this is codebase-grounding depth — v2 folded formatter usage into the
+    reporting-core (`#77`) without a standalone stub-fix story. **(ii)** Ordering differs: v1 =
+    stub-fix → assemble → locale → export → header; v2 = core → locale → header → **export last** (v2's
+    `split`-mode reviewer flagged that export-before-header would serialize a header-less structure and
+    reordered). Both are dependency-valid foundation-then-fan-out shapes. Same class as Scenario-1 Div-1
+    and the S10-scenario-1 "v1 opus diverged from its own spec" precedent — operator owns whether the
+    split-cardinality difference is acceptable.
+  - **Div-2 (native dependency graph — v2 the richer/correct-er leg).** v2 set the **native `blocked by
+    #77`** GitHub dependency on `#78/#79/#80` (`create --blocked-by`, capability-gated; the sandbox
+    reports `deps_available: true`, so no `DEPS_UNSUPPORTED` fallback was needed) **and** the prose note in
+    the Epic `## Stories`. v1 set **no** native deps — it expressed the same ordering via the `## Stories`
+    list order + prose only. This is a v2 enrichment consistent with the drafter's native-deps capability
+    (the task's "native deps set where the schema calls for them" is satisfied on the v2 leg), not a
+    regression: every downstream reader keying on native `blocked_by` (planner Dimension 10, resolver /
+    evaluator hard-gate) gets a real graph from v2.
+  - **Div-3 (Epic body section set — authoring latitude).** v1's Epic added a `## PRD impact` note
+    (reporting is new territory vs the PRD's audit-trail-only coverage — no contradiction); v2's Epic is
+    `## Goal / ## Background / ## Stories / ## Definition of done` with no `## PRD impact`. The spine adds
+    `## PRD impact` only on genuine PRD **tension** (contradiction / gap), and *extending* into uncovered
+    territory without conflict is a judgment call — v2 declined, v1 added it as informational. Built-in
+    Epic template is the floor; same class as Scenario-1 Div-1. No fabrication either way.
+  - **Div-4 (D-adjacent — handoff rendering latitude; corroborates Scenario-1 Div-2).** v1's handoff is
+    schema-perfect (`**Epic:** #70 — … · open · epic · plan: ✗` + flat `**Stories:** #71, …, #75 (5
+    filed, dependency-ordered)` + fenced `/github-pipeline:github-issue-planner #70`). v2's again
+    **deviates from the `handoff-renderings.md` Epic-batch shape**: a `**Filed — Epic + 4 stories**`
+    header, the `**Epic:**` line **dropped the `open` state marker** (rendered `· label \`epic\`` not
+    `· open · epic`), `Stories` rendered as a nested bulleted list rather than the flat `**Stories:**`
+    line, and the `Next:` command inlined rather than fenced. The **routing substance is intact** (Epic
+    #76, `plan: ✗`, dependency order conveyed, correct v2-renamed `/github-pipeline:planner #76`). This is
+    the **same rendering-time latitude against a correct prompt** flagged as Scenario-1 Div-2 — and its
+    recurrence here (**dropped `open` marker + restructured block on 2 of 2 scenarios**) is the
+    reproducibility data point Scenario-1 called for: it reads as an opus handoff-rendering tendency, not a
+    fixture artifact. Operator call whether `references/handoff-renderings.md` needs tightening vs
+    accepting it as rendering non-determinism (the substance has never regressed).
 
 ### Scenario 3 — revise
 
