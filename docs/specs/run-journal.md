@@ -754,7 +754,33 @@ of truth; a **freshly started** resumed session will pick them up by name and ca
 
 ---
 
-### S15 — Drafter skill rewrite — PARTIAL (automatable done + committed; live parity PENDING) (2026-07-17)
+### S15 — Drafter skill rewrite — ACCEPTED (automatable 2026-07-17; live parity closed 2026-07-18)
+
+- **Parity (operator-run, 4 scenarios, all PASS; go/no-go GO):** `9a0c06f` scenario 1 (new bug
+  draft), `d2ff523` scenario 2 (epic split — native-deps enrichment; the classification-override
+  log fired), `fbbcbda` scenario 3 (revise — byte-identical plan-pointer survival; plan comment
+  SHA-untouched; **the drift fix live-confirmed**), `0fccba4` scenario 4 (question + OQ absorption —
+  **the bug-3 trap defeated on both legs**: `--oq-query` returned live candidate #61, both legs
+  recorded `in-scope (blocked) — question: #61` + native `blocked_by`, never "(not filed)";
+  `## Open questions` byte-identical; **boxes 1–4 ticked, GO filled by the operator**).
+- **The handoff-drift arc (the step's defining fix):** scenarios 1+2 reproduced off-schema v2
+  handoffs 2/2 (`**Filed:**`, dropped state segment, invented Snapshot, inlined Next:) → diagnosis:
+  the forced-read was present; the LATENT cross-skill gap was that the SSoT's exact-words rule
+  covered marker values only. Fixed twice: `d349622` (the drafter binding — emit-verbatim +
+  named prohibitions, 8 fence-scoped tests) and `61c8229` (the SSoT extension — field names +
+  block structure are contract, each skill bound to ITS OWN renderings; S16–S19 inherit it).
+  **Live confirmation: 0/6 post-fix legs across scenarios 3+4.**
+- **Honest non-repro (scenario 4):** the predicted v1 companion body-patch did NOT occur — the
+  headless v1 leg skipped its own §517 companion-patch step (another v1 flake), so the recorded
+  divergence narrowed to "v2 leaves the `Related to #<build>` comment breadcrumb; v1 leaves
+  nothing." No machine consumer affected; both legs' native deps + `## Open questions` identical.
+- **Harness learning (recorded):** two build-issue legs against one repo collide via the drafter's
+  `--state all` de-dup — reset-between-legs (capture evidence → delete → restore baseline → re-run
+  isolated) is the standard technique.
+- **Final suite state:** 924/924 macOS + Linux (post-fix routing tests 51; four-skill handoff
+  suites 158 green at the SSoT commit). Census 85, zero drops.
+
+#### Original PARTIAL entry (2026-07-17, superseded by the acceptance above)
 
 - **Commit:** `c1fa3aa` (`S15: skills/drafter/ — drafter cutover + _shared relabel + sandbox
   fixes`).
@@ -832,7 +858,13 @@ of truth; a **freshly started** resumed session will pick them up by name and ca
 
 ## Handback log
 
-### 2026-07-17 handback — STOP at S15's live parity (fourth operator gate) — OPEN
+### 2026-07-17 handback — STOP at S15's live parity (fourth operator gate) — CLOSED 2026-07-18
+
+**Superseded; retained as a pointer.** The operator ran all four drafter scenarios (PASS ×4 across
+`9a0c06f`/`d2ff523`/`fbbcbda`/`0fccba4`, boxes 1–4 + GO at scenario 4) with the two orchestrated
+in-flight drift fixes (`d349622` drafter binding, `61c8229` SSoT extension — live-confirmed 0/6
+post-fix). S15 flipped to ACCEPTED above. The run resumes at **S16 → S17 → S18 → S19 → S20**; the
+next planned operator gates are S16's researcher parity and the S17–S19 landing scenarios.
 
 The run is stopped at **S15 boxes 1–4's parity halves**. Everything automatable through S15 is
 committed on `rewrite/v2-implementation` (**unpushed**; 924 offline tests green both platforms).
