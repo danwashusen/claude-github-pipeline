@@ -856,7 +856,47 @@ of truth; a **freshly started** resumed session will pick them up by name and ca
   `handoff-renderings.md` needs tightening. Scenarios 3–4 (revise / question) still TODO. Committed
   locally (unpushed).
 
+### S16 — Researcher rewrite — PARTIAL (automatable done + committed; live parity PENDING) (2026-07-18)
+
+- **Commit:** _backfilled post-commit_ (`S16: researcher — prep + skill, the thinnest cutover`).
+- **Status:** **2 of 4 DoD boxes ticked** (boxes 2 + 4, wholly offline). Boxes 1 + 3 carry
+  "parity:" clauses — the run's fifth stop; S17 waits on the three researcher scenarios.
+- **Deliverables:** `scripts/prep_researcher.py` (mode vector — marker→revise dominant,
+  `--question`→targeted, else broad, fully script-visible so NO route override; manifest/doc
+  inventory; root-only per the S14 precedent; flat 3-call budget across all modes) +
+  `skills/researcher/` (router 86; **spine + three thin variants** — reviewer-ruled genuinely
+  §5-grounded, NOT metric-gaming: broad alone runs derive+decline+confirm and can terminate
+  posting nothing, revise alone delete-and-reposts with a diff, targeted skips both gates; the
+  decline gate's four currency-risk conditions verbatim; the dossier schema **byte-identical** to
+  the S1 capture with frozen provenance strings; the carried validator with exactly **two**
+  path/reference adaptations, both test-pinned; handoffs authored under the S15-hardened SSoT
+  binding from day one) + 76 tests + 4 fixtures + the parity scaffold (3 operator scenarios;
+  scenario 1 seeds the live dossier scenario 3 revises).
+- **Budget pin:** **143 ≤ 144** (v1 289) — 1 line of headroom, test-enforced; any future
+  SKILL.md/research-spine.md addition must be offset (the S13-precedent pin, recorded in the
+  parity metrics).
+- **Dual-platform:** **1007/1007** macOS + Linux. Census 85, zero drops (purely additive tokens).
+  S11 validator green over the carried prompt.
+- **Process:** 1 opus implementor → orchestrator sanity (both platforms) → 1 opus reviewer
+  (**PASS, 0 actionable**, 2 advisories: the fidelity undercount [one→two adaptations] +
+  the margin pin — both landed in a record micro-round, +1 pinning test). **0 actionable rounds.**
+
 ## Handback log
+
+### 2026-07-18 handback — STOP at S16's live parity (fifth operator gate) — OPEN
+
+The run is stopped at **S16 boxes 1 + 3's parity clauses**. Everything automatable through S16 is
+committed (**unpushed**; 1007 offline tests green both platforms).
+
+**Operator actions (scaffolded in [`docs/specs/parity/researcher.md`](parity/researcher.md)):**
+three scenarios — **broad on a currency-risky issue** (seeds the live dossier), **decline on a
+no-currency-risk issue** (the preserved gate — expect `research: ✗`, nothing posted), **revise of
+the existing dossier** (delete-and-repost via `--delete-marker-id`, diff shown). v1
+`/github-pipeline:github-issue-researcher` vs v2 `/github-pipeline:researcher`, same harness
+discipline (fresh clone per run; 0-gate fixtures where possible — note broad's confirm gate is
+interactive, the parity doc's scenarios handle it; reset-between-legs where twins share state).
+Tick boxes 1 + 3 when the scenarios pass; commit locally; never push; resume the orchestrator —
+it flips S16 to ACCEPTED and proceeds **S17 → S18 → S19 → S20**.
 
 ### 2026-07-17 handback — STOP at S15's live parity (fourth operator gate) — CLOSED 2026-07-18
 

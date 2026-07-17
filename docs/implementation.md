@@ -488,10 +488,10 @@ bar says otherwise — decided at build); web-research loop and validator carrie
 **DoD**
 - [ ] Dossier comment diffs clean against S1 captures; the decline gate is preserved (parity: a
       no-currency-risk issue declines).
-- [ ] Prep fixtures: marker present/absent; manifests found/missing.
+- [x] Prep fixtures: marker present/absent; manifests found/missing.
 - [ ] Grep gates + pins; parity recorded: broad run on a currency-risky issue, decline case,
       revise of an existing dossier.
-- [ ] Router + largest playbook line count recorded in `docs/specs/parity/researcher.md` and is
+- [x] Router + largest playbook line count recorded in `docs/specs/parity/researcher.md` and is
       at most half the v1 `SKILL.md` count in `baseline.md` ([prd.md §10](prd.md)).
 
 **Testing:** shim-backed unit tests; the three live parity scenarios.
