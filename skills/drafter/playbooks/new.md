@@ -45,7 +45,9 @@ Everything below runs only after the spine returns.
 
 ## Handoff
 
-Read [`../references/handoff-renderings.md`](../references/handoff-renderings.md) and match the outcome:
+Read [`../references/handoff-renderings.md`](../references/handoff-renderings.md) immediately before
+composing this and emit the matching shape verbatim — copy it, substitute only the data below, never
+rename a field or restructure it:
 
 - **Single issue filed** (default): `Issue:` line (`plan: ✗`) + `Next: /github-pipeline:planner #<N>`;
   `Why:` names what the planner will do.

@@ -15,20 +15,23 @@ the v1 `SKILL.md` line count. v1 `github-issue-drafter/SKILL.md` = **576 lines**
 
 | File | Lines |
 |---|---:|
-| `skills/drafter/SKILL.md` (router) | 123 |
+| `skills/drafter/SKILL.md` (router) | 130 |
 | `skills/drafter/playbooks/draft-spine.md` (the shared spine — largest playbook) | 147 |
-| `skills/drafter/playbooks/epic-split.md` | 82 |
-| `skills/drafter/playbooks/revise.md` | 70 |
-| `skills/drafter/playbooks/question.md` | 55 |
-| `skills/drafter/playbooks/new.md` | 54 |
-| **router + largest playbook (the loaded set)** | **270** |
+| `skills/drafter/playbooks/epic-split.md` | 84 |
+| `skills/drafter/playbooks/revise.md` | 72 |
+| `skills/drafter/playbooks/question.md` | 57 |
+| `skills/drafter/playbooks/new.md` | 56 |
+| **router + largest playbook (the loaded set)** | **277** |
 
-**270 ≤ 288** ✅. Router **123 ≤ 150** ✅ (architecture.md §9 size bar). References are read on demand and
-are not part of the loaded-prompt metric; recorded for completeness: `issue-reviewer-prompt.md` 213
-(carried adversarial review loop, tool-use rewritten for the drafter's current-checkout grounding vantage),
-`issue-templates.md` 143 (carried built-in fallback templates), `handoff-renderings.md` 118 (drafter
-handoff shapes, next-commands renamed to the v2 skills). Every routed session loads the router (123) + the
-spine (147) + exactly one thin routed playbook (54–82); each individual document fits one default `Read`.
+**277 ≤ 288** ✅ (11 lines of margin). Router **130 ≤ 150** ✅ (architecture.md §9 size bar). Router grew
+123 → 130 (+7) and each playbook +2 in the post-scenario-2 handoff-binding fix below (the shared spine,
+already the largest file, was untouched, so the loaded-set sum grew only by the router's +7). References
+are read on demand and are not part of the loaded-prompt metric; recorded for completeness:
+`issue-reviewer-prompt.md` 213 (carried adversarial review loop, tool-use rewritten for the drafter's
+current-checkout grounding vantage), `issue-templates.md` 143 (carried built-in fallback templates),
+`handoff-renderings.md` 123 (drafter handoff shapes, next-commands renamed to the v2 skills, +5 for the
+binding-language fix below). Every routed session loads the router (130) + the spine (147) + exactly one
+thin routed playbook (56–84); each individual document fits one default `Read`.
 
 ## Playbook split (the §5-bar decision the Work records)
 
@@ -160,6 +163,9 @@ template-conformant (built-in Bug template: Description / Steps / Expected / Act
     prescribes the correct shape, so this is rendering-time non-determinism, not a prompt bug; the routing
     substance (correct v2 skill name, copy-pasteable, `plan: ✗`) is intact. **A cheap v2-only re-run would
     confirm reproducibility vs a systematic regression** before the operator ticks D2.
+    **RESOLVED-pending-live-confirmation** — see "Handoff-rendering drift — diagnosis + fix" below. The
+    router/reference binding was tightened after this recurred 2/2 with Scenario-2 Div-4; the live
+    confirmation is the optional v2-only Scenario-1 re-run plus Scenarios 3/4 below, not self-certification.
 
 ### Scenario 2 — epic split (twins, since it patches the epic)
 
@@ -235,6 +241,78 @@ placeholders patched to `- [ ] #NN — <title>` links via `edit-body`, epic-batc
     reproducibility data point Scenario-1 called for: it reads as an opus handoff-rendering tendency, not a
     fixture artifact. Operator call whether `references/handoff-renderings.md` needs tightening vs
     accepting it as rendering non-determinism (the substance has never regressed).
+    **RESOLVED-pending-live-confirmation** — the 2/2 recurrence (this + Scenario-1 Div-2) was ruled a real
+    v2 authoring-compliance defect and fixed; see "Handoff-rendering drift — diagnosis + fix" below.
+    Scenarios 3 and 4 (and an optional v2-only Scenario-1 re-run) are the live confirmation this box needs
+    before the operator ticks D2/D4 — no self-certification.
+
+## Handoff-rendering drift — diagnosis + fix (post-Scenario-2)
+
+Scenario-1 Div-2 and Scenario-2 Div-4 are the **same** live-observed rendering defect, reproduced 2/2:
+v2's emitted `## Handoff` renamed `**Issue:**`/`**Epic:**` to `**Filed:**` (or `**Filed — Epic + N
+stories**`), dropped the `· <state> ·` segment, added an invented `**Snapshot:**` block or a nested bullet
+list where the schema has a flat `**Stories:**` line, and inlined the fenced `Next:` command into prose.
+Routing *substance* was intact both times (correct next-skill, correct numbers, `plan: ✗`), but the
+*shape* diverged from `references/handoff-renderings.md`, which already prescribed the correct form —
+2/2 rules this an authoring-compliance failure at emission time, not fixture noise.
+
+**Diagnosis.** Compared the drafter's handoff-emission binding against the three skills whose parities
+show zero such drift across 9+ scenarios (resolver, planner, evaluator):
+
+- **The forced point-of-use `Read`** ("Read `references/handoff-renderings.md` … before composing the
+  handoff") is present in the drafter at both the router (`SKILL.md` §4) and every playbook's own
+  `## Handoff` section — structurally identical to the other three skills. **Not the delta.**
+- **The verb strength differs.** Resolver's and evaluator's playbooks predominantly instruct **"emit the
+  matching shape"** (a copy-literally verb), and resolver's reference-file intro is explicit: "Pick the one
+  that matches the run's outcome, **copy the shape**, and **substitute** the … placeholders." The drafter's
+  playbooks and reference-file intro instead said "**match** the run's outcome to a shape and **fill** the
+  snapshot" — a softer framing that reads as "compose something equivalent," not "reproduce this literally."
+- **No skill — including the three drift-free ones — names the field names (`**Issue:**`, `**Next:**`,
+  `**Why:**`, block structure) as fixed contract text**, distinct from `_shared/handoff-format.md`'s closed
+  **value** vocabulary ("Use these exact words. Don't invent synonyms." — a table of marker *values*:
+  `open`/`closed`, `✓`/`✗`/`stale`, `APPROVE`/`COMMENT`, never the field *names* or the block *shape*).
+  None of the observed drift forms (`**Filed:**`, dropped state, an invented `Snapshot` block, an inlined
+  `Next:`) were named anywhere as an explicit prohibition, on any of the four skills. This is a real,
+  previously-latent gap the other three skills simply hadn't hit yet — the drafter's 2/2 is the first
+  reproduction, and the fix closes the gap everywhere it's applied rather than assuming the others are
+  immune by luck alone.
+
+**Fix (mirrors the drift-free skills' phrasing; no new wording invented where theirs already worked).**
+
+1. `skills/drafter/SKILL.md` §4 — replaced "Read that reference before composing the handoff and match the
+   run's outcome to a shape" with "Read that reference **immediately before composing the handoff — not
+   earlier in the session** — then **emit the matching shape verbatim**," plus a new binding sentence
+   naming the field names/block structure/closed-set markers as **contract, not prose to summarize**, and
+   naming the four observed drift forms as concrete prohibitions (`**Filed:**` for `**Issue:**`; dropping
+   the `· <state> ·` segment; an invented `Snapshot` block; an inlined `Next:` command).
+2. `skills/drafter/references/handoff-renderings.md` — the point-of-use file actually read right before
+   emission — got the same "copy the shape, substitute the … values" phrasing (mirroring resolver's intro
+   verbatim in spirit) plus the same four named prohibitions, so the binding is present at the surface the
+   model reads last before rendering.
+3. Every playbook's `## Handoff` section (`new.md`, `revise.md`, `epic-split.md`, `question.md`) — the
+   "Read X and match the outcome" line became "Read X immediately before composing this and emit the
+   matching shape verbatim — copy it, substitute only the data below, never rename a field or restructure
+   it," mirroring resolver's/evaluator's "emit the matching shape" playbook phrasing exactly.
+
+**Budget.** Router 123 → 130 (+7, still ≤150). Each playbook +2 lines (the one added instruction line
+wraps to two). `handoff-renderings.md` 118 → 123 (+5). The shared spine (`draft-spine.md`, the largest
+playbook at 147, untouched) still sets the "largest playbook" term, so **router + largest playbook = 130 +
+147 = 277 ≤ 288** (11 lines of margin) — the fix does not threaten the S15 DoD box-5 bar. Full arithmetic
+recorded in the "Line-count metric" table above (now current).
+
+**Tests.** `tests/test_drafter_routing.py::HandoffBindingLanguageTests` (new) pins: the forced-read-at-
+emission instruction ("immediately before composing"); the verbatim/copy-the-shape binding verb in the
+router, the reference intro, and every playbook's `## Handoff` section; the four named prohibitions present
+verbatim in both the router and the reference intro; and that the binding text sits outside code fences
+(prose, not sample output). `tests/run.py` was **not** re-run in full for this fix — only prose in three
+already-tested files changed (no fenced/tested content, no script, no schema); the targeted routing suite
++ the S11 subagent-prompt validator were re-run instead (see Validator output in the report).
+
+**Live confirmation — not self-certified.** This fix is offline-verified (the binding text exists and is
+pinned by a test); it is **not** proof the live rendering drift stops. Scenarios 3 and 4 below are the live
+confirmation this fix needs, plus an optional cheap v2-only re-run of Scenario 1 (the harness the Scenario-1
+Div-2 note already suggested). Scenario-1 D2 / Scenario-2 D4 stay **RESOLVED-pending-live-confirmation**
+(annotated inline above) until one of those runs shows the corrected shape.
 
 ### Scenario 3 — revise
 

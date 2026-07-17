@@ -587,6 +587,105 @@ class HandoffRenderingTests(unittest.TestCase):
             )
 
 
+class HandoffBindingLanguageTests(unittest.TestCase):
+    """Post-Scenario-2 fix: docs/specs/parity/drafter.md recorded a 2/2 live-parity handoff-rendering
+    drift (Scenario-1 Div-2 / Scenario-2 Div-4) — v2 renamed `**Issue:**`/`**Epic:**` to `**Filed:**`,
+    dropped the state marker, invented a `Snapshot` block, and inlined the fenced `Next:` command, despite
+    a correct prompt. Pins the binding fix: the point-of-use `Read` is immediate (not earlier in the
+    session), the shape must be emitted/copied verbatim (mirroring resolver's/evaluator's "emit the
+    matching shape" phrasing — the drift-free skills), and the four observed drift forms are named as
+    explicit prohibitions in both the router and the reference file actually read at emission time."""
+
+    _DRIFT_PROHIBITIONS = (
+        "Filed",           # renamed field (**Filed:** instead of **Issue:**/**Epic:**)
+        "state",           # dropped `· <state> ·` segment
+        "Snapshot",        # invented block
+        "Next:",           # inlined instead of fenced
+    )
+
+    @staticmethod
+    def _flat(text):
+        # Word-wrapped prose carries a literal newline where a space would read the same to a human;
+        # collapse all whitespace runs to a single space so a multi-word phrase-match survives wrapping.
+        return re.sub(r"\s+", " ", text)
+
+    def setUp(self):
+        self.router = ROUTER.read_text(encoding="utf-8")
+        self.router_flat = self._flat(self.router)
+        self.renderings = (REFERENCES_DIR / "handoff-renderings.md").read_text(encoding="utf-8")
+        self.renderings_flat = self._flat(self.renderings)
+        self.playbook_texts = {
+            name: (PLAYBOOKS_DIR / name).read_text(encoding="utf-8") for name in ROUTABLE_PLAYBOOKS
+        }
+        self.playbook_texts_flat = {name: self._flat(t) for name, t in self.playbook_texts.items()}
+
+    def test_router_forces_read_immediately_before_composing(self):
+        self.assertRegex(
+            self.router_flat,
+            r"Read that reference immediately before composing the handoff",
+            "the router must force the point-of-use Read to happen at emission time, not earlier",
+        )
+
+    def test_router_binds_emit_verbatim_not_match_and_fill(self):
+        self.assertRegex(
+            self.router_flat, r"emit the matching shape verbatim",
+            "the router must bind to 'emit … verbatim' (mirrors resolver/evaluator), not 'match … to a shape'",
+        )
+        self.assertIn("contract, not prose to summarize", self.router_flat)
+
+    def test_router_names_all_four_drift_forms_as_prohibitions(self):
+        for token in ("**Filed:**", "state", "Snapshot", "Next:"):
+            self.assertIn(token, self.router)
+        self.assertIn(
+            "never paraphrase, restructure, rename a field, drop a segment, or add a block",
+            self.router_flat,
+        )
+
+    def test_reference_file_intro_binds_copy_the_shape(self):
+        # The file actually Read right before emission carries the same binding, not just the router.
+        self.assertRegex(
+            self.renderings_flat,
+            r"[Cc]opy its shape, and substitute only the issue/Epic/story numbers",
+            "the reference-file intro must bind to 'copy the shape' (mirrors resolver's intro)",
+        )
+        self.assertIn("contract, not a style to imitate", self.renderings_flat)
+
+    def test_reference_file_names_all_four_drift_forms_as_prohibitions(self):
+        for token in ("**Filed:**", "Snapshot", "Next:"):
+            self.assertIn(token, self.renderings)
+        self.assertRegex(self.renderings_flat, r"drop the\s*`?· <state> ·`?\s*segment")
+
+    def test_every_playbook_handoff_section_binds_emit_verbatim(self):
+        for name, text in self.playbook_texts_flat.items():
+            self.assertRegex(
+                text,
+                r"immediately before composing this and emit the matching shape verbatim",
+                "%s's ## Handoff section must bind to 'emit … verbatim', not 'match the outcome'" % name,
+            )
+            self.assertRegex(
+                text, r"never rename a field or restructure it",
+                "%s must carry the never-restructure prohibition" % name,
+            )
+
+    def test_binding_language_is_prose_not_inside_a_code_fence(self):
+        for label, text, path in (
+            ("router", self.router, ROUTER),
+            ("renderings", self.renderings, REFERENCES_DIR / "handoff-renderings.md"),
+        ):
+            for i, line, in_fence in _fence_stripped_lines(path):
+                if in_fence:
+                    self.assertNotIn(
+                        "emit the matching shape verbatim", line,
+                        "%s:%d — the binding rule must be prose, not inside a code fence" % (label, i),
+                    )
+
+    def test_deliberate_violation_would_be_caught(self):
+        # Proof the predicate actually discriminates: a router missing the binding fails the same assertion
+        # the real router must pass.
+        weak_router = "Read that reference before composing the handoff and match the run's outcome to a shape."
+        self.assertNotRegex(weak_router, r"emit the matching shape verbatim")
+
+
 # ---------------------------------------------------------------------------
 # The falsifiable OQ-absorption rule (DoD box 3, offline half)
 # ---------------------------------------------------------------------------

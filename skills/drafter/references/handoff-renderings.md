@@ -2,9 +2,14 @@
 
 Every clean run of the drafter ends with a single `## Handoff` block. The schema, omission rules, and
 closed-set state-marker vocabulary live in [`../../_shared/handoff-format.md`](../../_shared/handoff-format.md);
-this file holds the drafter's worked rendering shapes. Match the run's outcome to a shape and fill the
-snapshot from the data in hand (the `create` result carries the issue/Epic/story numbers and titles;
-`plan: ✗` is always correct — the drafter never authors a plan). Next-command skills are namespaced
+this file holds the drafter's worked rendering shapes. **Pick the one worked example that matches the run's
+outcome, copy its shape, and substitute only the issue/Epic/story numbers, titles, and state values** — fill
+the snapshot from the data in hand (the `create` result carries the issue/Epic/story numbers and titles;
+`plan: ✗` is always correct — the drafter never authors a plan). The field names, block structure, and
+closed-set markers below are rendered exactly as shown — they are contract, not a style to imitate:
+never rename a field (`**Filed:**` for `**Issue:**` is a defect, not a variant), never drop the
+`· <state> ·` segment, never add a block the shape below doesn't have (no invented `Snapshot` section),
+never inline the fenced `Next:` command into prose. Next-command skills are namespaced
 `/github-pipeline:<name>`.
 
 ## The `**Open questions:**` line (renders in every build shape that has OQs)

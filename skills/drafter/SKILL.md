@@ -114,10 +114,17 @@ omission rules, and closed-set state-marker vocabulary are owned by
 [`../_shared/handoff-format.md`](../_shared/handoff-format.md); the drafter's per-outcome shapes (single
 issue filed → planner; single issue with open questions → planner + `**Open questions:**` line; Epic batch
 → planner; revise → author/refresh/terminal; the terminal `question` shape) are in
-[`references/handoff-renderings.md`](references/handoff-renderings.md). **Read that reference before
-composing the handoff** and match the run's outcome to a shape. Fill the snapshot from data in hand — the
-`create` result carries the issue/Epic/story numbers and titles; `plan: ✗` is always correct (the drafter
-never authors plans). The `Why:` line is yours. The forward route is the `planner`
-(`/github-pipeline:planner`); an OQ deferral points at `/github-pipeline:open-questions`. A `question`'s
-handoff is **terminal** — a human answers it, not a downstream skill. The handoff is the only signal; the user runs the next command in a
-fresh session (session-per-skill is the context-isolation choice).
+[`references/handoff-renderings.md`](references/handoff-renderings.md). **Read that reference immediately
+before composing the handoff — not earlier in the session — then emit the matching shape verbatim.** The
+field names (`**Issue:**`/`**Epic:**`, `**Next:**`, `**Why:**`, …), the block structure, and the closed-set
+state markers are **contract, not prose to summarize**: copy the shape and substitute only the
+issue/Epic/story numbers, titles, and state values it names — never paraphrase, restructure, rename a
+field, drop a segment, or add a block the shape doesn't have. Concretely forbidden (observed live-parity
+drift): renaming `**Issue:**` to `**Filed:**` or anything else; dropping the `· <state> ·` segment; adding
+an invented `Snapshot` (or similarly-named) block; inlining the fenced `Next:` command into prose instead
+of its own indented code line. Fill the snapshot from data in hand — the `create` result carries the
+issue/Epic/story numbers and titles; `plan: ✗` is always correct (the drafter never authors plans). The
+`Why:` line is yours. The forward route is the `planner` (`/github-pipeline:planner`); an OQ deferral
+points at `/github-pipeline:open-questions`. A `question`'s handoff is **terminal** — a human answers it,
+not a downstream skill. The handoff is the only signal; the user runs the next command in a fresh session
+(session-per-skill is the context-isolation choice).

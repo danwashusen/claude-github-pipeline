@@ -75,7 +75,9 @@ stories (the same E2/E3 discipline) and `edit-body` the reconciled Epic body.
 
 ## Handoff
 
-Read [`../references/handoff-renderings.md`](../references/handoff-renderings.md): **Epic batch filed** →
+Read [`../references/handoff-renderings.md`](../references/handoff-renderings.md) immediately before
+composing this and emit the matching shape verbatim — copy it, substitute only the data below, never
+rename a field or restructure it. **Epic batch filed** →
 forward to the planner on the Epic — `Epic:` line (`plan: ✗`) + `Stories:` line (the filed,
 dependency-ordered set) + `Next: /github-pipeline:planner #<epic-#>`; `Why:` the planner posts the
 epic-level plan (contracts + sequencing), then each story is planned just-in-time. Add the

@@ -48,7 +48,9 @@ the only post-file output before the handoff.
 
 ## Handoff
 
-Read [`../references/handoff-renderings.md`](../references/handoff-renderings.md): the **terminal question**
+Read [`../references/handoff-renderings.md`](../references/handoff-renderings.md) immediately before
+composing this and emit the matching shape verbatim — copy it, substitute only the data below, never
+rename a field or restructure it: the **terminal question**
 shape — `Issue:` line `#N — <title> · <state> · question` (the `research:`/`plan:` markers omitted), an
 `**Audience:**` line listing the `audience:*` labels, the fenced next-action replaced with
 `(terminal — no follow-up skill)`, and a `Why:` that explains it awaits a human answer and what to do once

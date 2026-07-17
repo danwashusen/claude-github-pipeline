@@ -59,7 +59,9 @@ epic** — don't leave a Story dangling under a closed Epic.
 
 ## Handoff
 
-Read [`../references/handoff-renderings.md`](../references/handoff-renderings.md) and match on whether a
+Read [`../references/handoff-renderings.md`](../references/handoff-renderings.md) immediately before
+composing this and emit the matching shape verbatim — copy it, substitute only the data below, never
+rename a field or restructure it. Match on whether a
 plan exists (`facts.revise.plan.present`) and whether the revise was material:
 
 - **No plan yet** (`plan: ✗`) → forward to the planner to author one.
