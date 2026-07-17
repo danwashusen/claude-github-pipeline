@@ -40,7 +40,10 @@ The block is always present on a clean exit. Lines are omitted (not blanked, not
 
 ## State-marker vocabulary (closed sets)
 
-Use these exact words. Don't invent synonyms.
+Use these exact words. Don't invent synonyms. The field names and block structure in each skill's handoff
+renderings are contract exactly like the marker values: emit the applicable shape verbatim, substituting
+only the values — never rename a field, drop a segment, restructure, or add a block the shape doesn't
+carry.
 
 | Field | Values |
 |---|---|
