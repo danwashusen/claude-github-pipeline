@@ -163,9 +163,10 @@ template-conformant (built-in Bug template: Description / Steps / Expected / Act
     prescribes the correct shape, so this is rendering-time non-determinism, not a prompt bug; the routing
     substance (correct v2 skill name, copy-pasteable, `plan: ✗`) is intact. **A cheap v2-only re-run would
     confirm reproducibility vs a systematic regression** before the operator ticks D2.
-    **RESOLVED-pending-live-confirmation** — see "Handoff-rendering drift — diagnosis + fix" below. The
-    router/reference binding was tightened after this recurred 2/2 with Scenario-2 Div-4; the live
-    confirmation is the optional v2-only Scenario-1 re-run plus Scenarios 3/4 below, not self-certification.
+    **RESOLVED-live-confirmed** (2026-07-18, by Scenario 3) — see "Handoff-rendering drift — diagnosis +
+    fix" below. The router/reference binding was tightened after this recurred 2/2 with Scenario-2 Div-4;
+    **Scenario 3's v2 leg then emitted the corrected shape live** (schema-perfect `**Issue:**` handoff, no
+    drift form present), so this is no longer pending. Operator still owns the D2 tick.
 
 ### Scenario 2 — epic split (twins, since it patches the epic)
 
@@ -241,10 +242,11 @@ placeholders patched to `- [ ] #NN — <title>` links via `edit-body`, epic-batc
     reproducibility data point Scenario-1 called for: it reads as an opus handoff-rendering tendency, not a
     fixture artifact. Operator call whether `references/handoff-renderings.md` needs tightening vs
     accepting it as rendering non-determinism (the substance has never regressed).
-    **RESOLVED-pending-live-confirmation** — the 2/2 recurrence (this + Scenario-1 Div-2) was ruled a real
-    v2 authoring-compliance defect and fixed; see "Handoff-rendering drift — diagnosis + fix" below.
-    Scenarios 3 and 4 (and an optional v2-only Scenario-1 re-run) are the live confirmation this box needs
-    before the operator ticks D2/D4 — no self-certification.
+    **RESOLVED-live-confirmed** (2026-07-18, by Scenario 3) — the 2/2 recurrence (this + Scenario-1 Div-2)
+    was ruled a real v2 authoring-compliance defect and fixed; see "Handoff-rendering drift — diagnosis +
+    fix" below. **Scenario 3's v2 leg emitted the corrected Epic-adjacent shape's sibling — a schema-perfect
+    single-issue `**Issue:**` handoff with no drift form present**, the live confirmation this box needed.
+    Operator still owns the D4 tick.
 
 ## Handoff-rendering drift — diagnosis + fix (post-Scenario-2)
 
@@ -308,11 +310,15 @@ verbatim in both the router and the reference intro; and that the binding text s
 already-tested files changed (no fenced/tested content, no script, no schema); the targeted routing suite
 + the S11 subagent-prompt validator were re-run instead (see Validator output in the report).
 
-**Live confirmation — not self-certified.** This fix is offline-verified (the binding text exists and is
-pinned by a test); it is **not** proof the live rendering drift stops. Scenarios 3 and 4 below are the live
-confirmation this fix needs, plus an optional cheap v2-only re-run of Scenario 1 (the harness the Scenario-1
-Div-2 note already suggested). Scenario-1 D2 / Scenario-2 D4 stay **RESOLVED-pending-live-confirmation**
-(annotated inline above) until one of those runs shows the corrected shape.
+**Live confirmation — CONFIRMED by Scenario 3 (2026-07-18).** This fix was offline-verified (the binding
+text exists and is pinned by a test); the live proof it needed is now in. **Scenario 3's v2 leg emitted a
+schema-perfect `## Handoff`** — `**Issue:** #82 — … · open · bug · plan: stale`, fenced `Next:` on its own
+line, real `**Why:**`; **none** of the four drift forms (`**Filed:**`, dropped `· <state> ·`, invented
+`Snapshot`, inlined `Next:`) appeared. Pre-fix reproduction was 2/2 (Scenario-1 Div-2 + Scenario-2 Div-4);
+post-fix it is **0/1** — the binding tightening holds at emission time on a live headless run, not just in
+the pinned test. Scenario-1 D2 / Scenario-2 D4 are therefore **RESOLVED-live-confirmed** (a cheap v2-only
+re-run of Scenario 1 is now optional corroboration, no longer required); the operator still owns the D2/D4
+ticks on those scenarios' own result sections.
 
 ### Scenario 3 — revise
 
@@ -324,7 +330,56 @@ preserved verbatim, stale-plan flag when the revise is material, correct author/
   every untouched section; the `> 📋 **Implementation plan:**` pointer survives byte-for-byte.
 - [ ] **D2** — the plan comment itself is never edited or deleted.
 - [ ] **D3** — handoff resolves to `plan: stale` (material) / current (cosmetic) matching v1.
-- **Result:** _TODO (operator)_
+- **Result:** **PASS — all three D-checks hold on both legs; the only divergences are prose/DoD-split
+  authoring latitude (boxes left unticked — operator owns the tick + go/no-go). This is also the live
+  run that confirms the handoff-rendering-drift fix (see below).** Run 2026-07-18, branch
+  `rewrite/v2-implementation` (headless `claude -p --plugin-dir`, fresh clone per leg, operator-launched
+  via `!`; `--output-format` default, tool-call census recovered from the two session transcripts).
+  **Fixture (identical both legs):** a filed standalone `bug` build issue on `src/welcome_a.py`'s
+  `welcome()` (built-in Bug template: Description / Steps / Expected / Actual / Additional context /
+  Definition of done), carrying the canonical `> 📋 **Implementation plan:**` pointer (planner's exact
+  form) linking a `<!-- implementation-plan:v1 -->` plan comment, plus a **superseding thread comment**
+  that materially grows scope (empty-name guard → also whitespace-trim + empty-after-trim fallback) and
+  the DoD (dedicated per-case unit tests). The comment pre-authorizes the apply (0-gate design — the diff
+  gate is a freeform prose confirm, no `AskUserQuestion`, so a pre-authorized headless run proceeds). Twin
+  A → v1 `/github-pipeline:github-issue-drafter` revised **#81**; Twin B → v2 `/github-pipeline:drafter`
+  revised **#82**. Both twins byte-identical at seed (modulo the per-issue plan-comment URL). Logs:
+  `scratchpad/v1.log`, `scratchpad/v2.log`; transcripts: `scratchpad/transcript-{v1,v2}.jsonl`.
+  - **Clean (machine-relevant, both legs):** **D1** — both revised bodies stay template-conformant, keep
+    the **full Bug section set** (Description / Steps / Expected / Actual / Additional context / Definition
+    of done — none dropped, none fabricated), and the section sets are **identical v1↔v2** (`diff` clean);
+    the `> 📋 **Implementation plan:**` pointer **survived byte-for-byte** on both (`head -1` pre == post).
+    **D2** — the `<!-- implementation-plan:v1 -->` comment is **untouched** on both (comment `id` **and**
+    body SHA-256 identical pre/post: `#81` `IC_kwDOTNKca88AAAABKg32YQ`, `#82` `IC_kwDOTNKca88AAAABKg357w`).
+    **D3** — both handoffs resolve to **`plan: stale`** (material revise) and forward to the planner in
+    revise mode, matching each other. Labels identical both legs (`bug, planned`, unchanged). No
+    `## Open questions` section and no `**Open questions:**` handoff line on either leg (the revise opened
+    no new OQ). **v2 process profile:** startup = **exactly one `prep_drafter.py … --issue 82` call**
+    (`vector.mode: revise`, `type: standard`, `suggested_playbook: revise.md`, `plan.present: true` — the
+    "vector.mode=revise from prep"); write path = **1 `gh_persist.py edit-body` (staged
+    `/tmp/gh-drafter-82/revised.md`), 0 raw `gh`, 0 `github-ops`**; sub-agents = **1× `Explore`** (the
+    `revise <N>` reviewer, dims `1,2,3,6,+4`). v1's profile = `github-ops` GATHER → `Explore` review →
+    `github-ops` PERSIST_BODY (+ one raw `gh issue view … | head -1` pointer spot-check) — the expected
+    v1 executor-delegation shape.
+  - **Live confirmation — handoff-rendering drift did NOT reproduce (the box this run was for).** v2's
+    emitted `## Handoff` is **schema-perfect**: `**Issue:** #82 — … · open · bug · plan: stale` (correct
+    `**Issue:**` field, `· <state> ·` segment intact — **not** `**Filed:**`, **not** dropped), the
+    `Next:` command in its **own indented fenced line** (`/github-pipeline:planner revise #82`, v2 rename),
+    and a real `**Why:**`. **None** of the four drift forms flagged at Scenario-1 Div-2 / Scenario-2 Div-4
+    (`**Filed:**`; dropped `· <state> ·`; invented `Snapshot` block; inlined `Next:`) is present. v1's
+    handoff is likewise schema-perfect (`**Issue:** #81 — … · open · bug · plan: stale`). After 2/2
+    reproduction pre-fix, this is **0/1 post-fix** — the `handoff-format.md`/router/reference binding
+    tightening (commits `d349622`, `61c8229`) holds live. This is the confirmation Scenario-1 D2 /
+    Scenario-2 D4 and the "Handoff-rendering drift" section below were waiting on.
+  - **Div-1 (D1 — DoD-split + prose authoring latitude; both legs valid).** The bodies are section-set-
+    identical but **not word-for-word**: each leg rewrote every touched section in its own prose (expected
+    opus latitude, same class as Scenario-1/2 Div-1), and the **Definition of done split differs** — v1
+    grew the DoD to **6** checkboxes, v2 to **5**, but both cover the identical case set (empty / `None` /
+    whitespace-only / whitespace-trim / normal-name / dedicated per-case unit tests in
+    `tests/test_welcome_a.py`); v1 gave "trim" and "normal name still greeted" their own boxes where v2
+    folded them. No case is dropped or fabricated on either leg. Operator owns whether the split-count
+    difference matters (it changes no downstream contract — the `## Definition of done` annotation forms
+    the resolver/evaluator parse are unaffected by checkbox cardinality).
 
 ### Scenario 4 — question (with a seeded source-doc OQ)
 
