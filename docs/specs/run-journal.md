@@ -858,7 +858,7 @@ of truth; a **freshly started** resumed session will pick them up by name and ca
 
 ### S16 — Researcher rewrite — PARTIAL (automatable done + committed; live parity PENDING) (2026-07-18)
 
-- **Commit:** _backfilled post-commit_ (`S16: researcher — prep + skill, the thinnest cutover`).
+- **Commit:** `e733d53` (`S16: researcher — prep + skill, the thinnest cutover`).
 - **Status:** **2 of 4 DoD boxes ticked** (boxes 2 + 4, wholly offline). Boxes 1 + 3 carry
   "parity:" clauses — the run's fifth stop; S17 waits on the three researcher scenarios.
 - **Deliverables:** `scripts/prep_researcher.py` (mode vector — marker→revise dominant,
