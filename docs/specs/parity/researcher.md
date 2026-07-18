@@ -156,7 +156,75 @@ forward-to-planner handoff (`research: ✓` with the URL).
   skill name); the `researched` label applied.
 - [ ] **D3** — v2 startup = exactly one `prep_researcher.py` call; the write path = `gh_persist.py comment`
   + `edit-labels`, 0 raw `gh`, 0 `github-ops`; the only sub-agent is the `Explore` validator.
-- **Result:** _(operator fills)_
+- **Result:** **PASS on the machine-relevant broad/currency-risk parity; three explained divergences (boxes
+  left unticked — operator owns the tick + go/no-go).** Run 2026-07-18, branch `rewrite/v2-implementation`
+  (headless `claude -p --plugin-dir … --model opus --permission-mode bypassPermissions --output-format
+  stream-json --verbose`, fresh sandbox clone per leg, operator-launched via `!`; live web + sandbox `gh`
+  both up). **Fixture (identical both twins):** an *"Adopt Pydantic v2 for the report data models
+  (`src/formatter_a.py`)"* build issue — a genuine currency risk (the exact v2 field/model-validator
+  decorator API, the v1→v2 breaking changes, and the `.dict()`/`.json()`→`model_dump()` serialization API
+  are precisely what a model would misremember; the DoD explicitly demands official-doc confirmation with
+  fetch dates), no dossier, no `— <question>` → **broad** (prep confirmed `vector.mode: broad`,
+  `suggested_playbook: broad.md`). The sandbox carries **no dependency manifest** (pure-Python
+  `src/`), so the currency risk lives in the issue text, not a pin — both legs discovered "no Pydantic pin
+  today" as the stack context. **Hands-free confirm-gate technique:** the invocation pre-authorized
+  "Proceed" (identical text on both legs, so any authoring effect is symmetric) so broad's `AskUserQuestion`
+  "Questions" gate never stalled the headless run. Twin A (#87) → v1
+  `/github-pipeline:github-issue-researcher`; Twin B (#88) → v2 `/github-pipeline:researcher`. **Dossiers
+  left in place** (Scenario 3 revises them). Logs: `scratchpad/s16-scen1/{v1,v2}.jsonl`; captured dossiers:
+  `scratchpad/s16-scen1/{v1,v2}-dossier.md` + `{v1,v2}-comments.json`.
+  - **Clean (machine-relevant, both legs):** **D1** — both posted a **marker-first** `<!-- issue-research:v1 -->`
+    dossier (`#87` comment `5010186027`, `#88` comment `5010200097`) with the **identical section set in the
+    identical order**: `## Questions researched` → `## Consensus across sources` → `## Findings by source`
+    (4 `### <source>` **primary/official** subsections each) → `## Implications mapped to the issue's Definition
+    of Done` → `## Tensions for the planner to resolve` → `## Sources` (both omit the optional `## Strawman
+    draft` — no synthetic call to make). **Every source + finding carries fetch date 2026-07-18; no uncited
+    recall** (both state verbatim "nothing here is from model memory"). Both **fired the decline gate
+    explicitly** (v1 "research clearly fired"; v2 "fired on all four criteria") and derived a **4-question**
+    set, and both **independently converged on the same live external truth — Pydantic 2.13.4, released
+    2026-05-06** (*past* the Jan-2026 training cutoff, so recall could not have produced it — proof the web
+    research genuinely ran on both legs). The **frozen provenance strings are byte-identical** v1↔v2 (the
+    footer `_Authored by \`github-issue-researcher\`. Re-run that skill to refresh …_` + the body
+    `\`github-issue-planner\` consumes it and owns the design decisions.`), so the dossiers are
+    **schema-identical** — a v1 planner reading v2's #88 dossier (and vice versa) parses the same marker,
+    section set, and `## External sources consulted` fold-back (parity-protocol §4 cross-consumption holds).
+    **D2** — both `## Handoff` blocks are **schema-perfect**: `**Issue:** #N — … · open · enhancement ·
+    research: ✓ (<dossier-url>)`, a fenced `**Next:**` planner command, real `**Why:**`; **v2 forwards to the
+    v2-renamed `/github-pipeline:planner #88`**, v1 to `/github-pipeline:github-issue-planner #87` — each its
+    own generation's planner. The **`researched` label is applied on both** (`[enhancement, researched]`).
+    **The S15 handoff-rendering-drift fix holds live here too** — v2 emitted `**Issue:**` (not `**Filed:**`),
+    the `· open ·` state segment intact, and a fenced `Next:`; **none** of the four drift forms appeared
+    (0/1 on this route). **D3 (v2 process):** startup = **exactly one `prep_researcher.py 88` call**; write
+    path = **`gh_persist.py comment` + `gh_persist.py edit-labels`** (0 raw-`gh` *writes*, **0 `github-ops`**);
+    sub-agents = **exactly one `Explore` validator** (returned 0 blockers, 1 suggestion + 1 nit, both applied
+    via 2 `Edit`s to the staged `research.md`). v1's contrasting profile is the expected v1 executor-delegation
+    shape: **2× `github-ops`** (GATHER + POST) **+ 1× `Explore`** validator, plus `gh-gather.sh`/`gh-persist.sh`
+    and raw `gh issue view`/`gh issue edit --add-label` in the main loop. v2 ran leaner overall (7 Bash vs 10;
+    1 sub-agent vs 3).
+  - **Div-1 (D3 — v2 made one redundant raw `gh issue view` READ; not v2-specific).** After the validator
+    returned, v2 ran a single `gh issue view 88 --comments --json …` (transcript step 11) to firm up the
+    "Implications mapped to DoD" section, instead of re-reading prep's already-staged `facts.sections`
+    (`issue_body*`/`thread*`). It is **read-only** — not a write, not an executor bypass; **the write path and
+    sub-agent profile are exactly as D3 specifies** (all writes went through `gh_persist.py`, no `github-ops`).
+    v1 *also* made a raw `gh issue view` read (plus more), so this is not a v2 regression — a minor process
+    redundancy against what prep had already gathered, visible to no downstream consumer. Operator owns whether
+    D3's literal "0 raw `gh`" is read as "0 raw-`gh` *writes*" (met) or "0 raw `gh` anywhere" (one read on each
+    leg).
+  - **Div-2 (findings-prose / source-count / tension-count authoring latitude; both legs valid).** The
+    **section set + order are identical**; only prose and subsection cardinality differ. v1 cited **4** sources
+    and surfaced **1** tension (the `architecture.md` §3 "no classes, no framework" rule vs Pydantic
+    `BaseModel` classes); v2 cited **5** (it additionally cited the **GitHub releases** page to date the
+    2.13.4 release) and surfaced **3** tensions (the §3 rule + first-dependency/manifest choice + the
+    validate-vs-format boundary). Both cite the **same core official sources** (PyPI + the Pydantic migration /
+    validators / serialization concept docs) and converged on the same version. Same class as the S10/S15
+    "v1/v2 opus authoring latitude" precedent — neither a schema regression nor a fabrication.
+  - **Div-3 (D1 — one-character frozen-template nit, v1-side; v2 byte-faithful).** In the fixed "What this is:"
+    block, v1 rendered "fetched on the **date** shown" (singular) where the schema's frozen text (and v2) reads
+    "fetched on the **dates** shown". All sources were fetched on the single date 2026-07-18, so v1's singular
+    is arguably more accurate — but it is a one-word drift from the template. It is **not a contract-token
+    break**: the *named* byte-compat tokens (the marker, the footer, and the `\`github-issue-planner\` consumes
+    it` phrase the planner's lookup/fold-back key on) are byte-identical on both legs. Non-contract prose
+    latitude, v1-side.
 
 ### Scenario 2 — decline on a no-currency-risk issue
 
