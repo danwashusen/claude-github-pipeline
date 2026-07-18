@@ -238,7 +238,51 @@ straight to the planner with `research: ✗`.
 - [ ] **D2** — handoff `Issue:` line with `research: ✗` (no URL) + `Next: /github-pipeline:planner #<N>`;
   no `researched` label.
 - [ ] **D3** — v2 makes **no** `gh_persist.py` write on this leg (a decline writes nothing).
-- **Result:** _(operator fills)_
+- **Result:** **PASS on the machine-relevant decline-gate parity; one explained divergence (boxes left
+  unticked — operator owns the tick + go/no-go).** Run 2026-07-18, branch `rewrite/v2-implementation`
+  (headless `claude -p --plugin-dir … --model opus --permission-mode bypassPermissions --output-format
+  stream-json --verbose`, fresh sandbox clone per leg, operator-launched via `!`; live web + sandbox `gh`
+  both up). **Fixture (identical both twins):** a *"Refactor `src/formatter_a.py`: extract a shared
+  input-normalization helper"* build issue — a **pure internal, behaviour-preserving refactor** (extract a
+  private `_coerce(...)` over the three formatter stubs, stdlib-only, no new dependency), deliberately
+  engineered so **none of the four currency-risk conditions fire**: no manifest/pin (stdlib-only, DoD
+  forbids a new dep), not a fast-moving area (decades-stable stdlib string/number/date formatting), the
+  behaviour is fully pinned by in-repo docstring contracts (not model recall), and the DoD explicitly frames
+  naming/placement as *"a local judgment, not an external standard"* (a textbook **design-choice trap**, not
+  research). No dossier, no `— <question>` → **broad** → **decline**. Twin A (#89) → v1
+  `/github-pipeline:github-issue-researcher`; Twin B (#90) → v2 `/github-pipeline:researcher`. **Neutral
+  pre-auth** (identical both legs): authorize headless proceed and make the decline judgment *honestly* —
+  "do not manufacture research where there is none, and do not skip the gate" — so neither leg was biased
+  toward posting. Logs: `scratchpad/s16-scen2/{v1,v2}.jsonl`; snapshots: `scratchpad/s16-scen2/{v1,v2}-comments.json`.
+  - **Clean (machine-relevant, both legs):** **D1** — **both declined and posted NOTHING**: each issue ends
+    with **0 comments, 0 `<!-- issue-research:v1 -->` markers**, and **labels == `[enhancement]`** (no
+    `researched`) — the decline-gate must-post-nothing bar met on both. Both **stated the four-condition
+    verdict for auditability**: v1 as a four-row table, v2 as a numbered one-line-per-condition list; on both
+    legs **all four conditions "do not fire"** with the same reasoning (no pin, stdlib-stable, in-repo
+    docstring contracts, explicitly-local naming), and both explicitly named the **design-choice trap** (the
+    helper-naming call is the planner's from in-repo precedent — `helpers_a.py`, `_`-prefixed privates — not
+    external truth). **D2** — both `## Handoff` blocks are schema-perfect for the decline shape: `**Issue:**
+    #N — … · open · <type> · research: ✗` (**no URL**, correct for a decline), a `**Next:**` planner command,
+    real `**Why:**`; **v2 forwards to the v2-renamed `/github-pipeline:planner #90`**, v1 to
+    `/github-pipeline:github-issue-planner #89`. **No `researched` label on either.** **The S15
+    handoff-rendering-drift fix holds live here too** — v2 emitted `**Issue:**` (not `**Filed:**`), the
+    `· open ·` state segment intact, `research: ✗` (no URL), a code-block `Next:`; **none** of the four drift
+    forms appeared (**0/1** on this route). **D3 (v2 process):** startup = **exactly one `prep_researcher.py 90`
+    call**; **0 `gh_persist.py` writes** (a decline writes nothing — the must-not-write bar met), **0 raw-`gh`
+    writes, 0 `github-ops`, 0 sub-agents** (no `Explore` validator — nothing was synthesized to validate).
+    v1's contrasting profile is the expected v1 executor-delegation shape: **1× `github-ops`** (GATHER) via
+    `gh-gather.sh`, then declined — also 0 writes, 0 label. v2 read two grounding docs (`architecture.md`/`prd.md`)
+    inline to confirm the design-choice-trap read; v1 inspected the tree via a raw `ls`/`cat` Bash step.
+  - **Div-1 (D2 — `<type>` segment: v2 mapped `enhancement`→closed-set `feature`; v1 kept the literal label;
+    v2 arguably the more schema-faithful).** Both issues carry the GitHub `enhancement` label. v2 rendered the
+    `<type>` segment as `· feature ·` — mapping the label onto the **closed-set `<type>` vocabulary**
+    (`handoff-format.md`:51 — `bug, feature, incomplete, story, epic, question`; `enhancement` is *not* a
+    member), while v1 rendered the raw label `· enhancement ·` (as *both* legs did in Scenario 1). Neither
+    affects the decline-gate parity (the load-bearing decline markers are `· open ·` and `research: ✗`, both
+    byte-correct on each leg); the `<type>` token is descriptive, and if anything v2's closed-set mapping is
+    the stricter reading. Non-load-bearing rendering latitude on a non-currency-risk segment; operator owns
+    the tick. (v2 also kept the `[S16 scenario 2 twin-B]` title suffix verbatim in the Issue line where v1
+    dropped its `[twin-A]` suffix — title-verbatim vs cleaned, cosmetic.)
 
 ### Scenario 3 — revise of an existing dossier
 
