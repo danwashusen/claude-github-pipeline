@@ -486,10 +486,10 @@ list); router with broad/targeted/revise as facts-selected modes (single playboo
 bar says otherwise — decided at build); web-research loop and validator carried unchanged.
 
 **DoD**
-- [ ] Dossier comment diffs clean against S1 captures; the decline gate is preserved (parity: a
+- [x] Dossier comment diffs clean against S1 captures; the decline gate is preserved (parity: a
       no-currency-risk issue declines).
 - [x] Prep fixtures: marker present/absent; manifests found/missing.
-- [ ] Grep gates + pins; parity recorded: broad run on a currency-risky issue, decline case,
+- [x] Grep gates + pins; parity recorded: broad run on a currency-risky issue, decline case,
       revise of an existing dossier.
 - [x] Router + largest playbook line count recorded in `docs/specs/parity/researcher.md` and is
       at most half the v1 `SKILL.md` count in `baseline.md` ([prd.md §10](prd.md)).

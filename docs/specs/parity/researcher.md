@@ -297,10 +297,83 @@ deleted), forward-to-planner handoff (`research: ✓` with the *new* URL).
   (not re-researched from scratch); the diff shown to the operator matches what changed.
 - [ ] **D3** — the persist used `--delete-marker-id <prior-comment-id>` (post-before-delete); v2 startup =
   one `prep_researcher.py` call reporting `vector.mode: revise` with the prior dossier's `comment_id`.
-- **Result:** _(operator fills)_
+- **Result:** **PASS on the machine-relevant revise parity; three explained divergences (all matching the
+  Scenario-1/2 classes — boxes left unticked, operator owns the tick + go/no-go).** Run 2026-07-18, branch
+  `rewrite/v2-implementation` (headless `claude -p --plugin-dir … --model opus --permission-mode
+  bypassPermissions --output-format stream-json --verbose`, fresh sandbox clone per leg, operator-launched
+  via `!`; live web + sandbox `gh` both up). **Fixture:** the two **Scenario-1 seeded twins** (#87 v1 dossier
+  `5010186027`, #88 v2 dossier `5010200097`), each carrying a current `<!-- issue-research:v1 -->` Pydantic-v2
+  dossier. An **identical superseding thread comment** was posted to each (#87 `5010307334`, #88 `5010307388`,
+  `scratchpad/s16-scen3/supersede-comment.md`) that **materially changes the research need**: it adds a
+  *fourth* need — the current Pydantic v2 `@computed_field` API (declare a derived `total`; is it serialized
+  by default?) — while **explicitly keeping the original three findings valid**. The partial change is the
+  point: both legs must refresh **only** what changed and carry the untouched findings forward verbatim. The
+  dossier's presence ⇒ **revise** (v2 prep confirmed `vector.mode: revise`, `suggested_playbook: revise.md`,
+  `revise.dossier.comment_id: 5010200097`); no `— <question>` on the trigger, so the new need is discovered
+  from the thread (the spec's "new thread question" path). Twins are **separate issues** ⇒ the two legs don't
+  collide on GitHub state (no reset-between-legs). Twin A (#87) → v1 `/github-pipeline:github-issue-researcher`;
+  Twin B (#88) → v2 `/github-pipeline:researcher`. Logs: `scratchpad/s16-scen3/{v1,v2}.jsonl`; dossiers:
+  `scratchpad/s16-scen3/{v1,v2}-{prior-,}dossier.md` + `{v1,v2}-comments.json`; driver `run-scen3.sh`.
+  - **Clean (machine-relevant, both legs):** **D1** — **both delete-and-reposted, exactly one dossier
+    remains.** #87: prior `5010186027` **deleted**, new dossier `5010325214` posted (2 comments = 1 supersede
+    thread + 1 dossier; **1** `<!-- issue-research:v1 -->` marker). #88: prior `5010200097` **deleted**, new
+    dossier `5010341509` (same shape; **1** marker). No orphan, no double — the harness asserted marker-count
+    == 1 and prior-id-absent on both. **D2** — the refresh is a **textbook partial update**: `diff prior→new`
+    on each leg is **purely additive** for the `@computed_field` material (a new `## Questions researched`
+    entry, a new `## Consensus` bullet, a new `### …computed fields…` **primary/official** findings subsection,
+    a new `## Implications…DoD` mapping, a new `## Tensions` entry, and new `## Sources` rows) plus the two
+    **correct consequential** edits the scope change forces (v1: "agree on all **four** points"→"all points"
+    now the set is five; v2: the stack-context line gains "…and (per the 2026-07-18 scope addition) a derived
+    `total`"). **Every prior finding — version 2.13.4, the `@field_validator`/`@model_validator` API, the
+    v1→v2 breaking changes, the `model_dump()`/`model_dump_json()` serialization API — is carried forward
+    verbatim** (the diffs touch none of those lines), and **every new claim carries fetch date 2026-07-18**
+    against the official Pydantic Fields doc. **The in-session diff was shown** on both legs before the persist
+    (v2 narrated "carrying all three prior findings forward verbatim … exactly one dossier comment remains").
+    **D3** — the write path is **delete-and-repost with `--delete-marker-id`** on both: v2 →
+    `gh_persist.py comment … 88 … --delete-marker-id 5010200097`; v1 → `gh-persist.sh comment … 87 …
+    --delete-marker-id 5010186027` (via `github-ops` `PERSIST_COMMENT`). **v2 startup = exactly one
+    `prep_researcher.py 88` call** reporting `mode: revise` + `revise.dossier.present: true` +
+    `comment_id: 5010200097` (the prior dossier); write path = **`gh_persist.py comment` (delete-and-repost) +
+    `edit-labels`**, **0 `github-ops`**, sub-agents = **exactly one `Explore` validator** (spawned via the
+    `Agent` tool at the spine's `S-validate` step). Both handoffs are schema-perfect: `**Issue:** #N — … ·
+    open · <type> · research: ✓ (<NEW dossier url>)` (v1 `…5010325214`, v2 `…5010341509` — the *new* URL), a
+    fenced `**Next:**` planner command (**v2 the v2-renamed `/github-pipeline:planner #88`**, v1
+    `/github-pipeline:github-issue-planner #87`), and a real `**Why:**` naming exactly what the refresh
+    changed (the computed-field scope addition). **The `researched` label stays applied on both.** **The S15
+    handoff-rendering-drift fix holds live here too** — v2 emitted `**Issue:**` (not `**Filed:**`), the
+    `· open ·` segment intact, `research: ✓` with the new URL, a fenced `Next:`; **none** of the four drift
+    forms appeared (**0/1** on this route).
+  - **Div-1 (D3 — v2 made one redundant raw `gh issue view` READ; not v2-specific; same as Scenario 1).**
+    After prep, v2 ran a single `gh issue view 88 --comments --json …` (read-only) rather than re-reading
+    prep's already-staged `facts.sections`. It is **read-only — not a write, not an executor bypass**; all
+    writes went through `gh_persist.py`, 0 `github-ops`. Operator owns whether D3's literal "0 raw `gh`" reads
+    as "0 raw-`gh` *writes*" (met) or "0 raw `gh` anywhere" (one read on this leg). Identical to Scenario 1
+    Div-1.
+  - **Div-2 (D2 — findings-prose / source-count / tension-count authoring latitude; both legs valid; same
+    class as Scenario 1 Div-2).** The **added section set is identical**; only the new-source cardinality and
+    prose differ. v1 cited **two** new official pages (the Fields *concept* doc + the `pydantic/fields` API
+    reference) and added **two** computed-field detail rows (decorator order, the `alias`/`repr`/`return_type`/
+    `exclude_if` params); v2 cited **one** (the Fields concept doc) and additionally noted **`exclude_if` is
+    new in v2.13**. Both confirmed the same core facts (declare `@computed_field` over `@property`; serialized
+    by default) against the same official source and converged on the same answer. Neither a schema regression
+    nor a fabrication — the S10/S15/S16-scen1 "opus authoring latitude" precedent.
+  - **Div-3 (D2 — the `<type>` handoff segment; the *inverse* of Scenario 2, confirming it's latitude not a
+    regression).** Both issues carry the GitHub `enhancement` label. This run **v1** rendered `· feature ·`
+    (mapping the label onto the closed-set `<type>` vocabulary, `handoff-format.md`:51) while **v2** kept the
+    literal `· enhancement ·` — the **opposite mapping** from Scenario 2 (where v2 mapped `feature` and v1 kept
+    `enhancement`). That the two legs *flip* which one maps across runs is proof the `<type>` token is
+    **non-deterministic opus rendering latitude on a non-currency-risk segment**, not a v1-vs-v2 behavioural
+    difference. The load-bearing revise markers (`· open ·`, `research: ✓` + the *new* URL) are byte-correct
+    on both legs. Operator owns the tick.
 
 ## Go/no-go (operator)
 
-- [ ] All three scenarios PASS (or every divergence is adjudicated as an explained v1 defect / fixture
-  artifact / v2 enrichment, recorded above).
-- **Recommendation:** _(operator fills — GO / NO-GO)_
+- [x] All three scenarios PASS (or every divergence is adjudicated as an explained v1 defect / fixture
+  artifact / v2 enrichment, recorded above). **Scenario 1 (broad/currency-risk) PASS, Scenario 2 (decline)
+  PASS, Scenario 3 (revise) PASS** — every divergence across the three is an explained read-only redundancy,
+  opus authoring latitude, or non-load-bearing `<type>`-token rendering; none is a v2 regression.
+- **Recommendation:** **GO.** All three researcher modes (broad, decline, revise) reach v1-parity on the
+  machine-relevant contract: marker-first dossier schema (byte-compat, frozen provenance), the decline gate,
+  and revise's delete-and-repost (`--delete-marker-id`, exactly-one-marker, partial refresh with verbatim
+  carry-forward). v2 runs leaner throughout (one `prep_researcher.py`, `gh_persist.py` write path, 0
+  `github-ops`, a lone `Explore` validator) and the S15 handoff-drift fix holds live 0/1 on every route.
