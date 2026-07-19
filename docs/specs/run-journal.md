@@ -901,7 +901,57 @@ of truth; a **freshly started** resumed session will pick them up by name and ca
   (**PASS, 0 actionable**, 2 advisories: the fidelity undercount [one→two adaptations] +
   the margin pin — both landed in a record micro-round, +1 pinning test). **0 actionable rounds.**
 
+### S17 — Setup rewrite — PARTIAL (automatable done + committed; live landing scenarios PENDING) (2026-07-19)
+
+- **Commit:** _backfilled post-commit_ (`S17: skills/setup/ — setup rewrite + prep_setup`).
+- **Status:** **2 of 5 boxes ticked** (1 byte-identity, 4 legacy split). Boxes 2/3 (the live
+  landing runs) + box 5's parity clause are the operator's — the run's sixth stop.
+- **Deliverables:** `scripts/prep_setup.py` (gh-free one-call inventory: multi-file block list +
+  classification + legacy/stack-profile/ambiguity detection; only-`ok` status ruled conformant —
+  malformed blocks are inventory FACTS the router escalates, v1's "refused, not guessed") +
+  `skills/setup/` (router 83 + ONE playbook 85 — a genuinely single linear flow, ruled the right
+  §5 call; **168 ≤ 169, the third 1-line budget pin, test-enforced**; all 11 canonical blocks
+  **byte-identical** via `config_block.py` — reviewer spot-wrote four; the legacy health-checks
+  split preserved; the §8.2 landing gate authored exactly — one offer, decline → zero git actions
+  + workspace path + commands; the stack-profile user-owned rules; `block-authoring.md` carried
+  with two adaptations) + 34 tests + the parity scaffold (two live landing scenarios seeding
+  deliberate drift).
+- **Two adjudications of record:** (i) **`docs: auto` is an interview FRAMING** over the canonical
+  `standard`/`story` keys, never a literal block key (a literal key would break byte-identity AND
+  require an evaluator change; `block-authoring.md` says "never write a `docs:` key" — ruled the
+  faithful reading of the plan's "`docs: auto` style option"); (ii) **setup stays
+  model-invocable** — the first-pass `disable-model-invocation: true` addition was REVERSED on
+  review: CLAUDE.md:73 deliberately excludes setup from the trio, v1 never had the key, and the
+  spec's Known-bugs §1 pre-analyzed the DoD's "retained" as an over-generalization; the
+  absence-pin test carries the citations. **Rule for S18/S19: the other three standalone tools DO
+  carry the key — setup is the exception, not the template; the §8.2 gate is setup's real guard.**
+- **Dual-platform:** **1047/1047** macOS + Linux. Census 85 → 87 (+`§8.1`/`§8.2`), zero drops.
+- **Process:** 1 opus implementor → orchestrator sanity (both platforms) → 1 opus reviewer
+  (CHANGES REQUIRED: the disable-model-invocation contradiction — caught against CLAUDE.md + the
+  spec after both the plan's DoD and the orchestrator's brief propagated the flawed wording) →
+  adjudication + fix → re-verify (**PASS**). **1 fix round.**
+
 ## Handback log
+
+### 2026-07-19 handback — STOP at S17's live landing scenarios (sixth operator gate) — OPEN
+
+The run is stopped at **S17 boxes 2/3 + box 5's parity clause**. Everything automatable through
+S17 is committed (**unpushed**; 1047 offline tests green both platforms).
+
+**Operator actions (scaffolded in [`docs/specs/parity/setup.md`](parity/setup.md)):** two live
+scenarios on the sandbox, both against a deliberately-drifted config (the scaffold's seeding
+notes — the sandbox blocks are canonical since `6c5f669`, so seed the drift first):
+1. **Landing approved:** run `/github-pipeline:setup` interactively (the landing gate is an
+   `AskUserQuestion` — NOT headless), approve the landing → a real sandbox PR must open with the
+   block-diff summary body; `git -C <root> status` clean throughout (the edits live in the work
+   workspace, never the root).
+2. **Landing declined:** re-run against fresh drift, decline → ZERO git actions (no commit, no
+   push, no PR); the summary must report the workspace path + ready-to-run landing commands.
+Compare each against the v1 `github-pipeline-setup` behavior where meaningful (v1 has no landing
+gate — the §8.2 gate is a v2 addition per the PRD; the parity bar is the BLOCKS' byte-identity +
+the flows, already fixture-proven offline). Tick boxes 2, 3, and 5 when the scenarios pass;
+commit locally; never push this repo; resume the orchestrator — it flips S17 to ACCEPTED and
+proceeds **S18 → S19 → S20**.
 
 ### 2026-07-18 handback — STOP at S16's live parity (fifth operator gate) — CLOSED 2026-07-19
 

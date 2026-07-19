@@ -511,12 +511,12 @@ bar says otherwise — decided at build); web-research loop and validator carrie
 hook-block authoring retained, linted via `workspace.py lint`.
 
 **DoD**
-- [ ] Written blocks are byte-identical to v1 canonical forms (fixture diff).
+- [x] Written blocks are byte-identical to v1 canonical forms (fixture diff).
 - [ ] Live sandbox run (landing approved): PR opened with the block-diff summary;
       `git -C <root> status` clean throughout.
 - [ ] Live sandbox run (landing declined): no commit/push/PR occurs; the summary reports the
       workspace path and ready-to-run landing commands.
-- [ ] Legacy `pr-evaluator-health-checks` split/migration preserved (fixture).
+- [x] Legacy `pr-evaluator-health-checks` split/migration preserved (fixture).
 - [ ] `disable-model-invocation: true` retained; grep gates; parity recorded.
 
 **Testing:** offline config-block fixtures; one live sandbox run.
