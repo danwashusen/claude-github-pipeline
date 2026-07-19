@@ -903,7 +903,7 @@ of truth; a **freshly started** resumed session will pick them up by name and ca
 
 ### S17 — Setup rewrite — PARTIAL (automatable done + committed; live landing scenarios PENDING) (2026-07-19)
 
-- **Commit:** _backfilled post-commit_ (`S17: skills/setup/ — setup rewrite + prep_setup`).
+- **Commit:** `7d8b931` (`S17: skills/setup/ — setup rewrite + prep_setup`).
 - **Status:** **2 of 5 boxes ticked** (1 byte-identity, 4 legacy split). Boxes 2/3 (the live
   landing runs) + box 5's parity clause are the operator's — the run's sixth stop.
 - **Deliverables:** `scripts/prep_setup.py` (gh-free one-call inventory: multi-file block list +
