@@ -48,7 +48,7 @@ carry.
 | Field | Values |
 |---|---|
 | Issue `state` | `open`, `closed` |
-| Issue `type` | `bug`, `feature`, `incomplete`, `story`, `epic`, `question` |
+| Issue `type` | `bug`, `feature`, `incomplete`, `story`, `epic`, `question` (the slot takes ONLY these values — map the repo's own label onto this set, e.g. `enhancement` → `feature`; never leak a raw label that isn't a member) |
 | Issue `research` | `✓` (dossier posted), `✗` (none / judged not needed), `stale` (posted but superseded by an issue or source change) |
 | Issue `plan` | `✓` (posted), `✗` (none), `stale` (posted but superseded) |
 | PR `state` | `draft`, `open`, `merged`, `closed` |

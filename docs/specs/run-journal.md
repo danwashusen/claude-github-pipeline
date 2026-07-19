@@ -856,7 +856,27 @@ of truth; a **freshly started** resumed session will pick them up by name and ca
   `handoff-renderings.md` needs tightening. Scenarios 3–4 (revise / question) still TODO. Committed
   locally (unpushed).
 
-### S16 — Researcher rewrite — PARTIAL (automatable done + committed; live parity PENDING) (2026-07-18)
+### S16 — Researcher rewrite — ACCEPTED (automatable 2026-07-18; live parity closed 2026-07-19)
+
+- **Parity (operator-run, 3 scenarios, all PASS; go/no-go GO):** `41ad36a` scenario 1 (broad
+  currency-risky — twins #87/#88 converged independently on live Pydantic 2.13.4, past-cutoff
+  proof the web loop genuinely ran; dossiers seeded for scenario 3), `4b27b47` scenario 2
+  (decline — both legs posted NOTHING, four-condition verdicts stated, the design-choice trap
+  defeated), `5741d7d` scenario 3 (revise — delete-and-repost with exactly one marker surviving
+  on each, partial refresh with prior findings carried forward verbatim; **boxes 1+3 + GO by the
+  operator**). The S15 drift fix held live across all legs (now 0/10 post-fix cumulative).
+- **Orchestrator rulings at the gate:** the redundant read-only `gh issue view` is within the
+  §7-rule-7 bar (writes/fetch-envelopes; flow-time reads sanctioned per the S14 precedent;
+  parity-neutral — both legs did it); the `<type>` token inversions (v1 leaked `enhancement` in
+  scen-2, v2 in scen-3) exposed a fill-rule gap in the closed-set slot.
+- **Post-acceptance hardening (reviewer-verified, folded into this acceptance per the S13
+  precedent):** the SSoT Issue-`type` row gains the mapping instruction (map repo labels onto the
+  set — `enhancement` → `feature`; never leak a non-member; the six values byte-unchanged); one
+  echo sentence in the researcher's renderings (the demonstrably-leaking skill); the other four
+  skills verified inheriting cleanly with no local echo needed; +5 pinning tests (researcher
+  suite → 47); census zero-delta; the operator's records byte-untouched.
+
+#### Original PARTIAL entry (2026-07-18, superseded by the acceptance above)
 
 - **Commit:** `e733d53` (`S16: researcher — prep + skill, the thinnest cutover`).
 - **Status:** **2 of 4 DoD boxes ticked** (boxes 2 + 4, wholly offline). Boxes 1 + 3 carry
@@ -883,7 +903,14 @@ of truth; a **freshly started** resumed session will pick them up by name and ca
 
 ## Handback log
 
-### 2026-07-18 handback — STOP at S16's live parity (fifth operator gate) — OPEN
+### 2026-07-18 handback — STOP at S16's live parity (fifth operator gate) — CLOSED 2026-07-19
+
+**Superseded; retained as a pointer.** The operator ran all three researcher scenarios (PASS ×3
+across `41ad36a`/`4b27b47`/`5741d7d`, boxes 1+3 + GO at scenario 3); two orchestrator rulings
+closed the recorded divergences (the flow-time-read bar; the type-token fill rule → the SSoT
+hardening folded into the acceptance). S16 flipped to ACCEPTED above. The run resumes at
+**S17 → S18 → S19 → S20**; the remaining operator gates are the S17–S19 landing scenarios and
+S20's final census.
 
 The run is stopped at **S16 boxes 1 + 3's parity clauses**. Everything automatable through S16 is
 committed (**unpushed**; 1007 offline tests green both platforms).

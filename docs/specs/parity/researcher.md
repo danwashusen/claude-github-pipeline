@@ -274,15 +274,23 @@ straight to the planner with `research: ✗`.
     `gh-gather.sh`, then declined — also 0 writes, 0 label. v2 read two grounding docs (`architecture.md`/`prd.md`)
     inline to confirm the design-choice-trap read; v1 inspected the tree via a raw `ls`/`cat` Bash step.
   - **Div-1 (D2 — `<type>` segment: v2 mapped `enhancement`→closed-set `feature`; v1 kept the literal label;
-    v2 arguably the more schema-faithful).** Both issues carry the GitHub `enhancement` label. v2 rendered the
-    `<type>` segment as `· feature ·` — mapping the label onto the **closed-set `<type>` vocabulary**
-    (`handoff-format.md`:51 — `bug, feature, incomplete, story, epic, question`; `enhancement` is *not* a
-    member), while v1 rendered the raw label `· enhancement ·` (as *both* legs did in Scenario 1). Neither
-    affects the decline-gate parity (the load-bearing decline markers are `· open ·` and `research: ✗`, both
-    byte-correct on each leg); the `<type>` token is descriptive, and if anything v2's closed-set mapping is
-    the stricter reading. Non-load-bearing rendering latitude on a non-currency-risk segment; operator owns
-    the tick. (v2 also kept the `[S16 scenario 2 twin-B]` title suffix verbatim in the Issue line where v1
-    dropped its `[twin-A]` suffix — title-verbatim vs cleaned, cosmetic.)
+    v2 arguably the more schema-faithful). HARDENED (post-acceptance micro-round).** Both issues carry the
+    GitHub `enhancement` label. v2 rendered the `<type>` segment as `· feature ·` — mapping the label onto
+    the **closed-set `<type>` vocabulary** (`handoff-format.md`:51 — `bug, feature, incomplete, story, epic,
+    question`; `enhancement` is *not* a member), while v1 rendered the raw label `· enhancement ·` (as *both*
+    legs did in Scenario 1). Neither affects the decline-gate parity (the load-bearing decline markers are
+    `· open ·` and `research: ✗`, both byte-correct on each leg); the `<type>` token is descriptive, and if
+    anything v2's closed-set mapping is the stricter reading. Non-load-bearing rendering latitude on a
+    non-currency-risk segment; operator owns the tick. (v2 also kept the `[S16 scenario 2 twin-B]` title
+    suffix verbatim in the Issue line where v1 dropped its `[twin-A]` suffix — title-verbatim vs cleaned,
+    cosmetic.) **Fix landed:** `_shared/handoff-format.md`'s Issue `type` row now carries an explicit mapping
+    instruction (map the repo's own label onto the closed set — `enhancement` → `feature` named as the worked
+    example — never leak a raw label that isn't a member), echoed in
+    `skills/researcher/references/handoff-renderings.md` (the file the forced-read binding actually loads at
+    emission; the SSoT row alone isn't in context then). Pinned by
+    `tests/test_researcher_routing.py::TypeTokenMappingHardeningTests` (5 tests). This run's own record — v1
+    leaked the raw label, v2 mapped it correctly — stands as the honest pre-fix observation; it is not
+    retroactively edited.
 
 ### Scenario 3 — revise of an existing dossier
 
@@ -358,13 +366,18 @@ deleted), forward-to-planner handoff (`research: ✓` with the *new* URL).
     by default) against the same official source and converged on the same answer. Neither a schema regression
     nor a fabrication — the S10/S15/S16-scen1 "opus authoring latitude" precedent.
   - **Div-3 (D2 — the `<type>` handoff segment; the *inverse* of Scenario 2, confirming it's latitude not a
-    regression).** Both issues carry the GitHub `enhancement` label. This run **v1** rendered `· feature ·`
-    (mapping the label onto the closed-set `<type>` vocabulary, `handoff-format.md`:51) while **v2** kept the
-    literal `· enhancement ·` — the **opposite mapping** from Scenario 2 (where v2 mapped `feature` and v1 kept
-    `enhancement`). That the two legs *flip* which one maps across runs is proof the `<type>` token is
-    **non-deterministic opus rendering latitude on a non-currency-risk segment**, not a v1-vs-v2 behavioural
-    difference. The load-bearing revise markers (`· open ·`, `research: ✓` + the *new* URL) are byte-correct
-    on both legs. Operator owns the tick.
+    regression). HARDENED (post-acceptance micro-round).** Both issues carry the GitHub `enhancement` label.
+    This run **v1** rendered `· feature ·` (mapping the label onto the closed-set `<type>` vocabulary,
+    `handoff-format.md`:51) while **v2** kept the literal `· enhancement ·` — the **opposite mapping** from
+    Scenario 2 (where v2 mapped `feature` and v1 kept `enhancement`). That the two legs *flip* which one maps
+    across runs is proof the `<type>` token is **non-deterministic opus rendering latitude on a
+    non-currency-risk segment**, not a v1-vs-v2 behavioural difference. The load-bearing revise markers
+    (`· open ·`, `research: ✓` + the *new* URL) are byte-correct on both legs. Operator owns the tick. **Fix
+    landed:** same fix as Scenario-2 Div-1 — `_shared/handoff-format.md`'s Issue `type` row now instructs the
+    emitter to map the repo's own label onto the closed set (never leak it raw), echoed in the researcher's
+    own `handoff-renderings.md`, pinned by `TypeTokenMappingHardeningTests`. The inverse-flip observation
+    above is exactly what motivated closing this gap deterministically (per-run non-determinism, not a
+    v1/v2 defect) — this run's record stands unedited as the honest pre-fix evidence.
 
 ## Go/no-go (operator)
 

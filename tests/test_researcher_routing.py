@@ -35,6 +35,16 @@ Surfaces the S16 DoD / Testing section names:
 8. **The S15 handoff-binding language** — the forced point-of-use Read + emit-verbatim + the four named
    drift prohibitions, present in the router, the reference file, and the spine's `## S-handoff`.
 
+9. **The `<type>` closed-set mapping hardening** (post-acceptance micro-round, prompted by the S16
+   Scenario-2/3 live-parity `<type>`-token divergence — an inverse flip across runs proved it was
+   per-run opus rendering non-determinism, not a v1/v2 behavioural difference). The shared SSoT
+   (`_shared/handoff-format.md`'s Issue `type` row) now carries a terse mapping instruction — the slot
+   takes ONLY the closed-set values, a raw repo label (e.g. `enhancement`) must be mapped onto the set
+   (e.g. `feature`), never leaked verbatim — and the researcher's own `handoff-renderings.md` echoes it
+   (the file the forced-read binding actually loads at emission; the SSoT row alone isn't in context
+   then). These tests pin both the SSoT instruction and its researcher-side echo, `enhancement` named as
+   the worked example in both.
+
 No network: gh_persist.py's `gh` calls resolve to the offline shim via tests/run.py's PATH wiring; the
 dry-run path performs no gh call at all.
 """
@@ -56,6 +66,7 @@ PLAYBOOKS_DIR = SKILL_DIR / "playbooks"
 REFERENCES_DIR = SKILL_DIR / "references"
 GH_PERSIST = SCRIPTS_DIR / "gh_persist.py"
 EXAMPLES = REPO_ROOT / "docs" / "specs" / "examples"
+SHARED = REPO_ROOT / "skills" / "_shared"
 
 ROUTABLE_PLAYBOOKS = {"broad.md", "targeted.md", "revise.md"}
 SPINE = "research-spine.md"
@@ -519,6 +530,49 @@ class CarriedReferenceTests(unittest.TestCase):
         tactics = (REFERENCES_DIR / "gather-tactics.md").read_text(encoding="utf-8")
         for cue in ("Primary / official", "deep-research", "JS-rendered docs", "fetch date"):
             self.assertIn(cue, tactics, "gather-tactics cue %r missing" % cue)
+
+
+class TypeTokenMappingHardeningTests(unittest.TestCase):
+    """Post-acceptance micro-round (S16 Scenario-2/3 `<type>`-token divergence — an inverse flip across
+    runs proved per-run opus rendering non-determinism, not a v1/v2 behavioural difference). The shared
+    SSoT (`_shared/handoff-format.md`'s Issue `type` row) must instruct the emitter to map a raw repo
+    label onto the closed set rather than leaking it verbatim; the researcher's own `handoff-renderings.md`
+    — what the forced-read binding actually loads at emission, when the SSoT row alone isn't in context —
+    must echo the same instruction. `enhancement` is pinned as the worked example in both, matching the
+    live-observed leaking label."""
+
+    def setUp(self):
+        self.ssot = (SHARED / "handoff-format.md").read_text(encoding="utf-8")
+        self.renderings = (REFERENCES_DIR / "handoff-renderings.md").read_text(encoding="utf-8")
+
+    def test_ssot_type_row_carries_the_mapping_instruction(self):
+        # The closed-set row itself (still exactly six values — the mapping instruction must not grow
+        # the set, only instruct how to fill it).
+        self.assertIn(
+            "| Issue `type` | `bug`, `feature`, `incomplete`, `story`, `epic`, `question`", self.ssot
+        )
+        self.assertRegex(self.ssot, r"map the repo's own label onto this set")
+        self.assertRegex(self.ssot, r"never leak a raw label")
+
+    def test_ssot_names_enhancement_as_the_worked_example(self):
+        self.assertRegex(self.ssot, r"`enhancement`\s*→\s*`feature`")
+
+    def test_researcher_renderings_echoes_the_type_mapping_instruction(self):
+        self.assertRegex(self.renderings, r"mapped onto that closed set")
+        self.assertRegex(self.renderings, r"never leaked raw")
+        self.assertRegex(self.renderings, r"`enhancement`.*renders as `feature`")
+
+    def test_researcher_renderings_echo_cites_the_ssot_type_row(self):
+        self.assertIn("_shared/handoff-format.md", self.renderings)
+        self.assertRegex(self.renderings, r"Issue `type` row")
+
+    def test_echo_line_is_prose_not_inside_a_code_fence(self):
+        for i, line, in_fence in _fence_stripped_lines(REFERENCES_DIR / "handoff-renderings.md"):
+            if in_fence:
+                self.assertNotIn(
+                    "mapped onto that closed set", line,
+                    "the type-mapping echo must be prose, not inside a code fence (%d)" % i,
+                )
 
 
 if __name__ == "__main__":

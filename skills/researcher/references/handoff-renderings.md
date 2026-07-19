@@ -14,7 +14,9 @@ The `research:` marker carries the dossier comment's URL in parentheses on the c
 per the shared schema's rule that "when the marker carries a URL (the researcher's clean exit), append it in
 parentheses" ([`../../_shared/handoff-format.md`](../../_shared/handoff-format.md)). The researcher never
 authors a plan, so `plan:` is **omitted** on both shapes (the issue has no plan yet — the planner posts one
-next).
+next). The `<type>` segment (`bug`/`feature`/`incomplete`/`story`/`epic`/`question`) is the repo's own label
+mapped onto that closed set, never leaked raw — e.g. an `enhancement` label renders as `feature`
+([`../../_shared/handoff-format.md`](../../_shared/handoff-format.md)'s Issue `type` row).
 
 ## Renderings
 
