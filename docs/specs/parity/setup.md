@@ -201,11 +201,76 @@ on `main` throughout.
 - [ ] **D4 (v2 process)** — v2 startup = exactly one `prep_setup.py` call; block I/O = `config_block.py`
   only (0 hand-rolled `sed`/`Edit`/`Write` on a marker block); the landing = `workspace.py ensure --work`
   + `gh_persist.py create-pr`; 0 `github-ops`.
-- **Result:** _(operator fills — PASS/FAIL, run date, twins, logs; boxes ticked by the reviewer)_
+- **Result: PASS** (v2 leg, 2026-07-20). Run interactively (`claude --plugin-dir <this branch> --model
+  opus`, cwd = a fresh sandbox clone) — the §8.2 gate is a real `AskUserQuestion` card, so this leg was
+  operator-driven end to end, not headless. Session transcript:
+  `~/.claude/projects/…-scratchpad-s17-scen1-clone/31c3eb73-….jsonl`.
+
+  **Fixture / seeded drift** — sandbox `main` moved `6c5f669 → 1b048ba` (`seed(S17-parity-scen1)`,
+  **pushed**): `<!-- issue-resolver-fast-checks -->` removed entirely; `<!-- pr-evaluator-static-checks -->`
+  staled to `python3 -m flake8 --max-line-length 100 .` (ungroundable — no manifest declares it). The
+  baseline's legacy `<!-- pr-evaluator-health-checks -->` and the absent `claude-code-stack-profile` came
+  along for free, so the run exercised all four dispositions: **written / reconciled / migrated+removed /
+  seeded**. The drift must be **pushed**, not just committed locally: `workspace.py ensure --work` forks at
+  `origin/<base>` and gates on `merge --ff-only origin/main`, so a local-only drift commit yields
+  `ROOT_DIVERGED` *and* a workspace without the drift. Per-block confirms: all four answered with the
+  recommended option; landing gate: **approved**.
+
+  - **D1 — PASS (byte-identity half).** All three written blocks parse via `config_block.py read`, and
+    `pr-evaluator-health-checks` is correctly absent (exit 3). Both command blocks reproduce the frozen
+    `- \`<command>\` — <description>` form from `docs/specs/examples/config-blocks.md` §
+    `issue-resolver-fast-checks` / `pr-evaluator-static-checks` byte-for-byte; delimiters one per line.
+    The **v1-vs-v2 half was not exercised** — this leg was v2-only per the operator's PASS definition
+    (a real PR opens / root stays clean / blocks parse canonically). Note for a future v1 leg: v1
+    `github-pipeline-setup` has no landing step at all, so only the *block bodies* are comparable.
+  - **D2 — PASS.** [PR #91](https://github.com/danwashusen/gh-pipeline-sandbox/pull/91), head
+    `setup/config-sandbox`, base `main`, workspace commit `09cecd3`. The body summarizes the block diffs
+    exactly as specified: a `## Block diffs` marker/file/disposition table (written / reconciled / removed
+    / seeded), a per-marker rationale section each, `## Untouched` naming the eight already-correct
+    markers and why no `github-pipeline-config` header was proposed (target file is `CLAUDE.md`, not
+    `COMMANDS.md`), `## Validation`, and `## Known gaps`.
+  - **D3 — PASS at every phase boundary, with one transient (Div-2).** `git -C <root> status` clean and
+    on `main` at every checkpoint — before the run, after workspace creation, and after the PR opened
+    (root HEAD never left `1b048ba`). All edits landed in `.worktrees/setup/config-sandbox`.
+  - **D4 — PASS.** 13 Bash calls total, **0** `Task`/`Agent` sub-agents, **0** `Edit`/`Write`/
+    `NotebookEdit` tool calls, **0** `sed -i`, **0** `github-ops` (the single transcript hit is the agent
+    roster in the system prompt, not an invocation). Startup = **one** `prep_setup.py` (two attempts —
+    see Div-1). Block I/O = `config_block.py` only (3 `upsert` + 1 `remove`, the remove issued only after
+    both replacements were written). Landing = `workspace.py ensure --work setup/config-sandbox --base
+    main --root <root>` → `gh_persist.py create-pr`. The one live `gh` call before the landing was the
+    report-only `gh auth status` readiness probe (router-level environment probe, not a block gate) —
+    prep itself made no `gh` call, as designed.
+
+  **4 divergences (none blocks the scenario; Div-1 is a real defect to fix):**
+  1. **Div-1 — `scripts/prep_setup.py` and `scripts/workspace.py` are missing the executable bit.** The
+     skill's prescribed `${CLAUDE_PLUGIN_ROOT}/scripts/prep_setup.py` invocation exits **126**
+     (`permission denied`); the session self-recovered with `python3 <path>`. Every other prep
+     (`prep_drafter/evaluator/planner/researcher/resolver.py`) is `0755` — these two are `0644`. A real
+     S17 packaging defect, **TO FIX** (`chmod +x`); deliberately *not* fixed in this commit so Scenario 2
+     runs under identical conditions.
+  2. **Div-2 — the run briefly dirtied the root itself.** A step-3 grounding command
+     (`python3 -m compileall -q .`, run to prove the candidate command is viable) wrote `src/__pycache__/`
+     into the read-only root. The session **detected and removed it unprompted** in the very next call,
+     before any workspace op, so `workspace.py ensure` returned `ok` rather than `ROOT_DIRTY`. Root
+     hygiene held at every phase boundary but not literally every instant. Worth a playbook note that
+     step-3 grounding is inference from repo evidence, not command execution in the root.
+  3. **Div-3 — confirm/diff ordering.** Playbook §4 specifies *show the diff, then gate*. The run gated
+     **first** (one 4-question `AskUserQuestion` card, each option carrying the exact proposed block
+     bytes as a preview), then rendered the full diffs and proceeded to stage without a second card.
+     "Nothing is written silently" is satisfied in substance — the operator approved exact bytes — but
+     the order is inverted relative to §4.
+  4. **Div-4 — re-added block position.** `issue-resolver-fast-checks` was re-appended at the **end** of
+     `CLAUDE.md` rather than restored to its original slot after `issue-resolver-test-target` — the
+     `config_block.py upsert` append semantics for a missing marker. Cosmetic; parse is unaffected.
 
 ### Scenario 2 — landing declined
 
-Same seeded drift as Scenario 1 (reset first). Run v2 `setup`, approve the per-block confirms, but
+Same seeded drift as Scenario 1 (reset first). **State Scenario 1 left behind:** the drift commit
+`1b048ba` is still on sandbox `main` (so the drift needs no re-seeding) and PR #91 / branch
+`setup/config-sandbox` are **open** — close the PR and delete that remote branch before this leg, or
+`gh_persist.py create-pr` has nothing to prove when it is *not* called. Use a **fresh clone** (Scenario 1's
+carries a `.worktrees/setup/config-sandbox` workspace and a local branch of the same name, which would let
+`ensure` reuse instead of create). Run v2 `setup`, approve the per-block confirms, but
 **decline the landing gate**. Expect: the reconciled blocks are staged in the workspace, but **no commit,
 no push, no PR** occurs; the summary reports the **workspace path** and the **ready-to-run landing
 commands** so the operator can land by hand later.
