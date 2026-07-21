@@ -951,7 +951,63 @@ of truth; a **freshly started** resumed session will pick them up by name and ca
   spec after both the plan's DoD and the orchestrator's brief propagated the flawed wording) →
   adjudication + fix → re-verify (**PASS**). **1 fix round.**
 
+### S18 — Question pair rewrite — PARTIAL (automatable done + committed; live scenarios PENDING) (2026-07-22)
+
+- **Commit:** _backfilled post-commit_ (`S18: question pair — sweep + resolver + the authorized
+  retirement`).
+- **Status:** **1 of 5 boxes ticked** (box 1). Boxes 2/3 (the landing legs) + box 4's
+  "parity-tested" + box 5's "parity recorded" are the operator's — the run's seventh stop.
+- **THE AUTHORIZED §11-ADJACENT DEVIATION (riders-bound, reviewer-verified):** the frozen v1
+  `skills/question-resolver/` was **early-retired** — the only v1 skill whose name equals its v2
+  target (path + runtime-registry collision; the implementor's mandated collision-check STOPPED
+  the build and reported four options). Option A adjudicated with three riders, all satisfied:
+  the retirement as the labeled first action; **v1 vantage = `f9f1623`** (behavior preserved in
+  git + the S1 spec + the parity doc's worktree recipe for the v1 leg); the deviation recorded in
+  the parity doc. The fidelity proof: the carried `constraint-audit-prompt.md` shows **no git
+  diff** vs the retired v1 file. **S20 note: S20 will find this one dir already gone.**
+- **Deliverables:** `prep_question_sweep.py` (the registry gather + the **Tier-1 join trio**
+  [closed = free / decision-marked / still-open → `tier2_needed`] + doc candidates; budget 3N+1)
+  + `prep_question_resolver.py` (gather + decision marker + native `blocking` + reentrancy facts;
+  both 0755) + `skills/question-sweep/` (router 59 + one flow 62; the §8.2 landing gate per the
+  S17 model) + `skills/question-resolver/` (router 70 + one flow 97; `question-decision:v1`
+  **byte-identical** to the S1 capture — a first draft diverged and the test caught it; reentrant
+  marker-replace; close no-op; reopen offered) + the converged question-status reader
+  (**S11 COMPLETE** — cites §3, returns `AMBIGUOUS`, the retired doc dropped; the validator
+  auto-binds both new prompts) + 57 tests + 10 fixtures + `docs/specs/parity/question-pair.md`
+  (three operator scenarios incl. the vantage recipe + tmux note).
+- **Ruling of record — prd §10's scope:** the ≤half-v1 metric binds **pipeline sessions only**
+  (§10's own words); standalone tools are out of scope — the binding bar is §9's router ≤150
+  (met: 59/70). Both loaded sets are smaller than v1 anyway (121<147; 167<185) while ADDING the
+  landing gate. **Rule for S19/S20: record the metric, never force-trim a standalone tool.**
+- **Ambiguity split (specs-faithful):** the sweep records `ambiguous` + continues (project-wide
+  run); the resolver forwards `MARKER_AMBIGUOUS` (single-question, blocking). Carried advisory:
+  the sweep prep's per-open-question `pr list` leg is fetched-but-unused (~1 call/question) — a
+  future optimization note.
+- **Dual-platform:** **1107/1107** macOS + Linux. Census 87 → 88 (+`github-pipeline:question-sweep`),
+  zero drops (every retired-dir token survives elsewhere — archive-diff verified).
+- **Process:** 1 opus implementor → **the collision-check STOP** (the gate worked) → orchestrator
+  adjudication (Option A + riders) → full build → orchestrator sanity (both platforms) → 1 opus
+  reviewer (**PASS, 0 actionable**, 2 advisories). **0 actionable rounds.**
+
 ## Handback log
+
+### 2026-07-22 handback — STOP at S18's live scenarios (seventh operator gate) — OPEN
+
+The run is stopped at **S18 boxes 2/3 + the parity clauses of 4/5**. Everything automatable
+through S18 is committed (**unpushed**; 1107 offline tests green both platforms).
+
+**Operator actions (scaffolded in [`docs/specs/parity/question-pair.md`](parity/question-pair.md)):**
+1. **Sweep report-only** — v1 `/github-pipeline:open-questions` vs v2
+   `/github-pipeline:question-sweep` on the sandbox registry (7 questions live); compare the
+   report artifacts + Tier-1/Tier-2 behavior. Headless-able if no gate fires; else tmux.
+2. **Sweep apply** — two legs per the S17 model (tmux): approved → PR with the doc/link-change
+   summary + root clean; declined → zero git actions + workspace + commands.
+3. **Resolve + close** — v1 vs v2 on twin questions (**the v1 leg runs from the vantage**: `git
+   worktree add /tmp/v1-vantage f9f1623` then `--plugin-dir /tmp/v1-vantage` — the parity doc's
+   recipe); the operator supplies the decision at the gate both legs; verify the byte-compat
+   decision comment, the reentrant revise (post-new-then-delete-old), close/reopen semantics.
+Tick boxes 2/3/4/5 as their clauses close; fill the go/no-go; commit locally; never push; resume
+the orchestrator — it flips S18 to ACCEPTED and proceeds **S19 → S20**.
 
 ### 2026-07-19 handback — STOP at S17's live landing scenarios (sixth operator gate) — CLOSED 2026-07-22
 

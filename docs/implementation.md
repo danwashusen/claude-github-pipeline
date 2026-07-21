@@ -536,7 +536,7 @@ close/reopen stay on `gh_persist.py` with reentrancy preserved; the question-sta
 return vocabulary converges on the §3 codes here (`AMBIGUOUS`), completing S11's sweep.
 
 **DoD**
-- [ ] Tier-1 status join fixtures: closed / decision-marker present / still open (→ Tier-2
+- [x] Tier-1 status join fixtures: closed / decision-marker present / still open (→ Tier-2
       needed flag).
 - [ ] Sweep apply (landing approved): PR opened; root clean throughout.
 - [ ] Sweep apply (landing declined): no git actions; summary reports workspace + landing

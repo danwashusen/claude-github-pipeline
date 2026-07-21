@@ -1,0 +1,4 @@
+[
+  {"argv": ["issue", "list", "--repo", "octo/widgets", "--state", "all", "--label", "question", "--limit", "500", "--json", "number,title,state,labels,url"],
+   "exit_code": 4}
+]
