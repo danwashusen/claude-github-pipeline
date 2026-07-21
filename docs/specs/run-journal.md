@@ -901,7 +901,27 @@ of truth; a **freshly started** resumed session will pick them up by name and ca
   (**PASS, 0 actionable**, 2 advisories: the fidelity undercount [one→two adaptations] +
   the margin pin — both landed in a record micro-round, +1 pinning test). **0 actionable rounds.**
 
-### S17 — Setup rewrite — PARTIAL (automatable done + committed; live landing scenarios PENDING) (2026-07-19)
+### S17 — Setup rewrite — ACCEPTED (automatable 2026-07-19; landing scenarios closed 2026-07-22)
+
+- **Landing scenarios (operator-run, tmux-driven interactive — headless can't surface the §8.2
+  gate; both PASS, GO):** `2db484f` scenario 1 (approved — PR #91 with the block-diff summary
+  body; all four block dispositions exercised in one run [written/reconciled/migrated+removed/
+  seeded]; root clean at every boundary; the drift push ruled load-bearing — `ensure --work`
+  forks at `origin/<base>`); `4b0828f` scenario 2 (declined — ZERO git actions verified
+  [transcript + refs + PR list]; the staged workspace + ready-to-run commands reported; staged
+  blocks byte-matched scenario 1; **boxes 2/3/5 + GO by the operator**).
+- **Div-1 → the packaging fix (folded into this acceptance):** `prep_setup.py`, `workspace.py`,
+  AND `parse.py` (the orchestrator-sweep third) were 0644 — the bare `${CLAUDE_PLUGIN_ROOT}`
+  dispatch exits 126 (both legs self-recovered via `python3`). Fixed: `chmod +x` ×3 (mode-only
+  diffs) + `tests/test_script_modes.py` (the X_OK pin over every shebang+main CLI script,
+  falsification-proven) — the S21-era chmod lesson's third recurrence, now structurally pinned.
+- **Div-3 (gate-before-diff) CLOSED — NOT-REPRODUCED (1/2):** scenario 2 ran §4's diff→gate order
+  correctly; per-run nondeterminism under the S15 drift framework; a third occurrence reopens it.
+- **Harness of record:** the tmux send-keys recipe (operator memory + parity doc) — the
+  S18/S19 landing scenarios need the same approach.
+- **Final suite state:** **1050/1050** macOS + Linux.
+
+#### Original PARTIAL entry (2026-07-19, superseded by the acceptance above)
 
 - **Commit:** `7d8b931` (`S17: skills/setup/ — setup rewrite + prep_setup`).
 - **Status:** **2 of 5 boxes ticked** (1 byte-identity, 4 legacy split). Boxes 2/3 (the live
@@ -933,7 +953,11 @@ of truth; a **freshly started** resumed session will pick them up by name and ca
 
 ## Handback log
 
-### 2026-07-19 handback — STOP at S17's live landing scenarios (sixth operator gate) — OPEN
+### 2026-07-19 handback — STOP at S17's live landing scenarios (sixth operator gate) — CLOSED 2026-07-22
+
+**Superseded; retained as a pointer.** The operator ran both landing scenarios tmux-interactively
+(PASS ×2 across `2db484f`/`4b0828f`, boxes 2/3/5 + GO); the Div-1 mode fix + pin test folded into
+the acceptance. S17 flipped to ACCEPTED above. The run resumes at **S18 → S19 → S20**.
 
 The run is stopped at **S17 boxes 2/3 + box 5's parity clause**. Everything automatable through
 S17 is committed (**unpushed**; 1047 offline tests green both platforms).

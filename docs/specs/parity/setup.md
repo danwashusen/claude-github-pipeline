@@ -241,24 +241,40 @@ on `main` throughout.
     report-only `gh auth status` readiness probe (router-level environment probe, not a block gate) —
     prep itself made no `gh` call, as designed.
 
-  **4 divergences (none blocks the scenario; Div-1 is a real defect to fix):**
-  1. **Div-1 — `scripts/prep_setup.py` and `scripts/workspace.py` are missing the executable bit.** The
-     skill's prescribed `${CLAUDE_PLUGIN_ROOT}/scripts/prep_setup.py` invocation exits **126**
-     (`permission denied`); the session self-recovered with `python3 <path>`. Every other prep
-     (`prep_drafter/evaluator/planner/researcher/resolver.py`) is `0755` — these two are `0644`. A real
-     S17 packaging defect, **TO FIX** (`chmod +x`); deliberately *not* fixed in this commit so Scenario 2
-     runs under identical conditions.
+  **4 divergences (none blocks the scenario; Div-1 was a real defect, now resolved):**
+  1. **Div-1 — `scripts/prep_setup.py` and `scripts/workspace.py` were missing the executable bit —
+     RESOLVED.** The skill's prescribed `${CLAUDE_PLUGIN_ROOT}/scripts/prep_setup.py` invocation exited
+     **126** (`permission denied`); the session self-recovered with `python3 <path>`. Every other prep
+     (`prep_drafter/evaluator/planner/researcher/resolver.py`) was already `0755` — these two shipped
+     `0644` out of S17's implementor pass. **Fix landed** (post-acceptance micro-round): `chmod +x` on
+     both, **plus a third file the orchestrator's own sweep found in the same 0644 state**,
+     `scripts/parse.py` (pre-existing, unrelated to S17's own additions, but the same class of defect —
+     every `scripts/*.py` CLI must be `0755`). Guarded going forward by
+     `tests/test_script_modes.py::DispatchedCliScriptsAreExecutableTests` — a repo-wide regression pin
+     (not setup-specific) asserting every shebang-led, `def main(`-carrying `scripts/*.py` is executable,
+     citing this Div-1 as the third recurrence of the "S21-era chmod lesson." **Both legs' 126→`python3`
+     self-recovery stands as the honest as-run record above** — this is a forward-looking fix, not a
+     retroactive edit of what actually happened on 2026-07-20/2026-07-22.
   2. **Div-2 — the run briefly dirtied the root itself.** A step-3 grounding command
      (`python3 -m compileall -q .`, run to prove the candidate command is viable) wrote `src/__pycache__/`
      into the read-only root. The session **detected and removed it unprompted** in the very next call,
      before any workspace op, so `workspace.py ensure` returned `ok` rather than `ROOT_DIRTY`. Root
      hygiene held at every phase boundary but not literally every instant. Worth a playbook note that
      step-3 grounding is inference from repo evidence, not command execution in the root.
-  3. **Div-3 — confirm/diff ordering.** Playbook §4 specifies *show the diff, then gate*. The run gated
-     **first** (one 4-question `AskUserQuestion` card, each option carrying the exact proposed block
-     bytes as a preview), then rendered the full diffs and proceeded to stage without a second card.
-     "Nothing is written silently" is satisfied in substance — the operator approved exact bytes — but
-     the order is inverted relative to §4.
+  3. **Div-3 — confirm/diff ordering — NOT-REPRODUCED in Scenario 2 (1/2), closed, no hardening
+     warranted.** Playbook §4 specifies *show the diff, then gate*. This run gated **first** (one
+     4-question `AskUserQuestion` card, each option carrying the exact proposed block bytes as a
+     preview), then rendered the full diffs and proceeded to stage without a second card. "Nothing is
+     written silently" was satisfied in substance — the operator approved exact bytes — but the order
+     was inverted relative to §4. **Scenario 2's own run of the identical §4 step did NOT reproduce this**
+     (its Div-2: diff rendered first, then the confirm card, matching the spec exactly). A defect that
+     fires 1 run out of 2 identical-spec executions, with the playbook text itself unambiguous and
+     unchanged between legs, reads as **per-run opus ordering non-determinism, not a v2 authoring
+     defect** — the same disposition class the S15 drift-disposition framework applies to a single
+     non-reproducing divergence (`docs/specs/parity/drafter.md`'s and the researcher's `<type>`-token
+     precedent: a 1/2 or 1/3 flip that doesn't reproduce is recorded and closed, not chased into a
+     hardening change, unless a *second* independent occurrence confirms it's structural). Recorded here
+     as **CLOSED — no hardening warranted**; a third occurrence in a future run would reopen it.
   4. **Div-4 — re-added block position.** `issue-resolver-fast-checks` was re-appended at the **end** of
      `CLAUDE.md` rather than restored to its original slot after `issue-resolver-test-target` — the
      `config_block.py upsert` append semantics for a missing marker. Cosmetic; parse is unaffected.
@@ -319,14 +335,20 @@ commands** so the operator can land by hand later.
     status`.
 
   **Divergences (none blocks the scenario):**
-  1. **Div-1 — SAME defect as Scenario 1, still unfixed:** `scripts/prep_setup.py` (and `workspace.py`)
-     lack the executable bit, so the prescribed `${CLAUDE_PLUGIN_ROOT}/scripts/prep_setup.py` exits
-     **126**; the session self-recovered with `python3 <path>`. Reproduced identically — left unfixed
-     for this leg by design. **TO FIX now** (`chmod +x` both) — both landing scenarios are complete.
-  2. **Div-2 (positive) — diff→gate order correct.** Unlike Scenario 1's Div-3 (gated before rendering
-     diffs), this run rendered the full per-block diffs **first**, then presented the confirm card, and
-     likewise rendered the staged `git diff` before the landing gate — matching `setup-flow.md` §4's
-     specified diff→gate order. Scenario 1's Div-3 did **not** reproduce.
+  1. **Div-1 — SAME defect as Scenario 1, reproduced identically — RESOLVED.**
+     `scripts/prep_setup.py` (and `workspace.py`) lacked the executable bit, so the prescribed
+     `${CLAUDE_PLUGIN_ROOT}/scripts/prep_setup.py` exited **126**; the session self-recovered with
+     `python3 <path>`. Reproduced identically on this leg — left unfixed at the time by design (so both
+     landing scenarios ran under identical conditions). **Fixed** in the post-acceptance micro-round
+     described in full under Scenario 1's Div-1 (`chmod +x` on `prep_setup.py`/`workspace.py` **and**
+     `scripts/parse.py`, the third file the orchestrator's sweep found in the same state; regression-pinned
+     by `tests/test_script_modes.py`). See Scenario 1's Div-1 for the complete resolution record — not
+     duplicated here.
+  2. **Div-2 (positive) — diff→gate order correct; the counterpoint that closes Scenario 1's Div-3.**
+     Unlike Scenario 1's Div-3 (gated before rendering diffs), this run rendered the full per-block diffs
+     **first**, then presented the confirm card, and likewise rendered the staged `git diff` before the
+     landing gate — matching `setup-flow.md` §4's specified diff→gate order exactly. **Scenario 1's Div-3
+     did NOT reproduce here (1/2)** — see that entry for the closed, no-hardening-warranted disposition.
   3. **Div-3 — scratch staged via the `Write` tool.** The three block bodies were staged to
      `/tmp/gh-setup-s17-scen2-clone/*.md` with the `Write` tool (Scenario 1 used bash heredocs). Benign:
      the discipline forbids `Write`/`Edit` on a *marker block*, not on a scratch file (0 marker-file
@@ -342,11 +364,14 @@ commands** so the operator can land by hand later.
 - [x] Both landing scenarios PASS (or every divergence is adjudicated as an explained v1 defect / fixture
   artifact / v2 enrichment, recorded above). — **Scenario 1 (approved) PASS** 2026-07-20 (PR #91);
   **Scenario 2 (declined) PASS** 2026-07-22 (0 git actions; workspace + landing commands reported). Every
-  divergence is adjudicated above: Div-1 (missing `+x` on `prep_setup.py`/`workspace.py`) is a real S17
-  packaging defect reproduced on both legs, now fixable; the rest are fixture/method/cosmetic (Scenario
-  1's diff-order Div-3 did not even recur).
+  divergence is adjudicated above: **Div-1 (missing `+x` on `prep_setup.py`/`workspace.py`, reproduced on
+  both legs) is RESOLVED** (post-acceptance micro-round — `chmod +x` on all three affected files +
+  `scripts/parse.py` + a repo-wide regression pin, `tests/test_script_modes.py`); **Scenario 1's Div-3
+  (gate-before-diff) is CLOSED as NOT-REPRODUCED** (1/2 — Scenario 2's Div-2 ran the identical §4 step
+  correctly; per-run non-determinism per the S15 drift-disposition framework, no hardening warranted); the
+  rest are fixture/method/cosmetic.
 - **Recommendation: GO.** The offline half (boxes 1 + 4 + the structural/frontmatter/grep gates + the
   scaffold) is implementor-complete and green, and both live landing legs pass on machine-relevant
   parity — approve opens a block-diff PR with the root clean throughout; decline takes **zero** git
   actions and hands back the workspace path + ready-to-run landing commands. The one true defect (Div-1,
-  the executable bit) is a one-line `chmod +x` fix that does not affect the skill's behavior or parity.
+  the executable bit) is now fixed and regression-pinned; no other open finding remains.
