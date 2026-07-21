@@ -953,8 +953,7 @@ of truth; a **freshly started** resumed session will pick them up by name and ca
 
 ### S18 — Question pair rewrite — PARTIAL (automatable done + committed; live scenarios PENDING) (2026-07-22)
 
-- **Commit:** _backfilled post-commit_ (`S18: question pair — sweep + resolver + the authorized
-  retirement`).
+- **Commit:** `12cab81` (`S18: question pair — sweep + resolver + the authorized retirement`).
 - **Status:** **1 of 5 boxes ticked** (box 1). Boxes 2/3 (the landing legs) + box 4's
   "parity-tested" + box 5's "parity recorded" are the operator's — the run's seventh stop.
 - **THE AUTHORIZED §11-ADJACENT DEVIATION (riders-bound, reviewer-verified):** the frozen v1
