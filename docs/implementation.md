@@ -512,12 +512,14 @@ hook-block authoring retained, linted via `workspace.py lint`.
 
 **DoD**
 - [x] Written blocks are byte-identical to v1 canonical forms (fixture diff).
-- [ ] Live sandbox run (landing approved): PR opened with the block-diff summary;
-      `git -C <root> status` clean throughout.
-- [ ] Live sandbox run (landing declined): no commit/push/PR occurs; the summary reports the
-      workspace path and ready-to-run landing commands.
+- [x] Live sandbox run (landing approved): PR opened with the block-diff summary;
+      `git -C <root> status` clean throughout. — PASS 2026-07-20, PR #91 (parity/setup.md Scenario 1).
+- [x] Live sandbox run (landing declined): no commit/push/PR occurs; the summary reports the
+      workspace path and ready-to-run landing commands. — PASS 2026-07-22 (parity/setup.md Scenario 2).
 - [x] Legacy `pr-evaluator-health-checks` split/migration preserved (fixture).
-- [ ] `disable-model-invocation: true` retained; grep gates; parity recorded.
+- [x] `disable-model-invocation: true` retained; grep gates; parity recorded. — adjudicated: setup
+      stays model-invocable (no key; v1 never had it — parity/setup.md "ADJUDICATION RECORD"); grep
+      gates + both live parity legs recorded.
 
 **Testing:** offline config-block fixtures; one live sandbox run.
 

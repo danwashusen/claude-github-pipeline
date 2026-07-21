@@ -275,21 +275,78 @@ carries a `.worktrees/setup/config-sandbox` workspace and a local branch of the 
 no push, no PR** occurs; the summary reports the **workspace path** and the **ready-to-run landing
 commands** so the operator can land by hand later.
 
-- [ ] **D1 (binds parity: decline path)** — no commit, no push, no PR is created on this leg (verify:
+- [x] **D1 (binds parity: decline path)** — no commit, no push, no PR is created on this leg (verify:
   no new branch on the remote, no open PR, no new commit in the workspace's log beyond what the operator
   would add by hand).
-- [ ] **D2** — the summary reports the workspace path (`.worktrees/setup/config-<slug>`) and the exact
+- [x] **D2** — the summary reports the workspace path (`.worktrees/setup/config-<slug>`) and the exact
   ready-to-run landing commands (`git -C <workspace> add`/`commit`, `git -C <workspace> push -u origin
   <branch>`, then the `create-pr` command).
-- [ ] **D3 (root hygiene)** — `git -C <root> status` clean and on `main` throughout.
-- [ ] **D4 (v2 process)** — the staged blocks are byte-identical to Scenario 1's; the only difference is
+- [x] **D3 (root hygiene)** — `git -C <root> status` clean and on `main` throughout.
+- [x] **D4 (v2 process)** — the staged blocks are byte-identical to Scenario 1's; the only difference is
   the landing outcome (0 git actions vs the PR). 0 `github-ops`.
-- **Result:** _(operator fills — PASS/FAIL, run date, twins, logs; boxes ticked by the reviewer)_
+- **Result: PASS** (v2 leg, 2026-07-22). Run interactively (`claude --plugin-dir <this branch> --model
+  opus`, cwd = a **fresh** sandbox clone — Scenario 1's carried a `.worktrees/setup/config-sandbox`
+  workspace `ensure` would have reused) via the tmux harness ([[s17-scenario1-landing-approved]] recipe),
+  so the §8.2 gate was a real `AskUserQuestion` card answered by hand. Session transcript:
+  `~/.claude/projects/…-scratchpad-s17-scen2-clone/c314f37d-….jsonl`.
+
+  **Prep / fixture** — the drift commit `1b048ba` is still on sandbox `main`, so no re-seeding; **PR #91
+  and its `setup/config-sandbox` branch were closed/deleted first** (`gh pr close 91 --delete-branch`)
+  so `gh_persist.py create-pr` had nothing to prove when *not* called. Fresh clone at `1b048ba`, no
+  worktrees. Same four dispositions as Scenario 1 (fast-checks missing / static-checks staled to
+  `flake8` / legacy `health-checks` present / `stack-profile` absent). Per-block confirms: all three
+  answered with the recommended option; landing gate: **declined** (option 2 "No, leave staged").
+
+  - **D1 — PASS.** Transcript grep: **0** `git commit`/`git push`/`gh pr create`/`create-pr` in any
+    Bash tool-use, **0** `gh_persist.py`. Workspace branch `setup/config-s17-scen2` sits at `1b048ba`
+    (= main HEAD, **no commit on top**); `git status` shows only `M CLAUDE.md` (staged edits in the
+    working tree, never committed). No `setup/config-*` ref on the remote; no open `setup/config` PR.
+  - **D2 — PASS.** The closing summary states "Landing outcome: declined — nothing committed, pushed, or
+    opened," reports **Workspace: `.worktrees/setup/config-s17-scen2` (branch setup/config-s17-scen2,
+    based on main)**, and lists the exact ready-to-run commands: `git -C "$WS" add CLAUDE.md` →
+    `git -C "$WS" commit -m "…"` → `git -C "$WS" push -u origin setup/config-s17-scen2` → the
+    `gh_persist.py create-pr … --base main --head setup/config-s17-scen2` invocation.
+  - **D3 — PASS.** Clone root stayed on `main` at HEAD `1b048ba` with a clean `git status` throughout;
+    every write landed in `.worktrees/setup/config-s17-scen2`.
+  - **D4 — PASS.** Staged machine-parsed blocks reproduce Scenario 1's reconciled forms byte-for-byte:
+    `pr-evaluator-static-checks` = `compileall` prepended ahead of `flake8` (fail-fast order),
+    `issue-resolver-fast-checks` written as its mirror, legacy `pr-evaluator-health-checks` removed
+    (0 occurrences), `claude-code-stack-profile` seeded. Block I/O = `config_block.py` only (3 `upsert`
+    + 1 `remove`, in one compound Bash call); **0** `sed -i`, **0** `Edit`, **0** marker-file `Write`.
+    **0** `github-ops` / `Task` sub-agents (the 2 `github-pipeline:github-ops` transcript hits are the
+    system-prompt agent roster, not invocations). 10 Bash calls total; startup = 1 `prep_setup` (2
+    attempts — Div-1); `workspace.py ensure` + `lint setup`/`lint teardown`; 1 report-only `gh auth
+    status`.
+
+  **Divergences (none blocks the scenario):**
+  1. **Div-1 — SAME defect as Scenario 1, still unfixed:** `scripts/prep_setup.py` (and `workspace.py`)
+     lack the executable bit, so the prescribed `${CLAUDE_PLUGIN_ROOT}/scripts/prep_setup.py` exits
+     **126**; the session self-recovered with `python3 <path>`. Reproduced identically — left unfixed
+     for this leg by design. **TO FIX now** (`chmod +x` both) — both landing scenarios are complete.
+  2. **Div-2 (positive) — diff→gate order correct.** Unlike Scenario 1's Div-3 (gated before rendering
+     diffs), this run rendered the full per-block diffs **first**, then presented the confirm card, and
+     likewise rendered the staged `git diff` before the landing gate — matching `setup-flow.md` §4's
+     specified diff→gate order. Scenario 1's Div-3 did **not** reproduce.
+  3. **Div-3 — scratch staged via the `Write` tool.** The three block bodies were staged to
+     `/tmp/gh-setup-s17-scen2-clone/*.md` with the `Write` tool (Scenario 1 used bash heredocs). Benign:
+     the discipline forbids `Write`/`Edit` on a *marker block*, not on a scratch file (0 marker-file
+     writes confirmed); the bodies still reach `CLAUDE.md` only through `config_block.py upsert`.
+  4. **Div-4 — branch slug from clone dir.** Head branch is `setup/config-s17-scen2` (slug derived from
+     the `s17-scen2-clone` dir) vs Scenario 1's `setup/config-sandbox`. Cosmetic; the decline path opens
+     no PR/branch regardless. The `stack-profile` prose is model-authored (SANDBOX.md: no parity check
+     depends on its exact content), so its exact wording may differ from Scenario 1's — expected, not a
+     parity break.
 
 ## Go/no-go (operator)
 
-- [ ] Both landing scenarios PASS (or every divergence is adjudicated as an explained v1 defect / fixture
-  artifact / v2 enrichment, recorded above).
-- **Recommendation:** _(operator fills after the two live runs — the offline half (boxes 1 + 4 + the rest
-  of 5 + the scaffold) is implementor-complete and green; boxes 2 + 3 + "parity recorded" are the
-  operator's.)_
+- [x] Both landing scenarios PASS (or every divergence is adjudicated as an explained v1 defect / fixture
+  artifact / v2 enrichment, recorded above). — **Scenario 1 (approved) PASS** 2026-07-20 (PR #91);
+  **Scenario 2 (declined) PASS** 2026-07-22 (0 git actions; workspace + landing commands reported). Every
+  divergence is adjudicated above: Div-1 (missing `+x` on `prep_setup.py`/`workspace.py`) is a real S17
+  packaging defect reproduced on both legs, now fixable; the rest are fixture/method/cosmetic (Scenario
+  1's diff-order Div-3 did not even recur).
+- **Recommendation: GO.** The offline half (boxes 1 + 4 + the structural/frontmatter/grep gates + the
+  scaffold) is implementor-complete and green, and both live landing legs pass on machine-relevant
+  parity — approve opens a block-diff PR with the root clean throughout; decline takes **zero** git
+  actions and hands back the workspace path + ready-to-run landing commands. The one true defect (Div-1,
+  the executable bit) is a one-line `chmod +x` fix that does not affect the skill's behavior or parity.
