@@ -95,11 +95,16 @@ class PrepResolverSandboxTestCase(unittest.TestCase):
             check=False,
         )
 
-    def _envelope(self, issue="100", repo="octo/widgets", fixture_case="prep_resolver_row_no_prior_pr", extra_args=None):
+    def _envelope(self, issue="100", repo="octo/widgets", fixture_case="prep_resolver_row_no_prior_pr", extra_args=None, fixtures_dir=None):
         args = [issue, repo, "--root", str(self.root), "--scratch-dir", self.scratch]
         if extra_args:
             args += extra_args
-        result = self._run(args, fixture_case=fixture_case)
+        # A `fixtures_dir` overrides the named case with an explicit (e.g. run-time-stamped) fixture dir
+        # via GH_SHIM_FIXTURES — see PriorPrRowTests._stamped_active_fixture (the time-bomb fix).
+        if fixtures_dir is not None:
+            result = self._run(args, fixture_case=None, extra_env={"GH_SHIM_FIXTURES": str(fixtures_dir)})
+        else:
+            result = self._run(args, fixture_case=fixture_case)
         self.assertEqual(result.returncode, 0, msg="stderr: %s" % result.stderr)
         envelope = _parse_one_envelope(result.stdout)
         envelope_asserts.assert_full_envelope_conformance(envelope)
@@ -227,6 +232,37 @@ class PriorPrRowTests(PrepResolverSandboxTestCase):
     """One fixture per row of the v1 prior-PR table (docs/specs/resolver.md's 7-row table) —
     S9 DoD's first box."""
 
+    def _stamped_active_fixture(self, source_case):
+        """Copy a foreign-open-PR row fixture into a per-test temp fixture dir and re-stamp its open
+        PR's `updatedAt` to `now(utc) - 2 days`, so the active/stale classification
+        (`prep_resolver._classify_open_other_activity`, `_STALE_ACTIVITY_DAYS = 14`) is **time-
+        invariant**. Returns the temp dir for `_envelope(fixtures_dir=...)`.
+
+        Regression (fixed-date-rot across the stale boundary): the original row fixtures carried a
+        static `updatedAt` (~2026-07-08, "recent" at S9 authoring) that aged past the 14-day cutoff on
+        2026-07-23, flipping `open-pr-other-active` -> `open-pr-other-stale`. S9 made the BOUNDARY tests
+        run-time-relative (`timedelta` at call time) but these subprocess-level row fixtures kept fixed
+        dates. Rule: an **active-classified** fixture MUST be stamped at run time; the stale-row
+        fixture's 18-month-old date (`2025-01-01`) is safe forever and stays static."""
+        import datetime
+        import shutil
+
+        src = shimenv.fixture_case_dir(source_case)
+        dst = Path(tempfile.mkdtemp(prefix="gh-resolver-stamp-"))
+        self.addCleanup(lambda: shutil.rmtree(dst, ignore_errors=True))
+        for f in src.iterdir():
+            (dst / f.name).write_bytes(f.read_bytes())
+        fresh = (
+            datetime.datetime.now(datetime.timezone.utc) - datetime.timedelta(days=2)
+        ).strftime("%Y-%m-%dT%H:%M:%SZ")
+        prs_path = dst / "open_prs.json"
+        prs = json.loads(prs_path.read_text(encoding="utf-8"))
+        for pr in prs:
+            if "updatedAt" in pr:
+                pr["updatedAt"] = fresh
+        prs_path.write_text(json.dumps(prs), encoding="utf-8")
+        return dst
+
     def test_open_pr_yours(self):
         envelope = self._envelope(fixture_case="prep_resolver_row_open_yours")
         self.assertEqual(envelope["vector"]["prior_pr_row"], "open-pr-yours")
@@ -239,7 +275,9 @@ class PriorPrRowTests(PrepResolverSandboxTestCase):
         # "Do not open a competing PR" / "AskUserQuestion (header 'Open PR')". Prep must NOT
         # pre-empt that gate with mode: continue or a work-worktree side effect impersonating
         # carol's branch (S9 review finding).
-        envelope = self._envelope(fixture_case="prep_resolver_row_open_other_active")
+        envelope = self._envelope(
+            fixtures_dir=self._stamped_active_fixture("prep_resolver_row_open_other_active")
+        )
         self.assertEqual(envelope["vector"]["prior_pr_row"], "open-pr-other-active")
         self.assertEqual(envelope["vector"]["mode"], "gated")
         self.assertNotEqual(envelope["vector"]["mode"], "continue")
@@ -296,7 +334,9 @@ class PriorPrRowTests(PrepResolverSandboxTestCase):
         # The ordering-bug regression case itself: a FOREIGN draft must classify via the same
         # activity check as a foreign ready PR (SKILL.md:648's "Drafts are still claimed work" is
         # about protecting another author's draft, not a license to treat it as available).
-        envelope = self._envelope(fixture_case="prep_resolver_row_draft_other_author")
+        envelope = self._envelope(
+            fixtures_dir=self._stamped_active_fixture("prep_resolver_row_draft_other_author")
+        )
         self.assertEqual(envelope["vector"]["prior_pr_row"], "open-pr-other-active")
         self.assertEqual(envelope["vector"]["mode"], "gated")
         self.assertTrue(envelope["prior_pr"]["isDraft"])

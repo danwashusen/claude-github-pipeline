@@ -25,9 +25,12 @@ doc marker gone → surface, never close) · **in-sync** (count only).
 
 ## 3. Report and gate
 
-One consolidated report grouped by class — each entry: the OQ, doc location, matched issue, proposed
-action, evidence (a quote + the Tier-1/2 finding). Then gate: GitHub writes (companions + back-link body
-patches) via `AskUserQuestion`; doc edits propose-then-apply (show the exact diff). Never auto-close.
+One consolidated report grouped by the five classes — each entry: the OQ, doc location, matched issue,
+proposed action, evidence (a quote + the Tier-1/2 finding). **Every per-class header count and every
+summary total IS that class's row count in this one table — derive each count by counting the table's
+rows, never tally a class independently; a header/summary/table row-count mismatch is a defect.** Then
+gate: GitHub writes (companions + back-link body patches) via `AskUserQuestion`; doc edits
+propose-then-apply (show the exact diff). Never auto-close.
 
 ## 4. Apply the approved GitHub writes
 

@@ -157,6 +157,21 @@ It cannot call `AskUserQuestion` and never re-fetches via `gh` (`references/ques
 
 ## Known bugs / gaps
 
-None recorded in v1 source for this skill. (The two mandatory falsifiable planner bugs named in
-the S1 step definition belong to `docs/specs/planner.md`, not this file — this skill has no
-analogous defect documented in `skills/open-questions/SKILL.md` or its reference.)
+None is documented in v1 *source* (the two mandatory falsifiable planner bugs named in the S1 step
+definition belong to `docs/specs/planner.md`, not this file). One v1 defect was **observed live** at the
+S18 scenario-1 run and is recorded here:
+
+- **v1 registry-coverage + empty-thread defect (observed live 2026-07-22/23, S18 scenario-1 —
+  [`parity/question-pair.md`](parity/question-pair.md) Div-1).** v1 `open-questions` fetched only a
+  **subset** of the `question` registry (3 of 7 live questions) and then asserted an **empty thread for
+  every** question ("every question in scope is unambiguously still open — empty threads, no decision
+  markers"), so it missed two **resolved-in-thread** answers: #29 and #30 each carry an owner comment that
+  answers the question but was never folded to docs or used to close the issue. **Falsifiable:** on a
+  registry where a still-`open` question has a direction-setting thread answer and no
+  `<!-- question-decision:v1 -->` comment, v1 reports it `still-open` (and never dispatches a Tier-2
+  reader), rather than `resolved-in-thread`. **v2 does not reproduce it:** the deterministic Tier-1 join
+  covers **every** registry entry (`prep_question_sweep.py`), and the Tier-2 question-status reader is
+  dispatched for every `tier2_needed` (`still-open`, no-marker) entry — catching exactly the
+  answered-in-thread-but-still-open staleness case, which is the tiered read's stated purpose
+  (`skills/_shared/open-question-links.md` §"Status is the tracker's"). This is the highest-value finding
+  the whole skill exists to produce.

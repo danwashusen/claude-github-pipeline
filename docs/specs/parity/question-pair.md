@@ -259,7 +259,7 @@ landing). Expect a full reconciliation report grouped by class and a plain summa
     `Edit`/`Write`, **0** `gh_persist.py`. v1: 10 Bash, 5 Read, 1 Grep, 1 `github-ops` Agent, 1
     `AskUserQuestion` (3 questions), 0 Edit/Write.
 
-  **6 divergences (none blocks the scenario; Div-1 is a v1 defect, Div-2 a v2 report defect TO FIX):**
+  **6 divergences (none blocks the scenario; Div-1 is a v1 defect, Div-2 a v2 report defect — RESOLVED):**
   1. **Div-1 — v1 asserted "empty threads" for questions it never read; v2 caught the answered-but-open
      pair.** v1 gathered only #61/#83/#84 through `github-ops` and closed its report with *"every question
      in scope is unambiguously still open (empty threads, no decision markers), so nothing needed
@@ -270,13 +270,19 @@ landing). Expect a full reconciliation report grouped by class and a plain summa
      -->` comment, which every Tier-1 consumer (drafter/planner/resolver) will keep treating as
      unresolved. **v1 defect / v2 enrichment** — this is exactly the drift the tiered read exists to
      catch, and it is the one class of finding the whole skill is for.
-  2. **Div-2 — v2's orphaned-issue count label disagrees with its own table — TO FIX (cosmetic,
-     report-only).** The section header renders `🟣 orphaned-issue — 5` while the table below it lists
-     **6** rows (#84/#83/#30/#29/#27/#5) and the final summary correctly says *"6 orphaned question
-     issues."* A per-class count that undercounts its own rows is a report-integrity defect even though
-     no action derives from it. No count is authored in `sweep-flow.md` §3 (the report shape is the
-     model's), so this is a rendering slip, not a spec bug — worth a §3 note that per-class counts must
-     equal the rows rendered.
+  2. **Div-2 — v2's orphaned-issue count label disagreed with its own table — RESOLVED.** The section
+     header rendered `🟣 orphaned-issue — 5` while the table below it listed **6** rows
+     (#84/#83/#30/#29/#27/#5) and the final summary correctly said *"6 orphaned question issues."* A
+     per-class count that undercounts its own rows is a report-integrity defect even though no action
+     derives from it. No count was authored in `sweep-flow.md` §3 (the report shape is the model's), so
+     this was a rendering slip, not a spec bug. **Fix:** `sweep-flow.md` §3 now states the single-source
+     count invariant — *every per-class header count and every summary total IS that class's row count in
+     the one classification table; derive by counting the rows, never tally a class independently; a
+     header/summary/table row-count mismatch is a defect* — the falsifiable-wording class. Pinned by
+     `test_question_sweep_routing.py::ReportCountIntegrityTests` (the §3 invariant prose is present).
+     **Not self-certified:** the pin fixes the *instruction*, not the rendered report (which is the
+     model's at runtime); **Scenario 2's live report render is the confirmation** that the hardened
+     instruction holds — a re-occurrence there reopens this.
   3. **Div-3 — both legs read the docs directly instead of fanning out `Explore`.** `sweep-flow.md` §1
      (and v1's Step 2) prescribe a grep-prefilter then an `Explore` fan-out over the candidate files.
      With 3 docs totalling 47 lines, **both** legs prefiltered and then read them inline, each saying so

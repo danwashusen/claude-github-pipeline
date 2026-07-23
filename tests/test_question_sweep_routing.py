@@ -180,6 +180,24 @@ class LandingGateLanguageTests(unittest.TestCase):
         self.assertIn("no git actions", self.router)
 
 
+class ReportCountIntegrityTests(unittest.TestCase):
+    """S18 Scenario-1 Div-2 fix: the §3 report shape states the single-source count invariant, so a
+    per-class header count can never disagree with its own classification-table rows (the live defect:
+    header `orphaned-issue — 5` over a 6-row table). Pins the falsifiable instruction prose; the rendered
+    report is the model's at runtime, so Scenario 2's live render is the confirmation (not self-certified)."""
+
+    def setUp(self):
+        self.flow = (PLAYBOOKS_DIR / FLOW).read_text(encoding="utf-8")
+
+    def test_flow_states_the_single_source_count_invariant(self):
+        # The counts derive from ONE source — the classification table's rows — never tallied independently.
+        self.assertRegex(self.flow, r"row count in this one table|that class's row count")
+        self.assertRegex(self.flow, r"never tally|never re-count|never recount")
+
+    def test_flow_names_the_mismatch_as_a_defect(self):
+        self.assertRegex(self.flow, r"mismatch is a defect")
+
+
 class ConvergedReaderTests(unittest.TestCase):
     """S11 completion: the carried question-status reader converges on the §3 vocabulary — it cites
     architecture.md §3 and no longer cites the retired subagent-decision-signal doc. (The S11 drift-check
