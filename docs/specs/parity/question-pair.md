@@ -391,7 +391,7 @@ legs; use a fresh clone for the decline leg.
   *"Counts (each = its row count above)"*). This is the live confirmation Div-2 was left open for; it
   closes.
 
-  **5 divergences (none blocks the scenario; Div-4 is a v2 defect TO FIX):**
+  **5 divergences (none blocks the scenario; Div-4 is a v2 defect — RESOLVED-pending-live):**
   1. **Div-1 — leg (a)'s doc-edit gate under-scoped the edit set it then made; leg (b)'s did not.** Leg
      (a) gated on *"Doc edits to `docs/open-questions.md`"* and then also edited `docs/prd.md` §2 (the same
      `SBX-OQ-22` drift, second location) and the register's header sentence. It **disclosed all three
@@ -413,15 +413,23 @@ legs; use a fresh clone for the decline leg.
      Scenario-1's Div-3).** Same 3-file/47-line scale, same prefilter-then-read, same explicit
      prefiltered-vs-read reporting. Confirms the fan-out is a cost control at this scale, not a
      correctness requirement.
-  4. **Div-4 — the decline path's "ready-to-run" commands cite a `pr.md` that was never staged — v2 defect,
-     TO FIX.** `sweep-flow.md` §5's decline branch says the summary reports the `create-pr` command from
-     §5's fence, which takes `"<facts.scratch>/pr.md"` — but the PR body is only authored on the *approve*
-     path, so on decline that path does not exist. Leg (b) emitted the command **and flagged the gap
-     honestly** (*"(pr.md isn't written — the gate was declined before staging it. Write a short body
+  4. **Div-4 — the decline path's "ready-to-run" commands cited a `pr.md` that was never staged — v2
+     defect, RESOLVED-pending-live.** `sweep-flow.md` §5's decline branch reported the `create-pr` command
+     from §5's fence, which takes `"<facts.scratch>/pr.md"` — but the PR body was only authored on the
+     *approve* path, so on decline that path did not exist. Leg (b) emitted the command **and flagged the
+     gap honestly** (*"(pr.md isn't written — the gate was declined before staging it. Write a short body
      covering the three changes above, or open the PR with `gh pr create` directly.)"*), which is why D2
-     still passes: the operator is not misled. Still, "ready-to-run" is the contract word. **Fix
-     direction:** stage `pr.md` **before** the landing gate (it is written matter either way, and the
-     approve path already needs it), so decline hands over a genuinely runnable block.
+     still passed: the operator was not misled. Still, "ready-to-run" is the contract word. **Fix:**
+     `sweep-flow.md` §5 now **stages `pr.md` (the doc/link-change summary) BEFORE the landing gate**, so
+     both paths share that one authored file — approve consumes it via `create-pr`; decline's reported
+     commands run exactly as printed. Falsifiable wording added: *the decline commands must run exactly as
+     printed — `pr.md` is already staged, so citing it is safe; citing an unstaged file is a defect.*
+     Pinned by `test_question_sweep_routing.py::LandingGateLanguageTests::{test_pr_body_staged_before_the_landing_gate,
+     test_decline_commands_are_runnable_as_printed}` (the staging-order + the staged-path citation).
+     **Not self-certified:** the pins fix the *instruction*, not a live decline render — and **no
+     remaining scenario re-renders the decline path** (Scenario 3 is the resolver, no landing). So the live
+     confirmation is honestly **deferred** to real-world use or an optional operator re-leg of Scenario 2's
+     decline branch; a re-occurrence there reopens this.
   5. **Div-5 — leg (b) ran one vestigial `ls <scratch>` + `sleep 1; echo ok`** while waiting on its
      backgrounded `Explore` readers — a faint echo of the v1 Scenario-1 Div-5 polling loop, but bounded
      (one second, no timeout, no dependence on the filesystem for the result). Cosmetic.

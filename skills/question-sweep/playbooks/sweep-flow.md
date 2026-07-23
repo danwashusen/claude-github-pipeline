@@ -48,17 +48,18 @@ fold-back": rewrite to the decided state / remove the marker / flip the register
 missing-back-link doc-side `tracked in #N`) never touches the read-only root. Create a **work workspace**
 (`${CLAUDE_PLUGIN_ROOT}/scripts/workspace.py ensure --work question-sweep/oq-<slug> --base main --root
 <root>`; a `ROOT_*` freshness result is one `AskUserQuestion` card), `Edit` each doc **inside the workspace
-path** it returns, then offer the landing as **one explicit gate**: commit + push + open a PR whose body
-summarizes the doc/link changes:
+path** it returns, then **stage the PR body (the doc/link-change summary) to `<facts.scratch>/pr.md`
+BEFORE the gate** — so both paths share that one authored file. Offer the landing as **one explicit gate**:
 
 ```bash
 ${CLAUDE_PLUGIN_ROOT}/scripts/gh_persist.py create-pr <owner/repo> "<facts.scratch>/pr.md" \
   --title "Reconcile open questions" --base main --head question-sweep/oq-<slug>
 ```
 
-On **decline**: perform **no git actions** — the summary reports the workspace path and the ready-to-run
-landing commands (`git -C <workspace> add`/`commit`, `git -C <workspace> push -u origin <branch>`, then the
-`create-pr` above). When no doc edit was approved, skip the workspace/landing entirely.
+On **decline**: perform **no git actions** — report the workspace path and the ready-to-run landing
+commands (`git -C <workspace> add`/`commit`, `git -C <workspace> push -u origin <branch>`, then the
+`create-pr` above). **These commands must run exactly as printed — `pr.md` is already staged, so citing it
+is safe; citing an unstaged file is a defect.** When no doc edit was approved, skip workspace + landing.
 
 ## 6. Summary
 

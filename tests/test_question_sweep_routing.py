@@ -179,6 +179,24 @@ class LandingGateLanguageTests(unittest.TestCase):
         self.assertRegex(self.router, r"[Oo]n decline")
         self.assertIn("no git actions", self.router)
 
+    def test_pr_body_staged_before_the_landing_gate(self):
+        # S18 Scenario-2 Div-4 fix: the PR body (pr.md) is authored BEFORE the landing gate, so approve
+        # AND decline share one staged file — the decline path's create-pr command then references a real
+        # file, not a phantom only the approve path would have authored.
+        stage_idx = self.flow.find("stage the PR body")
+        gate_idx = self.flow.find("one explicit gate")
+        self.assertNotEqual(stage_idx, -1, "flow must stage the PR body")
+        self.assertNotEqual(gate_idx, -1, "flow must offer the landing gate")
+        self.assertLess(stage_idx, gate_idx, "pr.md must be staged BEFORE the landing gate")
+        self.assertRegex(self.flow, r"BEFORE the gate")
+
+    def test_decline_commands_are_runnable_as_printed(self):
+        # The decline path's reported landing commands must cite the already-staged pr.md — a falsifiable
+        # invariant (citing an unstaged file is a defect).
+        self.assertIn("<facts.scratch>/pr.md", self.flow)
+        self.assertRegex(self.flow, r"run exactly as printed")
+        self.assertRegex(self.flow, r"citing an unstaged file is a defect")
+
 
 class ReportCountIntegrityTests(unittest.TestCase):
     """S18 Scenario-1 Div-2 fix: the §3 report shape states the single-source count invariant, so a
