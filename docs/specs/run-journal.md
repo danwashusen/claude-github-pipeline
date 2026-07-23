@@ -1009,7 +1009,56 @@ of truth; a **freshly started** resumed session will pick them up by name and ca
   adjudication (Option A + riders) → full build → orchestrator sanity (both platforms) → 1 opus
   reviewer (**PASS, 0 actionable**, 2 advisories). **0 actionable rounds.**
 
+### S19 — Doc-reviewer rewrite — PARTIAL (automatable done + committed; live legs PENDING) (2026-07-23)
+
+- **Commit:** _backfilled post-commit_ (`S19: skills/doc-reviewer/ — the final cutover`).
+- **Status:** **1 of 4 boxes ticked** (box 4). Boxes 1/2/3's live halves are the operator's — the
+  run's eighth (and final skill) stop.
+- **The pre-adjudicated retirement (the S18 Option-A precedent, riders satisfied):** v1
+  `skills/doc-reviewer/` (one 144-line SKILL.md) retired as the labeled first action; **vantage =
+  `7bffb90`**; the parity doc carries the vantage-worktree recipe + the deviation paragraph.
+- **Deliverables:** the v2 `skills/doc-reviewer/` (router 77 + one flow 71 + the carried
+  `review-lenses.md` 100 — the five lenses / three honesty rules / severity calibration / report
+  shape carried **verbatim from the vantage, only the file changed** [reviewer spot-checked 11
+  load-bearing phrases both sides]; guide resolution preserved; the post-Div-4 §8.2 landing from
+  day one; `disable-model-invocation: true` retained — this tool IS in the trio; **no prep script**
+  — verified against the spec and pinned; **no sub-agents** — S11 correctly binds nothing) + 32
+  tests + the parity scaffold (report-structure parity from the vantage + two landing legs).
+- **Rulings of record:** the 148 loaded set vs the recorded 72 half-metric (~2×, the largest gap)
+  is **legitimately structural** (the leanest v1 tool + the full §8.2 landing added; no trimmable
+  fat found; ceiling 155 with bump-with-justification); the "no gather round-trip" phrasing keeps
+  the `github-ops` token correctly ABSENT (more precise, not less); the no-capture guard is the
+  right falsifiable shape (glob-hardened per the advisory).
+- **S20 carries (the reviewer's final-step enumeration):** re-baseline the final census against
+  the **v2-only** token set (the current 88 double-counts v1+v2; every v1-only token legitimately
+  drops at removal); the CLAUDE.md rewrite must preserve the disable-model-invocation adjudication
+  (setup = the invocable exception; the trio carries it), the two retire-rebuild vantages
+  (`f9f1623` question-resolver, `7bffb90` doc-reviewer), and the pipeline-vs-standalone split that
+  underpins the §10 scoping.
+- **Census:** 88 → 88, **both diff sets empty** (the unchanged-name retire+rebuild).
+  **Dual-platform:** **1143/1143** macOS + Linux.
+- **Process:** 1 opus implementor → orchestrator sanity (both platforms) → 1 opus reviewer
+  (**PASS, 0 actionable**, 2 advisories: the guard glob [folded]; the S20 carries). **0
+  actionable rounds.** All eight skill cutovers are now reviewed.
+
 ## Handback log
+
+### 2026-07-23 handback — STOP at S19's live legs (eighth operator gate) — OPEN
+
+The run is stopped at **S19 boxes 1/2/3's live halves** — the final skill's scenarios. Everything
+automatable through S19 is committed (**unpushed**; 1143 offline tests green both platforms).
+
+**Operator actions (scaffolded in [`docs/specs/parity/doc-reviewer.md`](parity/doc-reviewer.md)):**
+1. **Report-structure parity on one sandbox doc** — v1 from the vantage (`git worktree add
+   /tmp/v1-vantage-s19 7bffb90` + `--plugin-dir /tmp/v1-vantage-s19`) vs v2 from this branch,
+   tmux-interactive, same doc + guide both legs; compare the report shape (lens order, severity
+   markers, section set).
+2. **Apply landing approved** — accept ≥1 finding, approve the §8.2 gate → a sandbox PR with the
+   doc-change summary; root clean throughout.
+3. **Apply landing declined** — decline → zero git actions; the workspace path + commands
+   runnable as printed (the post-Div-4 shape's first live render).
+Tick boxes 1/2/3 as they pass; fill the go/no-go; commit locally; never push; resume the
+orchestrator — it flips S19 to ACCEPTED and runs **S20, the final step**.
 
 ### 2026-07-22 handback — STOP at S18's live scenarios (seventh operator gate) — CLOSED 2026-07-23
 

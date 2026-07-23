@@ -561,7 +561,7 @@ gather — assert that stays true).
 - [ ] Apply mode (landing approved): PR opened; root clean throughout.
 - [ ] Apply mode (landing declined): no git actions; summary reports workspace + landing
       commands.
-- [ ] `disable-model-invocation` retained; grep gates.
+- [x] `disable-model-invocation` retained; grep gates.
 
 **Testing:** live parity on one doc; offline n/a beyond validators.
 
