@@ -951,7 +951,28 @@ of truth; a **freshly started** resumed session will pick them up by name and ca
   spec after both the plan's DoD and the orchestrator's brief propagated the flawed wording) →
   adjudication + fix → re-verify (**PASS**). **1 fix round.**
 
-### S18 — Question pair rewrite — PARTIAL (automatable done + committed; live scenarios PENDING) (2026-07-22)
+### S18 — Question pair rewrite — ACCEPTED (automatable 2026-07-22; live scenarios closed 2026-07-23)
+
+- **Scenarios (operator-run, 3/3 PASS; GO):** `ee8dbbe` scenario 1 (sweep report-only — the
+  tiered read caught two resolved-in-thread answers v1 missed entirely [the 6th v1-defect
+  addendum]; Div-2 count defect filed→fixed `0360767`); `6b96112` scenario 2 (sweep apply, both
+  landing legs — approved → PR #93 root-clean; declined → zero git actions; Div-2 confirmed-live;
+  Div-4 decline-path pr.md defect filed→fixed `ed6a405` with the economy-vs-§10 ceiling ruling);
+  `75a6fc5` scenario 3 (resolve + close — the **seeded-BLOCKER test**: a constraint-violating
+  decision supplied identically on both legs, both halted recording and re-gated; the reentrant
+  revise exact [one marker survives, old id 404s]; the v1 leg run from the `f9f1623` vantage
+  worktree per the riders; **boxes 4/5 + GO by the operator**).
+- **In-flight incidents:** the S9 fixture time-bomb (static `updatedAt` dates aged past the
+  14-day boundary overnight — caught by the orchestrator's full-suite sanity after a targeted-run
+  green; de-fused with run-time stamping + a repo-wide audit confirming the activity check is the
+  only now-distance consumer, `0360767`).
+- **Open defect-candidate (recorded, not fixed):** the fresh v2 resolve leg ran the constraint
+  audit INLINE (0 Agent calls) where resolve-flow.md §4 says dispatch — 1/2 occurrence (the
+  revise leg dispatched correctly); outcome identical. Per the 1-of-2 framework: recorded, a
+  recurrence in any future live run reopens it as a dispatch-binding hardening.
+- **Final suite state:** **1111/1111** macOS + Linux.
+
+#### Original PARTIAL entry (2026-07-22, superseded by the acceptance above)
 
 - **Commit:** `12cab81` (`S18: question pair — sweep + resolver + the authorized retirement`).
 - **Status:** **1 of 5 boxes ticked** (box 1). Boxes 2/3 (the landing legs) + box 4's
