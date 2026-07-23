@@ -990,7 +990,17 @@ of truth; a **freshly started** resumed session will pick them up by name and ca
 
 ## Handback log
 
-### 2026-07-22 handback — STOP at S18's live scenarios (seventh operator gate) — OPEN
+### 2026-07-22 handback — STOP at S18's live scenarios (seventh operator gate) — CLOSED 2026-07-23
+
+**Superseded; retained as a pointer.** The operator ran all three live scenarios
+tmux-interactively (PASS ×3 across `ee8dbbe` sweep report-only, `6b96112` sweep apply, and this
+commit's resolve+close), ticking S18 boxes 1–5 and filling the go/no-go (**GO**). Scenario 3 used
+**seeded twins** (#97→#95 v1, #98→#96 v2) rather than #61, with the v1 leg run from the `f9f1623`
+vantage worktree per naming rider 2; it also exercised a seeded BLOCKER (both legs halted recording
+and re-gated) and the reentrant revise (post-new-then-delete-old + reopen-then-close). Two in-flight
+v2 fixes landed between scenarios (`0360767` count invariant, `ed6a405` `pr.md` staging order); one
+open v2 defect candidate is recorded, not fixed (Scenario-3 Div-1, the intermittent inline
+constraint audit). The run resumes at **S19 → S20**.
 
 The run is stopped at **S18 boxes 2/3 + the parity clauses of 4/5**. Everything automatable
 through S18 is committed (**unpushed**; 1107 offline tests green both platforms).

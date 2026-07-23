@@ -464,22 +464,159 @@ claude -p "/github-pipeline:question-resolver 61" --plugin-dir /tmp/v1-vantage -
 Run the v2 leg from `--plugin-dir <this branch>`. Diff the recorded decision comments (schema + marker) and
 the close/reopen outcome.
 
-- [ ] **D1 (decision comment byte-schema)** — v2 records a `<!-- question-decision:v1 -->` comment whose
+- [x] **D1 (decision comment byte-schema)** — v2 records a `<!-- question-decision:v1 -->` comment whose
   schema is byte-identical to the frozen S1 capture (marker first line; `## Decision`/`## Rationale`/
   `## Constraints respected`/`## Unblocks`/`## Caveats`); `## Unblocks` names the native `blocking` (#86).
-- [ ] **D2 (operator-decides + verify)** — the decision is the operator's; the constraint audit ran before
+- [x] **D2 (operator-decides + verify)** — the decision is the operator's; the constraint audit ran before
   recording; a BLOCKER (if seeded) halted recording and returned to the discussion.
-- [ ] **D3 (reentrant revise)** — the re-run **replaces** the prior decision comment (post-new-then-
+- [x] **D3 (reentrant revise)** — the re-run **replaces** the prior decision comment (post-new-then-
   delete-old via `--delete-marker-id`), leaving exactly one decision comment; close is a no-op on the
   already-closed issue; reopen offered when the decision materially changed.
-- [ ] **D4 (v2 process)** — startup = one `prep_question_resolver.py`; 0 `github-ops`; the doc fold-back is
+- [x] **D4 (v2 process)** — startup = one `prep_question_resolver.py`; 0 `github-ops`; the doc fold-back is
   **proposed only** (0 doc edits); writes = `gh_persist.py comment` (+ optional `close`/`reopen`).
-- **Result: _pending operator_**
+- **Result: PASS** (both legs + the reentrant-revise re-leg, 2026-07-23). Run **interactively under the
+  tmux harness** (the [`setup.md`](setup.md) Scenario-1 recipe + the Scenario-1 `--allowedTools`
+  upgrade), one **fresh clone per leg**. The v1 leg ran against the **`f9f1623` vantage worktree**
+  (`git worktree add /tmp/v1-vantage f9f1623` → `claude --plugin-dir /tmp/v1-vantage`) per naming rider
+  2; the v2 leg against this branch. Transcripts: `…-private-tmp-s18s3-v1/ad9fe443-….jsonl` (v1),
+  `…-private-tmp-s18s3-v2/e1a541de-….jsonl` (v2 fresh), `…-private-tmp-s18s3-v2r/23be8253-….jsonl`
+  (v2 reentrant revise).
+
+  **Fixture (seeded twins — not #61).** Resolve+close is destructive (a decision comment + a close), so
+  the protocol's **twin targets** apply rather than #61's shared registry entry. Scenario 2 left #61
+  carrying a decision marker (→ `mode: revise`), and the target also needs a native `blocking` edge, so
+  two symmetric pairs were filed instead: question **#97** blocking build **#95** (v1 leg) and question
+  **#98** blocking build **#96** (v2 leg), question bodies **byte-identical apart from the build ref**
+  (`sha256` differs only where `#95`/`#96` appears), both `question` + `audience:architect`, both filed
+  through `gh_persist.py create --blocking`. Both twins re-use the register's existing **`SBX-OQ-24`**
+  (export format at launch), so **both legs ground on the same unmodified docs** and no seed commit was
+  needed — sandbox `main` stayed at `d18fc3c` throughout. Prep confirmed the shape on #98: `is_question:
+  true`, `mode: fresh`, `blocking: [96]`, `deps_available: true`, the `## Unblocks` attention line present.
+
+  **The seeded BLOCKER (D2's conditional clause, exercised).** `docs/architecture.md` §3 states *"There
+  is no service layer, registry, or dependency-injection seam — a caller imports the module and calls
+  it."* The question's `## Context` offers three shapes, the middle one being **CSV+JSON behind a
+  pluggable exporter registry** — which that §3 line forbids. The operator supplied the **same free-text
+  decision on both legs** (identical bytes, via each card's "Type something" so the input channel
+  matched): *"Go with CSV and JSON at launch behind a pluggable exporter registry … That is my decision
+  -- record it."* Both legs then halted and re-gated; the operator supplied the identical replacement
+  (*"drop the registry … two module-level functions, `to_csv(report)` and `to_json(report)` … §3 stands
+  unchanged"*), both recorded that, and both were told to close.
+
+  - **D1 — PASS (schema-identical, both legs, and identical to the frozen capture).** Section set and
+    order `diff`-clean against `docs/specs/examples/question-decision.md` on **all three** posted
+    comments (v1 #97, v2 #98 fresh, v2 #98 revise): marker as the literal first line, then `## Decision`
+    · `## Rationale` · `## Constraints respected` · `## Unblocks` · `## Caveats`, nothing added or
+    reordered. `## Unblocks` names the native `blocking` on each side — v1 cites **#95**, v2 **#96**,
+    each with the build issue's title. Free prose differs (v1 bolds the issue ref and adds a "block
+    removed" clause; v2 adds a DoD-satisfied clause) — the schema is the contract, and it matched.
+  - **D2 — PASS, both legs.** The decision was the operator's on both sides, including the deliberately
+    non-conformant one. The constraint audit ran **before** any recording on both legs and **both
+    returned a BLOCKER** citing `docs/architecture.md` §3 verbatim, **halted recording, and returned to
+    the discussion** with the finding and re-decide options. Nothing was posted until the operator's
+    replacement decision cleared a clean audit — verified by the write census (the first `gh_persist.py
+    comment` / `PERSIST_COMMENT` on each leg happens *after* the second operator answer). Both recorded
+    comments attribute the call to the operator and document the rejected registry option in
+    `## Rationale`, so #95/#96 don't re-litigate it. See Div-1 (v2's fresh leg ran that audit inline
+    rather than dispatching it) and Div-3 (v1 announced it would record the BLOCKER-tripping decision
+    before running the audit, then correctly halted).
+  - **D3 — PASS (the reentrant re-leg).** Re-run of `/github-pipeline:question-resolver 98` in a **fresh
+    clone** (`/tmp/s18s3/v2r`): prep reported `mode: revise`, `marker_comment_count: 1`,
+    `prior_decision.comment_id: 5054500957`, `already_closed: true`. The flow showed the prior decision,
+    re-verified it against the docs at `d18fc3c`, and gated on keep / re-record / **change materially**.
+    Given a materially changed decision (CSV+JSON → **CSV-only, JSON deferred**), it re-ran the audit
+    (dispatched, clean), then posted via `gh_persist.py comment … --delete-marker-id 5054500957`.
+    **Exactly one decision comment survives** — the run verified it itself (`gh issue view … comments`)
+    and so did the post-run check: #98 holds 1 comment, `5054552813`, and the GitHub API returns
+    `Not Found` for `5054500957`. **Reopen was offered** and correctly scoped to the material-change case
+    (*"anyone who saw the old answer won't get a notification that it flipped"*), with three options; the
+    operator picked *reopen-then-close-again*, which ran `gh_persist.py reopen` then `close --reason
+    completed` — #98 ends `CLOSED` / `COMPLETED`. Close-as-no-op is exercised twice over (the closed
+    issue was re-entered, and `close` ran again on it) with no error.
+  - **D4 — PASS.** v2 startup = **exactly one** `prep_question_resolver.py`. **0** `github-ops` on both
+    v2 legs. **0 doc edits** — the fold-back was proposal-only on every leg (all three clones end `git
+    status`-clean, on `main`, at `d18fc3c`, no `.worktrees/`, no extra branch; sandbox `main` unmoved).
+    Writes are exactly the two surfaces: `gh_persist.py comment` (+ `close`, and `reopen`+`close` on the
+    re-leg); **0** hand-rolled `gh issue comment`/`close`. Tool census — **v2 fresh:** 6 Bash (1 `gh repo
+    view`, 1 prep, 1 `ls`, 1 read-only `gh issue view 96`, 1 comment, 1 close), 5 Read, 1 Write (the
+    staged `decision.md`), 2 `AskUserQuestion`, **0** Agent, 0 Edit. **v2 revise:** 8 Bash (1 repo view,
+    1 prep, 1 `ls`, 1 `mkdir`, 1 comment `--delete-marker-id`, 1 read-only comment-list verify, 1 reopen,
+    1 close), 6 Read, 1 Grep, 2 Write, 3 `AskUserQuestion`, **1** Agent (the `Explore` constraint audit),
+    0 Edit. **v1:** 8 Bash, 7 Read, 4 Agent (**3 `github-ops`** — gather / post comment / close — plus 1
+    `Explore` audit), 3 `AskUserQuestion`, 1 Write.
+
+  **Both legs reached the same decision, the same close, and the same fold-back target** — SBX-OQ-24's
+  register entry (`Status: Open` → decided, provisional default replaced, `**Tracked in:**` filled with
+  the issue + the build it gates), with `prd.md` §2 correctly assessed as needing no edit (it names only
+  SBX-OQ-21/22). Both breadcrumbed the unblocked build issue with the planner command and stated they had
+  **not** removed the native block.
+
+  **6 divergences (none blocks the scenario; Div-1 is a v2 defect, Div-3 a v1 posture defect):**
+  1. **Div-1 — v2's fresh leg ran the constraint audit *inline* instead of dispatching it; the revise
+     leg dispatched it correctly.** `resolve-flow.md` §4 says *"Dispatch the constraint audit
+     (`references/constraint-audit-prompt.md`)"*. The fresh v2 leg made **0 `Agent` calls** and never
+     read that prompt — it produced the BLOCKER from its own reading of `architecture.md`. v1 read the
+     prompt and dispatched it as `Explore`. **The outcome was identical** (same BLOCKER, same citation,
+     same halt), and the *same v2 skill* dispatched properly on the revise leg (`Explore(Constraint audit
+     for #98)`), so this is **intermittent, not structural** — but it costs the two things the dispatch
+     exists for: context isolation, and the prompt's own severity/citation discipline. Recorded as a v2
+     defect candidate; the falsifiable-wording fix would be to make §4's dispatch non-optional in the
+     same form the resolver's forced reads use. **Not fixed in this pass** (a wording change post-parity
+     would need its own live confirmation, and one clean dispatch out of two is not yet a pattern).
+  2. **Div-2 — neither leg dispatched the question-status reader (§1).** Both twins were freshly filed
+     with empty threads (`thread_comment_count: 0`), and both legs short-circuited the reader as
+     deterministic-still-open rather than dispatching it. Identical on both sides ⇒ parity-neutral, and
+     the same short-circuit class as Scenario-1's Div-4 / Scenario-2's Div-2. Recorded because §1 reads
+     as unconditional.
+  3. **Div-3 — v1 announced it would record the BLOCKER-tripping decision *before* running the audit;
+     v2 halted first.** On the registry decision v1 replied *"Understood — that's your call and I'll
+     record it … You've seen the citation and reaffirmed, so I'm proceeding — but this decision … amends
+     architecture §3, and I'll record it that way"*, and only then ran the audit. It did **not** record
+     — the audit came back BLOCKER and v1 correctly halted and re-gated (*"the skill's rule is that I
+     don't record a decision that trips a BLOCKER without putting the finding in front of you"*). v2
+     never entered that state: its first response was *"I have to pause before recording — the verify
+     step is not optional here, and it returns a BLOCKER."* Same end state, weaker v1 posture on the
+     step-5 invariant — **v1 defect, and evidence the v2 router's "Verify before recording" invariant
+     lands harder than v1's Step-5 prose.**
+  4. **Div-4 — gate shape.** v1 raised **3** `AskUserQuestion` cards (decide → post-BLOCKER re-decide →
+     close), v2 **2** (decide → close), because v2 presented its post-BLOCKER re-decide as prose options
+     A/B and took the answer conversationally. Both gated every genuine decision; the operator's inputs
+     were byte-identical on both legs. Values-level, not actions-level. v2's fresh leg also offered the
+     ruled-out registry **as a visible card option** (labelled *"Selecting this means overriding a
+     binding architectural constraint"*) where v1 dropped it from the card entirely and only mentioned it
+     in prose — v2's shape keeps the operator's authority explicit, v1's is quieter.
+  5. **Div-5 — v1 ran `sleep 30; echo waited`** while waiting on its backgrounded `github-ops` gather —
+     a bounded echo of Scenario-1's Div-5 polling loop (no timeout, no filesystem race). Structural to
+     the delegated-executor model v2 removes: v2's prep returns the facts synchronously, so there is
+     nothing to wait on.
+  6. **Div-6 — the reentrant leg's staged `decision.md` write failed once on the *previous* run's file.**
+     `facts.scratch` is keyed only on the issue number (`/tmp/gh-question-resolver-98/`), so the revise
+     run's `Write` hit the `decision.md` the fresh run left there and errored (*"Error writing file"* —
+     the harness refuses to overwrite a file unread in this session). The run self-recovered (`Read`
+     then `Write`) and nothing was lost. A reentrancy paper-cut in the scratch-path convention, not a
+     contract break — worth a per-run suffix or an explicit "read-then-overwrite" note if it recurs.
+
+  **Sandbox state left behind (for a later scenario or S20).** Twins **#97** (CLOSED/COMPLETED, 1
+  decision comment `5054501362`) and **#98** (CLOSED/COMPLETED, 1 decision comment `5054552813` — the
+  revised CSV-only answer) plus their open build issues **#95**/**#96**, each still natively `blocked by`
+  its (now closed) question. Scenario 2's leg-(b) leftovers are untouched: #61 open with its decision
+  marker, companion #94, #27's patched `## Tracked in`. `main` is still `d18fc3c`. The `/tmp/v1-vantage`
+  worktree was removed after the run.
 
 ## Go/no-go (operator)
 
-- [ ] All three scenarios PASS (or every divergence is adjudicated as an explained v1 defect / fixture
+- [x] All three scenarios PASS (or every divergence is adjudicated as an explained v1 defect / fixture
   artifact / v2 enrichment).
+- **Operator verdict (2026-07-23): GO.** All three live scenarios PASS — sweep report-only, sweep apply
+  (both landing legs), resolve+close (both legs + the reentrant re-leg). Every divergence across the
+  three is adjudicated: **v1 defects** (Scenario-1 Div-1 empty-thread claim, Scenario-1 Div-5 / Scenario-3
+  Div-5 polling, Scenario-3 Div-3 record-then-verify posture), **v2 defects fixed + confirmed** (the
+  Scenario-1 Div-2 count integrity, confirmed live in Scenario 2), **v2 defects fixed pending live**
+  (Scenario-2 Div-4 `pr.md` staging order — no remaining scenario re-renders the decline path),
+  **one open v2 defect candidate** (Scenario-3 Div-1, the intermittent inline constraint audit — recorded,
+  not fixed, since one clean dispatch out of two is not yet a pattern and a post-parity wording change
+  would need its own live confirmation), and the rest **parity-neutral** (docs read inline at 3-file
+  scale; Tier-2 dispatched for a subset of `tier2_needed`; gate shape).
 - **Recommendation (implementor): GO on the offline half.** Both preps' fixture matrices (Tier-1 trio,
   reentrancy trio, budgets, decision paths), both routers' structural/frontmatter/contract-token/landing/
   byte-compat/reentrancy gates, the S11 reader convergence, and the census zero-drop are implementor-complete

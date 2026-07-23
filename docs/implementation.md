@@ -541,9 +541,9 @@ return vocabulary converges on the §3 codes here (`AMBIGUOUS`), completing S11'
 - [x] Sweep apply (landing approved): PR opened; root clean throughout.
 - [x] Sweep apply (landing declined): no git actions; summary reports workspace + landing
       commands.
-- [ ] `question-decision:v1` comment diffs clean against S1 captures; reentrant revise
+- [x] `question-decision:v1` comment diffs clean against S1 captures; reentrant revise
       (post-new-then-delete-old) parity-tested.
-- [ ] New names used throughout the new dirs; `disable-model-invocation` retained; grep gates;
+- [x] New names used throughout the new dirs; `disable-model-invocation` retained; grep gates;
       parity recorded: sweep report-only, sweep apply, resolve + close.
 
 **Testing:** shim-backed unit tests for both preps; the three live parity scenarios.
