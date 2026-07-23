@@ -282,7 +282,8 @@ landing). Expect a full reconciliation report grouped by class and a plain summa
      `test_question_sweep_routing.py::ReportCountIntegrityTests` (the §3 invariant prose is present).
      **Not self-certified:** the pin fixes the *instruction*, not the rendered report (which is the
      model's at runtime); **Scenario 2's live report render is the confirmation** that the hardened
-     instruction holds — a re-occurrence there reopens this.
+     instruction holds — a re-occurrence there reopens this. **Confirmed live (2026-07-23):** both
+     Scenario-2 legs rendered counts equal to their table rows and named the derivation; no recurrence.
   3. **Div-3 — both legs read the docs directly instead of fanning out `Explore`.** `sweep-flow.md` §1
      (and v1's Step 2) prescribe a grep-prefilter then an `Explore` fan-out over the candidate files.
      With 3 docs totalling 47 lines, **both** legs prefiltered and then read them inline, each saying so
@@ -321,14 +322,109 @@ head `question-sweep/oq-<slug>`, base `main`, root clean throughout; (b) **decli
 actions**, the summary reports the workspace path + ready-to-run landing commands. Reset the seed between
 legs; use a fresh clone for the decline leg.
 
-- [ ] **D1 (landing approved)** — a PR opens with a body summarizing the doc/link changes; the project root
+- [x] **D1 (landing approved)** — a PR opens with a body summarizing the doc/link changes; the project root
   is clean and on `main` **throughout** (all doc edits happened in the workspace — prd.md §8.1/§8.2).
-- [ ] **D2 (landing declined)** — **no** commit, push, or PR; the summary reports the workspace path
+- [x] **D2 (landing declined)** — **no** commit, push, or PR; the summary reports the workspace path
   (`.worktrees/question-sweep/oq-<slug>`) and the exact ready-to-run landing commands.
-- [ ] **D3 (GitHub writes via the single path)** — companions filed via `gh_persist.py create` (audience
+- [x] **D3 (GitHub writes via the single path)** — companions filed via `gh_persist.py create` (audience
   labels created inline first); back-link body patches via `gh_persist.py edit-body`; the landing via
   `workspace.py ensure --work` + `gh_persist.py create-pr`; 0 `github-ops`, 0 hand-rolled `gh … create`.
-- **Result: _pending operator_**
+- **Result: PASS** (both landing legs, 2026-07-23). **v2-only by design** — the scenario tests the prd.md
+  §8.2 workspace+landing behavior, which v1 `open-questions` does not have (it edits docs in place), so
+  there is no v1 twin to diff; the comparison is against the specced contract, not a v1 leg. Run
+  **interactively under the tmux harness** (the [`setup.md`](setup.md) Scenario-1 recipe + the Scenario-1
+  `--allowedTools` upgrade above), one **fresh clone per leg**, with a full reset between legs.
+  Transcripts: `…-private-tmp-s18s2-a/5cd232c1-….jsonl` (leg a), `…-private-tmp-s18s2-b/302d88d9-….jsonl`
+  (leg b).
+
+  **Fixture (seeded — the recipe).** From the Scenario-1 as-found state, three moves put one row in each
+  actionable class:
+  1. Posted a `<!-- question-decision:v1 -->` comment on **#61** (retention capped at the last 500 entries,
+     oldest-first; `## Unblocks` names the native `blocking` #86) and **left the issue open** — Tier-1
+     `decision-marked`, so prep still gathers it and the decision text is staged for the fold-back. (A
+     *closed* issue would also read resolved but costs no gather, leaving the flow nothing to fold back.)
+  2. Set the register's `SBX-OQ-22` entry to `**Tracked in:** #61` so its only drift is the resolution
+     status → a clean **stale-doc** (doc says `Status: Open` / `Provisional default: unbounded`).
+  3. Appended a `SBX-OQ-24` register entry (export format, `**Tracked in:** (see the tracker)`) matching
+     open **#27**, whose `## Tracked in` names no doc → **missing-back-link**, both sides.
+  `SBX-OQ-21` stays as-found → **untracked**. Seed commit `d18fc3c` pushed to sandbox `main`. Prep
+  confirmed the join: #61 `decision-marked` (`marker_comment_present: true`), the other six `still-open`
+  → `tier2_needed`, 3 docs in scope.
+
+  - **D1 — PASS.** PR [#93](https://github.com/danwashusen/gh-pipeline-sandbox/pull/93) opened, head
+    `question-sweep/oq-reconcile`, base `main`, workspace commit `0207481`. Body summarizes the doc/link
+    changes under `## Doc changes` (the `SBX-OQ-22` fold-back in both locations, both back-links, the
+    register-header fix), plus `## Not changed` ("No question issue was closed or resolved by this sweep")
+    and `## Related` (#61/#92/#27). **Root clean throughout**, verified at three points — before the run,
+    mid-run right after `workspace.py ensure`, and after the landing: `/tmp/s18s2/a` is `git status`-empty,
+    on `main`, at the seed SHA `d18fc3c` every time; `git worktree list` shows the root at `d18fc3c [main]`
+    with the only other entry the workspace. Every `Edit` targeted a path under
+    `.worktrees/question-sweep/oq-reconcile/`.
+  - **D2 — PASS.** Landing declined ⇒ **zero git actions**: workspace HEAD still `d18fc3c` with
+    `docs/open-questions.md` + `docs/prd.md` **uncommitted** (`git status` shows ` M` both), the remote
+    branch list **byte-identical** to the pre-run snapshot (no `question-sweep/*` remote branch), no new PR
+    (the PR list's newest is leg (a)'s #93, closed during the reset), `main` still `d18fc3c`. The summary
+    reports the workspace path (`/private/tmp/s18s2/b/.worktrees/question-sweep/oq-reconcile`, branch and
+    base named) and a ready-to-run `W=…` / `git -C "$W" add` / `commit` / `push -u origin` /
+    `gh_persist.py create-pr` block. Root clean on `main` at `d18fc3c`. See Div-4: the `create-pr` line
+    cites a `pr.md` the declined run never staged, and the run said so.
+  - **D3 — PASS, both legs.** Companion filed via `gh_persist.py create … --label question --label
+    audience:developer` (leg a: `gh label create audience:developer … || true` inline first — it already
+    existed, no label created; leg b checked `gh label list` and skipped the create). Back-link patch via
+    `gh_persist.py edit-body … 27 <staged path>`. Landing via `workspace.py ensure --work
+    question-sweep/oq-reconcile --base main --root <root>` + `gh_persist.py create-pr`. Every body staged
+    to `facts.scratch` first. **0** `github-ops`, **0** hand-rolled `gh issue create`/`gh pr create`/`gh
+    issue edit`; the only raw `gh` calls are read-only (`repo view`, the de-dup `issue list`, `label
+    list`). Tool census — leg a: 10 Bash (1 prep, 2 read-only greps, 1 `gh repo view`, 1 label+create, 1
+    edit-body, 1 `workspace.py ensure`, 1 workspace `git diff`, 1 workspace `add`/`commit`/`push`, 1
+    `create-pr`), 8 Read, 3 `Explore`, 1 Grep, 2 `AskUserQuestion`, 4 Edit (all in-workspace), 3 Write (all
+    to scratch). Leg b: 11 Bash (same shape minus commit/push/create-pr, plus a vestigial `ls`/`sleep 1`),
+    9 Read, 2 `Explore`, 2 `AskUserQuestion`, 4 Edit (all in-workspace), 0 Write.
+
+  **Reconciliation was identical on both legs** — untracked 1 (`SBX-OQ-21`) · stale-doc 1 (`SBX-OQ-22` ↔
+  #61) · missing-back-link 1 (`SBX-OQ-24` ↔ #27) · orphaned-issue 5 (#84/#83/#30/#29/#5) · in-sync 0, total
+  8 rows; each leg re-derived the #29/#30 `resolved-in-thread` finding and refused to close anything.
+
+  **Scenario-1 Div-2 (count integrity) did NOT recur — confirmed fixed.** Both legs rendered per-class
+  counts that equal their table's row counts and a total that equals the sum, and both said so in the
+  falsifiable form the hardened §3 asks for (leg a: *"Counts (row counts from the table above)"*; leg b:
+  *"Counts (each = its row count above)"*). This is the live confirmation Div-2 was left open for; it
+  closes.
+
+  **5 divergences (none blocks the scenario; Div-4 is a v2 defect TO FIX):**
+  1. **Div-1 — leg (a)'s doc-edit gate under-scoped the edit set it then made; leg (b)'s did not.** Leg
+     (a) gated on *"Doc edits to `docs/open-questions.md`"* and then also edited `docs/prd.md` §2 (the same
+     `SBX-OQ-22` drift, second location) and the register's header sentence. It **disclosed all three
+     before the landing gate** (*"the diff above includes three things beyond the two literal doc-edit
+     items you picked"*, with an offer to revert), and every edit was in the workspace, so nothing was
+     silently applied and the landing gate still governed. Leg (b) scoped `prd.md` **into** the gate option
+     up front (*"Plus prd.md §2: OQ-22 removed from the 'not yet decided' sentence"*) and offered the
+     `SBX-OQ-21` back-link as its own option. Same final edit set, better gate wording — the fold-back
+     legitimately spans every doc that asserts the stale state (`sweep-flow.md` §5 says "rewrite to the
+     decided state", not "one file"), so the fix is to name the full file set **in** the gate, not to
+     narrow the edit.
+  2. **Div-2 — Tier-2 dispatched for a subset of `tier2_needed` (recurrence of Scenario-1's Div-4).** Prep
+     flagged 6 still-open questions; leg (a) dispatched 3 (#27/#29/#30), leg (b) 2 (#29/#30), both
+     short-circuiting the entries prep already showed with `thread_comment_count: 0`. Leg (b) reached the
+     same **missing-back-link** classification for #27 without a reader (Tier-1 `still-open` + an empty
+     thread is deterministic). D3's "only for `tier2_needed`" is an **only** constraint, so both pass;
+     recorded because the dispatch count is not the flag count.
+  3. **Div-3 — both legs read the docs inline instead of the `Explore` fan-out (recurrence of
+     Scenario-1's Div-3).** Same 3-file/47-line scale, same prefilter-then-read, same explicit
+     prefiltered-vs-read reporting. Confirms the fan-out is a cost control at this scale, not a
+     correctness requirement.
+  4. **Div-4 — the decline path's "ready-to-run" commands cite a `pr.md` that was never staged — v2 defect,
+     TO FIX.** `sweep-flow.md` §5's decline branch says the summary reports the `create-pr` command from
+     §5's fence, which takes `"<facts.scratch>/pr.md"` — but the PR body is only authored on the *approve*
+     path, so on decline that path does not exist. Leg (b) emitted the command **and flagged the gap
+     honestly** (*"(pr.md isn't written — the gate was declined before staging it. Write a short body
+     covering the three changes above, or open the PR with `gh pr create` directly.)"*), which is why D2
+     still passes: the operator is not misled. Still, "ready-to-run" is the contract word. **Fix
+     direction:** stage `pr.md` **before** the landing gate (it is written matter either way, and the
+     approve path already needs it), so decline hands over a genuinely runnable block.
+  5. **Div-5 — leg (b) ran one vestigial `ls <scratch>` + `sleep 1; echo ok`** while waiting on its
+     backgrounded `Explore` readers — a faint echo of the v1 Scenario-1 Div-5 polling loop, but bounded
+     (one second, no timeout, no dependence on the filesystem for the result). Cosmetic.
 
 ### Scenario 3 — resolve + close (incl. the reentrant-revise clause)
 
@@ -336,6 +432,17 @@ Run v2 `question-resolver <N>` on an open sandbox question (e.g. **#61** — it 
 the decision comment's `## Unblocks` and the summary breadcrumb are exercised). Reach a decision, record it,
 and **close**. Then **re-run** the same issue with a materially-changed decision to exercise the reentrant
 revise (post-new-then-delete-old on the `<!-- question-decision:v1 -->` comment) and the offered reopen.
+
+**Sandbox state left by Scenario 2 (read before picking a target).** Scenario 2's seed and its leg-(b)
+outputs were deliberately **not** rolled back — leg (a) was fully reset (PR #93 closed + branch deleted,
+companion deleted, #27 restored), leg (b) was not. So going in: **#61 is open and already carries a
+`<!-- question-decision:v1 -->` comment** (the Scenario-2 stale-doc seed), which makes `prep_question_resolver`
+report `reentrancy.mode: revise` — i.e. a #61 run starts on the *reentrant* path, not the fresh one. To run
+the fresh leg on #61, delete that comment first (`gh api -X DELETE
+repos/danwashusen/gh-pipeline-sandbox/issues/comments/5054106253`; body preserved in this record and in the
+seed scratch), or target a still-fresh question instead — **#27** also carries a native `blocking` edge
+(#28) and so exercises `## Unblocks` the same way. Also present from leg (b): companion **#94**
+(`SBX-OQ-21`) and #27's patched `## Tracked in`. Sandbox `main` is at the Scenario-2 seed `d18fc3c`.
 
 **v1 leg vantage (naming rider 2).** The v1 `question-resolver` dir is gone from `HEAD`; run the v1 leg from
 a worktree at the vantage:

@@ -538,8 +538,8 @@ return vocabulary converges on the §3 codes here (`AMBIGUOUS`), completing S11'
 **DoD**
 - [x] Tier-1 status join fixtures: closed / decision-marker present / still open (→ Tier-2
       needed flag).
-- [ ] Sweep apply (landing approved): PR opened; root clean throughout.
-- [ ] Sweep apply (landing declined): no git actions; summary reports workspace + landing
+- [x] Sweep apply (landing approved): PR opened; root clean throughout.
+- [x] Sweep apply (landing declined): no git actions; summary reports workspace + landing
       commands.
 - [ ] `question-decision:v1` comment diffs clean against S1 captures; reentrant revise
       (post-new-then-delete-old) parity-tested.
