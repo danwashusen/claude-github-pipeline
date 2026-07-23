@@ -1011,7 +1011,7 @@ of truth; a **freshly started** resumed session will pick them up by name and ca
 
 ### S19 — Doc-reviewer rewrite — PARTIAL (automatable done + committed; live legs PENDING) (2026-07-23)
 
-- **Commit:** _backfilled post-commit_ (`S19: skills/doc-reviewer/ — the final cutover`).
+- **Commit:** `65268e2` (`S19: skills/doc-reviewer/ — the final cutover`).
 - **Status:** **1 of 4 boxes ticked** (box 4). Boxes 1/2/3's live halves are the operator's — the
   run's eighth (and final skill) stop.
 - **The pre-adjudicated retirement (the S18 Option-A precedent, riders satisfied):** v1
