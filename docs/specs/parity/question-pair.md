@@ -216,7 +216,95 @@ landing). Expect a full reconciliation report grouped by class and a plain summa
   plain summary (not a `## Handoff`), and any orphan is surfaced, never auto-closed.
 - [ ] **D3 (v2 process)** — startup = exactly one `prep_question_sweep.py`; 0 `github-ops`; the Tier-2 reader
   is dispatched only for `tier2_needed` questions.
-- **Result: _pending operator_**
+- **Result: PASS** (both legs, 2026-07-23). Twin-less comparison — one shared live registry, so v1
+  `/github-pipeline:open-questions` and v2 `/github-pipeline:question-sweep` ran against **identical**
+  starting state (7 open `question` issues, sandbox `main` `1b048ba`), one fresh clone each, both
+  **report-only** (every gate declined). Run **interactively under the tmux harness** (the
+  [`setup.md`](setup.md) Scenario-1 recipe — `claude --plugin-dir <this branch> --model opus`, cwd = the
+  clone): both legs raise a real multi-question `AskUserQuestion` write gate, which headless `claude -p`
+  cannot answer. Transcripts: `…-s18-scen1-clone-v1/247c9924-….jsonl` (v1),
+  `…-s18-scen1-clone-v2/f974e666-….jsonl` (v2).
+
+  **Fixture (as-found, unseeded).** `docs/open-questions.md` carries two register entries — `SBX-OQ-21`
+  (repeated event name) with `**Tracked in:** (no companion question filed yet)` → **untracked**, and
+  `SBX-OQ-22` (retention cap) with `**Tracked in:** (see the tracker)` → **missing-back-link** against #61
+  (which names the doc correctly on its side). The other six questions (#84/#83/#30/#29/#27/#5) have no
+  in-scope doc marker → **orphaned-issue**. #29/#30 each carry one owner comment that *answers* the
+  question without a decision marker — the Tier-2 trap. Prep: all 7 Tier-1 `still-open`,
+  `tier2_needed: true`, `heuristics_active` false (the `drafter-open-question-markers` block is present),
+  3 docs in scope.
+
+  - **D1 — PASS (identical class assignment; v2 strictly better-grounded).** Both legs produced the same
+    reconciliation over the same closed set: **untracked 1** (`SBX-OQ-21`, both citing the same doc line
+    and the same de-dup search result), **missing-back-link 1** (`SBX-OQ-22` ↔ #61, both naming the doc
+    side as the gap), **orphaned-issue 6** (#84/#83/#30/#29/#27/#5, both flagging #83/#84 as a duplicate
+    pair with no doc source, both surfacing rather than closing), **stale-doc 0**, **in-sync 0**. v2 read
+    resolution only from prep's Tier-1 `status` plus the Tier-2 reader — never from the register's own
+    `**Status:** Open` field, which it never cites as evidence of resolution. See Div-1: only v2 caught
+    that #29/#30 are answered-but-open.
+  - **D2 — PASS.** Zero writes on both legs, verified against pre/post snapshots: the full issue list
+    (71 issues) and each of the 7 questions' `body`/`state`/`updatedAt`/`comments` are **byte-identical**
+    pre-vs-post; the PR list is unchanged; `main` is still `1b048ba`. Zero git actions: both clones end
+    clean, on `main`, at `1b048ba`, with no `.worktrees/` entry and no local branch beyond `main`
+    (`git worktree list` shows only the clone itself). Both legs closed with a plain `## Summary`
+    (companions filed / docs updated / back-links added / discrepancies left) — **no `## Handoff`** in
+    either transcript. Orphans surfaced, none closed; v2 explicitly refused (*"The sweep will not close
+    them"*) and both breadcrumbed the follow-on skill in prose.
+  - **D3 — PASS.** v2 startup = **exactly one** `prep_question_sweep.py` call. **0** `github-ops` (the
+    only `Agent` dispatches are 2 `Explore` Tier-2 readers). Tier-2 was dispatched **only** for
+    `tier2_needed` entries (#29 and #30 — both flagged by prep), each with the reader prompt's `<<…>>`
+    placeholders filled from prep's staged `sections` (body + thread inline), and each returned
+    `resolved-in-thread`. Tool census — v2: 6 Bash (1 prep, 1 `gh repo view`, 2 read-only `gh issue list`
+    de-dup searches, 2 local `wc`/`grep`), 7 Read, 2 Agent, 1 `AskUserQuestion` (2 questions), **0**
+    `Edit`/`Write`, **0** `gh_persist.py`. v1: 10 Bash, 5 Read, 1 Grep, 1 `github-ops` Agent, 1
+    `AskUserQuestion` (3 questions), 0 Edit/Write.
+
+  **6 divergences (none blocks the scenario; Div-1 is a v1 defect, Div-2 a v2 report defect TO FIX):**
+  1. **Div-1 — v1 asserted "empty threads" for questions it never read; v2 caught the answered-but-open
+     pair.** v1 gathered only #61/#83/#84 through `github-ops` and closed its report with *"every question
+     in scope is unambiguously still open (empty threads, no decision markers), so nothing needed
+     escalation to a Tier-2 reader."* #29 and #30 each carry an owner comment that answers the question —
+     v1's claim is contradicted by data it never fetched. v2's prep staged all 7 threads, and its two
+     Tier-2 reads returned `resolved-in-thread` with the quoted answer, so v2's report surfaces the
+     highest-value finding of the run: two questions answered in-thread with no `<!-- question-decision:v1
+     -->` comment, which every Tier-1 consumer (drafter/planner/resolver) will keep treating as
+     unresolved. **v1 defect / v2 enrichment** — this is exactly the drift the tiered read exists to
+     catch, and it is the one class of finding the whole skill is for.
+  2. **Div-2 — v2's orphaned-issue count label disagrees with its own table — TO FIX (cosmetic,
+     report-only).** The section header renders `🟣 orphaned-issue — 5` while the table below it lists
+     **6** rows (#84/#83/#30/#29/#27/#5) and the final summary correctly says *"6 orphaned question
+     issues."* A per-class count that undercounts its own rows is a report-integrity defect even though
+     no action derives from it. No count is authored in `sweep-flow.md` §3 (the report shape is the
+     model's), so this is a rendering slip, not a spec bug — worth a §3 note that per-class counts must
+     equal the rows rendered.
+  3. **Div-3 — both legs read the docs directly instead of fanning out `Explore`.** `sweep-flow.md` §1
+     (and v1's Step 2) prescribe a grep-prefilter then an `Explore` fan-out over the candidate files.
+     With 3 docs totalling 47 lines, **both** legs prefiltered and then read them inline, each saying so
+     explicitly (v2: *"Docs are small, so I read all three directly rather than fanning out"*; v1:
+     *"Small doc set (3 files, 2 prefiltered) — I'll read them directly"*). Identical on both sides ⇒
+     parity-neutral, and the reported prefiltered-vs-read count was preserved. Records that the fan-out
+     is a cost control, not a correctness requirement, at this scale.
+  4. **Div-4 — v2 short-circuited 5 of the 7 `tier2_needed` entries on `thread_comment_count: 0`.** Prep
+     flags every still-open question `tier2_needed` and its attention line says the router dispatches the
+     reader for all 7; v2 dispatched 2, reasoning that an empty thread is deterministically still-open
+     with nothing for judgment to read. D3 as written is an **only** constraint (both dispatches *were*
+     `tier2_needed`), so this passes — and the economy is sound (5 saved sub-agents, no information lost,
+     since prep already stages `thread_comment_count`). Recorded because a future reader of the D3 box
+     might expect 7 dispatches.
+  5. **Div-5 — v1 burned 5 minutes on a self-authored polling loop.** After dispatching `github-ops`, v1
+     ran `until [ -n "$(ls -A /tmp/gh-open-questions-sbx/ 2>/dev/null)" ]; do sleep 5; done` to wait for
+     the sub-agent's scratch dir to populate — a race that cannot resolve, since the `Agent` result
+     arrives through the tool result, not the filesystem. It hit the 5-minute Bash timeout (exit 143) and
+     the leg self-recovered. Structural to the delegated-executor model v2 removes (v2 has no sub-agent
+     to wait on at gather time — prep returns the facts synchronously), so **not** a fixture artifact.
+  6. **Div-6 — gate shape and one extra v1 proposal.** v1 raised 3 questions (GitHub writes / doc edits /
+     how to handle the #83/#84 duplicate pair, the last offering non-destructive cross-link comments);
+     v2 raised 2 (GitHub write / doc edits) and handled the duplicate pair as a report-only observation.
+     v1 also proposed a second GitHub write v2 did not — patching **#61's** `## Tracked in` to name the
+     build issue it natively blocks (#86); v2 had the same `blocking` edge in its prep facts but judged
+     #61's issue side already correct (the contract's back-link is doc↔issue, not issue↔build). Both
+     gate before any write, both default to the non-destructive option — a values-level difference, not
+     an actions-level one.
 
 ### Scenario 2 — sweep, apply (landing approved + declined legs, per the S17 model)
 
