@@ -206,7 +206,7 @@ severity-tiered findings), then exercise the two §8.2 landing legs on the **v2*
   whose body summarizes the doc changes, head `doc-reviewer/<doc-slug>`, base `main`; the doc `Edit`s
   all happened **in the workspace** and the project **root is clean and on `main` throughout**
   (prd.md §8.1/§8.2).
-- [ ] **D3 (apply mode — landing declined)** — on a fresh clone, accept findings but **decline** the
+- [x] **D3 (apply mode — landing declined)** — on a fresh clone, accept findings but **decline** the
   landing: **no** commit, push, or PR; the summary reports the workspace path
   (`.worktrees/doc-reviewer/<doc-slug>`) and the exact ready-to-run landing commands (which run as
   printed — `pr.md` was staged before the gate).
@@ -218,7 +218,7 @@ severity-tiered findings), then exercise the two §8.2 landing legs on the **v2*
 - **Result: D1 PASS (report structure), 2026-07-25** — this leg was scoped to the
   **report-structure parity read only**: both legs were driven to the apply gate and **declined** (accept
   no findings), so the run is report-only on both sides and the two §8.2 landing legs were deferred.
-  **D2 + D4 PASS** in Scenario 2 below (2026-07-25); **D3 remains TODO** (Scenario 3, the decline leg).
+  **D2 + D4 PASS** in Scenario 2 below (2026-07-25); **D3 PASS** in Scenario 3 below (2026-07-25).
 
   **Harness.** tmux interactive harness ([`setup.md`](setup.md) Scenario-1 recipe + the S18 Scenario-1
   `--allowedTools` upgrade): `claude --plugin-dir <dir> --model opus --allowedTools Bash Read Grep Glob
@@ -417,13 +417,110 @@ open PR"**.
   `origin/main` (the [[s17-scenario2-landing-declined]] lesson). `/tmp/s19-d2` is left intact as
   evidence.
 
+### Scenario 3 — apply mode, landing **declined** (D3)
+
+**v2-only by design**, same as Scenario 2 (v1 has no workspace/landing to decline). This is the
+**first live render of the post-Div-4 shape's decline path** — `pr.md` staged *before* the gate, so
+the printed commands are runnable as printed.
+
+**Harness.** tmux interactive harness (the [[s19-scenario1-report-structure]] recipe): `claude
+--plugin-dir <this branch> --model opus --allowedTools Bash Read Grep Glob Task TodoWrite Edit Write
+WebFetch`, cwd = a **fresh** clone `/tmp/s19-d3` at sandbox `main` `ff490b3`. Fixture reused
+unchanged (`docs/constitution.md`, `sha1 991a4dd8…`). Transcript:
+`~/.claude/projects/-private-tmp-s19-d3/fa622bdd-….jsonl`. Two gates: apply → **"Blockers only"**
+(a *multi*-select card, `Submit`-tab shape); landing → **"Decline — leave it in the workspace"**
+(single-select). This run's playbook is `437422e` (the Scenario-2 Div-1 fix), so the loaded set was
+155 lines.
+
+**Reset performed first** (the Scenario-2 prerequisite): `gh pr close 99 --delete-branch` — PR #99
+`CLOSED`, remote branch `doc-reviewer/constitution` deleted (0 `doc-reviewer/*` refs before the run),
+so `workspace.py ensure --work` forked cleanly at `origin/main`. The **stale
+`/tmp/gh-doc-reviewer-constitution/pr.md`** left by Scenario 2 (3520 B) was **deleted before the
+run** — otherwise the "the cited `pr.md` exists" check would have false-positived on the previous
+leg's file.
+
+- **Result: D3 PASS, 2026-07-25.**
+
+  **Zero git actions — verified four ways.** At session end: the workspace
+  `/private/tmp/s19-d3/.worktrees/doc-reviewer/constitution` sits on branch `doc-reviewer/constitution`
+  at **`ff490b3`** (no new commit) with `M docs/constitution.md` **unstaged** — not even a `git add`;
+  `git ls-remote --heads origin 'doc-reviewer/*'` returns **nothing**; the sandbox's newest PR is still
+  **#99 (CLOSED)** — no PR was opened; and the root clone is `main` `ff490b3` with `git status
+  --porcelain` **empty** and `docs/constitution.md` still `sha1 991a4dd8…` at every boundary (pre-run,
+  mid-edit, post-decline). The transcript's four `Bash` calls are all read-only or setup —
+  `gh repo view --json nameWithOwner`, `mkdir -p … && git rev-parse --show-toplevel`, `workspace.py
+  ensure`, `git -C <workspace> diff` — **0** `add`/`commit`/`push`, **0** `gh_persist.py`, **0** `gh`
+  write.
+
+  **The summary reports the workspace + the commands, and they run exactly as printed.** The `##
+  Summary` gives **Workspace:** `/private/tmp/s19-d3/.worktrees/doc-reviewer/constitution` (branch
+  `doc-reviewer/constitution`, base `main`), **PR body already staged:**
+  `/tmp/gh-doc-reviewer-constitution/pr.md`, and a `bash` fence of four commands. The **cited `pr.md`
+  really exists** — 2678 B, `sha256 1f7a1c03…`, written **before** the gate (snapshotted off-session
+  at the moment the pre-gate `Write` landed, and byte-identical after the decline). Those four
+  commands were then extracted **verbatim from the transcript** and executed as an operator would:
+  all four succeeded unmodified — workspace commit `e2d3573`, branch pushed, and `gh_persist.py
+  create-pr` returned `{"status": "ok", … "url": ".../pull/100", "body_bytes": 2678, "body_sha256":
+  "1f7a1c03…"}` — the **same sha256 as the pre-gate staged file**, so the body the operator lands is
+  byte-for-byte the one authored before the gate. **PR [#100](https://github.com/danwashusen/gh-pipeline-sandbox/pull/100)**
+  opened `OPEN`, title `Doc review — docs/constitution.md`, head `doc-reviewer/constitution`, base
+  `main`; its read-back body matches the staged file modulo GitHub's one trailing newline. Every git
+  invocation in the printed block is the explicit `git -C <workspace>` form — no `cd`, no bare git.
+
+  **D4 re-confirmed on this leg.** Startup = **no prep call**; **0** `github-ops`, **0** `Agent`/`Task`
+  dispatches; the guide was read from the **plugin bundle**
+  (`<this branch>/docs/guides/constitution.md`) and never edited; the plugin repo's working tree is
+  untouched by the run. Census: **5** `Read` (router-forced `playbooks/review-flow.md` +
+  `references/review-lenses.md`, the doc, the bundled guide, the workspace doc), **4** `Bash`, **2**
+  `AskUserQuestion`, **1** `Write` (`pr.md`), **1** `Edit` (the workspace doc only,
+  `…/.worktrees/doc-reviewer/constitution/docs/constitution.md`). `workspace.py` ran **directly as an
+  executable** (S17 Div-1 fix holds, 2/2 legs).
+
+  **Div-1 (Scenario 2) — fix live-evidenced at the prescription level, not the execution level.** This
+  leg renders the *decline* path, so the approve path's git ops never ran here; what the run does show
+  is that the fixed §5 text reached the gate — the landing card's approve option reads *"Runs `git -C
+  <workspace>` add/commit/push, then create-pr with the staged …/pr.md body"*, and the printed decline
+  block is the same explicit form. Honest status: **RESOLVED-pending-approve-render** — the next
+  approve-path run (or a re-run of Scenario 2) closes it live.
+
+  **3 divergences — none blocks D3:**
+  1. **Div-1 — the apply gate rendered *multi*-select again** (checkbox options + a `✔ Submit` tab),
+     where Scenario 2's run rendered *single*-select over bundled scopes. That makes the card shape
+     **run-to-run variable on identical inputs** (Scenario 1 multi, Scenario 2 single, Scenario 3
+     multi) — playbook §5 pins only "apply **only** the findings the operator accepts", not the shape,
+     so all three satisfy it. Recorded as a recurrence of Scenario-2 Div-2, not a new defect.
+  2. **Div-2 — severity calibration drifted across runs on the same fixture.** This run scored **4
+     blockers / 1 should-fix / 2 considers** where Scenario 1's v2 leg scored **3 / 2 / 2** — §5
+     (version pin + tooling defaults) moved 🟡 → 🔴. The finding *set* is identical (same seven, same
+     targets, same prescribed fixes) and both calibrations are defensible against the guide's own
+     stakes; the tier is judgment, which review-lenses calibrates rather than fixes. Non-blocking for
+     D3, recorded because it bears on D1's "identical 🔴/🟡 sets" evidence being a per-run reading.
+  3. **Div-3 — no citation grep before editing.** Scenario 2's run grepped `constitution §` repo-wide
+     to prove no citation would dangle; this run retired §5/§6 as gaps and said so, but did not run the
+     grep. review-lenses §"Apply-time discipline" mandates *preserving anchors* (done — §7/§8 keep
+     their numbers, gaps left), not the grep, so both are conformant; the grep is the stronger habit.
+
+  **Sandbox state this leaves.** The operator follow-through (proving the commands run as printed)
+  opened **PR #100** and pushed **`doc-reviewer/constitution`** — both are *evidence of this leg*, not
+  skill writes. Close/delete them before any future doc-reviewer live run
+  (`gh pr close 100 --delete-branch`). `/tmp/s19-d3` and `/tmp/gh-doc-reviewer-constitution/` are left
+  intact as evidence.
+
 ## Go/no-go (operator)
 
-- [ ] Scenario 1 PASSES (report structure parity + both landing legs; every divergence adjudicated as
+- [x] Scenario 1 PASSES (report structure parity + both landing legs; every divergence adjudicated as
   an explained v1 defect / fixture artifact / v2 enrichment).
-- **Operator verdict: _(fill)_.**
-- **Recommendation (implementor): GO on the offline half.** The router's structural / frontmatter /
-  contract-token / no-prep / landing / report-structure / carried-lenses / stack gates and the census
-  zero-drop are implementor-complete and green (1143 tests). The interactive scenario (report-structure
-  parity on one sandbox doc + the two §8.2 landing legs) is scaffolded above and awaits the operator's
-  tmux-harness run.
+- **Operator verdict: GO (2026-07-25).** All four D-checks pass across the three legs — D1 in
+  Scenario 1, D2 + D4 in Scenario 2, D3 in Scenario 3 (D4 re-confirmed there). Every divergence is
+  adjudicated in place: the §8.2 enrichments (gate channel, labeled `## Summary`, renumbering note)
+  are the behavior v2 *adds*; the judgment-tier ones (🟢 composition, severity calibration, card
+  shape, the citation grep) fall inside what the playbook deliberately leaves to judgment; the one
+  real defect found live (Scenario-2 Div-1, ambient cwd on the approve path) is **fixed** in
+  `437422e` and evidenced at the prescription level here. Two prior-step defects were closed live by
+  this cutover: **S18 Scenario-2 Div-4** (`pr.md` staged pre-gate — confirmed on both landing legs)
+  and **S17 Scenario-1 Div-1** (scripts executable — confirmed on both legs).
+- **Recommendation (implementor): GO.** The router's structural / frontmatter / contract-token /
+  no-prep / landing / report-structure / carried-lenses / stack gates and the census zero-drop are
+  implementor-complete and green (1144 tests, after the Div-1 fix's pin). The interactive scenario ran
+  in three legs on the tmux harness (report-structure parity + both §8.2 landing legs) and all four
+  D-checks pass.
