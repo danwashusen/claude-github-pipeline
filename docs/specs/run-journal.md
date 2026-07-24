@@ -1009,7 +1009,31 @@ of truth; a **freshly started** resumed session will pick them up by name and ca
   adjudication (Option A + riders) → full build → orchestrator sanity (both platforms) → 1 opus
   reviewer (**PASS, 0 actionable**, 2 advisories). **0 actionable rounds.**
 
-### S19 — Doc-reviewer rewrite — PARTIAL (automatable done + committed; live legs PENDING) (2026-07-23)
+### S19 — Doc-reviewer rewrite — ACCEPTED (automatable 2026-07-23; live legs closed 2026-07-24)
+
+- **Live legs (operator-run, tmux; 3/3 PASS, GO):** `86647ba` D1 (report-structure parity from
+  the `7bffb90` vantage — the seeded five-defect constitution fixture; five adjudicated
+  divergences); `c9b2794` D2 (landing approved — PR #99, body_sha256 receipt matched the staged
+  pr.md exactly; §-anchors preserved through a real rewrite; **two prior fixes live-confirmed**:
+  the S18 Div-4 pre-staging and the S17 +x fix; filed Div-1 — the approve path's bare-git-on-
+  inherited-cwd latent defect); `0ddf541` D3 (landing declined — zero git actions verified four
+  ways; **"run exactly as printed" proved by execution**: the operator ran the printed fence
+  verbatim → PR #100 with a byte-identical pre-gate body hash — the post-Div-4 decline shape's
+  first live render; **boxes 1–4 + GO**).
+- **Div-1 fixed in-flight (`437422e`):** the approve path now EXECUTES the explicit
+  `git -C <workspace>` fence (the §12 ambient-cwd class); the +7 fix lines bumped the ceiling
+  155 → 160 under the bump-with-justification clause — **the economy-ceiling ruling's first
+  exercise**. Status: RESOLVED-pending-approve-render (D3 rendered decline; a future approve run
+  closes it — the honest deferral).
+- **Harness notes of record:** the scratch pr.md path keys on the doc slug, not the clone — stale
+  copies from a prior leg must be cleared (recorded in the parity doc + operator memory); the
+  apply-gate card shape is run-to-run variable (§5 pins the accept set, not the shape); severity
+  calibration is a per-run reading. Evidence PR #100 + branch cleaned up post-acceptance
+  (orchestrator, pre-authorized).
+- **Final suite state:** **1144/1144** macOS + Linux. **All eight skill cutovers are now
+  ACCEPTED with live confirmation. Only S20 remains.**
+
+#### Original PARTIAL entry (2026-07-23, superseded by the acceptance above)
 
 - **Commit:** `65268e2` (`S19: skills/doc-reviewer/ — the final cutover`).
 - **Status:** **1 of 4 boxes ticked** (box 4). Boxes 1/2/3's live halves are the operator's — the
@@ -1043,7 +1067,11 @@ of truth; a **freshly started** resumed session will pick them up by name and ca
 
 ## Handback log
 
-### 2026-07-23 handback — STOP at S19's live legs (eighth operator gate) — OPEN
+### 2026-07-23 handback — STOP at S19's live legs (eighth operator gate) — CLOSED 2026-07-24
+
+**Superseded; retained as a pointer.** The operator ran all three legs (PASS ×3 across
+`86647ba`/`c9b2794`/`0ddf541`, boxes 1–4 + GO) with one in-flight fix (`437422e`, the approve-path
+`git -C` hardening). S19 flipped to ACCEPTED above. **The run proceeds to S20 — the final step.**
 
 The run is stopped at **S19 boxes 1/2/3's live halves** — the final skill's scenarios. Everything
 automatable through S19 is committed (**unpushed**; 1143 offline tests green both platforms).
