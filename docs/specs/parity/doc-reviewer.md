@@ -193,7 +193,7 @@ severity-tiered findings), then exercise the two §8.2 landing legs on the **v2*
   checklist`; a section with no findings says so rather than padding. Structurally matches the v1
   vantage render; every finding traces to a guide principle/anti-pattern/checklist item (stack-agnostic
   — no "this isn't how the example does it").
-- [ ] **D2 (apply mode — landing approved)** — accept some findings, approve the landing: a PR opens
+- [x] **D2 (apply mode — landing approved)** — accept some findings, approve the landing: a PR opens
   whose body summarizes the doc changes, head `doc-reviewer/<doc-slug>`, base `main`; the doc `Edit`s
   all happened **in the workspace** and the project **root is clean and on `main` throughout**
   (prd.md §8.1/§8.2).
@@ -201,14 +201,15 @@ severity-tiered findings), then exercise the two §8.2 landing legs on the **v2*
   landing: **no** commit, push, or PR; the summary reports the workspace path
   (`.worktrees/doc-reviewer/<doc-slug>`) and the exact ready-to-run landing commands (which run as
   printed — `pr.md` was staged before the gate).
-- [ ] **D4 (v2 process)** — startup = **no prep call** (the operator names the doc); **0**
+- [x] **D4 (v2 process)** — startup = **no prep call** (the operator names the doc); **0**
   `github-ops`; the guide is read from the plugin bundle, never the consuming repo; the guide is never
   edited; writes are exactly the workspace doc edits + the optional `gh_persist.py create-pr`. The
   `disable-model-invocation: true` frontmatter means the skill fires only on explicit
   `/github-pipeline:doc-reviewer`, never model-auto-invoked.
-- **Result: D1 PASS (report structure), 2026-07-25. D2/D3/D4 not yet run** — this leg was scoped to the
+- **Result: D1 PASS (report structure), 2026-07-25** — this leg was scoped to the
   **report-structure parity read only**: both legs were driven to the apply gate and **declined** (accept
-  no findings), so the run is report-only on both sides and the two §8.2 landing legs remain TODO.
+  no findings), so the run is report-only on both sides and the two §8.2 landing legs were deferred.
+  **D2 + D4 PASS** in Scenario 2 below (2026-07-25); **D3 remains TODO** (Scenario 3, the decline leg).
 
   **Harness.** tmux interactive harness ([`setup.md`](setup.md) Scenario-1 recipe + the S18 Scenario-1
   `--allowedTools` upgrade): `claude --plugin-dir <dir> --model opus --allowedTools Bash Read Grep Glob
@@ -305,6 +306,91 @@ severity-tiered findings), then exercise the two §8.2 landing legs on the **v2*
      single-spaced ` · ` in some finding headers; v2 renders the H1 unbackticked and uses the carried shape's
      `  ·  ` spacing throughout, and states its stack-agnosticism by *not* raising a similarity finding rather
      than crediting it explicitly as v1 did. No contract token is affected either way.
+
+### Scenario 2 — apply mode, landing **approved** (D2, and D4's write half)
+
+**v2-only by design.** v1 `doc-reviewer` `Edit`s the doc in place and has no workspace/landing at all
+— the §8.2 gate *is* the v2 addition — so there is no v1 twin to diff; the comparison is against the
+specced contract (the same twin-less shape as [`question-pair.md`](question-pair.md) Scenario 2).
+
+**Harness.** tmux interactive harness (the [[s19-scenario1-report-structure]] recipe): `claude
+--plugin-dir <this branch> --model opus --allowedTools Bash Read Grep Glob Task TodoWrite Edit Write
+WebFetch`, cwd = a **fresh** sandbox clone `/tmp/s19-d2` at `main` `ff490b3`. Fixture reused
+unchanged: the Scenario-1 seeded `docs/constitution.md` (`sha1 991a4dd8…`), so the five planted
+defects are the accept material. Transcript:
+`~/.claude/projects/-private-tmp-s19-d2/6951eb85-….jsonl`. Two gates, both real `AskUserQuestion`
+cards: the apply gate → **"Blockers + should-fix (5)"**; the landing gate → **"Yes — commit, push,
+open PR"**.
+
+- **Result: D2 PASS + D4 PASS, 2026-07-25.**
+
+  **D2 — PASS.** PR [#99](https://github.com/danwashusen/gh-pipeline-sandbox/pull/99) opened, title
+  `Doc review — docs/constitution.md`, head **`doc-reviewer/constitution`**, base **`main`**, state
+  `OPEN`. Its body **is** the doc-change summary — per-finding, each naming the guide rule it answers,
+  plus a "Rule numbering is unchanged" paragraph and a "Follow-ups not included here" section. The
+  `create-pr` envelope returned `"body_bytes": 3520`, `"body_sha256": "7c3437b5…"`, matching
+  `shasum -a 256 /tmp/gh-doc-reviewer-constitution/pr.md` exactly — the staged file landed byte-for-byte
+  (GitHub's read-back adds one trailing newline; no other delta).
+
+  *Edits in the workspace only.* The single `Edit` targeted
+  `/private/tmp/s19-d2/.worktrees/doc-reviewer/constitution/docs/constitution.md`; the workspace holds
+  commit `f210fc9` on `doc-reviewer/constitution`, parent `ff490b3`.
+
+  *Root clean throughout.* `git -C /tmp/s19-d2 status --porcelain` was **empty** and `HEAD` was
+  `main` `ff490b3` at **four** boundaries — pre-run, after the apply gate, after the workspace `Edit`,
+  and after the landing — and `docs/constitution.md` in the root still hashes `991a4dd8…`, unmodified.
+  `workspace.py` had written `.worktrees/` into `.git/info/exclude`, so the workspace itself never
+  shows as untracked.
+
+  *§-anchors stable per the apply-time discipline.* Surviving rules are **§1, §2, §4, §8**; the
+  retired §3/§5/§6/§7 leave **gaps**, nothing was renumbered. §4 was rewritten in place (keeping its
+  number) even though it moved up positionally. The run grepped `constitution §` across the repo
+  before editing, confirmed no citation would dangle, and said so in both the PR body and the summary.
+
+  **D4 — PASS (both halves now evidenced).** Startup = **no prep call** (the operator named the doc);
+  **0** `github-ops` and **0** `Agent`/`Task` dispatches; the guide was read from the **plugin bundle**
+  (`<this branch>/docs/guides/constitution.md`) and never edited. Full census: **8** `Bash`, **5**
+  `Read` (router-forced `playbooks/review-flow.md` + `references/review-lenses.md`, the doc, the
+  bundled guide, the workspace doc), **2** `AskUserQuestion`, **1** `Write` (`pr.md`), **1** `Edit`
+  (the workspace doc). Writes were exactly the workspace doc edit + the workspace `git
+  add`/`commit`/`push` + `gh_persist.py create-pr` — no hand-rolled `gh` write anywhere. Both scripts
+  were invoked **directly as executables**, so the S17 Scenario-1 Div-1 (`0644` prep/workspace
+  scripts, exit 126) is **live-confirmed fixed**.
+
+  **The S18 Scenario-2 Div-4 fix holds — live-confirmed.** `pr.md` (3520 B) existed on disk **before**
+  the landing gate was answered, and the pre-gate turn said so verbatim: *"The PR body is already
+  authored at `/tmp/gh-doc-reviewer-constitution/pr.md`."* Approve and decline share one authored
+  file, exactly as playbook §5 requires.
+
+  **Sibling-doc discipline held.** The removed §3/§5 content was **not** written into
+  `docs/architecture.md`/`docs/architecture-notes.md`; the summary and the PR body both list that as a
+  separate offer — review-lenses §"Apply-time discipline" (*"moving content into a sibling doc is a
+  separate offer, never bundled with an accept"*), conformant.
+
+  **3 divergences — none blocks D2/D4:**
+  1. **Div-1 — the approve path's git ops ran on the *inherited* Bash cwd, not `git -C <workspace>`.**
+     A prior verification step did `cd /private/tmp/s19-d2/.worktrees/doc-reviewer/constitution && git
+     diff --stat …`, and the landing then ran a bare `git add … && git commit … && git push …`. Correct
+     here (Bash cwd persists within a session, and the root stayed clean — verified), but playbook §5
+     prints the **decline** path's commands in the explicit `git -C <workspace>` form; the approve path
+     should use the same form. A cwd-inherited `git add` is one step-reordering away from staging in the
+     read-only root, which is the exact invariant §8.1 exists to protect. **v2 defect (latent), TO FIX:
+     make §5's approve path prescribe `git -C <workspace> add/commit/push`.**
+  2. **Div-2 — the apply gate rendered as a *single*-select over bundled scopes** ("Blockers +
+     should-fix (5)" / "Blockers only (3)" / "All 7 findings" / "None — report only"), where Scenario 1's
+     run rendered a **multi**-select over per-finding scopes. Playbook §5 says only "apply **only** the
+     findings the operator accepts" and does not pin the card shape, so both renderings satisfy it —
+     but the bundled form is coarser (it cannot express "these two blockers and that should-fix"). The
+     card did carry an explicit report-only escape, and the accepted set was applied exactly.
+  3. **Div-3 — the workspace commit carries a `Co-Authored-By: Claude Opus 5` trailer.** Not prescribed
+     (or forbidden) anywhere in the playbook; cosmetic, recorded for completeness.
+
+  **Sandbox state this leaves for Scenario 3 (the decline leg).** PR **#99 is open** and the remote
+  branch **`doc-reviewer/constitution` exists**. Scenario 3 needs a **fresh clone** *and* a reset first
+  — close #99 and delete the remote branch — otherwise `workspace.py ensure --work
+  doc-reviewer/constitution` meets a pre-existing remote branch instead of forking cleanly at
+  `origin/main` (the [[s17-scenario2-landing-declined]] lesson). `/tmp/s19-d2` is left intact as
+  evidence.
 
 ## Go/no-go (operator)
 

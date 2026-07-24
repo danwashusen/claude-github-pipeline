@@ -558,7 +558,7 @@ gather — assert that stays true).
 
 **DoD**
 - [x] Review report structure preserved (parity on one sandbox doc).
-- [ ] Apply mode (landing approved): PR opened; root clean throughout.
+- [x] Apply mode (landing approved): PR opened; root clean throughout.
 - [ ] Apply mode (landing declined): no git actions; summary reports workspace + landing
       commands.
 - [x] `disable-model-invocation` retained; grep gates.
