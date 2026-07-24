@@ -55,7 +55,15 @@ GH_PERSIST = SCRIPTS_DIR / "gh_persist.py"
 V1_HALF_BAR = 144 // 2
 # The enforced growth ceiling (guards unbounded growth without demanding the unmet <=half; see the
 # module docstring). Bump WITH a recorded justification per the S18 Scenario-2 Div-4 ceiling ruling.
-LOADED_SET_CEILING = 155
+#
+# Bump log (each entry = the recorded justification the ruling requires):
+#   155 -> 160 (S19 Scenario-2 Div-1 fix): the approve path's landing now EXECUTES the explicit
+#   `git -C <workspace>` add/commit/push form instead of leaving those git ops to the session's
+#   inherited cwd (+7 playbook lines: the 3-command fence + the falsifiable cwd invariant). Load-
+#   bearing — it is the fix for the ambient-cwd drift class architecture.md §12 kills — so the
+#   ceiling moves rather than the invariant being trimmed. Recorded in
+#   docs/specs/parity/doc-reviewer.md §"Line-count metrics".
+LOADED_SET_CEILING = 160
 
 sys.path.insert(0, str(SCRIPTS_DIR))
 
@@ -240,6 +248,35 @@ class LandingGateLanguageTests(unittest.TestCase):
         # When no finding is accepted there is nothing to land — no workspace, no landing.
         self.assertRegex(self.flow, r"no finding was accepted")
         self.assertRegex(self.flow, r"report-only")
+
+    def test_approve_path_git_commands_are_cwd_independent(self):
+        # S19 Scenario-2 Div-1 fix: the APPROVE path must EXECUTE the explicit `git -C <workspace>`
+        # form the decline path prints. A bare `git add`/`commit`/`push` inherits the session cwd —
+        # ambient state one reordering away from staging in the read-only root (architecture.md §12,
+        # "no ambient cwd in prompts"). Fence-scoped per the house pattern, so prose describing the
+        # banned form doesn't false-positive.
+        bare_git = re.compile(r"(?<!-C )\bgit\s+(add|commit|push)\b")
+        saw_git_c = False
+        for i, line, in_fence in _fence_stripped_lines(PLAYBOOKS_DIR / FLOW):
+            if not in_fence or line.strip().startswith("```"):
+                continue
+            if re.search(r"\bgit\s+-C\s+\S+\s+(add|commit|push)\b", line):
+                saw_git_c = True
+                continue
+            hit = bare_git.search(line)
+            self.assertIsNone(
+                hit,
+                "bare git relying on session cwd in a code fence at %s:%d — %r (use `git -C <workspace>`)"
+                % ((PLAYBOOKS_DIR / FLOW).relative_to(REPO_ROOT), i, line),
+            )
+        self.assertTrue(
+            saw_git_c,
+            "the approve path must EXECUTE `git -C <workspace>` add/commit/push in a fence, not "
+            "leave the landing's git ops to an inherited cwd",
+        )
+        # And the invariant is stated in falsifiable form.
+        self.assertRegex(self.flow, r"bare `git add`/`commit`/`push` relying on the session's cwd is a defect")
+        self.assertRegex(self.flow, r"never bare git and never a `cd`")
 
 
 class ReportStructureTests(unittest.TestCase):

@@ -53,18 +53,25 @@ edits never touch the read-only root (prd.md §8.1), so:
 - **Stage the PR body (the doc-change summary) to `/tmp/gh-doc-reviewer-<doc-slug>/pr.md` BEFORE the
   gate** — so both paths share that one authored file.
 
-Offer the landing as **one explicit gate**:
+Offer the landing as **one explicit gate**. On **approve**, run exactly these — every git invocation
+targets the workspace with `git -C <workspace>`, never bare git and never a `cd`:
 
 ```bash
+git -C <workspace> add <changed-doc-paths>
+git -C <workspace> commit -m "Doc review — <doc path>"
+git -C <workspace> push -u origin doc-reviewer/<doc-slug>
 ${CLAUDE_PLUGIN_ROOT}/scripts/gh_persist.py create-pr <owner/repo> "/tmp/gh-doc-reviewer-<doc-slug>/pr.md" \
   --title "Doc review — <doc path>" --base main --head doc-reviewer/<doc-slug>
 ```
 
+**A bare `git add`/`commit`/`push` relying on the session's cwd is a defect** — cwd is ambient state
+one reordering away from staging in the read-only root (architecture.md §12: no ambient cwd in
+prompts). Approve executes the same explicit form decline prints.
+
 On **decline**: perform **no git actions** — report the workspace path and the ready-to-run landing
-commands (`git -C <workspace> add`/`commit`, `git -C <workspace> push -u origin <branch>`, then the
-`create-pr` above). **These commands must run exactly as printed — `pr.md` is already staged, so
-citing it is safe; citing an unstaged file is a defect.** When no finding was accepted, skip the
-workspace + landing entirely (report-only).
+commands (the `git -C <workspace>` add/commit/push above, then the `create-pr`).
+**These must run exactly as printed — `pr.md` is already staged, so citing it is safe; citing an unstaged file is a defect.**
+When no finding was accepted, skip the workspace + landing entirely (report-only).
 
 ## 6. Summary
 

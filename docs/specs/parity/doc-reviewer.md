@@ -48,17 +48,23 @@ S18 Scenario-2 Div-4 ceiling ruling), and asserts the router itself stays ≤ 15
 | File | Lines |
 |---|---:|
 | `SKILL.md` (router) | 77 |
-| `playbooks/review-flow.md` (the one flow) | 71 |
-| **router + playbook (loaded set)** | **148** |
+| `playbooks/review-flow.md` (the one flow) | 78 |
+| **router + playbook (loaded set)** | **155** |
 | `references/review-lenses.md` (on-demand, not counted) | 100 |
 
 - **Router bar:** **77 ≤ 150** ✅ (architecture.md §9). Router + playbook fits one default `Read`.
-- **≤half-v1 metric (recorded, NOT met):** half = floor(144/2) = **72** (loaded 148). Rationale above.
+- **≤half-v1 metric (recorded, NOT met):** half = floor(144/2) = **72** (loaded 155). Rationale above.
   Pinned informationally by
-  `RouterStructureTests::test_loaded_set_under_ceiling_and_half_metric_recorded` (a ceiling guard at
-  **155** + an assertion that promotes the bar to enforced the day the loaded set drops under its
-  half). The reference (`review-lenses.md`, 100) is force-read at review time but is **on-demand, not
-  counted** — the same convention as `question-sweep`'s reader and `setup`'s `block-authoring.md`.
+  `RouterStructureTests::test_loaded_set_under_ceiling_and_half_metric_recorded` (a ceiling guard +
+  an assertion that promotes the bar to enforced the day the loaded set drops under its half). The
+  reference (`review-lenses.md`, 100) is force-read at review time but is **on-demand, not counted** —
+  the same convention as `question-sweep`'s reader and `setup`'s `block-authoring.md`.
+- **Ceiling bump log (the Div-4 bump-with-justification clause).** At the implementor pass the loaded
+  set was **148** under a **155** ceiling. The Scenario-2 **Div-1** fix (below) added **7** playbook
+  lines — the approve path's explicit `git -C <workspace>` command fence plus the falsifiable
+  ambient-cwd invariant — taking the loaded set to **155/155** (zero headroom). Because that text *is*
+  the fix for the drift class architecture.md §12 kills, the **ceiling moved to 160** rather than the
+  invariant being trimmed; the justification is recorded here and in the test's bump log.
 
 ## The prep decision — no prep (the §9 house-default call the Work records)
 
@@ -125,11 +131,14 @@ Div-4 fix from day one**: accepted edits stage in a **work workspace** (`workspa
 doc-reviewer/<doc-slug> --base main --root <repo-root>`), the doc is `Edit`ed **inside** that
 workspace, and the PR body (the doc-change summary) is **staged to `pr.md` BEFORE the landing gate** —
 so approve and decline share one authored file. The landing (commit + push + a PR summarizing the doc
-changes) is **one explicit final gate**. On **decline**: **no git actions** — the summary reports the
-workspace path + ready-to-run landing commands, which **run exactly as printed** because `pr.md` is
-already staged (citing an unstaged file is a defect). When no finding is accepted the flow is
-report-only (no workspace, no landing). Pinned by `LandingGateLanguageTests` (flow + router prose,
-incl. `test_pr_body_staged_before_the_landing_gate` and `test_decline_commands_are_runnable_as_printed`)
+changes) is **one explicit final gate**, and on **approve** its git ops are the explicit
+`git -C <workspace>` add/commit/push form — never bare git relying on the session's cwd, never a `cd`
+(the Scenario-2 Div-1 fix; architecture.md §12's "no ambient cwd in prompts"). On **decline**: **no git
+actions** — the summary reports the workspace path + ready-to-run landing commands, which **run exactly
+as printed** because `pr.md` is already staged (citing an unstaged file is a defect). When no finding is
+accepted the flow is report-only (no workspace, no landing). Pinned by `LandingGateLanguageTests` (flow
++ router prose, incl. `test_pr_body_staged_before_the_landing_gate`,
+`test_decline_commands_are_runnable_as_printed`, and `test_approve_path_git_commands_are_cwd_independent`)
 and `LandingPersistDryRunTests` (the `--dry-run` create-pr envelope: conformant, `would_run` present,
 no url). No sub-agent is dispatched anywhere (v1 spec §"Sub-agents dispatched: None") — pinned by
 `NoSubAgentTests`, which also confirms `references/` carries no `*-prompt*`/`*-sub-agent*` file, so the
@@ -374,8 +383,24 @@ open PR"**.
      here (Bash cwd persists within a session, and the root stayed clean — verified), but playbook §5
      prints the **decline** path's commands in the explicit `git -C <workspace>` form; the approve path
      should use the same form. A cwd-inherited `git add` is one step-reordering away from staging in the
-     read-only root, which is the exact invariant §8.1 exists to protect. **v2 defect (latent), TO FIX:
-     make §5's approve path prescribe `git -C <workspace> add/commit/push`.**
+     read-only root, which is the exact invariant §8.1 exists to protect — the ambient-cwd drift class
+     architecture.md §12 ("no ambient cwd in prompts") kills. **v2 defect (latent) — FIXED,
+     RESOLVED-pending-live.** `review-flow.md` §5's approve path now **executes** an explicit fence —
+     `git -C <workspace> add <changed-doc-paths>` / `git -C <workspace> commit -m …` / `git -C
+     <workspace> push -u origin doc-reviewer/<doc-slug>` / `gh_persist.py create-pr` — introduced with
+     the falsifiable wording *"every git invocation targets the workspace with `git -C <workspace>`,
+     never bare git and never a `cd`"* and *"a bare `git add`/`commit`/`push` relying on the session's
+     cwd is a defect"*, so approve executes the same explicit form decline prints. Pinned by
+     `test_doc_reviewer_routing.py::LandingGateLanguageTests::test_approve_path_git_commands_are_cwd_independent`
+     (fence-scoped per the house pattern: the approve fence must carry `git -C …` add/commit/push and no
+     fence line may carry a bare `git add`/`commit`/`push`; prose describing the banned form does not
+     false-positive). **Not self-certified:** the pin fixes the *instruction*, not a live approve render
+     — and **no remaining scenario re-renders the approve path** (Scenario 3 is the decline leg). So the
+     live confirmation is honestly **deferred** to real-world use or an optional operator re-leg of
+     Scenario 2's approve branch, exactly the [`question-pair.md`](question-pair.md) Scenario-2 Div-4
+     deferral precedent; a re-occurrence there reopens this. The fix cost 7 playbook lines and moved the
+     loaded set to 155, so the growth ceiling was bumped 155 → 160 with the justification recorded (see
+     §"Line-count metrics" and the test's bump log).
   2. **Div-2 — the apply gate rendered as a *single*-select over bundled scopes** ("Blockers +
      should-fix (5)" / "Blockers only (3)" / "All 7 findings" / "None — report only"), where Scenario 1's
      run rendered a **multi**-select over per-finding scopes. Playbook §5 says only "apply **only** the
