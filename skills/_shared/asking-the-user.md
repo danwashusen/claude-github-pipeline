@@ -25,6 +25,7 @@ force it into options.
 Any gate that arises during sub-agent work must be surfaced by the sub-agent
 returning a structured "decision needed" signal to this main loop, which asks the
 user and re-dispatches with the answer. Never tell a sub-agent to call
-`AskUserQuestion` itself. The schema and closed-set vocabulary for that signal live
-in [`subagent-decision-signal.md`](subagent-decision-signal.md) — the single source
-of truth for the typed-exception codes and the main-loop action each maps to.
+`AskUserQuestion` itself. One closed vocabulary spans scripts and sub-agents:
+[architecture.md §3](../../docs/architecture.md)'s decision-code set — the single
+source of truth for the typed codes, and the router's universal rule (render a
+`decision` as one `AskUserQuestion` card) for what the main loop does with one.

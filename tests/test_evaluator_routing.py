@@ -47,6 +47,7 @@ sys.path.insert(0, str(SCRIPTS_DIR))
 
 import prep_evaluator  # noqa: E402  (import after sys.path setup, by necessity)
 from tests.support import envelope_asserts, shimenv  # noqa: E402
+from tests.support.retired_tokens import FORBIDDEN_CONTRACT_TOKENS  # noqa: E402
 
 
 # ---------------------------------------------------------------------------
@@ -181,9 +182,9 @@ class RouterStructuralBarTests(unittest.TestCase):
                 )
 
     def test_no_forbidden_tokens_under_skill_dir(self):
-        # S7 DoD box 3: zero github-ops, zero old skill-invocation namespace strings, zero v1
+        # S7 DoD box 3: zero retired-executor tokens, zero old skill-invocation namespace strings, zero v1
         # GATHER_/PERSIST_ op names anywhere under skills/evaluator/.
-        forbidden = re.compile(r"\bgithub-ops\b|github-pipeline:github-|\bGATHER_[A-Z]+\b|\bPERSIST_[A-Z]+\b")
+        forbidden = FORBIDDEN_CONTRACT_TOKENS
         for path in SKILL_DIR.rglob("*.md"):
             for i, line in enumerate(path.read_text(encoding="utf-8").splitlines(), 1):
                 hit = forbidden.search(line)

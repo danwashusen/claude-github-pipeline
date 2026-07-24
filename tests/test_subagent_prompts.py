@@ -22,12 +22,11 @@ Three assertions, over every discovered v2 sub-agent prompt:
    (`test_resolver_routing.py::ContractTokenGateTests`), so prose that *describes* the banned form
    (an audit note explaining what v1's ref reads were replaced with) doesn't false-positive.
 
-Discovery keys on a **v2 signal that no v1 skill dir carries**: a `playbooks/` subdirectory (the v2
-router+playbook anatomy, architecture.md §9). v1 skill dirs (`github-issue-*`, and the not-yet-cut
-standalone tools that share a v2 name — `open-questions`, `question-resolver`, `doc-reviewer`) have
-no `playbooks/`, so they are correctly excluded and their still-v1 prompts (which legitimately cite
-the retired doc until their cutover step) do not trip this validator. When S18 rewrites the question
-pair into a `playbooks/` skill, its converged prompt is picked up automatically.
+Discovery keys on the v2 router+playbook anatomy (architecture.md §9): a skill dir carrying a
+`playbooks/` subdirectory. While v1 and v2 coexisted this also excluded every frozen v1 skill dir
+(none had `playbooks/`), so their still-v1 prompts could legitimately cite the retired doc until
+their own cutover step. S20 removed the last of them, so the glob now discovers exactly the nine v2
+skills' prompts — and keeps discovering any prompt a future skill adds.
 
 The §3 code set is parsed from `docs/architecture.md` (anchored on the `## §3` heading, backticked
 codes lifted from the closed-set list) — resilient to prose edits, strict on the set.
@@ -36,6 +35,8 @@ codes lifted from the closed-set list) — resilient to prose edits, strict on t
 import re
 import unittest
 from pathlib import Path
+
+from tests.support.retired_tokens import RETIRED_SKILL_DIRS
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 SKILLS_DIR = REPO_ROOT / "skills"
@@ -189,17 +190,19 @@ class PromptDiscoveryTests(unittest.TestCase):
             "resolver/references/test-selection-sub-agent.md",
         ):
             self.assertIn(expected, found, "discovery must include %r" % expected)
-        # No frozen v1 skill dir's prompt may be swept in (they legitimately still cite the old doc).
+        # The S18 question-status reader converged onto the §3 vocabulary and must be discovered
+        # at its v2 path.
+        self.assertIn(
+            "question-sweep/references/question-status-reader-prompt.md",
+            found,
+            "the question-status reader must be discovered at its v2 path",
+        )
+        # No retired v1 skill dir may reappear as a discovery source (S20 removed them all).
         for p in found:
             self.assertFalse(
-                p.startswith("github-"),
-                "a frozen v1 (github-*) prompt was discovered as v2: %r" % p,
+                p.split("/")[0] in RETIRED_SKILL_DIRS,
+                "a retired v1 skill dir was discovered as v2: %r" % p,
             )
-        self.assertNotIn(
-            "open-questions/references/question-status-reader-prompt.md",
-            found,
-            "the still-v1 question-status reader (no playbooks/ yet) must not be discovered until S18",
-        )
 
 
 class PromptCodeConformanceTests(unittest.TestCase):

@@ -39,7 +39,7 @@ seeded with:
   sandbox's own PRD/architecture, not this repo's; skills only need *something* at those paths to
   exercise the grounding-doc read path).
 - The config marker blocks (`<!-- NAME -->` / interior / `<!-- /NAME -->`, see
-  [`scripts/config-block.sh`](../scripts/config-block.sh)'s header for the canonical form) in the
+  [`scripts/config_block.py`](../scripts/config_block.py)'s header for the canonical form) in the
   sandbox's own `CLAUDE.md`: `issue-resolver-test-target`, `issue-resolver-fast-checks`,
   `issue-resolver-canonical-suite`, `pr-evaluator-health-checks`, `pr-evaluator-static-checks`,
   `pr-evaluator-test-target`, `pr-evaluator-escalation-labels`, `pr-evaluator-merge-policy`,

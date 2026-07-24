@@ -286,7 +286,7 @@ class ThresholdInlineSmallSectionTests(unittest.TestCase):
 
 
 class ExtraJsonTests(unittest.TestCase):
-    """github-ops.md's `extra_json=<fields>` caller knob, ported as `--extra-json`: a
+    """The v1 executor agent's `extra_json=<fields>` caller knob, ported as `--extra-json`: a
     supplementary `gh issue view --json <fields>` call whose scalar fields fold into the same
     envelope.
     """

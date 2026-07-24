@@ -52,7 +52,7 @@ Subcommands, each `<subcommand> <body-file>`:
 
     parse.py phases <body-file>
         Parses a plan's `## Phases` section per
-        `skills/github-issue-planner/references/plan-schema.md`'s numbered-list-with-structured-
+        `skills/planner/references/plan-schema.md`'s numbered-list-with-structured-
         keys grammar. `ok` payload: `{"phases": [{"number", "title", "kind", "ships",
         "closes_dod", "deliverable", "depends_on"}, ...]}`. `kind` is one of the closed set of
         exactly three values (`code-shipping` | `operator` | `decision-only`); `closes_dod` is
@@ -684,7 +684,7 @@ def run_oq_links(args):
 
 
 # ============================================================================================
-# `phases` subcommand — skills/github-issue-planner/references/plan-schema.md `## Phases`
+# `phases` subcommand — skills/planner/references/plan-schema.md `## Phases`
 # ============================================================================================
 
 # The closed `kind:` set (plan-schema.md: "kind: code-shipping | operator | decision-only").
@@ -910,7 +910,7 @@ def run_phases(args):
             },
             options=[
                 "fix the '## Phases' section by hand to match the structured-key grammar in "
-                "skills/github-issue-planner/references/plan-schema.md, then re-run"
+                "skills/planner/references/plan-schema.md, then re-run"
             ],
         )
         emit_needs_decision(decision)

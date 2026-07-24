@@ -51,13 +51,14 @@ S1_PLAN_CAPTURE = REPO_ROOT / "docs" / "specs" / "examples" / "implementation-pl
 ROUTABLE_PLAYBOOKS = {"single.md", "epic.md", "story-jit.md", "revise.md"}
 SPINE = "plan-spine.md"
 
-# Half of v1 github-issue-planner/SKILL.md (503 lines, docs/specs/baseline.md §1) = 251 (floor).
+# Half of the v1 planner SKILL.md (503 lines, docs/specs/baseline.md §1) = 251 (floor).
 V1_HALF_BAR = 503 // 2
 
 sys.path.insert(0, str(SCRIPTS_DIR))
 
 import prep_planner  # noqa: E402  (import after sys.path setup, by necessity)
 from tests.support import envelope_asserts, shimenv  # noqa: E402
+from tests.support.retired_tokens import FORBIDDEN_CONTRACT_TOKENS  # noqa: E402
 
 
 # ---------------------------------------------------------------------------
@@ -112,7 +113,7 @@ class RouterRoutingTableTests(unittest.TestCase):
         self.playbooks = [pb for _, pb in self.rows]
 
     def test_router_exists_and_has_frontmatter_pins(self):
-        # Frontmatter model/effort pins carried verbatim from v1 github-issue-planner (opus / xhigh).
+        # Frontmatter model/effort pins carried verbatim from the v1 planner (opus / xhigh).
         self.assertTrue(ROUTER.is_file(), "router SKILL.md must exist")
         head = "\n".join(self.router_text.splitlines()[:8])
         self.assertIn("name: planner", head)
@@ -231,16 +232,14 @@ class PlaybookInterleavingGrepTests(unittest.TestCase):
 
 
 class ContractTokenGateTests(unittest.TestCase):
-    """Grep gates over skills/planner/ — zero github-ops, zero v1 skill-invocation namespace strings,
+    """Grep gates over skills/planner/ — zero retired-executor tokens, zero v1 skill-invocation namespace strings,
     zero GATHER_/PERSIST_ op names, zero §P IDs, zero raw persist/gather WRITES in fences, zero
     ref-arithmetic in fences, zero w/ shorthand. The `planned` label and the HARD-revise PR-close (both
     write-path gaps at S13's first pass) are now real `gh_persist.py edit-labels`/`close-pr` ops
     (authorized in-step), so no raw-`gh` prose workaround remains anywhere in skills/planner/."""
 
     def test_no_github_ops_or_old_names_or_op_names_or_pids(self):
-        forbidden = re.compile(
-            r"\bgithub-ops\b|github-pipeline:github-|\bGATHER_[A-Z]+\b|\bPERSIST_[A-Z]+\b|§P[0-9]"
-        )
+        forbidden = FORBIDDEN_CONTRACT_TOKENS
         for path in _iter_md(SKILL_DIR):
             for i, line in enumerate(path.read_text(encoding="utf-8").splitlines(), 1):
                 hit = forbidden.search(line)

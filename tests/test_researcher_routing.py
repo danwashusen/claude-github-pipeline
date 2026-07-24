@@ -12,10 +12,10 @@ Surfaces the S16 DoD / Testing section names:
 2. **The interleaving pattern-grep** (DoD: variants are mode-conditional-free by construction). Greps
    the three variants + the shared spine for cross-mode conditionals and fails on a hit.
 
-3. **Contract-token grep gates** over skills/researcher/: zero `github-ops`, zero v1 skill-namespace
+3. **Contract-token grep gates** over skills/researcher/: zero retired-executor tokens, zero v1 skill-namespace
    strings (`github-pipeline:github-`), zero `GATHER_`/`PERSIST_` op names, zero `§P` IDs, zero raw
    persist/gather WRITES in fences, zero `w/` shorthand. (The frozen dossier artifact's own
-   `github-issue-planner`/`github-issue-researcher` provenance strings are byte-compat contract tokens
+   dossier provenance strings (which name the v1 authoring skills) are byte-compat contract tokens
    — S7 precedent (a) — and legitimately do NOT match `github-pipeline:github-`.)
 
 4. **`--dry-run` persist envelopes** for every GitHub write the playbooks specify (all through
@@ -71,13 +71,17 @@ SHARED = REPO_ROOT / "skills" / "_shared"
 ROUTABLE_PLAYBOOKS = {"broad.md", "targeted.md", "revise.md"}
 SPINE = "research-spine.md"
 
-# floor(v1 github-issue-researcher/SKILL.md 289 lines, docs/specs/baseline.md §1) / 2 = 144.
+# floor(the v1 researcher SKILL.md's 289 lines, docs/specs/baseline.md §1) / 2 = 144.
 V1_HALF_BAR = 289 // 2
 
 sys.path.insert(0, str(SCRIPTS_DIR))
 
 import prep_researcher  # noqa: E402
 from tests.support import envelope_asserts, shimenv  # noqa: E402
+from tests.support.retired_tokens import (  # noqa: E402
+    FORBIDDEN_CONTRACT_TOKENS,
+    V1_INVOCATION_PREFIX,
+)
 
 
 _ROUTE_ROW_RE = re.compile(
@@ -128,7 +132,7 @@ class RouterRoutingTableTests(unittest.TestCase):
         self.playbooks = [pb for _, pb in self.rows]
 
     def test_router_exists_and_has_frontmatter_pins(self):
-        # Frontmatter model/effort pins carried verbatim from v1 github-issue-researcher (opus / medium).
+        # Frontmatter model/effort pins carried verbatim from the v1 researcher (opus / medium).
         self.assertTrue(ROUTER.is_file(), "router SKILL.md must exist")
         head = "\n".join(self.router_text.splitlines()[:8])
         self.assertIn("name: researcher", head)
@@ -225,16 +229,14 @@ class PlaybookInterleavingGrepTests(unittest.TestCase):
 
 
 class ContractTokenGateTests(unittest.TestCase):
-    """Grep gates over skills/researcher/ — zero github-ops, zero v1 skill-invocation namespace strings,
+    """Grep gates over skills/researcher/ — zero retired-executor tokens, zero v1 skill-invocation namespace strings,
     zero GATHER_/PERSIST_ op names, zero §P IDs, zero raw persist/gather WRITES in fences, zero w/
-    shorthand. The frozen dossier artifact's `github-issue-planner`/`github-issue-researcher` provenance
+    shorthand. The frozen dossier artifact's own provenance
     strings are byte-compat contract tokens (S7 precedent (a)) — they carry no `github-pipeline:` prefix,
     so they legitimately do not match the forbidden `github-pipeline:github-` pattern."""
 
     def test_no_github_ops_or_old_namespace_or_op_names_or_pids(self):
-        forbidden = re.compile(
-            r"\bgithub-ops\b|github-pipeline:github-|\bGATHER_[A-Z]+\b|\bPERSIST_[A-Z]+\b|§P[0-9]"
-        )
+        forbidden = FORBIDDEN_CONTRACT_TOKENS
         for path in _iter_md(SKILL_DIR):
             for i, line in enumerate(path.read_text(encoding="utf-8").splitlines(), 1):
                 hit = forbidden.search(line)
@@ -247,7 +249,7 @@ class ContractTokenGateTests(unittest.TestCase):
     def test_forward_next_command_is_v2_planner(self):
         renderings = (REFERENCES_DIR / "handoff-renderings.md").read_text(encoding="utf-8")
         self.assertIn("/github-pipeline:planner", renderings)
-        self.assertNotIn("/github-pipeline:github-issue-planner", renderings)
+        self.assertNotIn(V1_INVOCATION_PREFIX, renderings)
 
     def test_no_raw_persist_or_gather_writes_in_code_fences(self):
         raw_write = re.compile(
@@ -518,7 +520,7 @@ class CarriedReferenceTests(unittest.TestCase):
     def test_validator_cross_reference_points_at_v2_planner(self):
         # Adaptation 1 of 2: the sibling reference is the v2 planner path, not v1's.
         self.assertIn("../../planner/references/plan-reviewer-prompt.md", self.validator)
-        self.assertNotIn("github-issue-planner/references", self.validator)
+        self.assertNotIn(V1_INVOCATION_PREFIX.lstrip("/"), self.validator)
 
     def test_validator_invocation_point_names_the_v2_spine_anchor(self):
         # Adaptation 2 of 2: v1's numbered-step anchor ("step 8 of the workflow") does not exist in

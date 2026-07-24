@@ -179,13 +179,13 @@ from pipelib.decisions import AMBIGUOUS, AUTH_REQUIRED, MARKER_AMBIGUOUS, needs_
 from pipelib.envelope import EXIT_OK, EXIT_USAGE_ERROR, emit_needs_decision, emit_ok  # noqa: E402
 from pipelib.spill import spill_bytes  # noqa: E402
 
-# The implementation-plan marker (skills/github-issue-planner/references/plan-schema.md;
+# The implementation-plan marker (skills/planner/references/plan-schema.md;
 # docs/specs/planner.md "Artifacts read") — GATHER_ISSUE's marker_prefix on both the TARGET issue
 # (the revise-mode trigger) and, for a story under an open epic, the parent epic (the JIT epic
 # plan the story grounds on).
 PLAN_MARKER = "<!-- implementation-plan:v1 -->"
 
-# The research-dossier marker (docs/specs/planner.md Step 4; skills/github-issue-researcher).
+# The research-dossier marker (docs/specs/planner.md Step 4; the researcher's dossier schema).
 # Detected by scanning the TARGET issue's own thread (already fully paginated by GATHER_ISSUE) —
 # never a second `gh api` round-trip the way v1's Step 4 targeted fetch needed, since v2's thread
 # fetch is already complete.
@@ -215,8 +215,9 @@ _EPIC_TITLE_PREFIX_RE = re.compile(r"^\s*epic\s*:", re.IGNORECASE)
 # Epic branch pattern: `epic/<N>-<slug>` (docs/specs/planner.md Step 4.5's table).
 _EPIC_BRANCH_LS_REMOTE_PATTERN = "epic/%s-*"
 
-# `## Stories` bullet grammar (skills/github-issue-drafter/references/issue-templates.md;
-# SKILL.md:539-540): a FILED story is `- [ ] #NN — <title>` / `- [x] #NN — <title>`; a PLACEHOLDER
+# `## Stories` bullet grammar (skills/drafter/references/issue-templates.md;
+# docs/specs/drafter.md "Artifacts written", Epic `## Stories` row): a FILED story is
+# `- [ ] #NN — <title>` / `- [x] #NN — <title>`; a PLACEHOLDER
 # (not yet filed) is a plain `- [ ] <title>` bullet with no `#NN`. No shared `parse.py` subcommand
 # covers this grammar (only `dod`/`oq-links`/`phases` are named in architecture.md §3's decision-
 # code table) — best-effort, non-raising: a line that matches neither shape is simply not a story
@@ -226,7 +227,7 @@ _STORY_FILED_RE = re.compile(r"^-\s*\[( |x|X)\]\s*#(\d+)\s*(?:—|-)\s*(.+)$")
 _STORY_PLAIN_RE = re.compile(r"^-\s*\[( |x|X)\]\s*(.+)$")
 _SECTION_HEADING_RE = re.compile(r"^##(?!#)")
 
-# `## Phase tracker` bullet grammar (docs/specs/resolver.md; SKILL.md:900-906): `- [x] Phase N —
+# `## Phase tracker` bullet grammar (docs/specs/resolver.md "Artifacts written"): `- [x] Phase N —
 # <title> (commit <sha>)` / `- [ ] Phase N — <title>` (unshipped). Same "no dedicated decision
 # code, best-effort" rationale as `_STORY_FILED_RE` above — the resolver's own §4.7 reads this
 # section as prose, not through a script; this module's parse is a convenience fact, not a gate.
@@ -264,7 +265,7 @@ def _forward_decision(decision, notices=None):
 
 
 # ---------------------------------------------------------------------------
-# State-vector type detection (docs/specs/planner.md; SKILL.md Step 3's "Route by shape").
+# State-vector type detection (docs/specs/planner.md "Route by shape").
 # ---------------------------------------------------------------------------
 
 
@@ -391,7 +392,7 @@ def _search_parent_epic(repo, story_number, cwd=None):
 def _fetch_story_state(repo, story_number, cwd=None):
     """`gh issue view <NN> --json state,title,labels` — the per-filed-story live-state fetch v1's
     `GATHER_EPIC` performs so the caller can reconcile body checkboxes against reality
-    (agents/github-ops.md's `GATHER_EPIC` description). Returns `(state_dict, decision_or_none)`."""
+    (the v1 executor agent's `GATHER_EPIC` description). Returns `(state_dict, decision_or_none)`."""
     result = process.run(
         ["gh", "issue", "view", str(story_number), "--repo", repo, "--json", "state,title,labels"],
         cwd=cwd,
@@ -638,7 +639,7 @@ build_oq_query = oq_tracker.build_oq_query
 
 def _extract_plan_sha(plan_body):
     """Extract the short/long SHA from the plan's header line: '... planned <ISO> at
-    `<plan-ref>@<short-sha>`' (skills/github-issue-planner/references/plan-schema.md). Returns
+    `<plan-ref>@<short-sha>`' (skills/planner/references/plan-schema.md). Returns
     `None` if the header doesn't match the documented shape rather than guessing."""
     match = re.search(r"@`?([0-9a-f]{7,40})`?", plan_body or "")
     return match.group(1) if match else None
@@ -697,12 +698,12 @@ def _suggested_playbook(issue_type, mode, parent_epic_open=False):
         (architecture.md §5 "revise is a distinct action flow: reconcile old-vs-new plan +
         projected-DoD, diff-show, SOFT/HARD gate, ## Predecessor").
       - ``story-jit.md`` — a story under an OPEN parent epic. Owns BOTH the fresh and the revise
-        path for such a story (v1 SKILL.md:72's "don't branch to Revise mode here — it's handled
+        path for such a story (v1's "don't branch to Revise mode here — it's handled
         by Just-in-time story planning"), so it wins over `revise.md` even when the story already
         has a plan.
       - ``epic.md`` — a fresh epic-as-target run.
       - ``single.md`` — everything else fresh: a standalone bug/feature/incomplete/multi-phase
-        issue, or a story with no open parent epic (v1 SKILL.md:92's "Everything else …
+        issue, or a story with no open parent epic (v1's "Everything else …
         continue with Steps 4–10").
 
     ``mode`` is the `fresh`/`revise` value `build_facts` already derived; ``parent_epic_open`` is

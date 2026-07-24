@@ -64,7 +64,7 @@ from pipelib import process  # noqa: E402
 from pipelib.decisions import AMBIGUOUS, needs_decision  # noqa: E402
 from pipelib.envelope import EXIT_OK, EXIT_USAGE_ERROR, emit_needs_decision, emit_ok  # noqa: E402
 
-# Health-cache marker comment prefix (docs/specs/evaluator.md, SKILL.md:300) — self-read by
+# Health-cache marker comment prefix (docs/specs/evaluator.md "Artifacts written") — self-read by
 # gh_pr_gather's marker-comment lookup so the health check needs no second fetch.
 HEALTH_CACHE_MARKER = "<!-- pr-evaluator-health-cache:v1 -->"
 
@@ -75,7 +75,8 @@ _TEST_TARGET_MARKER = "pr-evaluator-test-target"
 _ESCALATION_LABELS_MARKER = "pr-evaluator-escalation-labels"
 _MERGE_POLICY_MARKER = "pr-evaluator-merge-policy"
 # Legacy single-block backward-compat marker (docs/specs/evaluator.md "Known bugs/gaps",
-# SKILL.md §5.4) — read alongside static-checks/test-target so prep surfaces both arms and lets
+# docs/specs/evaluator.md "Legacy config: health checks") — read alongside static-checks/test-target
+# so prep surfaces both arms and lets
 # the evaluator playbook (not this script) decide which to honor.
 _LEGACY_HEALTH_CHECKS_MARKER = "pr-evaluator-health-checks"
 
@@ -96,7 +97,7 @@ _CI_FAILURE_EQUIVALENT = frozenset(
     {"FAILURE", "ERROR", "CANCELLED", "TIMED_OUT", "ACTION_REQUIRED", "STARTUP_FAILURE", "STALE"}
 )
 
-# PR-type detection patterns (docs/specs/evaluator.md §"5.5.2 test selection" / SKILL.md:254-256):
+# PR-type detection patterns (docs/specs/evaluator.md "PR-type classification"):
 # `epic-integration` if headRefName matches `epic/<N>-<slug>` AND baseRefName == main; `story` if
 # baseRefName matches `epic/<N>-<slug>`; `standard` otherwise (v1 names this bucket `regular`; the
 # v2 architecture.md §4 vocabulary and this step's brief both name it `standard`).
@@ -167,7 +168,8 @@ _MERGE_POLICY_LINE_RE = re.compile(r"^\s*-\s*([A-Za-z][A-Za-z0-9_-]*)\s*:\s*(ask
 def _parse_backtick_command_list(interior_lines):
     """One backtick-quoted command per Markdown list item — the shared shape
     ``pr-evaluator-static-checks``, ``pr-evaluator-escalation-labels``, and the legacy
-    ``pr-evaluator-health-checks`` block all use (docs/specs/evaluator.md; SKILL.md §5.4), the
+    ``pr-evaluator-health-checks`` block all use (docs/specs/evaluator.md "Legacy config: health
+    checks"), the
     exact same per-line grammar ``workspace.py``'s ``_parse_command_list`` already applies to
     worktree-hook blocks — restated locally so this module has no cross-module dependency on a
     workspace.py private helper for an unrelated block family."""
@@ -180,7 +182,7 @@ def _parse_backtick_command_list(interior_lines):
 
 
 def _parse_merge_policy(interior_lines):
-    """``- <pr-type>: ask|auto`` per line (docs/specs/evaluator.md; SKILL.md:479-483). Returns a
+    """``- <pr-type>: ask|auto`` per line (docs/specs/evaluator.md "Config: merge policy"). Returns a
     dict keyed by PR type. Unparseable lines (blank, prose) are skipped, not fatal — the merge
     policy block has no closed decision-code the way ``dod``/``phases`` do (architecture.md §3
     names no MERGE_POLICY_MALFORMED code), so a stray non-conforming line is simply not a policy
@@ -265,7 +267,7 @@ def _classify_ci_rollup(status_check_rollup):
     of ``green`` / ``red`` / ``pending`` / ``none``, plus the failing-check-name list when red.
     Preserves v1's exact terminal-state vocabulary (docs/specs/evaluator.md §5.3) — this is a
     CLASSIFICATION only; prep never blocks/watches a pending rollup to settle it (v1's own rule:
-    "Do NOT route this through github-ops ... run it from the main loop" — the v2 analogue is
+    "Do NOT route this through the executor sub-agent ... run it from the main loop" — the v2 analogue is
     "not synchronously inside a one-shot prep script"; the evaluator playbook is what decides
     whether/how to wait, using this fact as its starting point).
     """
@@ -305,7 +307,7 @@ def _classify_ci_rollup(status_check_rollup):
 
 
 # ---------------------------------------------------------------------------
-# PR-type detection (docs/specs/evaluator.md; SKILL.md:254-256).
+# PR-type detection (docs/specs/evaluator.md "PR-type classification").
 # ---------------------------------------------------------------------------
 
 
@@ -318,7 +320,7 @@ def _detect_pr_type(base_ref_name, head_ref_name):
 
 
 # ---------------------------------------------------------------------------
-# Health-cache marker SHA compare (docs/specs/evaluator.md; SKILL.md:131-134).
+# Health-cache marker SHA compare (docs/specs/evaluator.md "Health-cache marker (self-read)").
 # ---------------------------------------------------------------------------
 
 _CACHE_SHA_LINE_RE = re.compile(r"^SHA:\s*([0-9a-f]+)\s*$", re.MULTILINE)
@@ -361,7 +363,8 @@ def _auth_decision(result):
 
 
 def _fetch_repo_merge_config(repo, cwd):
-    """``gh api repos/<owner>/<repo>`` — the five merge-capability booleans (SKILL.md:454-455).
+    """``gh api repos/<owner>/<repo>`` — the five merge-capability booleans
+    (docs/specs/evaluator.md "Repo merge config").
     Returns ``(config_dict_or_none, decision_or_none)``."""
     result = process.run(["gh", "api", "repos/%s" % repo], cwd=cwd)
     if result.auth_required:
@@ -380,7 +383,8 @@ def _fetch_repo_merge_config(repo, cwd):
 
 
 def _fetch_current_user(cwd):
-    """``gh api user`` -> login (SKILL.md:73). Returns ``(login_or_none, decision_or_none)``."""
+    """``gh api user`` -> login (docs/specs/evaluator.md "Self-approval pre-check").
+    Returns ``(login_or_none, decision_or_none)``."""
     result = process.run(["gh", "api", "user"], cwd=cwd)
     if result.auth_required:
         return None, _auth_decision(result)

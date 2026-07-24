@@ -1,6 +1,6 @@
 # State-distiller sub-agent prompt (carried from v1)
 
-Carried from v1 (`skills/github-issue-resolver/references/state-distiller-prompt.md`) per the S10
+Carried from the v1 resolver's `references/state-distiller-prompt.md` per the S10
 cutover — a judgment sub-agent prompt, one of the two classes of v1 text a cutover step carries
 (architecture.md §9). The only adaptation: the sub-agent receives the three inputs as the **staged
 paths** in the prep facts block's `distiller_bundle` (`issue_body_path`, `thread_path`,

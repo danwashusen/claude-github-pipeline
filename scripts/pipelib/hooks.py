@@ -11,7 +11,7 @@ import this module; every other script's shell-out goes through :mod:`pipelib.pr
 
 The command string executed here is **repo-owned, not user/operator-typed** — it comes from the
 consuming repo's own ``<!-- worktree-setup -->`` / ``<!-- worktree-teardown -->`` marker-comment
-block (discovered via ``config_block.py``), the same trust boundary v1's ``worktree-hooks.sh``
+block (discovered via ``config_block.py``), the same trust boundary the v1 hook runner
 already operated under. This module does not change that trust boundary; it only relocates the
 carve-out into the new stdlib-Python layer, unconditionally as shell text (never as an argument
 list), because a setup/teardown block is authored as a shell command line, not as a pre-tokenized

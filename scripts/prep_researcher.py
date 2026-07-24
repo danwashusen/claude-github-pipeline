@@ -41,8 +41,8 @@ is where the flow later stages the dossier body (``research.md``) before persist
 stages nothing (no dossier exists yet at session start).
 
 **No workspace — the researcher grounds on the CURRENT checkout, not a pinned ref (S14 root-only
-precedent; docs/specs/researcher.md "Overview": "no epic/story branching, no worktree involvement";
-SKILL.md:85-93).** v1 discovers the project's stack and governing docs at runtime from wherever the
+precedent; docs/specs/researcher.md "Overview": "no epic/story branching, no worktree involvement").**
+v1 discovers the project's stack and governing docs at runtime from wherever the
 working tree happens to be (``read whatever the repo actually has``), with no requirement that the
 tree be clean or on ``main`` — the manifest inventory is a **currency-check input** for filtering web
 research, never a build/merge gate. Unlike the planner/resolver/evaluator (each of which forks a
@@ -58,12 +58,13 @@ adopted (see that module's "No workspace" note), for the same threat-model reaso
 dossier marker's presence and whether the operator supplied a ``--question``:
 
   - an ``<!-- issue-research:v1 -->`` dossier already exists on the issue -> ``"revise"``
-    (SKILL.md:63 "An existing dossier => revise mode" — the dominant trigger; the flow refreshes what
+    (docs/specs/researcher.md "Artifacts read": an existing dossier is the revise-mode trigger —
+    the dominant one; the flow refreshes what
     changed and delete-and-reposts, whether or not a ``--question`` narrows the refresh).
-  - no dossier, a ``--question`` supplied -> ``"targeted"`` (SKILL.md:57 — the questions are given,
+  - no dossier, a ``--question`` supplied -> ``"targeted"`` (the questions are given,
     typically because the planner hit a specific knowledge gap and routed here; the flow skips
     derivation and the confirm gate).
-  - no dossier, no ``--question`` -> ``"broad"`` (SKILL.md:56 — the default first run; the flow
+  - no dossier, no ``--question`` -> ``"broad"`` (the default first run; the flow
     derives the questions, runs the decline gate, and confirms them before spending fetches).
 
 **``suggested_playbook``** (architecture.md §5 "Prep proposes; the router confirms") maps the mode onto
@@ -73,19 +74,20 @@ the given questions; revise reads the prior dossier and refreshes only what chan
 shared ``research-spine.md`` (gather -> synthesize -> validate -> persist -> handoff). The split is the
 §5-honest one — the three modes differ in genuine front-end/persist **actions** (broad can exit posting
 nothing; revise delete-and-reposts and shows a diff), not merely in values — the largest single loaded
-file (router + ``research-spine.md``) stays under half the v1 ``SKILL.md`` line count, recorded in
+file (router + ``research-spine.md``) stays under half the v1 router's line count (docs/specs/baseline.md §1), recorded in
 ``docs/specs/parity/researcher.md``. The router routing table is byte-consistent with this map.
 
-**Manifest / governing-doc inventory (docs/specs/researcher.md "Deterministic steps"; SKILL.md:89-90).**
+**Manifest / governing-doc inventory (docs/specs/researcher.md "Deterministic steps",
+"Manifest/doc inventory list").**
 A filesystem inventory at ``root`` of whichever dependency manifest and governing-doc files actually
 exist — the *inventory* is deterministic; the *reading and synthesizing* into a one-line stack-context
 summary stays judgment (the playbook's Step 3). Manifests carry the pinned versions that are "the
 single most important signal for is-my-recall-current". The candidate names are v1's exact list
-(SKILL.md:89) treated as **examples, not a checklist** — first-match reporting per candidate, plus a
+(that same row's list) treated as **examples, not a checklist** — first-match reporting per candidate, plus a
 shallow root-level glob for the pattern-named ones (``*.csproj`` / ``*.bazel``). Scanned at
 root-level (not a full recursive tree walk — bounded, and it never blows up on ``node_modules`` /
 vendored trees); a deeply-nested manifest the shallow scan misses is still reachable by the model's
-own grep (SKILL.md:89 "grep for version pins rather than assuming the repo has none"), so the
+own grep ("grep for version pins rather than assuming the repo has none" — same row), so the
 inventory is a convenience signal, never a gate.
 
 Exit codes (architecture.md §3): 0 with the facts-block envelope present (``status`` is ``"ok"`` or
@@ -103,12 +105,13 @@ import gh_gather  # noqa: E402  (import after sys.path setup, by necessity; in-p
 from pipelib import process  # noqa: E402
 from pipelib.envelope import emit_needs_decision, emit_ok  # noqa: E402
 
-# The dossier marker (docs/specs/researcher.md "Artifacts written"; SKILL.md:140,143) — the literal
+# The dossier marker (docs/specs/researcher.md "Artifacts written") — the literal
 # first line of the research dossier comment, and gh_gather's `marker_prefix` for revise detection.
 RESEARCH_MARKER = "<!-- issue-research:v1 -->"
 
-# Dependency / build manifest candidates (SKILL.md:89's exact list) — treated as EXAMPLES, not a
-# checklist. Exact-name candidates checked at root; the pattern-named ones are a shallow root glob.
+# Dependency / build manifest candidates (the list in docs/specs/researcher.md's "Manifest/doc
+# inventory list" row) — treated as EXAMPLES, not a checklist. Exact-name candidates checked at
+# root; the pattern-named ones are a shallow root glob.
 _MANIFEST_EXACT = (
     "package.json",
     "Gemfile",
@@ -127,7 +130,7 @@ _MANIFEST_EXACT = (
 )
 _MANIFEST_GLOBS = ("*.csproj", "*.bazel")
 
-# Governing-doc candidates (SKILL.md:90) — README / CONTRIBUTING / CLAUDE.md at root, plus a listing
+# Governing-doc candidates (same spec row) — README / CONTRIBUTING / CLAUDE.md at root, plus a listing
 # of everything under `docs/` (v1: "anything under docs/"). The CLAUDE.md `@`-reference expansion is
 # a READING concern (judgment), so prep reports only CLAUDE.md's presence, never resolves the graph.
 _GOVERNING_DOC_EXACT = ("README.md", "README", "CONTRIBUTING.md", "CONTRIBUTING", "CLAUDE.md")
@@ -169,7 +172,8 @@ def _root_sha(root):
 
 
 def _manifest_inventory(root):
-    """Root-level inventory of the dependency/build manifests that actually exist (SKILL.md:89).
+    """Root-level inventory of the dependency/build manifests that actually exist
+    (docs/specs/researcher.md "Manifest/doc inventory list").
     `present` means "at least one manifest was found". `files` is the relative names found (sorted);
     `candidates_checked` rides along so a caller sees the exact search set without re-deriving it."""
     root_path = Path(root)
@@ -190,7 +194,7 @@ def _manifest_inventory(root):
 
 
 def _doc_inventory(root):
-    """Root-level governing-doc inventory (SKILL.md:90): README / CONTRIBUTING / CLAUDE.md at root,
+    """Root-level governing-doc inventory (same spec row): README / CONTRIBUTING / CLAUDE.md at root,
     plus a listing of `docs/*.md` ("anything under docs/"). `present` means at least one was found."""
     root_path = Path(root)
     files = []
@@ -225,7 +229,8 @@ def _suggested_playbook(mode):
 
 
 def _build_revise_facts(issue_envelope):
-    """Revise-mode-only facts (SKILL.md:63,212-216): the existing dossier comment's id/url (the flow
+    """Revise-mode-only facts (docs/specs/researcher.md "Artifacts read" + "Stage dossier to disk"):
+    the existing dossier comment's id/url (the flow
     passes the id to `gh_persist.py comment --delete-marker-id` on delete-and-repost) and its staged
     body (the flow reads it to refresh what changed, never re-researching untouched sections)."""
     dossier = {

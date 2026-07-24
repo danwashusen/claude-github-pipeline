@@ -238,9 +238,8 @@ an artifact written by a v1 skill is consumed correctly by its v2 counterpart, a
 - One operator per consuming repo at a time; concurrent sessions share only git/GitHub-enforced
   state.
 - `gh` is installed and authenticated with repo scope; `git` and Python 3 are present (versions
-  pinned in [architecture.md §1](architecture.md)). The v2 skills require no other runtimes,
-  interpreters, or packages; the coexisting v1 scripts retain their `bash`/`jq` dependencies
-  until retirement completes the rewrite.
+  pinned in [architecture.md §1](architecture.md)). The skills require no other runtimes,
+  interpreters, or packages.
 - Consuming repos may lack optional capabilities (native issue dependencies, grounding docs,
   config blocks); skills degrade gracefully and say so.
 - The plugin install directory is read-only at runtime; nothing is ever written there.

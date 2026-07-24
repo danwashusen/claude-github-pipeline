@@ -9,7 +9,7 @@ Surfaces the S18 DoD / Testing names for the sweep half:
    against unbounded growth.
 2. **Frontmatter pins.** name: question-sweep / opus / high / **`disable-model-invocation: true`** (the S18
    rule — the sweep is one of the three standalone tools that DO carry the key; setup was the exception).
-3. **Contract-token grep gates** over skills/question-sweep/: zero `github-ops`, zero `github-pipeline:github-`,
+3. **Contract-token grep gates** over skills/question-sweep/: zero retired-executor / v1-namespace tokens,
    zero `GATHER_`/`PERSIST_` op names, zero `§P` IDs, zero raw gh WRITES in fences, zero `w/`.
 4. **The §8.2 landing gate** (DoD boxes 2/3 offline half): offered as ONE explicit final gate; on decline
    zero git actions + the workspace path + ready-to-run commands — pinned as prose in the flow + router.
@@ -38,7 +38,7 @@ FLOW = "sweep-flow.md"
 READER = REFERENCES_DIR / "question-status-reader-prompt.md"
 GH_PERSIST = SCRIPTS_DIR / "gh_persist.py"
 
-# floor(v1 open-questions/SKILL.md 147 lines, docs/specs/baseline.md §1) / 2 = 73 — the RECORDED metric.
+# floor(the v1 sweep SKILL.md's 147 lines, docs/specs/baseline.md §1) / 2 = 73 — the RECORDED metric.
 V1_HALF_BAR = 147 // 2
 # The enforced ceiling (guards unbounded growth without demanding the unmet ≤half; see the module docstring).
 LOADED_SET_CEILING = 125
@@ -46,6 +46,10 @@ LOADED_SET_CEILING = 125
 sys.path.insert(0, str(SCRIPTS_DIR))
 
 from tests.support import envelope_asserts, shimenv  # noqa: E402
+from tests.support.retired_tokens import (  # noqa: E402
+    FORBIDDEN_CONTRACT_TOKENS,
+    retired_name_hits,
+)
 
 
 def _iter_md(dir_path):
@@ -72,7 +76,7 @@ class RouterStructureTests(unittest.TestCase):
         self.assertIn("name: question-sweep", head)
         self.assertIn("model: opus", head)
         self.assertIn("effort: high", head)
-        # DoD box 5 (S18 rule): the sweep DOES carry the key (unlike setup) — v1 open-questions carried it
+        # DoD box 5 (S18 rule): the sweep DOES carry the key (unlike setup) — its v1 predecessor carried it
         # and CLAUDE.md:73 names it among the three standalone tools that keep it.
         self.assertIn("disable-model-invocation: true", head)
 
@@ -107,9 +111,7 @@ class RouterStructureTests(unittest.TestCase):
 
 class ContractTokenGateTests(unittest.TestCase):
     def test_no_github_ops_or_old_namespace_or_op_names_or_pids(self):
-        forbidden = re.compile(
-            r"\bgithub-ops\b|github-pipeline:github-|\bGATHER_[A-Z]+\b|\bPERSIST_[A-Z]+\b|§P[0-9]"
-        )
+        forbidden = FORBIDDEN_CONTRACT_TOKENS
         for path in _iter_md(SKILL_DIR):
             for i, line in enumerate(path.read_text(encoding="utf-8").splitlines(), 1):
                 hit = forbidden.search(line)
@@ -122,7 +124,7 @@ class ContractTokenGateTests(unittest.TestCase):
     def test_forward_pointers_are_v2_skill_names(self):
         for path in _iter_md(SKILL_DIR):
             text = path.read_text(encoding="utf-8")
-            self.assertNotIn("github-issue-", text, "%s names a v1 skill" % path.name)
+            self.assertEqual(retired_name_hits(text), [], "%s names a retired v1 skill" % path.name)
 
     def test_no_raw_persist_or_gather_writes_in_fences(self):
         raw_write = re.compile(

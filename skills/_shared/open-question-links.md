@@ -27,12 +27,12 @@ split. Every consumer cites it rather than restating the schema.
 
 | Skill | Role |
 |---|---|
-| `open-questions` (sweep) | **Registry owner.** Detects OQs across all project docs, reconciles them against the tracker — files missing companion questions, flags stale docs, and maintains the doc↔issue back-links. Explicit-invocation only (a hygiene sweep, not a pipeline stage). |
+| `question-sweep` | **Registry owner.** Detects OQs across all project docs, reconciles them against the tracker — files missing companion questions, flags stale docs, and maintains the doc↔issue back-links. Explicit-invocation only (a hygiene sweep, not a pipeline stage). |
 | `question-resolver` | **Assisted closer.** Evaluates a `question` issue against the docs, records the operator's decision as the `<!-- question-decision:v1 -->` comment, optionally closes the issue, and **proposes** (never applies) the doc fold-back. Never decides — the operator does. Explicit-invocation only. |
-| `github-issue-drafter` | **Thin writer.** On a build issue whose scope an OQ gates: writes this section's entry, sets the native `blocked by` for `in-scope (blocked)`, and links the companion question — reusing an existing one, or filing when untracked (safety net). Reconciles in revise mode via the tiered read (§Status). Does **not** own cross-doc detection, registry reconciliation, or doc back-linking — those are the sweep's. |
-| `github-issue-planner` | **Reader + extender.** Reads this section and the issue's native `blocked_by` to learn which scope is gated, copies the live entries into the *plan's* own `## Open questions` section, and **never silently resolves an OQ** (a tracked OQ is not a hedge — see the planner's §7.5 carve-out). Does not write this body section. |
-| `github-issue-resolver` | **Reads `blocked_by`; hard-gates.** If the issue is natively `blocked by` an **open** question, routes to its `blocked` classification (surface "can't build until #N answers") instead of building the gated criterion. Treats this section as a tracked-dependency registry — **not buildable scope, not a DoD source**. |
-| `github-pr-evaluator` | **Reads `blocked_by`; hard-gates.** Holds / soft-rejects the merge while an in-scope blocker (open question) is unresolved, citing it. Does **not** read this section's bullets as acceptance criteria or as DoD gaps. |
+| `drafter` | **Thin writer.** On a build issue whose scope an OQ gates: writes this section's entry, sets the native `blocked by` for `in-scope (blocked)`, and links the companion question — reusing an existing one, or filing when untracked (safety net). Reconciles in revise mode via the tiered read (§Status). Does **not** own cross-doc detection, registry reconciliation, or doc back-linking — those are the sweep's. |
+| `planner` | **Reader + extender.** Reads this section and the issue's native `blocked_by` to learn which scope is gated, copies the live entries into the *plan's* own `## Open questions` section, and **never silently resolves an OQ** (a tracked OQ is not a hedge — see the planner's open-question carve-out). Does not write this body section. |
+| `resolver` | **Reads `blocked_by`; hard-gates.** If the issue is natively `blocked by` an **open** question, routes to its `blocked` classification (surface "can't build until #N answers") instead of building the gated criterion. Treats this section as a tracked-dependency registry — **not buildable scope, not a DoD source**. |
+| `evaluator` | **Reads `blocked_by`; hard-gates.** Holds / soft-rejects the merge while an in-scope blocker (open question) is unresolved, citing it. Does **not** read this section's bullets as acceptance criteria or as DoD gaps. |
 
 The section stays out of the verified `<!-- implementation-plan:v1 -->` plan on purpose: the plan is
 immutable, while this dependency record changes as OQs open and resolve.
@@ -97,22 +97,22 @@ de-dup search (the drafter always searches for an existing companion before prop
 ## Status is the tracker's
 
 An OQ's resolution is read from the **tracker**, not a doc register field — a doc marker can lag a
-decision made in the question's thread. The read is **tiered** so `github-ops` stays judgment-free
-(`GATHER_ISSUE` returns the issue `state`, the full verbatim `thread`, and — when passed
-`marker_prefix=<!-- question-decision:v1 -->` — whether a recorded-decision comment exists):
+decision made in the question's thread. The read is **tiered** so the deterministic half stays in the
+prep script (`gh_gather.py` returns the issue `state`, the full verbatim `thread`, and — when passed
+`--marker-prefix '<!-- question-decision:v1 -->'` — whether a recorded-decision comment exists):
 
 - **Tier 1 — deterministic (zero-cost).** The question is **resolved** if either the issue is `closed`
   **or** it carries a `<!-- question-decision:v1 -->` comment (the durable decision `question-resolver`
-  records — that comment *is* the answer). `state` is always in the `GATHER_ISSUE` envelope; the marker
-  half needs the fetch to pass `marker_prefix=<!-- question-decision:v1 -->` so `marker_comment_present`
+  records — that comment *is* the answer). `state` is always in the gather envelope; the marker
+  half needs the fetch to pass `--marker-prefix '<!-- question-decision:v1 -->'` so `marker_comment_present`
   populates — a consumer that doesn't (checking a single companion by `state`) still gets the marker via
   Tier 2's reader, which checks for it first. No sub-agent. This is the common, leanest path.
 - **Tier 2 — thread reading (judgment, only when `open` AND no decision marker).** Dispatch the
-  question-status reader `Explore` sub-agent (`${CLAUDE_PLUGIN_ROOT}/skills/open-questions/references/question-status-reader-prompt.md`),
+  question-status reader `Explore` sub-agent (`${CLAUDE_PLUGIN_ROOT}/skills/question-sweep/references/question-status-reader-prompt.md`),
   sibling to the resolver's state-distiller. It reads the question's body + thread and returns a typed
   reading — `resolved-in-thread` / `still-open`, with evidence (quote + author + date) and, when
   resolved, a one-line answer summary; on a thread it can't read confidently it raises `AMBIGUOUS` per
-  [`subagent-decision-signal.md`](subagent-decision-signal.md). This catches the
+  [architecture.md §3](../../docs/architecture.md)'s closed decision-code set. This catches the
   **answered-in-thread-but-still-open** staleness case (a stakeholder answered; nobody recorded a
   decision, closed the issue, or folded it to docs).
 
@@ -135,10 +135,10 @@ state *now*, not a changelog (version control carries the history). Three moves,
 
 1. Rewrite the affected prose to the decided state.
 2. Remove the now-obsolete `PROVISIONAL` / open-question marker.
-3. If the repo keeps an open-questions register, flip its status (Open → Decided) and add the
+3. If the repo keeps an open-question register, flip its status (Open → Decided) and add the
    `tracked in #<N>` back-link.
 
-`question-resolver` **proposes** these at decision time (never applies them); the `open-questions` sweep
+`question-resolver` **proposes** these at decision time (never applies them); the `question-sweep`
 proposes them for a `stale-doc` question resolved elsewhere. Both cite this section rather than
 restating the moves.
 
@@ -151,8 +151,8 @@ operator's decision as the `<!-- question-decision:v1 -->` comment (the machine-
 Tier 1 reads), offers to close the issue, and **proposes** (never applies) the doc fold-back. It does
 not decide — the operator does; it does not run the downstream flows either.
 
-Then, per the build issue's disposition: a `scoped-out` follow-up is a fresh `github-issue-drafter` run
+Then, per the build issue's disposition: a `scoped-out` follow-up is a fresh `drafter` run
 (breadcrumbed by the question's `## Tracked in` build back-link); an `in-scope (blocked)` dependency is
-cleared by removing the native `blocked by` (`PERSIST_LINK --remove-blocked-by`) and folding the
+cleared by removing the native `blocked by` (`gh_persist.py link … --remove-blocked-by`) and folding the
 now-decided scope in via the drafter/planner revise flow; a `provisional-default` is confirmed or
 corrected the same way, retiring the watchpoint.

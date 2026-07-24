@@ -72,7 +72,7 @@ from pipelib.envelope import emit_ok  # noqa: E402
 CANDIDATE_FILES = ("COMMANDS.md", "CLAUDE.md")
 
 # The nine machine-parsed blocks setup reconciles to canonical on every run (docs/specs/setup.md
-# "Ownership split") — read by the resolver / evaluator / worktree-hooks parser.
+# "Ownership split") — read by `workspace.py`'s hook runner for the resolver / evaluator.
 MACHINE_PARSED_MARKERS = (
     "issue-resolver-fast-checks",
     "issue-resolver-test-target",
@@ -91,7 +91,7 @@ CONFIG_HEADER_MARKER = "github-pipeline-config"
 STACK_PROFILE_MARKER = "claude-code-stack-profile"
 LEGACY_HEALTH_CHECKS_MARKER = "pr-evaluator-health-checks"
 
-# Tools the scripts and skills need at use-time (docs/specs/setup.md "Preflight"; SKILL.md:120).
+# Tools the scripts and skills need at use-time (docs/specs/setup.md "Preflight checks").
 PREFLIGHT_TOOLS = ("jq", "git", "gh")
 
 

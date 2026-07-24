@@ -11,15 +11,15 @@ applies to any stack — swap the example content for your framework's equivalen
 ## Why this guide exists: your reader is an LLM
 
 In this pipeline your architecture doc's primary reader is **not a human** — it's the
-`github-issue-planner` skill. That changes how you should write it.
+`planner` skill. That changes how you should write it.
 
 The consumption chain is one-directional and lossy by design:
 
 ```
-docs/architecture.md  ──read by──▶  github-issue-planner  ──emits──▶  <!-- implementation-plan:v1 -->
-                                                                              │
-                                                                     read by github-issue-resolver
-                                                                     (writes the code)
+docs/architecture.md  ──read by──▶  planner  ──emits──▶  <!-- implementation-plan:v1 -->
+                                                                    │
+                                                          read by resolver
+                                                          (writes the code)
 ```
 
 The **resolver never reads `architecture.md`.** It is told to lift its grounding from the plan's
@@ -107,7 +107,7 @@ Each principle is stated neutrally, then illustrated for Rails 8.1.
 | Non-negotiable rules ("secrets are never stored unencrypted") | `constitution.md` | Planner treats it as a hard blocker, not a deviation to negotiate |
 | *Why* a decision was made; rejected alternatives; history | `architecture-notes.md` | Planner reads it when tempted to deviate; keeps `architecture.md` prescriptive |
 | UI component catalog, sizes, named visual patterns | `ui-design.md` | Planner cites `ui-design §X` for UI decisions specifically |
-| Test/build/gate **command targets** (`<!-- issue-resolver-test-target -->`, `<!-- pr-evaluator-*-checks -->`, merge policy) | `CLAUDE.md` / `COMMANDS.md` marker blocks | Read by the **resolver/evaluator at run-time**, not by the planner-grounding path — different consumer, different mechanism. Run `github-pipeline-setup` to generate these |
+| Test/build/gate **command targets** (`<!-- issue-resolver-test-target -->`, `<!-- pr-evaluator-*-checks -->`, merge policy) | `CLAUDE.md` / `COMMANDS.md` marker blocks | Read by the **resolver/evaluator at run-time**, not by the planner-grounding path — different consumer, different mechanism. Run `setup` to generate these |
 | Setup / deploy runbooks, environment bootstrapping | `README` / ops docs | Not part of plan grounding |
 
 `architecture.md` itself = the prescriptive *what* of your structure and your stack decisions.
@@ -228,7 +228,7 @@ Before you consider the doc done:
 - [ ] Versions and relied-on defaults are pinned (§1/§3).
 - [ ] Test/build command targets are **not** here (they're in `CLAUDE.md` marker blocks).
 
-**Validate against the real consumer:** run `github-issue-planner` on a representative issue and
+**Validate against the real consumer:** run `planner` on a representative issue and
 read the posted `<!-- implementation-plan:v1 -->`. Success looks like: every
 `## Architecture decisions` bullet carries an `architecture.md §X` (or `[precedent: …]`) citation
 that resolves, and the planner needed *no* human Decision-gate for a convention the doc should

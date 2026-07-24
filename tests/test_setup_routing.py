@@ -19,7 +19,7 @@ Surfaces the S17 DoD / Testing section names:
    list, v1 never carried the key, and `docs/specs/setup.md`'s Known-bugs §1 pre-analyzed the DoD's
    "retained" wording as an over-generalization to correct, not to perpetuate).
 
-4. **Contract-token grep gates** over skills/setup/: zero `github-ops`, zero v1 skill-namespace strings
+4. **Contract-token grep gates** over skills/setup/: zero retired-executor tokens, zero v1 skill-namespace strings
    (`github-pipeline:github-`), zero `GATHER_`/`PERSIST_` op names, zero `§P` IDs, zero raw persist/gather
    WRITES in fences, zero `w/` shorthand. The v2 forward pointers are the renamed `github-pipeline:drafter`
    / `github-pipeline:resolver`.
@@ -58,7 +58,7 @@ GH_PERSIST = SCRIPTS_DIR / "gh_persist.py"
 CONFIG_BLOCKS_EXAMPLE = REPO_ROOT / "docs" / "specs" / "examples" / "config-blocks.md"
 BLOCK_AUTHORING = REFERENCES_DIR / "block-authoring.md"
 
-# floor(v1 github-pipeline-setup/SKILL.md 338 lines, docs/specs/baseline.md §1) / 2 = 169.
+# floor(the v1 setup SKILL.md's 338 lines, docs/specs/baseline.md §1) / 2 = 169.
 V1_HALF_BAR = 338 // 2
 
 FLOW = "setup-flow.md"
@@ -66,6 +66,10 @@ FLOW = "setup-flow.md"
 sys.path.insert(0, str(SCRIPTS_DIR))
 
 from tests.support import envelope_asserts, shimenv  # noqa: E402
+from tests.support.retired_tokens import (  # noqa: E402
+    FORBIDDEN_CONTRACT_TOKENS,
+    retired_name_hits,
+)
 
 # A block region: `<!-- NAME -->` … `<!-- /NAME -->` (whole-line markers, backreferenced name).
 _BLOCK_RE = re.compile(
@@ -123,8 +127,8 @@ class RouterStructureTests(unittest.TestCase):
         self.assertIn("model: opus", head)
         self.assertIn("effort: medium", head)
         # DoD box 5 (S17 adjudication — do NOT "fix" this back): setup stays model-invocable. v1
-        # `github-pipeline-setup` never carried `disable-model-invocation`, and CLAUDE.md:73
-        # deliberately lists the key for ONLY doc-reviewer/open-questions/question-resolver — setup
+        # The v1 setup skill never carried `disable-model-invocation`, and the adjudication record
+        # lists the key for ONLY doc-reviewer / question-sweep / question-resolver — setup
         # is excluded on purpose (its design is trigger-heavy). docs/specs/setup.md's Known-bugs §1
         # pre-analyzed the DoD's "retained" wording as an over-generalization to correct, not
         # perpetuate. So the key must be ABSENT here.
@@ -162,9 +166,7 @@ class RouterStructureTests(unittest.TestCase):
 
 class ContractTokenGateTests(unittest.TestCase):
     def test_no_github_ops_or_old_namespace_or_op_names_or_pids(self):
-        forbidden = re.compile(
-            r"\bgithub-ops\b|github-pipeline:github-|\bGATHER_[A-Z]+\b|\bPERSIST_[A-Z]+\b|§P[0-9]"
-        )
+        forbidden = FORBIDDEN_CONTRACT_TOKENS
         for path in _iter_md(SKILL_DIR):
             for i, line in enumerate(path.read_text(encoding="utf-8").splitlines(), 1):
                 hit = forbidden.search(line)
@@ -178,8 +180,7 @@ class ContractTokenGateTests(unittest.TestCase):
         router = ROUTER.read_text(encoding="utf-8")
         self.assertIn("/github-pipeline:drafter", router)
         self.assertIn("/github-pipeline:resolver", router)
-        self.assertNotIn("github-issue-drafter", router)
-        self.assertNotIn("github-issue-resolver", router)
+        self.assertEqual(retired_name_hits(router), [], "the setup router names a retired v1 skill")
 
     def test_no_raw_persist_or_gather_writes_in_fences(self):
         raw_write = re.compile(

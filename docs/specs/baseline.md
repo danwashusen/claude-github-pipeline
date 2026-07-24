@@ -631,3 +631,106 @@ status:
    census are green; the orchestrator re-runs them at acceptance.
 
 **No blocking finding.**
+
+## 6. S20 final census — the v2-only re-baseline
+
+> Produced by [implementation.md](../implementation.md) step **S20** ("v1 removal & repo truth"),
+> after the eight skill cutovers and the removal of every v1 surface. §2 above stays **frozen** as
+> the S1 record; this section is the diff against it and the **new going-forward baseline**. The
+> S19 reviewer's note is the reason it exists: the pre-removal count (88) double-counted the
+> coexisting v1 and v2 trees, so only a v2-only set is a usable reference for a future editor.
+
+### 6.1 Command
+
+`agents/` no longer exists (the v1 executor sub-agent prompt was its only occupant), so the census
+scope narrows to `skills/` — otherwise the command is unchanged from §2:
+
+```
+grep -roE '<!-- [a-z0-9:-]+ -->|§P?[0-9]+(\.[0-9]+)?|GATHER_[A-Z]+|PERSIST_[A-Z]+|github-pipeline:[a-z-]+' skills/ | sed 's/^[^:]*://' | sort -u | wc -l
+```
+
+Output: **44** distinct contract tokens (S1 baseline: 79).
+
+### 6.2 The v2-only baseline (token — total occurrences)
+
+This is what a future edit diffs against. A count drop is expected only when that edit deliberately
+removes the last user of a token; a **token** disappearing is the thing to explain.
+
+```
+     4  <!-- claude-code-stack-profile -->        11  §1
+     3  <!-- drafter-open-question-markers -->     2  §10
+    14  <!-- epic-delivery-log:v1 -->              1  §10.4
+     1  <!-- github-pipeline-config -->           13  §10.6
+    19  <!-- implementation-plan:v1 -->            3  §12
+     5  <!-- issue-research:v1 -->                 8  §2
+     3  <!-- issue-resolver-canonical-suite -->   23  §3
+     1  <!-- issue-resolver-fast-checks -->        1  §3.2
+     3  <!-- issue-resolver-test-target -->       19  §4
+     6  <!-- open-question-links:v1 -->           11  §5
+     3  <!-- pr-evaluator-escalation-labels -->    4  §5.5
+     4  <!-- pr-evaluator-health-cache:v1 -->     10  §6
+     1  <!-- pr-evaluator-merge-policy -->         3  §6.5
+     4  <!-- pr-evaluator-static-checks -->       10  §7
+     6  <!-- pr-evaluator-test-target -->         32  §8
+    10  <!-- question-decision:v1 -->              2  §8.1
+     3  <!-- worktree-setup -->                    9  §8.2
+     4  <!-- worktree-teardown -->                 6  §9
+     1  github-pipeline:doc-reviewer
+    13  github-pipeline:drafter
+     7  github-pipeline:evaluator
+    27  github-pipeline:planner
+     3  github-pipeline:question-resolver
+     3  github-pipeline:question-sweep
+     2  github-pipeline:researcher
+    31  github-pipeline:resolver
+```
+
+**All 18 `<!-- … -->` markers from §2's "must survive verbatim" category are present** — every
+`:v1` durable marker (`implementation-plan`, `issue-research`, `epic-delivery-log`,
+`question-decision`, `open-question-links`, `pr-evaluator-health-cache`) and every consuming-repo
+config-block marker (`issue-resolver-*`, `pr-evaluator-*`, `drafter-open-question-markers`,
+`worktree-setup`/`-teardown`, `claude-code-stack-profile`, `github-pipeline-config`). The
+compatibility contract ([prd.md §7](../prd.md)) is intact.
+
+### 6.3 The diff against S1's 79
+
+79 − 44 dropped + 9 added = 44. Every dropped token is on the deliberate-retirement list below;
+the additions are the v2 skill-invocation namespace and three new anchors.
+
+**Added (9):** `github-pipeline:drafter`, `github-pipeline:evaluator`, `github-pipeline:planner`,
+`github-pipeline:question-sweep`, `github-pipeline:researcher`, `github-pipeline:resolver` (the
+renamed pipeline stages + the renamed sweep — `github-pipeline:doc-reviewer` and
+`github-pipeline:question-resolver` were already in the S1 set, their names unchanged); and `§6.5`,
+`§8.1`, `§8.2` (the planner spine's decision gate, and prd.md §8.1/§8.2 citations in the standalone
+tools' landing-gate prose).
+
+**Dropped (44), by class — each on §2's "v1-only tokens expected to retire" list:**
+
+| # | Class | Tokens | Retired at | Why it is not a loss |
+|---:|---|---|---|---|
+| 1 | v1 executor op names | `GATHER_EPIC`, `GATHER_ISSUE`, `GATHER_PR`, `PERSIST_BODY`, `PERSIST_CLOSE`, `PERSIST_COMMENT`, `PERSIST_CREATE`, `PERSIST_ISSUE`, `PERSIST_LINK`, `PERSIST_REOPEN` (10) | the executor sub-agent + the v1 skill dirs at S20; the last citations (in `_shared/handoff-format.md`, `epic-delivery-log.md`, `open-question-links.md`) were rewritten to the script invocations that replaced them | The ops are gone as a *protocol*: skills call `gh_gather.py` / `gh_pr_gather.py` / `gh_persist.py` directly ([architecture.md §7](../architecture.md)'s rule-by-rule mapping; [prd.md §9.1](../prd.md) "no intermediary agent"). |
+| 2 | v1 skill-namespace strings | `github-pipeline:github-issue-drafter`, `…-researcher`, `…-planner`, `…-resolver`, `github-pipeline:github-pr-evaluator`, `github-pipeline:open-questions`, `github-pipeline:github-ops` (7) | each at its own cutover (S15/S16/S13/S10/S7/S18) — the last two stragglers (a drafter handoff pointer and a drafter playbook pointer at `github-pipeline:open-questions`) at S20 | Replaced 1:1 by the six added v2 names above. The `github-ops` namespace has no successor by design — there is no executor sub-agent. |
+| 3 | resolver-local `§P` IDs | `§P1`, `§P2`, `§P3`, `§P3.1`, `§P3.2`, `§P3.3`, `§P3.4`, `§P4`, `§P5`, `§P6` (10) | S10 for the resolver itself; the last citation (`_shared/follow-up-filing.md`'s `§P5`) at S20 | The scheme existed because the v1 resolver was one 1169-line reorder-prone file ([architecture.md §9](../architecture.md): "the resolver-local `§P-ID` scheme is retired"). The router + playbook split removed the need; no v2 skill defines or cites one, and the per-skill grep gates now *forbid* `§P[0-9]`. |
+| 4 | v1 skill-internal `§N` anchors | `§4.5`, `§4.6`, `§4.7`, `§5.1`, `§5.2`, `§5.3`, `§5.4`, `§5.6`, `§7.5`, `§10.3`, `§10.7`, `§11`, `§12.0`, `§13`, `§14`, `§15` (16) | with the v1 `SKILL.md`/`references` files that defined them (S7/S10/S13/S15/S16/S18); the handful cited from surviving `_shared` and `setup/references` files were retargeted at S20 | These were the **v1** resolver/evaluator/planner section numbers. §2's reading guide flags a bare-`§N` drop as "a cross-reference break to investigate" — the investigation is recorded here: every one was a citation *into a v1 skill body*, and each surviving citation was rewritten to name the behavior instead of the number (e.g. `_shared/epic-delivery-log.md`'s "(§13)" → "when it merges a story PR"; `_shared/handoff-format.md`'s "§14's worktree teardown" → "the post-merge workspace teardown … sequence"; `block-authoring.md`'s "the evaluator's merge step (its §12) … the §12.0 operator decision gate" → "its operator decision gate"). Zero dangling anchors remain. |
+| 5 | Legacy config marker (**form change, not a retirement**) | `<!-- pr-evaluator-health-checks -->` (1) | — | The marker **still exists** and is still handled: `skills/setup/playbooks/setup-flow.md` and `skills/setup/references/block-authoring.md` name it as the bare marker argument the split/migration reads and removes (`read pr-evaluator-health-checks` … `remove pr-evaluator-health-checks`), and `prep_evaluator.py` / `prep_resolver.py` still read it as the legacy fallback. The census regex only matches the `<!-- … -->` *comment* form, which the v2 prose no longer needs to spell. Fixture-tested by `tests/test_setup_routing.py::LegacyHealthChecksMigrationTests` and `tests/test_prep_setup.py::…test_legacy_health_checks_detected`. |
+
+Classes 1–4 are exactly §2's three expected-retirement buckets (with class 4 the "investigate"
+bucket, investigated). Class 5 is the one row a reviewer should read carefully: it is a
+**presentation** change in the prompt prose, verified against live behavior by the two test suites
+named.
+
+### 6.4 Surviving v1-labelled gate names (deliberate, not a miss)
+
+The v2 resolver spine keeps `§8` (the pre-push verification gate) and `§10.6` (the review-loop
+pre-push gate) as **labels carried from v1**, cited by `references/common-pitfalls.md`,
+`retry-ladder.md`, `epic-flow.md`, and `test-selection-sub-agent.md`. That was an S10 decision
+(`common-pitfalls.md`: "references name the v2 flow points"), not an oversight — the labels name
+gates that exist in `playbooks/resolve-spine.md`. They are counted in the v2 baseline above.
+
+### 6.5 Going forward
+
+§2 (79 tokens over `skills/` + `agents/`) is the **historical** S1 baseline and is never re-run
+green again — `agents/` is gone and no v1 dir exists. **§6.2 (44 tokens over `skills/`) is the
+baseline every future edit diffs against.** The zero-old-name property is additionally committed as
+a test (`tests/test_v1_retirement.py`), so a stale v1 reference fails the offline suite rather than
+waiting for someone to re-run a grep.

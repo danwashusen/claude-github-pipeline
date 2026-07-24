@@ -1,6 +1,6 @@
 # Issue audit sub-agent prompt (carried from v1, ref reads → read-workspace reads)
 
-Carried from v1 (`skills/github-issue-resolver/references/issue-audit-prompt.md`) per the S10 cutover —
+Carried from the v1 resolver's `references/issue-audit-prompt.md` per the S10 cutover (v1 retired at S20 — the v1 tree is in git history (last present at `d29ec1b`) and its behavior is frozen in [`docs/specs/resolver.md`](../../../docs/specs/resolver.md)) —
 a judgment sub-agent prompt (architecture.md §9). **The one required adaptation** is the code/doc read
 mechanism: v1 read the audit tree via `git show <audit_ref>:<path>` / `git grep <pattern> <audit_ref>`
 (ref arithmetic); v2 hands the sub-agent the **read workspace** (`facts.read_workspaces.audit.path`, a

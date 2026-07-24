@@ -149,7 +149,7 @@ def _root_sha(root):
 
 def _fetch_registry(repo, cwd=None, env=None):
     """`gh issue list --repo <repo> --state all --label question --limit 500 --json ...` — the registry
-    snapshot (docs/specs/question-sweep.md "Artifacts read"; SKILL.md:66-68). Returns `(entries,
+    snapshot (docs/specs/question-sweep.md "Artifacts read"). Returns `(entries,
     decision_or_none)`; each entry carries `number`/`title`/`state`/`labels`/`url`. A prep-owned direct
     `gh` call (`oq_tracker` covers only the `--search` de-dup lookup, never a full enumeration)."""
     result = process.run(

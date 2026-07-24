@@ -1,6 +1,6 @@
 # Test-selection sub-agent (carried from v1)
 
-Carried from v1 (`skills/github-issue-resolver/references/test-selection-sub-agent.md`) per the S10
+Carried from the v1 resolver's `references/test-selection-sub-agent.md` per the S10
 cutover — a judgment sub-agent prompt (architecture.md §9). The only adaptations: the sub-agent receives
 the **workspace path** from the prep facts block (`facts.workspace.path`) rather than resolving a
 worktree itself, and the integration target is the **bare** `facts.audit_ref` name (`main`, or the

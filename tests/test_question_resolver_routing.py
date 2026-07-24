@@ -8,7 +8,7 @@ Surfaces the S18 DoD / Testing names for the resolver half:
    ceiling test guards growth.
 2. **Frontmatter pins.** name: question-resolver / opus / high / **`disable-model-invocation: true`** (the
    S18 rule — one of the three standalone tools that keep the key).
-3. **Contract-token grep gates** over skills/question-resolver/: zero `github-ops`, zero
+3. **Contract-token grep gates** over skills/question-resolver/: zero retired-executor tokens, zero
    `github-pipeline:github-`, zero `GATHER_`/`PERSIST_` op names, zero `§P` IDs, zero raw gh WRITES in
    fences, zero `w/`.
 4. **`question-decision:v1` byte-identity (DoD box 4 offline half).** The decision-comment schema fence in
@@ -23,6 +23,8 @@ import re
 import sys
 import unittest
 from pathlib import Path
+
+from tests.support.retired_tokens import FORBIDDEN_CONTRACT_TOKENS, retired_name_hits
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 SCRIPTS_DIR = REPO_ROOT / "scripts"
@@ -117,9 +119,7 @@ class RouterStructureTests(unittest.TestCase):
 
 class ContractTokenGateTests(unittest.TestCase):
     def test_no_github_ops_or_old_namespace_or_op_names_or_pids(self):
-        forbidden = re.compile(
-            r"\bgithub-ops\b|github-pipeline:github-|\bGATHER_[A-Z]+\b|\bPERSIST_[A-Z]+\b|§P[0-9]"
-        )
+        forbidden = FORBIDDEN_CONTRACT_TOKENS
         for path in _iter_md(SKILL_DIR):
             for i, line in enumerate(path.read_text(encoding="utf-8").splitlines(), 1):
                 hit = forbidden.search(line)
@@ -131,7 +131,8 @@ class ContractTokenGateTests(unittest.TestCase):
 
     def test_no_v1_skill_names(self):
         for path in _iter_md(SKILL_DIR):
-            self.assertNotIn("github-issue-", path.read_text(encoding="utf-8"), "%s names a v1 skill" % path.name)
+            hits = retired_name_hits(path.read_text(encoding="utf-8"))
+            self.assertEqual(hits, [], "%s names a retired v1 skill" % path.name)
 
     def test_no_raw_persist_or_gather_writes_in_fences(self):
         raw_write = re.compile(

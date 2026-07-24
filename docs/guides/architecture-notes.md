@@ -26,7 +26,7 @@ never write "do X" here; you write "we chose X over Y because Z".
 
 **2. It is read on-demand, not always-in-context.** Unlike `constitution.md`, this doc is **not**
 `@`-included by `CLAUDE.md`, so it does not sit in every session's context and you pay no
-permanent context tax for its length. The `github-issue-planner` reads it at one specific
+permanent context tax for its length. The `planner` reads it at one specific
 moment — when it's tempted to deviate from `architecture.md` — and reads only the note relevant
 to that decision. That buys you room to be fuller than the constitution can afford, but it shifts
 the burden onto **navigability**: a note the planner can't *find* at the deviation moment may as
@@ -41,7 +41,7 @@ well not exist.
 
 Three mechanics determine how you should write:
 
-1. **The planner reads it on-demand, at the deviation moment.** Step 5 of `github-issue-planner`
+1. **The planner reads it on-demand, at the deviation moment.** The `planner`'s deviation step
    reads it with the instruction: *"Read this when you're tempted to deviate; the rationale often
    already addresses your case, and citing it keeps the plan aligned with intent rather than just
    letter."* It is not read on every plan and not read whole — so a note is useful only if it's
@@ -191,7 +191,7 @@ Before you consider the doc done:
 - [ ] The reasoning is durable — no pinning to a method, line, or version that will churn.
 - [ ] Headings are navigable; one decision per section; no rule, no command, no PRD content.
 
-**Validate against the real consumer:** run `github-issue-planner` on an issue that *tempts a
+**Validate against the real consumer:** run `planner` on an issue that *tempts a
 deviation* from `architecture.md`. Success looks like the planner either complying — citing
 `architecture-notes §Y` for the rationale that closed the case — or surfacing a deviation at the
 step-6 gate that is grounded in the stated reopen condition. A planner that guesses, or asks the

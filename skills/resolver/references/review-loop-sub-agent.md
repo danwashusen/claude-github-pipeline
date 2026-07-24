@@ -1,6 +1,6 @@
 # Review-loop sub-agent (carried from v1, file pointers → v2 structure)
 
-Carried from v1 (`skills/github-issue-resolver/references/review-loop-sub-agent.md`) per the S10 cutover
+Carried from the v1 resolver's `references/review-loop-sub-agent.md` per the S10 cutover
 — a judgment sub-agent prompt (architecture.md §9). The exception protocol (the JSON return schema and
 the four guard rails) is unchanged. The only adaptations: the file-read pointers name the v2 skill's
 files (the spine's review-loop section = the v1 §10 outer loop; `retry-ladder.md` /

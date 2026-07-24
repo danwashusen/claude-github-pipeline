@@ -125,6 +125,6 @@ an invented `Snapshot` (or similarly-named) block; inlining the fenced `Next:` c
 of its own indented code line. Fill the snapshot from data in hand — the `create` result carries the
 issue/Epic/story numbers and titles; `plan: ✗` is always correct (the drafter never authors plans). The
 `Why:` line is yours. The forward route is the `planner` (`/github-pipeline:planner`); an OQ deferral
-points at `/github-pipeline:open-questions`. A `question`'s handoff is **terminal** — a human answers it,
+points at `/github-pipeline:question-sweep`. A `question`'s handoff is **terminal** — a human answers it,
 not a downstream skill. The handoff is the only signal; the user runs the next command in a fresh session
 (session-per-skill is the context-isolation choice).

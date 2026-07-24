@@ -812,7 +812,7 @@ comment (`2026-07-16 — reporting-layer review`, posted identically to #43 and 
 already-shipped phases**: `pluralize` must implement real English suffix rules (`-y`→`-ies`,
 `-s/-x/-ch/-sh`→`-es`, else `+s`) rather than the shipped naive `+ "s"`, and `to_fahrenheit` must
 `round(…, 1)`. The two DoD bullet texts were edited to match. That trips **two independent "Always HARD"
-rules** from [`../../skills/planner/references/revise-reconciliation.md`](../../skills/planner/references/revise-reconciliation.md):
+rules** from [`skills/planner/references/revise-reconciliation.md`](../../../skills/planner/references/revise-reconciliation.md):
 a tracker-shipped phase's `deliverable` changed **and** a ticked DoD bullet's text was edited — HARD is
 not a borderline judgment call here. Headless recipe as the prior scenarios (**fresh sandbox clone per
 leg**); each leg ran in segments because `claude -p` exposes no `AskUserQuestion` (the scenario-2 harness

@@ -1,6 +1,6 @@
 # Test-selection sub-agent (carried from v1)
 
-Carried verbatim from v1 (`skills/github-pr-evaluator/references/test-selection-sub-agent.md`) per the
+Carried verbatim from the v1 evaluator's `references/test-selection-sub-agent.md` per the
 S7 cutover — a judgment sub-agent prompt, one of the two classes of v1 text a cutover step carries
 (architecture.md §9). The only adaptations: the sub-agent receives the **workspace path** from the
 prep facts block (`facts.workspace.path`) rather than resolving a worktree itself, and the `pr_type`

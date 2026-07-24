@@ -23,8 +23,8 @@ are the only cross-session state ([prd.md §4.1](prd.md)).
 
 **Pinned runtime:** Python ≥ 3.9 (the macOS Command Line Tools floor; **stdlib only** — no
 third-party packages, no venv, no pip step), `git` ≥ 2.38, `gh` ≥ 2.40 authenticated with repo
-scope. `jq` and `bash` are not v2 dependencies (the v1 scripts keep needing them until S20
-retirement). Scripts are executables (`#!/usr/bin/env python3`) invoked by absolute path via
+scope. Those three are the whole dependency set (v1's shell-script dependencies retired with the
+v1 scripts at S20). Scripts are executables (`#!/usr/bin/env python3`) invoked by absolute path via
 `${CLAUDE_PLUGIN_ROOT}/scripts/...`; the install dir is read-only.
 
 **Portability (macOS/BSD + Linux/GNU) is a requirement, not an aspiration.** Python is how the
@@ -36,8 +36,7 @@ opaque shell commands, cwd'd to the workspace; no other script spawns anything e
 I/O pins `encoding="utf-8"` (locale defaults differ across platforms); paths go through
 `pathlib` and are compared via `os.path.realpath` (macOS `/tmp` is a symlink to
 `/private/tmp`); nothing assumes a case-sensitive filesystem.
-Module filenames use underscores so the test suite can import them; the v1 hyphenated `.sh`
-files coexist untouched until S20.
+Module filenames use underscores so the test suite can import them.
 
 **Repo layout (after rewrite):**
 
@@ -49,7 +48,6 @@ scripts/
   gh_gather.py  gh_pr_gather.py  gh_persist.py  config_block.py   # executor ports (S21)
   prep_drafter.py  prep_researcher.py  prep_planner.py  prep_resolver.py  prep_evaluator.py
   prep_question_sweep.py  prep_question_resolver.py
-  *.sh                # v1 scripts, untouched until S20 retirement
 skills/
   <name>/SKILL.md     # thin router (§9)
   <name>/playbooks/   # one file per behaviorally distinct flow (§5)
@@ -386,11 +384,12 @@ census greps.
   ([prd.md §9.5](prd.md)).
 - `_shared/` files defining **external** artifacts (handoff format, DoD annotations,
   open-question links/detection, question-issue, epic-delivery-log, worktree block formats) are
-  preserved; **internal** coordination files are superseded per §3 (`subagent-decision-signal.md`)
-  and §6 (`worktree-lifecycle.md` mechanics fold into `workspace.py`; the ownership rules move
-  here).
-- `agents/github-ops.md` and every v1 `scripts/*.sh` (including `worktree-hooks.sh`) are removed
-  in the final cleanup step, after their last v1 caller is cut over.
+  preserved; **internal** coordination files are superseded per §3 (`subagent-decision-signal.md`,
+  removed at S20) and §6 (`worktree-lifecycle.md`'s mechanics folded into `workspace.py` at S20 —
+  the file now carries only the consuming-repo block format; the ownership rules live here).
+- The v1 executor sub-agent prompt under `agents/` and every v1 `scripts/*.sh` were removed in the
+  final cleanup step (S20), after their last v1 caller was cut over. Nothing in the tree references
+  them; `tests/test_v1_retirement.py` is the standing guard.
 
 ## §12 Invariants registry
 

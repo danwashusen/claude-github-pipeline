@@ -8,9 +8,9 @@ Usage::
 
     gh_gather.py <issue> <owner/repo> [marker_prefix] [scratch_dir] [--extra-json FIELDS]
 
-Positional order matches v1 exactly (``agents/github-ops.md``'s ``GATHER_ISSUE(issue, repo,
+Positional order matches v1 exactly (the v1 executor agent's ``GATHER_ISSUE(issue, repo,
 marker_prefix?, scratch_dir?)``); ``--extra-json`` is the one caller-facing knob v1 handled as a
-`github-ops` special case (its "If the caller passes extra_json=<fields>..." paragraph) and is
+v1-executor special case (its "If the caller passes extra_json=<fields>..." paragraph) and is
 ported here as an optional flag rather than a fifth positional, since it's rare and named at every
 real call site (the drafter's revise-mode ``closedByPullRequestsReferences,projectItems`` lookup).
 

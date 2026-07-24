@@ -15,12 +15,12 @@ Two properties set the constitution apart, and both shape how you write it.
 *may* deviate from with user approval. A constitution rule is non-negotiable: a change that
 violates it is **rejected, not negotiated**, at every stage —
 
-- the `github-issue-drafter`'s review flags an issue that asks for something the constitution forbids;
-- the `github-issue-planner` must reshape a plan to comply (or declare the issue unbuildable) — and
+- the `drafter`'s review flags an issue that asks for something the constitution forbids;
+- the `planner` must reshape a plan to comply (or declare the issue unbuildable) — and
   its isolated plan-reviewer treats a constitution violation as a **BLOCKER even if it's disclosed
   as a deviation**, because the constitution is not a deviation surface;
-- the `github-issue-resolver` stops on a `Doc conflict` gate if the issue contradicts it;
-- the `github-pr-evaluator` soft-rejects a PR that clearly violates a constitution directive.
+- the `resolver` stops on a `Doc conflict` gate if the issue contradicts it;
+- the `evaluator` soft-rejects a PR that clearly violates a constitution directive.
 
 So the constitution is where you put the rules you want **mechanically enforced across the whole
 pipeline**, with no "but the planner approved a deviation" escape hatch.
@@ -124,7 +124,7 @@ the **non-negotiable bar** lives here.
 | Is a strong default you'd occasionally approve deviating from | `architecture.md` | Planner can run a deviation gate |
 | Explains *why* a rule exists / its history | `architecture-notes.md` | Keeps the constitution to one line per rule |
 | Is version- or tooling-specific and churns | `architecture.md` | Re-read per issue, not carried on every run |
-| Is a build/test/lint *command* | `CLAUDE.md` / `COMMANDS.md` marker blocks | Read by the resolver/evaluator at run-time (`github-pipeline-setup` generates these) |
+| Is a build/test/lint *command* | `CLAUDE.md` / `COMMANDS.md` marker blocks | Read by the resolver/evaluator at run-time (`setup` generates these) |
 
 The constitution states the **bar** ("every behavior change ships with tests"); the marker blocks
 hold the **command** that runs them (`<!-- issue-resolver-test-target -->`). Don't conflate them.
@@ -184,7 +184,7 @@ That's the whole file. Anything you're tempted to add past this is probably a *d
 - [ ] No rationale prose (it's in `architecture-notes.md`); no version-specific defaults (they're
       in `architecture.md`); no build/test commands (they're in `CLAUDE.md` marker blocks).
 
-**Validate against the real consumer:** run `github-issue-planner` on an issue that brushes a
+**Validate against the real consumer:** run `planner` on an issue that brushes a
 constitution rule. Success looks like the plan either complying silently or — if the issue can't
 comply — the planner stopping rather than offering a deviation. A planner that proposes
 "deviate from the constitution, approve?" means that rule was miscategorized and belongs in

@@ -43,7 +43,7 @@ marker's count drives the mode — the skill is reentrant, a re-run must revise,
 offers `reopen` only when a materially-changed decision needs the issue visible again (§7).
 
 **Not a `question` issue** (`question` label absent) is a fact (`is_question: false` + an `attention`
-line), not a `needs_decision` — the router stops and points at `github-issue-resolver`, matching v1's
+line), not a `needs_decision` — the router stops and points at the `resolver`, matching v1's
 "stop and say so" and the same "facts by script, decision by router" posture prep_setup uses for a
 malformed block.
 

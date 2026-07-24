@@ -18,7 +18,7 @@ Two complementary strategies:
     `skills/setup/`) actually uses, proving the exit-code contract, the envelope shape via
     `tests/support/envelope_asserts`, and (the critical DoD row) **byte-identical round-trips**
     against fixtures lifted from `docs/specs/examples/config-blocks.md` /
-    `skills/github-pipeline-setup/references/block-authoring.md`'s canonical block forms.
+    `skills/setup/references/block-authoring.md`'s canonical block forms.
 
 Every exit code / decision / edge case in this file was cross-checked directly against the real
 `scripts/config-block.sh` (v1, frozen reference) at authoring time — not inferred from prose —
@@ -604,7 +604,7 @@ class ConfigBlockCliUsageTests(unittest.TestCase):
 class ConfigBlockRoundTripFixtureTests(unittest.TestCase):
     """**The critical DoD row**: byte-identical round-trips against the v1 canonical block forms,
     fixtures lifted verbatim from docs/specs/examples/config-blocks.md /
-    skills/github-pipeline-setup/references/block-authoring.md. Every "after" fixture file in
+    skills/setup/references/block-authoring.md. Every "after" fixture file in
     tests/fixtures/config_block_roundtrip/ was cross-generated and diffed against the real v1
     `scripts/config-block.sh` at authoring time (not hand-derived) — see the implementor report.
 

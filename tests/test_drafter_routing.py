@@ -15,7 +15,7 @@ Surfaces the S15 DoD / Testing section names:
    cross-route conditionals and fails on a hit. Patterns broadened per the S10 carried advisory to the
    drafter's route set.
 
-3. **Contract-token grep gates** over skills/drafter/: zero `github-ops`, zero v1 skill-namespace
+3. **Contract-token grep gates** over skills/drafter/: zero retired-executor tokens, zero v1 skill-namespace
    strings, zero `GATHER_`/`PERSIST_` op names, zero `§P` IDs, zero raw persist/gather WRITES in fences,
    zero `w/` shorthand.
 
@@ -64,7 +64,7 @@ EXAMPLES = REPO_ROOT / "docs" / "specs" / "examples"
 ROUTABLE_PLAYBOOKS = {"new.md", "revise.md", "epic-split.md", "question.md"}
 SPINE = "draft-spine.md"
 
-# Half of v1 github-issue-drafter/SKILL.md (576 lines, docs/specs/baseline.md §1) = 288.
+# Half of the v1 drafter SKILL.md (576 lines, docs/specs/baseline.md §1) = 288.
 V1_HALF_BAR = 576 // 2
 
 sys.path.insert(0, str(SCRIPTS_DIR))
@@ -73,6 +73,10 @@ import gh_persist  # noqa: E402
 import prep_drafter  # noqa: E402
 from pipelib import process  # noqa: E402
 from tests.support import envelope_asserts, shimenv  # noqa: E402
+from tests.support.retired_tokens import (  # noqa: E402
+    FORBIDDEN_CONTRACT_TOKENS,
+    V1_INVOCATION_PREFIX,
+)
 
 
 # ---------------------------------------------------------------------------
@@ -145,7 +149,7 @@ class RouterRoutingTableTests(unittest.TestCase):
         self.playbooks = [pb for _, pb in self.rows]
 
     def test_router_exists_and_has_frontmatter_pins(self):
-        # Frontmatter model/effort pins carried verbatim from v1 github-issue-drafter (opus / high).
+        # Frontmatter model/effort pins carried verbatim from the v1 drafter (opus / high).
         self.assertTrue(ROUTER.is_file(), "router SKILL.md must exist")
         head = "\n".join(self.router_text.splitlines()[:8])
         self.assertIn("name: drafter", head)
@@ -269,14 +273,12 @@ class PlaybookInterleavingGrepTests(unittest.TestCase):
 
 
 class ContractTokenGateTests(unittest.TestCase):
-    """Grep gates over skills/drafter/ — zero github-ops, zero v1 skill-invocation namespace strings,
+    """Grep gates over skills/drafter/ — zero retired-executor tokens, zero v1 skill-invocation namespace strings,
     zero GATHER_/PERSIST_ op names, zero §P IDs, zero raw persist/gather WRITES in fences, zero w/
     shorthand. Every write the drafter specifies routes through gh_persist.py."""
 
     def test_no_github_ops_or_old_names_or_op_names_or_pids(self):
-        forbidden = re.compile(
-            r"\bgithub-ops\b|github-pipeline:github-|\bGATHER_[A-Z]+\b|\bPERSIST_[A-Z]+\b|§P[0-9]"
-        )
+        forbidden = FORBIDDEN_CONTRACT_TOKENS
         for path in _iter_md(SKILL_DIR):
             for i, line in enumerate(path.read_text(encoding="utf-8").splitlines(), 1):
                 hit = forbidden.search(line)
@@ -554,7 +556,7 @@ class HandoffRenderingTests(unittest.TestCase):
         self.assertIn("plan: ✗", self.renderings)
         self.assertIn("/github-pipeline:planner", self.renderings)
         # v2 rename: never the v1 skill name in the next-command.
-        self.assertNotIn("/github-pipeline:github-issue-planner", self.renderings)
+        self.assertNotIn(V1_INVOCATION_PREFIX, self.renderings)
 
     def test_epic_batch_shape_present(self):
         self.assertRegex(self.renderings, r"\*\*Epic:\*\* #\d+ .*· epic · plan: ✗")

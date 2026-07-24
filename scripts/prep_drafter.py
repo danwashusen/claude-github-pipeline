@@ -50,7 +50,7 @@ target) — mechanically, from the target's own labels/title, never from operato
 selects new mode. ``--scratch-dir`` defaults to ``/tmp/gh-drafter-<issue-or-"new">`` (CLAUDE.md's
 ``/tmp/gh-<skill>-<N>/`` convention) when omitted — this IS "staging conventions" from this step's
 Work list: prep establishes and creates the directory every staged draft/revised body gets written
-under at flow time (SKILL.md:104/129/499/531-540); prep itself stages nothing, since no draft exists
+under at flow time (docs/specs/drafter.md "Artifacts written"); prep itself stages nothing, since no draft exists
 yet at session start. ``--oq-query`` mirrors `prep_planner.py`'s identical one-shot flag (see
 `oq_tracker.build_oq_query`'s docstring) and, when given, short-circuits to that one-shot payload —
 no full facts assembly, matching planner's own CLI contract.
@@ -62,7 +62,7 @@ one-time setup step for a `--refresh` flag to skip; adding one would be dead sur
 distinguishable behavior.
 
 **No workspace — the drafter grounds on the CURRENT checkout, not a pinned ref (docs/specs/drafter.md
-"Repo context probe"; SKILL.md:157-169).** v1 drafts from wherever the operator's working tree
+"Repo context probe").** v1 drafts from wherever the operator's working tree
 happens to be — `ls .github/ISSUE_TEMPLATE/`, `gh label list`, `ls docs/prd.md ...` all run inline,
 with no requirement that the tree be clean or on `main` (the skill's own primary trigger is "the user
 is mid-development ... notices things," i.e. very plausibly *while* the tree is dirty on a feature
@@ -92,10 +92,11 @@ intent the script can't see:
     issue to inspect yet, so it cannot and does not predict it — architecture.md §5: the router
     overrides `suggested_playbook` post-classification "on evidence the script cannot see").
   - ``--issue`` given, target's type (labels/title, same deterministic rule docs/specs/resolver.md
-    names) is ``"epic"`` -> ``"epic-revise"`` (SKILL.md's "Special case — revising an Epic":
+    names) is ``"epic"`` -> ``"epic-revise"`` (docs/specs/drafter.md's "Special case — revising an
+    Epic" rows:
     reconcile `## Stories` against live per-story state, re-run ordering/sizing).
   - ``--issue`` given, any other type (``"standard"`` / ``"story"`` / ``"question"``) -> ``"revise"``
-    (SKILL.md's core Revise-mode flow; a Story revise additionally verifies its Epic backlink line
+    (docs/specs/drafter.md's core revise-mode rows; a Story revise additionally verifies its Epic backlink line
     at flow time — Steps R1-R6 apply uniformly regardless of sub-type, so this prep does not fork a
     fourth mode for it).
 
@@ -128,14 +129,14 @@ directly, mirroring `prep_planner.py`'s identical additive extension for a plan-
 `root` IS the drafter's grounding vantage per the "No workspace" note above), `gh label list` (repo
 labels, live GitHub state, independent of `root`'s own git state), and grounding-doc presence: PRD
 specifically checks the FOUR v1-documented candidate paths (`docs/prd.md` / `docs/PRD.md` / `PRD.md`
-/ `prd.md` — SKILL.md:168), first match wins; `docs/architecture.md` / `docs/constitution.md` /
+/ `prd.md` — docs/specs/drafter.md "Repo context probe"), first match wins; `docs/architecture.md` / `docs/constitution.md` /
 `CLAUDE.md` each check their own single canonical path (CLAUDE.md's "Optional grounding docs read if
 present" convention, matching `prep_planner.py`'s `_GROUNDING_DOC_PATHS`).
 
 **Referenced-issue lookup, epic-backlink-open check: deliberately out of scope for this step.**
 docs/specs/drafter.md's "Deterministic steps" table also names a referenced-issue lookup (`gh issue
 view <N> --json title,state,body,labels`, for issue numbers the OPERATOR'S FEEDBACK TEXT names) and
-SKILL.md's "Special case — revising a Story" epic-backlink-open check. Both depend on text the model
+docs/specs/drafter.md's "Epic closed (revising a Story)" gate — the epic-backlink-open check. Both depend on text the model
 reads (the feedback, or the target's own body) that prep cannot see ahead of a session starting — the
 router/playbook reads that text directly and, per architecture.md §1's "any script may spawn git/gh
 directly," calls `gh issue view` itself at flow time for either case; this step's Build list (per the
@@ -159,19 +160,21 @@ from pipelib import process  # noqa: E402
 from pipelib.decisions import AUTH_REQUIRED, needs_decision  # noqa: E402
 from pipelib.envelope import EXIT_OK, emit_needs_decision, emit_ok  # noqa: E402
 
-# The implementation-plan marker (skills/github-issue-planner/references/plan-schema.md;
-# docs/specs/drafter.md "Artifacts read": SKILL.md:70-76 — revise mode fetches it to ground the
+# The implementation-plan marker (skills/planner/references/plan-schema.md;
+# docs/specs/drafter.md "Artifacts read" (plan-comment row) — revise mode fetches it to ground the
 # revise against the planner's own approach, and to know whether Step R6's staleness flag applies).
 # Same constant as `prep_planner.py`'s `PLAN_MARKER` — restated locally per this codebase's
 # "no prep-to-prep imports" design convention (see `prep_planner.py`'s module docstring).
 PLAN_MARKER = "<!-- implementation-plan:v1 -->"
 
-# The OQ-marker config block name (skills/_shared/open-question-detection.md; SKILL.md:402) — read
+# The OQ-marker config block name (skills/_shared/open-question-detection.md; docs/specs/drafter.md
+# "OQ marker config read") — read
 # via `config_block.read_block_anywhere` from CLAUDE.md/COMMANDS.md (its default candidate set
 # already includes CLAUDE.md, the block's documented home).
 OQ_MARKER_CONFIG_BLOCK = "drafter-open-question-markers"
 
-# Revise-mode's extra `--json` fields (SKILL.md:70): surfaced before editing so the operator can
+# Revise-mode's extra `--json` fields (docs/specs/drafter.md "Artifacts read", closed-by-PR row):
+# surfaced before editing so the operator can
 # coordinate around an in-flight PR or a project-board placement, per docs/specs/drafter.md
 # "Artifacts read"'s "Closed-by-PR / project references" row.
 REVISE_EXTRA_JSON = "closedByPullRequestsReferences,projectItems"
@@ -183,14 +186,15 @@ REVISE_EXTRA_JSON = "closedByPullRequestsReferences,projectItems"
 # label/title-derivable without any judgment call.
 _EPIC_TITLE_PREFIX_RE = re.compile(r"^\s*epic\s*:", re.IGNORECASE)
 
-# PRD candidate paths (SKILL.md:168's exact `ls` list) — first match wins.
+# PRD candidate paths (docs/specs/drafter.md "Repo context probe"'s exact list) — first match wins.
 _PRD_CANDIDATE_PATHS = ("docs/prd.md", "docs/PRD.md", "PRD.md", "prd.md")
 _ARCHITECTURE_PATH = "docs/architecture.md"
 _CONSTITUTION_PATH = "docs/constitution.md"
 _CLAUDE_MD_PATH = "CLAUDE.md"
 
-# `## Stories` bullet grammar (skills/github-issue-drafter/references/issue-templates.md;
-# SKILL.md:539-540) — byte-identical regexes to `prep_planner.py`'s (restated locally; see the
+# `## Stories` bullet grammar (skills/drafter/references/issue-templates.md;
+# docs/specs/drafter.md "Artifacts written", Epic `## Stories` row) — byte-identical regexes to
+# `prep_planner.py`'s (restated locally; see the
 # module docstring's "no prep-to-prep imports" note).
 _STORY_FILED_RE = re.compile(r"^-\s*\[( |x|X)\]\s*#(\d+)\s*(?:—|-)\s*(.+)$")
 _STORY_PLAIN_RE = re.compile(r"^-\s*\[( |x|X)\]\s*(.+)$")
@@ -226,7 +230,7 @@ def _forward_decision(decision, notices=None):
 
 
 # ---------------------------------------------------------------------------
-# State-vector type detection (docs/specs/drafter.md; SKILL.md Step 1 / "Special case" sections).
+# State-vector type detection (docs/specs/drafter.md "Overview" + the two "Special case" rows).
 # ---------------------------------------------------------------------------
 
 
@@ -272,7 +276,8 @@ def _root_sha(root):
 
 
 def _template_inventory(root):
-    """`.github/ISSUE_TEMPLATE/*` listing at `root` (SKILL.md:162's `ls`) — a plain filesystem read,
+    """`.github/ISSUE_TEMPLATE/*` listing at `root` (docs/specs/drafter.md "Repo context probe") — a
+    plain filesystem read,
     no `git`/`gh` call (root IS the drafter's grounding vantage; see module docstring). `present`
     means "at least one template file exists"; an empty (or absent) directory both report
     `present: False` so the router falls back to the built-in templates identically either way.
@@ -291,7 +296,8 @@ def _doc_presence(root, rel_path):
 
 
 def _prd_presence(root):
-    """PRD presence across the four v1-documented candidate paths (SKILL.md:168) — first match
+    """PRD presence across the four v1-documented candidate paths (docs/specs/drafter.md
+    "Repo context probe") — first match
     wins; `candidates_checked` rides along so a caller can see the exact search order without
     re-deriving it."""
     for rel in _PRD_CANDIDATE_PATHS:
@@ -315,9 +321,11 @@ def _grounding_docs(root):
 
 
 def _fetch_labels(repo, cwd=None):
-    """`gh label list --repo <repo> --limit 100 --json name,description,color` (SKILL.md:165's
+    """`gh label list --repo <repo> --limit 100 --json name,description,color` (docs/specs/drafter.md
+    "Repo context probe"
     `gh label list --limit 100`) — so the router maps feedback to existing labels rather than
-    inventing new ones (SKILL.md:173), and so it can tell whether a needed `audience:*` label
+    inventing new ones (docs/specs/drafter.md "Artifacts read", existing-labels row), and so it can
+    tell whether a needed `audience:*` label
     already exists before offering to create it (`_shared/question-issue.md`). Returns
     `(labels, decision_or_none)`.
     """
@@ -343,7 +351,8 @@ def _fetch_labels(repo, cwd=None):
 
 
 def _read_oq_marker_config(root):
-    """The `<!-- drafter-open-question-markers -->` config block (SKILL.md:402;
+    """The `<!-- drafter-open-question-markers -->` config block (docs/specs/drafter.md
+    "OQ marker config read";
     `_shared/open-question-detection.md`'s "Config block (preferred hint)") — raw interior text,
     never interpreted here (facts by script, meaning by model: the register-location/inline-pattern/
     open-status-rule prose is the router's own reading job). Absent -> `heuristics_active: True`,
@@ -410,7 +419,8 @@ def _parse_stories_section(issue_body):
 def _fetch_story_state(repo, story_number, cwd=None):
     """`gh issue view <NN> --json state,title,labels` — the per-filed-story live-state fetch v1's
     `GATHER_EPIC` performs so the caller can reconcile body checkboxes against reality
-    (agents/github-ops.md's `GATHER_EPIC` description; SKILL.md:133). Returns `(state_dict,
+    (the v1 executor agent's `GATHER_EPIC` description; docs/specs/drafter.md "Epic-revise gather").
+    Returns `(state_dict,
     decision_or_none)`."""
     result = process.run(
         ["gh", "issue", "view", str(story_number), "--repo", repo, "--json", "state,title,labels"],
@@ -435,7 +445,7 @@ def _fetch_story_state(repo, story_number, cwd=None):
 
 
 def _build_epic_revise_facts(issue_body, repo, cwd=None):
-    """Epic-revise mode's facts (SKILL.md's "Special case — revising an Epic"): every `## Stories`
+    """Epic-revise mode's facts (docs/specs/drafter.md "Special case — revising an Epic"): every `## Stories`
     entry, reconciled against its live state. A FILED story (`- [ ] #NN — <title>`) gets its live
     `state`/`live_title` via :func:`_fetch_story_state`; a PLACEHOLDER bullet (not yet filed) rides
     with `state`/`live_title` both `None` — mirroring `prep_planner.py`'s identical shape. A
@@ -488,11 +498,12 @@ def _extract_body(envelope, key):
 
 
 def _build_revise_facts(issue_envelope):
-    """Assemble revise-mode-only facts (SKILL.md Step R2/R6): the plan-marker's presence + staged
+    """Assemble revise-mode-only facts (docs/specs/drafter.md "Revise-mode gather"): the plan-marker's presence + staged
     body (grounds the revise against the planner's approach; lets the router decide whether Step
     R6's staleness flag applies), the open-PR list (already filtered by `gh_gather.references_issue`
-    — surfaced so the router can coordinate before editing, SKILL.md:74), and the
-    closed-by-PR/project references `--extra-json` folded in (SKILL.md:70).
+    — surfaced so the router can coordinate before editing, docs/specs/drafter.md "Artifacts read"),
+    and the
+    closed-by-PR/project references `--extra-json` folded in (same row).
     """
     plan_present = bool(issue_envelope.get("marker_comment_present"))
     plan_facts = {

@@ -60,8 +60,9 @@ hard `gh`/`git` failure surfaced by a composed executor — stderr carries the f
 ``vector.mode`` is a THREE-value closed set — ``"continue"`` / ``"gated"`` / ``"fresh"`` — not the
 two-value fresh/continue an earlier revision of this module used. ``"gated"`` is a deliberate
 distinct value (never an overload of ``"fresh"``): docs/specs/resolver.md's prior-PR state table
-(SKILL.md:645-651) makes an open PR by ANOTHER author (active or stale) — and a DRAFT PR by
-another author, which SKILL.md:648 scopes to "the same author," not any draft — operator-gated
+("Fresh/continue mode from the prior-PR state table") makes an open PR by ANOTHER author (active
+or stale) — and a DRAFT PR by another author, which that table's Draft row scopes to "the same
+author," not any draft — operator-gated
 via `AskUserQuestion` with NO worktree until the operator decides. This prep therefore reports
 ``mode: "gated"`` plus a ``vector.gate`` fact block (``reason``, the exact `AskUserQuestion`
 ``header``/``options`` S10 renders verbatim, and the driving ``prior_pr`` fact) and does **not**
@@ -94,7 +95,7 @@ from pipelib import process  # noqa: E402
 from pipelib.decisions import AMBIGUOUS, PLAN_MISSING, needs_decision  # noqa: E402
 from pipelib.envelope import EXIT_OK, EXIT_USAGE_ERROR, emit_needs_decision, emit_ok  # noqa: E402
 
-# The implementation-plan marker (skills/github-issue-planner/references/plan-schema.md;
+# The implementation-plan marker (skills/planner/references/plan-schema.md;
 # docs/specs/resolver.md "Artifacts read") — the plan comment is always the first marker_prefix
 # lookup GATHER_ISSUE performs, exactly as v1's step 2 documents.
 PLAN_MARKER = "<!-- implementation-plan:v1 -->"
@@ -122,17 +123,17 @@ _FALLBACK_TEST_TARGET_MARKER = "pr-evaluator-test-target"
 ROOT_MAIN_BRANCH = "main"
 
 # State-vector `type` detection (docs/specs/resolver.md "State-vector derivation: labels -> type";
-# SKILL.md's "Early branch discovery" step): case-insensitive `epic`/`story` label match, OR a
-# title `Epic:` prefix (case-insensitive) for the epic arm — SKILL.md:474 uses the identical
-# prefix test for slug computation, so the type-detection prefix check mirrors it exactly.
+# the spec's "Epic-branch discovery" row): case-insensitive `epic`/`story` label match, OR a
+# title `Epic:` prefix (case-insensitive) for the epic arm — the fresh-slug derivation uses the
+# identical prefix test, so the type-detection prefix check mirrors it exactly.
 _EPIC_TITLE_PREFIX_RE = re.compile(r"^\s*epic\s*:", re.IGNORECASE)
 
 # Epic branch pattern: `epic/<N>-<slug>` (docs/specs/resolver.md "Epic-branch discovery").
 _EPIC_BRANCH_LS_REMOTE_PATTERN = "epic/%s-*"
 _EPIC_BRANCH_NAME_RE = re.compile(r"^epic/(\d+)-(.+)$")
 
-# Branch-collision suffixing: `<issue>-<slug>` optionally followed by `-v<N>` (SKILL.md's
-# "Branch-collision suffixing (-vN)" row; unsuffixed counts as v1).
+# Branch-collision suffixing: `<issue>-<slug>` optionally followed by `-v<N>`
+# (docs/specs/resolver.md's "Branch-collision suffixing (`-vN`)" row; unsuffixed counts as v1).
 _BRANCH_VERSION_SUFFIX_RE = re.compile(r"^-v(\d+)$")
 
 
@@ -183,15 +184,15 @@ def _detect_type(labels, title):
     return "standard"
 
 
-# The v1 step-5 prior-PR state table (docs/specs/resolver.md; SKILL.md:645-651), carried as the
-# row name -> mode mapping.
+# The v1 step-5 prior-PR state table (docs/specs/resolver.md "Fresh/continue mode from the
+# prior-PR state table" — its seven rows), carried as the row name -> mode mapping.
 #
 # `mode` is one of three values — NOT the two-value fresh/continue this prep started with:
 #   - `continue` — a worktree is safe to ensure NOW, no operator input needed first:
-#     open-pr-yours, and draft-by-the-SAME-author (SKILL.md:648: "Treat the same as an open PR by
-#     the same author" — the table's "Draft PR" row is scoped to your own draft, not any draft).
+#     open-pr-yours, and draft-by-the-SAME-author ("Treat the same as an open PR by the same
+#     author" — the table's "Draft PR" row is scoped to your own draft, not any draft).
 #   - `gated` — an operator decision is required BEFORE any work-workspace side effect:
-#     open-pr-other-active, open-pr-other-stale, and draft-by-ANOTHER-author (SKILL.md's "Open PR
+#     open-pr-other-active, open-pr-other-stale, and draft-by-ANOTHER-author (the table's "Open PR
 #     by someone else" rows, both gated via AskUserQuestion — "Review it"/"Leave a comment"/"Wait"
 #     for active, "Take it over"/"Start fresh" for stale; a foreign draft is still claimed work
 #     someone else owns, so it gates the same way, never silently treated as available to continue
@@ -199,7 +200,8 @@ def _detect_type(labels, title):
 #     must render the operator gate on `gated` and must NOT fall through to the fresh-branch flow,
 #     which is exactly the failure `fresh` would silently invite (a bare boolean would also lose
 #     the case distinction the router needs to pick which AskUserQuestion card to render — active
-#     vs stale vs foreign-draft each has different header/options per SKILL.md, so `prior_pr_row`
+#     vs stale vs foreign-draft each has its own header/options in the spec's "Operator gates"
+#     table, so `prior_pr_row`
 #     plus `vector.gate` below carry that distinction, not `mode` alone).
 #   - `fresh` — no usable prior work exists to continue or gate on: no-prior-pr, and (mirroring
 #     v1's own "proceed as the no-prior-PR case") closed-not-resolved. closed-resolved never
@@ -226,7 +228,8 @@ MODE_FRESH = "fresh"
 _CONTINUE_ROWS = frozenset({PRIOR_PR_ROW_OPEN_YOURS, PRIOR_PR_ROW_DRAFT})
 _GATED_ROWS = frozenset({PRIOR_PR_ROW_OPEN_OTHER_ACTIVE, PRIOR_PR_ROW_OPEN_OTHER_STALE})
 
-# Per-gated-row AskUserQuestion shape S10's router renders (SKILL.md's exact headers/options),
+# Per-gated-row AskUserQuestion shape S10's router renders (the exact headers/options in
+# docs/specs/resolver.md "Operator gates"),
 # carried as a fact so the router never re-derives which card goes with which row. A foreign draft
 # reuses whichever of the two "someone else" rows its activity classifies as (see
 # _classify_prior_pr_row) — there is no third, draft-specific card in v1.
@@ -241,7 +244,7 @@ _GATE_CARDS = {
     },
 }
 
-# "Stale" activity threshold in days. SKILL.md's row text is deliberately unquantified ("no recent
+# "Stale" activity threshold in days. The spec row's text is deliberately unquantified ("no recent
 # activity ... for a long time") — this is a CHOSEN deterministic default this prep needs in order
 # to classify open-other PRs at all, not a value derived from any other doc in this repo (no
 # retry-ladder/epic-flow inactivity window exists at this order of magnitude; an earlier revision
@@ -309,7 +312,7 @@ def _classify_prior_pr_row(open_prs, current_user, closed_prs, issue_state):
     partial-fix/abandoned case).
 
     Authorship is decided BEFORE draft state (the ordering bug this function was previously
-    written with, fixed here): SKILL.md:648's "Draft PR" row explicitly scopes to "the same
+    written with, fixed here): the prior-PR table's "Draft PR" row explicitly scopes to "the same
     author" — it is not a draft-vs-ready split independent of who owns the PR. So an open PR by
     someone else classifies via :func:`_classify_open_other_activity` regardless of its draft
     state; only YOUR own open PR can ever land on `open-pr-yours` or `draft`.
@@ -323,7 +326,7 @@ def _classify_prior_pr_row(open_prs, current_user, closed_prs, issue_state):
             row = PRIOR_PR_ROW_DRAFT if chosen.get("isDraft") else PRIOR_PR_ROW_OPEN_YOURS
         else:
             # Someone else's PR — draft or not, it's still claimed work someone else owns
-            # (SKILL.md:648: "Drafts are still claimed work" — that line is about protecting
+            # ("Drafts are still claimed work" — that rule is about protecting
             # ANY author's draft, not just your own; a foreign draft therefore gates exactly like
             # a foreign ready PR, classified by the same activity check).
             row = _classify_open_other_activity(chosen)
@@ -385,7 +388,7 @@ def _classify_open_other_activity(pr):
 
 
 # ---------------------------------------------------------------------------
-# Fresh-slug computation (bootstrap only) — SKILL.md's 6-step derivation, verbatim.
+# Fresh-slug computation (bootstrap only) — the spec's 6-step derivation, verbatim.
 # ---------------------------------------------------------------------------
 
 _SLUG_STRIP_EPIC_PREFIX_RE = re.compile(r"^\s*epic\s*:\s*", re.IGNORECASE)
@@ -394,11 +397,13 @@ _SLUG_MAX_LENGTH = 50
 
 
 def compute_fresh_slug(title):
-    """The 6-step epic-title -> slug derivation (docs/specs/resolver.md; SKILL.md:471-480):
+    """The 6-step epic-title -> slug derivation (docs/specs/resolver.md "Fresh-slug computation
+    (bootstrap only)"):
     strip an `Epic:` prefix, lowercase, replace non-`[a-z0-9]` runs with `-`, strip leading/
     trailing `-`, truncate to <=50 chars on a `-` boundary. Used ONLY on the bootstrap path (zero
     `git ls-remote` matches) — an existing branch's slug is always taken from the discovered
-    branch name verbatim, never recomputed (SKILL.md:467's "do not recompute it from the title").
+    branch name verbatim, never recomputed (the spec's "Discover the epic branch slug by prefix;
+    only compute fresh on bootstrap" invariant).
     """
     stripped = _SLUG_STRIP_EPIC_PREFIX_RE.sub("", title or "").strip()
     lowered = stripped.lower()
@@ -449,7 +454,7 @@ def _discover_epic_branch(root, epic_number, epic_title):
 
 
 def _search_parent_epic(repo, story_number, cwd=None):
-    """Story parent-epic search (docs/specs/resolver.md; SKILL.md's "gh issue list --label epic
+    """Story parent-epic search (docs/specs/resolver.md "Epic-branch discovery"; the "gh issue list --label epic
     --state all --search '#<N> in:body'"). Returns `(matches, decision_or_none)` where `matches`
     is the `gh issue list` result list, filtered (empty on zero genuine matches).
 
@@ -514,7 +519,7 @@ def _search_parent_epic(repo, story_number, cwd=None):
 
 def compute_branch_name(root, issue_number, slug):
     """`<issue>-<slug>` with collision suffixing (docs/specs/resolver.md "Branch-collision
-    suffixing"; SKILL.md's step-8 branch-creation convention): inspect
+    suffixing"; the spec's branch-creation convention): inspect
     `git ls-remote --heads origin "<issue>-<slug>*"`, take the highest existing `-vN` suffix + 1
     (an unsuffixed match counts as v1 — the first collision yields `-v2`). Returns
     `(branch_name, collided_with_or_none)`.
@@ -550,10 +555,11 @@ def _read_gate_config(root):
     only); `issue-resolver-test-target` -> `pr-evaluator-test-target`; `issue-resolver-canonical-
     suite` -> `pr-evaluator-test-target`'s full-suite-command (approximated here as its raw text,
     since prep surfaces facts, not judgment about which sub-line is the full-suite command —
-    the resolver playbook parses the fallback block's prose itself, matching SKILL.md's own "read
+    the resolver playbook parses the fallback block's prose itself, matching v1's own "read
     it as natural language; don't try to parse it" instruction for `issue-resolver-test-target`).
     Absent both `issue-resolver-fast-checks` and `pr-evaluator-static-checks`, falls back once
-    more to the legacy `pr-evaluator-health-checks` block (SKILL.md §P3.1's documented worst-case
+    more to the legacy `pr-evaluator-health-checks` block (docs/specs/resolver.md "Fallback config
+    blocks"'s documented worst-case
     chain). Returns `(config_dict_without_sha, notices)`.
     """
     notices = []
@@ -588,7 +594,8 @@ def _read_gate_config(root):
         root, _CANONICAL_SUITE_MARKER
     )
     if not canonical_present:
-        # Fallback chain per SKILL.md §P3.1: pr-evaluator-test-target's full-suite-command line —
+        # Fallback chain per docs/specs/resolver.md "Fallback config blocks":
+        # pr-evaluator-test-target's full-suite-command line —
         # prep surfaces the raw fallback block for the playbook to extract the labelled line from
         # (this module does not parse `full-suite-command:` out of free-form prose; see the
         # function docstring).
@@ -758,7 +765,7 @@ def _audit_ref(issue_type, epic_branch_name):
     `read_workspaces.audit.ref` once a read workspace is ensured (§6 below), since that workspace
     really did check out `origin/<ref>`, not the bare name. **S10's router/playbooks must read
     `audit_ref` as bare and never hand it to `git`/the state-distiller with an assumed `origin/`
-    prefix themselves** (v1's SKILL.md passes an `origin/`-prefixed `audit_ref`/
+    prefix themselves** (v1 passed an `origin/`-prefixed `audit_ref`/
     `integration_target_ref` to the sub-agents directly — v2 does not carry that prefixing
     convention on THIS field; consumers needing the prefixed form read
     `read_workspaces.audit.ref` instead).
@@ -893,7 +900,7 @@ def build_facts(issue_number, repo, root=".", scratch_dir=None, refresh=False, c
         mode = MODE_FRESH
     gate = None
     if mode == MODE_GATED:
-        # An unmissable gate fact, never a pre-empting side effect — mirrors the open-questions
+        # An unmissable gate fact, never a pre-empting side effect — mirrors the open-question
         # hard gate below. S10's router renders this AskUserQuestion card verbatim; prep does not
         # ensure a work worktree, does not fabricate a branch name, and does not otherwise act on
         # this issue's code until the operator answers.
@@ -940,7 +947,7 @@ def build_facts(issue_number, repo, root=".", scratch_dir=None, refresh=False, c
                     context={"issue": issue_number, "line_number": exc.line_number, "raw_line": exc.raw_line},
                     options=[
                         "fix the '## Phases' section by hand to match the structured-key grammar "
-                        "in skills/github-issue-planner/references/plan-schema.md, then re-run"
+                        "in skills/planner/references/plan-schema.md, then re-run"
                     ],
                 )
             )
@@ -1022,7 +1029,7 @@ def build_facts(issue_number, repo, root=".", scratch_dir=None, refresh=False, c
             branch_name, branch_collision_with = compute_branch_name(root, issue_number, slug)
 
     # A gated row is a flow gate, not an assembly blocker (identical reasoning to comment_only /
-    # the open-questions hard gate) — prep still completes and reports `status: ok`, it just never
+    # the open-question hard gate) — prep still completes and reports `status: ok`, it just never
     # ensures (or names a branch for) a WORK workspace impersonating someone else's in-flight PR.
     # `read_workspaces.audit` may still be assembled below (it's a detached, reused-by-ref view of
     # the audit target, never a branch checkout of the other author's own work).
@@ -1093,7 +1100,7 @@ def build_facts(issue_number, repo, root=".", scratch_dir=None, refresh=False, c
     if gate is not None:
         vector["gate"] = gate
 
-    # One unmissable top-level boolean for the open-questions hard gate (S10 should not have to
+    # One unmissable top-level boolean for the open-question hard gate (S10 should not have to
     # derive it from a conjunction of comment_only + per-entry statuses) — mirrors the prior-PR
     # gate fact above: a fact the router reads directly, never re-derives.
     blocking_oq_entries = [
@@ -1168,7 +1175,7 @@ def build_facts(issue_number, repo, root=".", scratch_dir=None, refresh=False, c
 
 def _extract_plan_sha(plan_body):
     """Extract the short/long SHA from the plan's header line: '... planned <ISO> at
-    `<plan-ref>@<short-sha>`' (skills/github-issue-planner/references/plan-schema.md). Returns
+    `<plan-ref>@<short-sha>`' (skills/planner/references/plan-schema.md). Returns
     `None` if the header doesn't match the documented shape rather than guessing."""
     match = re.search(r"@`?([0-9a-f]{7,40})`?", plan_body or "")
     return match.group(1) if match else None

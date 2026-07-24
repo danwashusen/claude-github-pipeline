@@ -584,15 +584,15 @@ raw `gh` writes in `skills/`); record the final census diff against the S1 basel
 `docs/specs/baseline.md` with every dropped token accounted for.
 
 **DoD**
-- [ ] Zero grep hits under `skills/`, `agents/`, `scripts/`, `tests/`, `README.md`,
+- [x] Zero grep hits under `skills/`, `agents/`, `scripts/`, `tests/`, `README.md`,
       `.claude-plugin/`, and `CLAUDE.md` for: old skill names, `github-ops`, `worktree-hooks`
       (`docs/specs/**` and `docs/implementation.md` are exempt as the historical record); no
       `*.sh` remains under `scripts/`.
-- [ ] Census diff reviewed; every removed token is on the deliberate-retirement list.
-- [ ] Full offline suite green on macOS and Linux; manifests parse; version bumped; the
+- [x] Census diff reviewed; every removed token is on the deliberate-retirement list.
+- [x] Full offline suite green on macOS and Linux; manifests parse; version bumped; the
       runtime-dependency docs list only `python3` / `git` / `gh` (`jq` and `bash` dropped).
 - [ ] Fresh end-to-end conveyor run on the sandbox — draft → research (decline acceptable) →
       plan → resolve → evaluate → merge — with every handoff schema-valid.
-- [ ] `CLAUDE.md` describes only the v2 architecture; guides name only new skills.
+- [x] `CLAUDE.md` describes only the v2 architecture; guides name only new skills.
 
 **Testing:** the end-to-end sandbox run is the test; all validators re-run and recorded.

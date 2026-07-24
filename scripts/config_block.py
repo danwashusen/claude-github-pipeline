@@ -15,7 +15,7 @@ object, plus proper usage-error exit code 2.
 
 This module does **no** GitHub or git I/O and shells out to nothing — it only reads/writes local
 Markdown files. `workspace.py` (§6) delegates block reads to it for `<!-- worktree-setup/teardown
--->` discovery; `skills/setup/` (v2 rename of `github-pipeline-setup`) uses it for all block I/O.
+-->` discovery; `skills/setup/` uses it for all block I/O.
 
 Canonical block form: the line ``<!-- NAME -->`` on its own line, the block's interior lines, and
 the line ``<!-- /NAME -->`` on its own line — each delimiter tolerant of surrounding leading/

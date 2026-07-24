@@ -136,4 +136,4 @@ A **story under an epic** uses the standard single-issue schema above — with t
 
 ### Epic delivery log (a separate, living comment — not part of the verified plan)
 
-What each story **actually** delivered is tracked in a separate `<!-- epic-delivery-log:v1 -->` comment on the epic issue — maintained by `github-pr-evaluator` (writer) and read by `github-issue-planner` (Just-in-time story planning + Dimension 8). It is **not** part of this verified plan: the plan is immutable, the log changes on every merge. **See [`../../_shared/epic-delivery-log.md`](../../_shared/epic-delivery-log.md)** for its verbatim format and the writer/reader contract.
+What each story **actually** delivered is tracked in a separate `<!-- epic-delivery-log:v1 -->` comment on the epic issue — maintained by the `evaluator` (writer) and read by the `planner` (Just-in-time story planning + Dimension 8). It is **not** part of this verified plan: the plan is immutable, the log changes on every merge. **See [`../../_shared/epic-delivery-log.md`](../../_shared/epic-delivery-log.md)** for its verbatim format and the writer/reader contract.

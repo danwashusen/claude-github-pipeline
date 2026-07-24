@@ -1,6 +1,6 @@
 # Block authoring reference
 
-The authoring spec for every block `github-pipeline-setup` writes: exact shape, what belongs
+The authoring spec for every block `setup` writes: exact shape, what belongs
 in each, how to infer the contents from the repo, and how to migrate the legacy single-block
 declaration. Read this before drafting anything in §3 of the skill.
 
@@ -50,7 +50,7 @@ labels are what make it legible to the test-selection sub-agent.
 
 ### issue-resolver-fast-checks
 
-Fail-fast **static** commands the resolver runs at its §7 baseline and before every push (§8/§10.6):
+Fail-fast **static** commands the resolver runs at its pre-build baseline and before every push:
 codegen, dependency resolution, lints, layer-import boundary checks. **No test invocations belong
 here** — tests are the test-target block's job. Keep it to things that finish in seconds.
 
@@ -151,7 +151,7 @@ escalation labels, write the block empty (it documents the decision) or skip it.
 
 ### pr-evaluator-merge-policy
 
-Governs whether the evaluator's merge step (its §12) runs hands-free or routes through the §12.0
+Governs whether the evaluator's merge step runs hands-free or routes through its
 **operator decision gate** (a human approves/rejects the merge). One list item per PR type,
 `<pr-type>: <ask | auto>` — a small key/value list, not the command-list or prose-config shape:
 
@@ -190,7 +190,7 @@ port or scratch DB on a Rails one, a branch-keyed cache). Command-list shape. Se
 worktree is created/entered and is *fail-fast*; teardown runs before a worktree is removed and is
 *best-effort*. Both must be **idempotent** — setup may re-run on a reused worktree, teardown may run
 on a half-provisioned or already-cleaned one. The full runtime contract (discovery, idempotency
-rationale, status lines, the `worktree-hooks.sh` executor the resolver/evaluator run) lives in
+rationale, and what a repo's hook commands must guarantee) lives in
 [`../../_shared/worktree-lifecycle.md`](../../_shared/worktree-lifecycle.md) — this section only
 covers the authoring shape.
 
@@ -210,7 +210,7 @@ commands for confirmation. Propose the two blocks **as a pair** — setup that a
 ship with the teardown that releases it — and prefer commands that are idempotent by construction
 (guard-then-create / create-if-absent), per the idempotency contract above.
 
-**Parser constraint.** The runtime executor (`worktree-hooks.sh`) extracts the *first* backtick-quoted
+**Parser constraint.** The runtime executor (`workspace.py`) extracts the *first* backtick-quoted
 span of each `- ` item, so every command must be a single backtick-quoted span on one line with no
 embedded backticks — a multi-line or backtick-containing command is silently dropped. Chain a compound
 command with `&&` on one line, or wrap it in a checked-in script and reference that script.
@@ -227,7 +227,7 @@ drowning the context window?**
 Because the value is the auto-load, this block always lives in **CLAUDE.md** (or a file CLAUDE.md
 `@`-includes), regardless of where the pipeline config blocks live — the one deliberate exception
 to the "config defaults to `COMMANDS.md`" rule. The interior is free prose under a human-facing
-heading; `config-block.sh` copies it verbatim.
+heading; `config_block.py` copies it verbatim.
 
 **Ownership — user-owned, not plugin-owned.** Unlike the machine-parsed config blocks, this one is
 **user-owned**: external edits are allowed and expected. Setup *seeds* it when absent; on re-run it
@@ -310,7 +310,7 @@ are pipeline config and that **hand-edits are fine as long as the `<!-- … -->`
 **Lives only in `COMMANDS.md`** (the dedicated config file), never atop a human-facing `CLAUDE.md` —
 skip it when the pipeline config blocks live in `CLAUDE.md`.
 
-Write it via `config-block.sh upsert <COMMANDS.md> github-pipeline-config <body-path> --prepend` —
+Write it via `config_block.py upsert <COMMANDS.md> github-pipeline-config <body-path> --prepend` —
 `--prepend` places a newly created block at the top of the file (a no-op once the block exists, so
 re-runs stay idempotent). The verbatim body:
 
@@ -321,7 +321,7 @@ Pipeline configuration for the `github-pipeline` skills (resolver / evaluator / 
 ```
 
 The illustrative `<!-- … -->` in the prose uses an ellipsis and sits inline with other words, so it
-never matches `config-block.sh`'s whole-line marker scan — keep it that way (don't put a bare
+never matches `config_block.py`'s whole-line marker scan — keep it that way (don't put a bare
 look-alike marker on its own line). **Never** write an "edit only via setup / not by hand" notice in
 its place: hand-edits are allowed; the only ask is that the markers are maintained.
 
@@ -392,7 +392,7 @@ Rules of thumb:
 Older repos declare one `pr-evaluator-health-checks` block holding both static checks and the test
 invocation as a flat command list. Re-running setup offers to split it:
 
-1. `config-block.sh read <file> pr-evaluator-health-checks` — get the current commands.
+1. `config_block.py read <file> pr-evaluator-health-checks` — get the current commands.
 2. **Static commands** (lints, codegen, dep resolution, boundary checks) → `pr-evaluator-static-checks`.
 3. **The test invocation** → the basis for `pr-evaluator-test-target`: that command becomes both the
    `wrapper` and the `full-suite-command`. The per-target `naming` / fallbacks aren't recoverable from

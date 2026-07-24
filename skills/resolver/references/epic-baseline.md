@@ -2,7 +2,7 @@
 
 The two epic-issue comments the epic-as-target route posts to record the canonical-suite baseline (spec
 `docs/specs/resolver.md` "Artifacts written", rows "Epic issue comment — Baseline established" and
-"— Baseline override"; source `github-issue-resolver/SKILL.md:797-812`). Render byte-for-byte per the
+"— Baseline override"; source: the v1 resolver `SKILL.md`, frozen in [`docs/specs/resolver.md`](../../../docs/specs/resolver.md)). Render byte-for-byte per the
 fixed bodies below and post through the single write path — stage the body to `facts.scratch` and
 `gh_persist.py comment <owner/repo> issue <epic> "<staged>"` (SKILL.md §3). There is no S1
 `docs/specs/examples/` capture for these; the spec's Artifacts-written table is the source these match.

@@ -3,12 +3,12 @@
 for the two-tier trust topology (project root = read-only vantage, always clean ``main``;
 ``.worktrees/`` = all mutable and pinned-ref state), plus root-freshness, ``root-status``, and
 ``lint``. This is authored from scratch against architecture.md §6/§3/§12 and the
-``skills/_shared/worktree-lifecycle.md`` contract — not a transliteration of v1
-``scripts/worktree-hooks.sh``, which stays untouched and frozen for v1 callers until S20.
+``skills/_shared/worktree-lifecycle.md`` contract — not a transliteration of the v1 hook-runner
+script (retired at S20; the v1 tree is in git history).
 
 What this absorbs from v1, and what's new
 ------------------------------------------
-v1's ``worktree-hooks.sh`` only ran a consuming repo's ``<!-- worktree-setup/teardown -->``
+The v1 hook runner only ran a consuming repo's ``<!-- worktree-setup/teardown -->``
 commands inside an *already-existing* worktree (fail-fast setup, best-effort teardown, plus
 ``lint``) — creation/removal/reuse were the calling skill's own cwd-stateful ``git worktree``
 calls. This script absorbs **both**: the hook execution (preserving v1's exact fail-fast /
@@ -387,8 +387,8 @@ def _read_hook_block_from_file(file_path, marker_name):
     scan itself ("delegate the block read — don't re-parse").
 
     Returns ``(present, interior_lines)``. ``present`` is ``False`` when the marker doesn't open
-    in this file at all, or is malformed there (duplicate/unterminated) — matching v1
-    ``worktree-hooks.sh``'s own candidate-file loop, which treats both "absent in this file" and
+    in this file at all, or is malformed there (duplicate/unterminated) — matching the v1 hook
+    runner's own candidate-file loop, which treats both "absent in this file" and
     "malformed in this file" as "try the next candidate," reserving a hard failure only for when
     NO candidate file yields a well-formed block (this module's caller reports that as
     ``phase_present=False`` after exhausting every candidate — the same "no usable block found"
@@ -441,7 +441,7 @@ def _run_setup_hooks(root, workspace_path):
     order; stop at the first non-zero exit. Returns ``{"phase_present", "commands_run",
     "succeeded", "first_failure"?}``.
 
-    Hook result-key mapping (v1 ``worktree-hooks.sh`` -> v2 ``workspace.py``)
+    Hook result-key mapping (v1 hook runner -> v2 ``workspace.py``)
     ---------------------------------------------------------------------
     Preserved verbatim (same key, same meaning, same shape) across both setup and teardown:
     ``phase_present``, ``commands_run``, ``succeeded``, ``first_failure`` (``{step, command,
@@ -464,7 +464,7 @@ def _run_setup_hooks(root, workspace_path):
     "phase_present", "command_count", "would_run"}`` — this is v2's rendering of v1's
     ``lint``/``--dry-run`` preview shape (discover + parse, no execution, no worktree needed).
 
-    Deliberate v1 divergence: a MALFORMED block. v1 ``worktree-hooks.sh``'s ``discover_and_parse``
+    Deliberate v1 divergence: a MALFORMED block. The v1 hook runner's ``discover_and_parse``
     hard-exits 2 with ``MALFORMED_BLOCK: ...`` the moment a candidate file's block is malformed
     (duplicate/unterminated), even though earlier or later candidates might still yield a good one.
     v2's :func:`_read_hook_block_from_file` instead treats a malformed block in one candidate file

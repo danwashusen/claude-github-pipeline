@@ -47,7 +47,7 @@ runner. ``--base``/``--head`` are **required and explicit** — no ambient-cwd b
 version /repo supports it — no capability gate needed, unlike the native-dependency flags below);
 it exists because the v1 resolver's multi-phase fresh-PR-open path passes ``--draft`` and flips
 draft→ready via a separate ``gh pr ready`` once every planned phase has shipped
-(``skills/github-issue-resolver/SKILL.md:896``; ``docs/specs/resolver.md`` "On the last-planned-
+(``docs/specs/resolver.md`` "On the last-planned-
 phase-shipped handoff, flip the PR draft→ready" invariant) — that flip is the pre-existing
 sanctioned raw-``gh`` PR-state toggle (architecture.md §10), unaffected by this op. No native-
 dependency support (``--blocked-by``/``--blocking``) is added to ``create-pr``: GitHub's issue-
@@ -57,8 +57,8 @@ one.
 ``edit-labels`` and ``close-pr`` (added S13, additive-only — the same architecture.md §2 "if a
 needed operation has no script, extend a script" precedent ``create-pr`` established at S10) close
 the two v1-write-path gaps the planner cutover surfaced: v1's ``planned``-label apply
-(``skills/github-issue-planner/SKILL.md:402``, ``gh issue edit --add-label``) and the HARD-revise
-predecessor-PR close (``skills/github-issue-planner/references/revise-reconciliation.md``'s "Start
+(``docs/specs/planner.md``, ``gh issue edit --add-label``) and the HARD-revise
+predecessor-PR close (``skills/planner/references/revise-reconciliation.md``'s "Start
 fresh", ``gh pr close --comment``). Both are additive: every existing op's behavior, argv shape, and
 envelope are byte-identical, and no existing test changed.
 

@@ -1065,7 +1065,67 @@ of truth; a **freshly started** resumed session will pick them up by name and ca
   (**PASS, 0 actionable**, 2 advisories: the guard glob [folded]; the S20 carries). **0
   actionable rounds.** All eight skill cutovers are now reviewed.
 
+### S20 — v1 removal & repo truth — PARTIAL (automatable done + committed; the conveyor run PENDING) (2026-07-24)
+
+- **Commit:** _backfilled post-commit_ (`S20: v1 removal & repo truth — the final step's
+  automatable work`).
+- **Status:** **4 of 5 boxes ticked** (1/2/3/5). **Box 4 — the end-to-end conveyor run — is the
+  run's ninth and FINAL operator gate.**
+- **The removals:** 38 files / 9,255 lines — `agents/github-ops.md`, all five v1 `*.sh`, the
+  seven remaining v1 skill dirs, `subagent-decision-signal.md`; `worktree-lifecycle.md` split
+  158 → 75 (the external block-format contract stays verbatim; the mechanics folded into
+  `workspace.py`'s domain — reviewer-verified nothing load-bearing lost).
+- **The rewrites:** `CLAUDE.md` fully v2 (the S19 preservation list honored item-by-item —
+  reviewer-cited; no retired name spelled — the literals live only in
+  `tests/support/retired_tokens.py`); `README`; manifests **declare 2.0.0** (breaking: every
+  invocation name changed, the executor agent gone, deps now `python3`/`git`/`gh` only — swept +
+  test-enforced); six guides; eight `_shared` contracts de-v1'd; the parity-doc links repaired.
+- **The final census (baseline.md §6):** **79 → 44** v2-only tokens, 44 drops in 5 classes each
+  citing its removing step, 1 non-retirement explained, zero dangling anchors —
+  reviewer-recomputed independently. **44 is the new going-forward baseline.**
+- **The retirement scan as tests:** `tests/test_v1_retirement.py` (17) — the box-1 greps with a
+  (path, token, line-fragment) exemption table (anti-vacuity + planted-violation +
+  stale-exemption guards; it caught its own author once), the deps pins, the 2.x pin, and the
+  dangling-citation scan (74 v1 cites in scripts/ retargeted to the frozen specs with an
+  **AST-identity proof**; 3 legitimate survivors).
+- **Rulings of record:** the box-1 exemptions = frozen prd §7 provenance bytes, never live names
+  (the alternative would retroactively falsify four steps' byte-identity boxes);
+  `gh label create` verified a genuine fourth scriptless surface (four call sites); 2.0.0
+  correct; **the `github-pipeline-config` header wart kept byte-pinned + recommended FILED** (the
+  frozen body tells users to run the dead `github-pipeline-setup` — changing it breaks the
+  byte-identity contract and every field repo's next diff; the fix is a deliberate migrated
+  capture change, a product issue — and a fitting draft subject for the conveyor run).
+- **In passing:** two live defects fixed (the drafter's dead `/github-pipeline:open-questions`
+  next-command; operator-facing `needs_decision` strings citing deleted v1 paths); a Docker
+  bind-mount stat-cache flake diagnosed and hardened (directory-listing reads); a future Python
+  SyntaxWarning-to-error caught under `-W error::SyntaxWarning`.
+- **Out-of-scope note:** `.claude/agents/{implementor,reviewer}.md` (this run's own harness, not
+  the plugin) still mention `shellcheck scripts/*.sh` — now vacuous; harmless, the run is ending.
+- **Dual-platform:** **1161/1161** macOS + Linux (implementor-run both, orchestrator-verified).
+- **Process:** 1 opus implementor → 1 opus reviewer (**PASS, 0 actionable**, 3 advisories) → the
+  dangling-citation round (74 retargets, AST-proven) → done. **All 21 steps' review records are
+  now complete.**
+
 ## Handback log
+
+### 2026-07-24 handback — STOP at S20's conveyor run (the ninth and FINAL operator gate) — OPEN
+
+The run is stopped at **S20 box 4** — the last box of the last step. Everything else in the
+entire plan is ACCEPTED and committed (**unpushed**; 1161 offline tests green both platforms;
+the tree is v2-only; the census re-baselined at 44).
+
+**The operator action ([`docs/specs/parity/conveyor.md`](parity/conveyor.md)):** one fresh
+end-to-end conveyor run on the sandbox — **draft → research (decline acceptable) → plan →
+resolve → evaluate → merge** — one session per leg via the established tmux harness (the two
+S19 gotchas are carried in the scaffold), every handoff schema-valid and its next-command run
+**as printed**, at most one prep call per leg. There is **no v1 leg** — v1 is gone; this is the
+v2 pipeline's whole-system falsifiable claim: one issue reaches a merged PR through five skills'
+handoffs. **A fitting draft subject: the pinned `github-pipeline-config` header wart** (the
+frozen block tells users to re-run the dead `github-pipeline-setup`) — the pipeline would close
+the run by filing and fixing its own last known defect. Known-and-not-a-defect: the sandbox's
+config header still says "Re-run `github-pipeline-setup`" (the deliberately-pinned wart, ruling
+(d)). Tick box 4 + fill the conveyor go/no-go; commit locally; never push; resume the
+orchestrator for the run's closing entry.
 
 ### 2026-07-23 handback — STOP at S19's live legs (eighth operator gate) — CLOSED 2026-07-24
 

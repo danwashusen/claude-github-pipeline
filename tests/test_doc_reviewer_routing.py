@@ -12,7 +12,7 @@ scaffold; boxes 1/2/3's live halves are the operator's):
 2. **Frontmatter pins.** name: doc-reviewer / opus / high / **`disable-model-invocation: true`** —
    RETAINED (the S17 rule: setup was the exception; doc-reviewer IS in the CLAUDE.md:73 standalone
    trio that keeps the key, and v1 carried it).
-3. **Contract-token grep gates** over skills/doc-reviewer/: zero `github-ops`, zero
+3. **Contract-token grep gates** over skills/doc-reviewer/: zero retired-executor tokens, zero
    `github-pipeline:github-`, zero `GATHER_`/`PERSIST_` op names, zero `§P` IDs, zero raw gh WRITES
    in fences, zero `w/`.
 4. **The §8.2 landing gate** (DoD boxes 2/3 offline half): offered as ONE explicit final gate; on
@@ -68,6 +68,10 @@ LOADED_SET_CEILING = 160
 sys.path.insert(0, str(SCRIPTS_DIR))
 
 from tests.support import envelope_asserts, shimenv  # noqa: E402
+from tests.support.retired_tokens import (  # noqa: E402
+    FORBIDDEN_CONTRACT_TOKENS,
+    retired_name_hits,
+)
 
 
 def _iter_md(dir_path):
@@ -130,9 +134,7 @@ class RouterStructureTests(unittest.TestCase):
 
 class ContractTokenGateTests(unittest.TestCase):
     def test_no_github_ops_or_old_namespace_or_op_names_or_pids(self):
-        forbidden = re.compile(
-            r"\bgithub-ops\b|github-pipeline:github-|\bGATHER_[A-Z]+\b|\bPERSIST_[A-Z]+\b|§P[0-9]"
-        )
+        forbidden = FORBIDDEN_CONTRACT_TOKENS
         for path in _iter_md(SKILL_DIR):
             for i, line in enumerate(path.read_text(encoding="utf-8").splitlines(), 1):
                 hit = forbidden.search(line)
@@ -145,7 +147,7 @@ class ContractTokenGateTests(unittest.TestCase):
     def test_forward_pointers_are_v2_skill_names(self):
         for path in _iter_md(SKILL_DIR):
             text = path.read_text(encoding="utf-8")
-            self.assertNotIn("github-issue-", text, "%s names a v1 skill" % path.name)
+            self.assertEqual(retired_name_hits(text), [], "%s names a retired v1 skill" % path.name)
 
     def test_no_raw_persist_or_gather_writes_in_fences(self):
         raw_write = re.compile(
@@ -194,7 +196,7 @@ class NoPrepAssertionTests(unittest.TestCase):
     def test_router_declares_no_prep_script_and_no_gather(self):
         # The router names the (absent) script precisely to pin its deliberate absence, so a future
         # editor reads "no prep_doc_reviewer.py and no gather round-trip" as intent, not omission.
-        # (The v1 `github-ops` delegated executor does not exist in v2 at all — §9.1 — so the token
+        # (The v1 delegated executor does not exist in v2 at all — §9.1 — so the token
         # is correctly absent from the loaded prompt, not merely negated.)
         self.assertRegex(self.router, r"no `prep_doc_reviewer\.py`")
         self.assertRegex(self.router, r"no gather round-trip")

@@ -47,13 +47,14 @@ GH_PERSIST = SCRIPTS_DIR / "gh_persist.py"
 ROUTABLE_PLAYBOOKS = {"standard.md", "story.md", "epic.md", "comment-only.md"}
 SPINE = "resolve-spine.md"
 
-# Half of v1 github-issue-resolver/SKILL.md (1169 lines, docs/specs/baseline.md §1) = 584 (floor).
+# Half of the v1 resolver SKILL.md (1169 lines, docs/specs/baseline.md §1) = 584 (floor).
 V1_HALF_BAR = 1169 // 2
 
 sys.path.insert(0, str(SCRIPTS_DIR))
 
 import prep_resolver  # noqa: E402  (import after sys.path setup, by necessity)
 from tests.support import envelope_asserts, shimenv  # noqa: E402
+from tests.support.retired_tokens import FORBIDDEN_CONTRACT_TOKENS  # noqa: E402
 
 
 # ---------------------------------------------------------------------------
@@ -249,16 +250,14 @@ class PlaybookInterleavingGrepTests(unittest.TestCase):
 
 
 class ContractTokenGateTests(unittest.TestCase):
-    """S10 DoD box 5: grep gates over skills/resolver/ — zero github-ops, zero v1 skill-invocation
+    """S10 DoD box 5: grep gates over skills/resolver/ — zero retired-executor tokens, zero v1 skill-invocation
     namespace strings, zero GATHER_/PERSIST_ op names, zero §P IDs, zero raw persist/gather writes,
     zero ref-arithmetic. Prose that *describes* a banned form (a pitfall telling you NOT to hand-roll
     `gh issue create`, or the audit note explaining the v1 `git show <ref>:` reads it replaced) is
     allowed OUTSIDE a code fence; an actual command inside a ``` fence is a violation."""
 
     def test_no_github_ops_or_old_names_or_op_names_or_pids(self):
-        forbidden = re.compile(
-            r"\bgithub-ops\b|github-pipeline:github-|\bGATHER_[A-Z]+\b|\bPERSIST_[A-Z]+\b|§P[0-9]"
-        )
+        forbidden = FORBIDDEN_CONTRACT_TOKENS
         for path in _iter_md(SKILL_DIR):
             for i, line in enumerate(path.read_text(encoding="utf-8").splitlines(), 1):
                 hit = forbidden.search(line)

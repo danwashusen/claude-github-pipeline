@@ -6,7 +6,7 @@ the `## Definition of done` / `## Open questions` / `## Phases` grammars inline 
 `SKILL.md`'s prose. This suite validates the Python re-implementation directly against the
 `_shared` contract files it is authored from (`skills/_shared/dod-annotations.md`,
 `skills/_shared/open-question-links.md`,
-`skills/github-issue-planner/references/plan-schema.md`), using fixtures lifted from those
+`skills/planner/references/plan-schema.md`), using fixtures lifted from those
 contracts' own worked examples (`docs/specs/examples/dod-annotations.md`,
 `docs/specs/examples/open-question-links.md`) plus adversarial mutations authored for this suite.
 

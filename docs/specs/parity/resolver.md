@@ -298,7 +298,7 @@ fresh sandbox clone per run, backgrounded stream-json log). The resolver opens a
       sub-agents for state assembly (distiller/audit/test-selection are judgment).
 - [x] Divergences (each traced to a PRD § or filed as a defect):
       - **D2 — v2 PR is not Closes-linked (FILED DEFECT, blocking).** v1's fresh standard-PR body leads with
-        `Fixes #31` (mandated verbatim at [`skills/github-issue-resolver/SKILL.md:888`](../../../skills/github-issue-resolver/SKILL.md):
+        `Fixes #31` (mandated verbatim at `skills/github-issue-resolver/SKILL.md:888`:
         "PR body must include `Fixes #<number>` (or `Closes #<number>`) so GitHub auto-links and auto-closes
         on merge") → `closingIssuesReferences: [31]`. v2's PR #34 body carries **no** closing keyword →
         `closingIssuesReferences: []`: the issue↔PR auto-link and auto-close-on-merge are broken, and the
@@ -309,7 +309,7 @@ fresh sandbox clone per run, backgrounded stream-json log). The resolver opens a
         the `Fixes/Closes #<issue>` keyword, while spine `S6:158` keeps v1's *narrow* prohibition ("never add
         `Closes #N` **in reaction to shipping a phase**") — so v2 retained the multi-phase-tick guard but
         dropped the fresh-open mandate. This also fell through the S1 spec: the resolver spec's
-        Artifacts-written table ([`docs/specs/resolver.md`](../../resolver.md)) has a closing-keyword row only
+        Artifacts-written table ([`docs/specs/resolver.md`](../resolver.md)) has a closing-keyword row only
         for the *epic-integration* PR (`Fixes #<epic-number>`), none for the standard/story fresh PR. On this
         same-account default-base PR the keyword would have populated the ref cleanly (the S7 gotcha), so the
         empty ref is caused **solely** by the missing keyword. No PRD § relaxes the standard-PR close-link →
@@ -319,9 +319,9 @@ fresh sandbox clone per run, backgrounded stream-json log). The resolver opens a
         phase-tick prohibition unchanged.
       - **D1 — v1 skipped its own single-phase DoD projection (EXPLAINED; non-deterministic v1 miss; v2 is
         the faithful leg).** Both skills mandate single-phase DoD projection identically — v1
-        [`SKILL.md:868`](../../../skills/github-issue-resolver/SKILL.md) ("Then project the phase's `closes-dod`
+        `SKILL.md:868` ("Then project the phase's `closes-dod`
         onto the issue body … apply via `gh issue edit`") + its §4.7 re-entry reconciliation
-        ([`SKILL.md:441-443`](../../../skills/github-issue-resolver/SKILL.md)), and v2
+        (`SKILL.md:441-443`), and v2
         [`dod-projection-rule.md`](../../../skills/resolver/references/dod-projection-rule.md) "Single-phase
         fallback" ("tick every top-level DoD bullet on the first push"). v2 executed it (`61bd8e3`); **v1's
         opus run silently omitted the §9 `gh issue edit`** (no explicit reasoning in the transcript — it went
@@ -339,7 +339,7 @@ fresh sandbox clone per run, backgrounded stream-json log). The resolver opens a
         script).
       - **D4 — PR title convention (CHECKED — v1 mandates a title shape; FIXED).** v1's `--title "Fix:
         <summary> (#<issue-number>)"` is not free prose — it is the literal `gh pr create --title` argument
-        every fresh-PR open takes ([`SKILL.md:885`](../../../skills/github-issue-resolver/SKILL.md)); v2 had
+        every fresh-PR open takes (`SKILL.md:885`); v2 had
         echoed the issue title verbatim instead. **Fixed:** `resolve-spine.md` now mandates the same
         `Fix: <summary> (#<issue-number>)` title shape on fresh-PR open (both the prose and the
         `create-pr --title` invocation), so the evaluator's squash-subject derivation (which reads a
@@ -603,7 +603,7 @@ answer, one comment staged + posted via `gh_persist.py comment`, terminal handof
 issues carrying the question-issue schema (`## Question`/`## Audience`/`## Constraints`/`## Context`/
 `## References`/`## Why this matters`/`## Tracked in`) and **no** `## Definition of done` — so the
 correct outcome is a posted answer, not code: **#29** (twin-A → v1 `github-issue-resolver`) and **#30**
-(twin-B → v2 `resolver`). Headless recipe per the [handback](../../run-journal.md) (`claude -p
+(twin-B → v2 `resolver`). Headless recipe per the [handback](../run-journal.md) (`claude -p
 "/github-pipeline:<skill> <n>" --plugin-dir <this branch> --model opus --permission-mode
 bypassPermissions`, fresh sandbox clone per run). The refusal mutates only by posting one comment (no
 branch/PR/shared-parent), so independent twins keep each run's thread clean for the distiller.

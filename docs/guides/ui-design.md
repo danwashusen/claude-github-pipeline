@@ -12,7 +12,7 @@ framework's UI equivalents.
 ## Why this guide exists: it's the authority for every UI surface
 
 In this pipeline your UI-design doc's primary reader is **not a human** — it's the
-`github-issue-planner` skill, on any issue that touches a UI surface. Its distinguishing job is
+`planner` skill, on any issue that touches a UI surface. Its distinguishing job is
 narrow and specific: it is **the authority the planner grounds UI decisions in**, so the planner
 reuses the components, sizes, and patterns you *named* rather than inventing new ones.
 
@@ -21,10 +21,10 @@ defines rather than inventing new ones." That instruction only has teeth if your
 *names* things the planner can cite. The consumption chain is one-directional and lossy by design:
 
 ```
-docs/ui-design.md  ──read by──▶  github-issue-planner  ──emits──▶  <!-- implementation-plan:v1 -->
-                                                                            │  (## UI decisions)
-                                                                   read by github-issue-resolver
-                                                                   (writes the code)
+docs/ui-design.md  ──read by──▶  planner  ──emits──▶  <!-- implementation-plan:v1 -->
+                                                                 │  (## UI decisions)
+                                                       read by resolver
+                                                       (writes the code)
 ```
 
 The **resolver never reads `ui-design.md`.** It grounds its implementation in the plan's locked
@@ -197,7 +197,7 @@ Before you consider the doc done:
       is in `architecture.md`; rationale is in `architecture-notes.md`.
 - [ ] No "TBD", no surveyed-but-undecided component options.
 
-**Validate against the real consumer:** run `github-issue-planner` on an issue that touches a UI
+**Validate against the real consumer:** run `planner` on an issue that touches a UI
 surface and read the posted `<!-- implementation-plan:v1 -->`. Success looks like: every
 `## UI decisions` bullet carries a `ui-design §X` citation that resolves, and the planner **reused a
 named component** from your catalog instead of inventing a new one. If the plan invents `PanelBox`
