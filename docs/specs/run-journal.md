@@ -1067,8 +1067,7 @@ of truth; a **freshly started** resumed session will pick them up by name and ca
 
 ### S20 — v1 removal & repo truth — PARTIAL (automatable done + committed; the conveyor run PENDING) (2026-07-24)
 
-- **Commit:** _backfilled post-commit_ (`S20: v1 removal & repo truth — the final step's
-  automatable work`).
+- **Commit:** `5ef4266` (`S20: v1 removal & repo truth — the final step's automatable work`).
 - **Status:** **4 of 5 boxes ticked** (1/2/3/5). **Box 4 — the end-to-end conveyor run — is the
   run's ninth and FINAL operator gate.**
 - **The removals:** 38 files / 9,255 lines — `agents/github-ops.md`, all five v1 `*.sh`, the
