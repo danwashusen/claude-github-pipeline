@@ -187,7 +187,7 @@ claude -p "/github-pipeline:doc-reviewer docs/prd.md" --plugin-dir /tmp/v1-vanta
 Run the v2 leg from `--plugin-dir <this branch>`. Diff the two report renders (structure + the
 severity-tiered findings), then exercise the two §8.2 landing legs on the **v2** leg.
 
-- [ ] **D1 (report structure preserved)** — v2's report has the carried fixed shape: `# Doc review —
+- [x] **D1 (report structure preserved)** — v2's report has the carried fixed shape: `# Doc review —
   <doc path> (guide: <basename>)`, a `Verdict:` line, `## What's working`, `## Findings` ordered
   🔴 Blocker → 🟡 Should-fix → 🟢 Consider (each with `guide:` / `doc:` refs), and a `## Guide
   checklist`; a section with no findings says so rather than padding. Structurally matches the v1
@@ -206,7 +206,105 @@ severity-tiered findings), then exercise the two §8.2 landing legs on the **v2*
   edited; writes are exactly the workspace doc edits + the optional `gh_persist.py create-pr`. The
   `disable-model-invocation: true` frontmatter means the skill fires only on explicit
   `/github-pipeline:doc-reviewer`, never model-auto-invoked.
-- **Result: _(operator to fill)_**
+- **Result: D1 PASS (report structure), 2026-07-25. D2/D3/D4 not yet run** — this leg was scoped to the
+  **report-structure parity read only**: both legs were driven to the apply gate and **declined** (accept
+  no findings), so the run is report-only on both sides and the two §8.2 landing legs remain TODO.
+
+  **Harness.** tmux interactive harness ([`setup.md`](setup.md) Scenario-1 recipe + the S18 Scenario-1
+  `--allowedTools` upgrade): `claude --plugin-dir <dir> --model opus --allowedTools Bash Read Grep Glob
+  Task TodoWrite Edit Write WebFetch`, cwd = a fresh sandbox clone per leg (`/tmp/s19-v1`, `/tmp/s19-v2`),
+  both at sandbox `main` `ff490b3`. The v1 leg ran against the **naming-rider-2 vantage**
+  (`git worktree add /tmp/v1-vantage-s19 7bffb90`; `--plugin-dir /tmp/v1-vantage-s19`), the v2 leg against
+  this branch. `docs/guides/` is **byte-identical** between `7bffb90` and `HEAD` (`git diff 7bffb90 HEAD --
+  docs/guides/` is empty), so both legs measured against the same rubric. Transcripts:
+  `~/.claude/projects/-private-tmp-s19-v1/0d526fd3-….jsonl` (v1),
+  `~/.claude/projects/-private-tmp-s19-v2/b6da4445-….jsonl` (v2). Gate answers: v1 declined in prose ("No —
+  do not apply anything"), v2 selected **"Nothing — report only"** on its `AskUserQuestion` card.
+
+  **Fixture (seeded for this run).** The sandbox had no `constitution.md`, and its `prd.md`/`architecture.md`
+  are 14-/10-line stubs — too thin to exercise all three severity tiers. Seeded `docs/constitution.md`
+  (28 lines, 8 numbered rules, Python-flavored so the guide's **Rails** worked example is a live
+  stack-agnosticism trap) as sandbox `main` `d18fc3c → ff490b3`, **pushed** so both legs and the later
+  landing legs fork from the same commit (the [`setup.md`](setup.md) Scenario-1 local-drift lesson —
+  `workspace.py ensure --work` forks at `origin/<base>`, so a local-only seed gives `ROOT_DIVERGED`). Five
+  planted defects, one per guide rule-class — §3 deviable `httpx` preference stated as law *with* rationale
+  prose (principle #2/#6), §4 test-first mandated as unverifiable *order* with no coverage bar / no-merge-on-red
+  (the guide's last anti-pattern + "Omitting the testing bar"), §5 version-pinned runtime + library defaults,
+  §6 aspirational "code should be clean" (the guide's literal counter-example), §7 build/test commands that
+  belong in `CLAUDE.md` marker blocks — against three deliberately clean rules (§1 layers, §2 secrets,
+  §8 logging) plus a correct preamble, so "credit what's right" had real material to find.
+
+  - **D1 — PASS.** Section set, order, and per-element shape are the same on both legs, and the carried
+    `references/review-lenses.md` §"Report shape" is honored by both:
+
+    | Element | v1 (vantage `7bffb90`) | v2 (this branch) |
+    |---|---|---|
+    | `# Doc review — <doc path>   (guide: <basename>)` | ✅ (paths backticked) | ✅ |
+    | `**Verdict:** <closed-set token> — <one-line rationale>` | ✅ `Significant drift` | ✅ `Significant drift` |
+    | `## What's working` (grounded, guide-cited) | ✅ 6 bullets | ✅ 5 bullets |
+    | `## Findings`, ordered 🔴 → 🟡 → 🟢 | ✅ 3 / 2 / 1 | ✅ 3 / 2 / 2 |
+    | `### <emoji> <tier> — <title>    guide: … · doc: …` | ✅ every finding | ✅ every finding |
+    | `## Guide checklist`, `- [x]`/`- [ ]` + evidence | ✅ 6 items | ✅ 6 items |
+    | Ends with a plain summary, **not** a `## Handoff` | ✅ prose recap | ✅ labeled `## Summary` |
+
+    **Severity markers** are the carried 🔴/🟡/🟢 glyphs on both, in the carried Blocker → Should-fix →
+    Consider order, with no interleaving. **The five 🔴/🟡 findings are identical across legs** — same
+    target rule (§4, §6, §3 blockers; §5, §7 should-fixes), same guide citation class, same prescribed
+    fix, and both independently reached "delete in place, leave the numbering gap, never renumber". The
+    **guide-checklist verdicts are identical item-for-item** (`[ ] [x] [ ] [x] [ ] [ ]`), each with doc
+    evidence. All five planted defects were caught by both legs; both credited §1/§2/§8 + the preamble.
+    No empty section on either leg, so the "state an empty section rather than pad it" rule was not
+    exercised (recorded, not a gap in D1 — the fixture has findings in every tier).
+
+    **Honesty rules — honored on both legs.** *Credit what's right*: both opened with a substantive
+    `## What's working` naming the three sound rules and the preamble, each with a guide ref. *Only review
+    against what the guide says*: every finding on both legs cites a guide principle, anti-pattern,
+    checklist item, or sibling-doc table row — **no invented findings** and no generic doc-writing opinion.
+    *The worked example is an illustration*: the doc is Python and the guide's worked constitution is Rails;
+    **neither leg raised a similarity finding**, and v1 went further, crediting *"Stack-appropriate, not
+    example-cloned — Python rules, not transliterated Rails"* explicitly (v2 honored it silently — Div-5).
+
+  - **D4 — partially evidenced (box left unticked; the write half needs the landing legs).** Observed this
+    run: startup was **no prep call** on either leg (the operator named the doc — router §1's deliberate
+    absence, live-confirmed); **0** `github-ops` and **0** `Agent` dispatches on both; the guide was read
+    from the **plugin bundle** on both (`/tmp/v1-vantage-s19/docs/guides/constitution.md` for v1,
+    `<this branch>/docs/guides/constitution.md` for v2), never the consuming repo; the guide was never
+    edited. Zero writes verified: both clones end clean on `main` at `ff490b3`, `docs/constitution.md`
+    `sha1 991a4dd8…` unchanged on both, **no `.worktrees/`**, no `doc-reviewer/*` branch local or remote,
+    no new PR (sandbox still tops out at #93). Tool census — **v1: 3 calls** (2 `Read` = doc + bundled
+    guide, 1 `ls`), **v2: 7 calls** (4 `Read` = the router-forced `playbooks/review-flow.md` +
+    `references/review-lenses.md`, then doc + bundled guide; 1 `ls`, 1 `Grep`, 1 `AskUserQuestion`);
+    **0** `Edit`/`Write`/`gh`/`gh_persist.py`/`workspace.py` on both.
+
+  **5 divergences — none blocks D1; three are the expected §8.2 enrichment, two are judgment-tier:**
+  1. **Div-1 — 🟢-tier composition differs (judgment, not structure).** v1 emitted **one** Consider (the
+     preamble points rationale at `docs/architecture-notes.md`, which doesn't exist in the repo); v2 emitted
+     **two** (§1's "entry-point scripts" has no path anchor; `CLAUDE.md` doesn't `@`-include the
+     constitution) and folded v1's observation into its §3 blocker as a heads-up plus its closing note. Both
+     legs' Considers are guide-grounded (v2's second cites the guide's own "*the skills assume `CLAUDE.md`
+     `@`-includes `docs/constitution.md`*"), and 🟢 is by definition the nuance tier — "conciseness, phrasing,
+     or nuance". The 🔴/🟡 sets, where the report's stakes live, are identical. v2's `CLAUDE.md` finding
+     targets a file *other than* the doc under review; it self-scopes correctly (`doc: n/a (repo CLAUDE.md)`
+     and *"flagging, not folding into an apply"*), so it is not an apply-scope leak.
+  2. **Div-2 — v2 interposes a "Renumbering note" between the last finding and `## Guide checklist`.**
+     A one-paragraph note ("removing §3, §5, §6, §7 leaves gaps. That is correct… I will leave the gaps and
+     never renumber survivors") sourced from `review-lenses.md` §"Apply-time discipline". v1 carried the same
+     rule but stated it inline inside its §6 finding. **v2 enrichment** — it displaces no section of the
+     carried shape and reads as a bridge into the apply gate.
+  3. **Div-3 — the apply offer's channel differs, by design.** v1 asked in prose ("Want me to apply these?");
+     v2 raised a real `AskUserQuestion` multi-select naming the accept scopes plus an explicit
+     **"Nothing — report only"**, and its preamble states the §8.2 model up front ("*Edits stage in a work
+     workspace — nothing touches the repo root, and the landing… is a separate gate afterwards*"). Expected:
+     v1 had no workspace/landing at all (it `Edit`ed in place), which is the behavior v2 **adds**.
+  4. **Div-4 — v2's closing summary is labeled and structured; v1's is prose.** v2 ends with `## Summary` /
+     **Doc reviewed** / **Verdict** / findings / **Applied** / **Landing** per router §4, explicitly reporting
+     *"No workspace was created, no files were edited, and no git or `gh` commands were run"*; v1 gave an
+     unlabeled recap. Both are plain summaries — **neither emitted a `## Handoff`**, correct for a
+     non-pipeline tool.
+  5. **Div-5 — cosmetic render deltas.** v1 backticks the doc path and guide basename in the H1 and uses a
+     single-spaced ` · ` in some finding headers; v2 renders the H1 unbackticked and uses the carried shape's
+     `  ·  ` spacing throughout, and states its stack-agnosticism by *not* raising a similarity finding rather
+     than crediting it explicitly as v1 did. No contract token is affected either way.
 
 ## Go/no-go (operator)
 
