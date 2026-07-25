@@ -1,0 +1,352 @@
+#!/usr/bin/env python3
+"""prep_setup.py — the setup skill's complete starting-state facts block in one call
+(architecture.md §4; §9.2 "inventory-in-one-call"; docs/implementation.md S17; docs/specs/setup.md).
+
+Setup is the SINGLE write path for the consuming repo's marker-delimited configuration blocks
+(``<!-- issue-resolver-* -->`` / ``<!-- pr-evaluator-* -->`` / ``<!-- worktree-setup/teardown -->`` /
+``<!-- claude-code-stack-profile -->`` / ``<!-- github-pipeline-config -->``). Unlike the five pipeline
+preps, setup does **no** GitHub gather — its whole subject is *local Markdown files*. So this prep
+assembles a purely local starting state: the tool-availability preflight, the git-repo/``root.sha``
+facts, and the multi-file block **inventory** (both candidate files' block lists, per-marker
+classification, the legacy ``pr-evaluator-health-checks`` signal, the user-owned
+``claude-code-stack-profile`` interior staged for re-ingest, and the same-marker-in-both-files
+ambiguity) — as ONE JSON envelope on stdout, so the setup session's startup is one Python process,
+never a chain of ``config_block.py list``/``read`` subprocess calls run from the router body.
+
+Composition (architecture.md §2 "compose the executors in-process"; §1 "the only external processes
+any script may spawn are git/gh"; S8 pattern lock)::
+
+    config_block.build_list(file)                  -- each candidate file's `<status> <name>` inventory
+    config_block.build_read(file, marker)          -- the user-owned stack-profile interior, staged for
+                                                      the re-ingest base
+    shutil.which("jq"/"git"/"gh")                  -- pure-Python tool presence (no subprocess)
+    git rev-parse --is-inside-work-tree / HEAD     -- prep-owned direct git call (the precedent every
+                                                      other prep already established)
+
+No ``redirect_stdout``/``io.StringIO`` capture of another script's stdout is used anywhere (S9-on
+rule; docs/specs/baseline.md §5) — the composed cores return their payloads directly.
+
+**No `gh` call, so no `AUTH_REQUIRED` from this prep.** Setup's inventory reads only local files;
+the report-only ``gh auth status`` readiness probe stays a router-level environment check (v1's §1
+main-loop probe), and the landing gate's own ``workspace.py ensure --work`` runs the real
+root-freshness protocol + ``gh_persist.py create-pr`` runs the authenticated write. A malformed
+(``dup``/``open``) config block is reported as an inventory **fact** (``class: "malformed"``), not a
+``needs_decision`` — the router surfaces it to the operator via ``AskUserQuestion`` (docs/specs/setup.md
+Invariants: "Malformed input is refused, not guessed"), matching v1's "surface these to the user"
+handling. So this prep has no decision path (like ``workspace.py gc``/``lint``): its emitting envelope
+is always ``status: "ok"``.
+
+**No workspace, no root-freshness gate in prep** (same root-only shape ``prep_drafter``/
+``prep_researcher`` adopted): the inventory reads the read-only ``main`` vantage; ``root.sha`` is a
+plain informational ``git rev-parse HEAD``. Setup's tracked-file writes are staged in a work workspace
+and land via an operator-gated PR (prd.md §8.2) — that gate lives in the flow's landing step, where
+``workspace.py ensure --work`` gates root-freshness, not here.
+
+Usage::
+
+    prep_setup.py [--root PATH] [--scratch-dir PATH]
+
+``--root`` defaults to ``.`` (the project root — architecture.md §6's read-only trust vantage).
+``--scratch-dir`` defaults to ``/tmp/gh-setup-<root-basename>`` (CLAUDE.md's ``/tmp/gh-<skill>-<N>/``
+convention) — where the flow later stages each approved block body before ``config_block.py upsert``,
+and where this prep stages the stack-profile re-ingest base.
+
+Exit codes (architecture.md §3): 0 with the facts-block envelope present (``status: "ok"``); 2 on a
+usage error (no envelope). Any other non-zero is an unclassified hard `git` failure surfaced by the
+composed git call — stderr carries the faithful error.
+"""
+
+import argparse
+import shutil
+import sys
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+
+import config_block  # noqa: E402  (import after sys.path setup, by necessity; in-process composition)
+from pipelib import process  # noqa: E402
+from pipelib.envelope import emit_ok  # noqa: E402
+
+# The two candidate config files, in discovery/preference order — COMMANDS.md is the preferred home
+# (docs/specs/setup.md "Operator gates": "Default proposal when neither exists: create COMMANDS.md").
+CANDIDATE_FILES = ("COMMANDS.md", "CLAUDE.md")
+
+# The nine machine-parsed blocks setup reconciles to canonical on every run (docs/specs/setup.md
+# "Ownership split") — read by `workspace.py`'s hook runner for the resolver / evaluator.
+MACHINE_PARSED_MARKERS = (
+    "issue-resolver-fast-checks",
+    "issue-resolver-test-target",
+    "issue-resolver-canonical-suite",
+    "pr-evaluator-static-checks",
+    "pr-evaluator-test-target",
+    "pr-evaluator-escalation-labels",
+    "pr-evaluator-merge-policy",
+    "worktree-setup",
+    "worktree-teardown",
+)
+
+# Plugin-owned-but-not-machine-parsed header (COMMANDS.md only) and the lone user-owned block
+# (CLAUDE.md only), plus the legacy pre-split block a re-run offers to migrate.
+CONFIG_HEADER_MARKER = "github-pipeline-config"
+STACK_PROFILE_MARKER = "claude-code-stack-profile"
+LEGACY_HEALTH_CHECKS_MARKER = "pr-evaluator-health-checks"
+
+# Tools the scripts and skills need at use-time (docs/specs/setup.md "Preflight checks").
+PREFLIGHT_TOOLS = ("jq", "git", "gh")
+
+
+def _is_git_repo(root):
+    result = process.run(["git", "rev-parse", "--is-inside-work-tree"], cwd=root)
+    return result.returncode == 0 and result.stdout.strip() == "true"
+
+
+def _root_sha(root):
+    """The root's own HEAD SHA — informational only (no freshness gate in prep; see the module
+    docstring's "No workspace" note). Returns None when root is not a git repo, so prep still emits a
+    faithful envelope on a non-repo target rather than hard-failing (the flow's §1 preflight reports
+    the not-a-git-repo readiness line and stops)."""
+    result = process.run(["git", "rev-parse", "HEAD"], cwd=root)
+    if result.returncode != 0:
+        return None
+    return result.stdout.strip()
+
+
+# ---------------------------------------------------------------------------
+# Preflight (report-only — never auto-fixed; docs/specs/setup.md Invariants).
+# ---------------------------------------------------------------------------
+
+
+def _preflight(root):
+    """Deterministic environment readiness (docs/specs/setup.md "Deterministic steps": preflight is
+    "pure environment probes with a fixed pass/fail → readiness-line mapping, no judgment involved").
+    Tool presence via ``shutil.which`` (pure Python — hermetic, no subprocess); the git-repo check via
+    a real ``git`` call. The report-only ``gh auth status`` probe is a router-level readiness line
+    (a live `gh` call, never a block-authoring gate), so it is deliberately NOT run here — this keeps
+    prep free of any `gh` call and therefore of an `AUTH_REQUIRED` path (module docstring)."""
+    return {
+        "git_repo": _is_git_repo(root),
+        "tools": {tool: shutil.which(tool) is not None for tool in PREFLIGHT_TOOLS},
+    }
+
+
+# ---------------------------------------------------------------------------
+# Inventory (the §9.2 one-call multi-file block inventory).
+# ---------------------------------------------------------------------------
+
+
+def _file_inventories(root):
+    """Per-candidate-file block inventory via ``config_block.build_list`` (composed in-process — the
+    same core ``config_block.py list`` wraps). Returns an ordered dict-like list preserving
+    CANDIDATE_FILES order; a nonexistent file lists as ``present: False`` with an empty block list
+    (``build_list`` treats "no file" as "no blocks" — exit 0, docs/specs/setup.md)."""
+    root_path = Path(root)
+    files = {}
+    for name in CANDIDATE_FILES:
+        path = root_path / name
+        pairs = config_block.build_list(str(path))
+        files[name] = {
+            "present": path.is_file(),
+            "blocks": [{"status": status, "name": marker} for status, marker in pairs],
+        }
+    return files
+
+
+def _marker_locations(files):
+    """Map every discovered marker name → {file_name: status} across all candidate files. Drives the
+    per-marker classification and the same-marker-in-both-files ambiguity flag."""
+    locations = {}
+    for file_name, info in files.items():
+        for block in info["blocks"]:
+            locations.setdefault(block["name"], {})[file_name] = block["status"]
+    return locations
+
+
+def _classify(marker, locations):
+    """Classify one known marker as present / legacy / malformed / missing (docs/specs/setup.md
+    "Judgment steps": inventory classification), with the files it lives in.
+
+      - not found anywhere            -> "missing"
+      - found `dup`/`open` anywhere   -> "malformed" (refused, not guessed — surfaced to the operator)
+      - found `ok` (in ≥1 file)       -> "present"
+    """
+    where = locations.get(marker, {})
+    if not where:
+        return {"name": marker, "class": "missing", "files": [], "statuses": {}}
+    statuses = dict(where)
+    if any(status in ("dup", "open") for status in statuses.values()):
+        cls = "malformed"
+    else:
+        cls = "present"
+    return {
+        "name": marker,
+        "class": cls,
+        "files": sorted(statuses.keys()),
+        "statuses": statuses,
+    }
+
+
+def _stack_profile_facts(root, locations, scratch_dir):
+    """User-owned ``claude-code-stack-profile`` facts (docs/specs/setup.md "Ownership split": seed when
+    absent, re-ingest the existing interior as the base when present — never overwrite). When a
+    well-formed block is present, stage its interior to ``<scratch>/claude-code-stack-profile.base.md``
+    so the flow re-ingests the operator's actual prose as the authoritative base, layering only
+    currency refinements on top."""
+    where = locations.get(STACK_PROFILE_MARKER, {})
+    present = bool(where) and all(status == "ok" for status in where.values())
+    facts = {
+        "present": present,
+        "files": sorted(where.keys()),
+        "statuses": dict(where),
+    }
+    if present:
+        # Read the interior from the single well-formed location and stage it as the re-ingest base.
+        source_file = sorted(where.keys())[0]
+        interior, exit_code = config_block.build_read(
+            str(Path(root) / source_file), STACK_PROFILE_MARKER
+        )
+        if exit_code == config_block.EXIT_OK:
+            base_path = Path(scratch_dir) / "claude-code-stack-profile.base.md"
+            base_path.write_text("".join(line + "\n" for line in interior), encoding="utf-8")
+            facts["interior_present"] = len(interior) > 0
+            facts["base_path"] = str(base_path)
+    return facts
+
+
+def _target_file_suggestion(files, locations):
+    """Decide the pipeline-config target file (docs/specs/setup.md "Operator gates": keep config in
+    one file; default to COMMANDS.md when neither exists). Counts machine-parsed + header markers per
+    file (the stack-profile is CLAUDE.md-only and excluded from this decision). ``split`` is True when
+    config markers are scattered across both files (an ambiguity the router confirms with the
+    operator)."""
+    config_markers = set(MACHINE_PARSED_MARKERS) | {CONFIG_HEADER_MARKER}
+    counts = {name: 0 for name in CANDIDATE_FILES}
+    for marker, where in locations.items():
+        if marker not in config_markers:
+            continue
+        for file_name in where:
+            if file_name in counts:
+                counts[file_name] += 1
+
+    files_with_config = [name for name in CANDIDATE_FILES if counts[name] > 0]
+    if len(files_with_config) == 1:
+        suggested = files_with_config[0]
+        reason = "existing-config"
+    elif len(files_with_config) > 1:
+        # Split across both — keep the file holding more, but flag it for the router to confirm.
+        suggested = max(files_with_config, key=lambda name: counts[name])
+        reason = "split-existing"
+    else:
+        suggested = "COMMANDS.md"
+        reason = "default-new"
+    return {
+        "suggested": suggested,
+        "reason": reason,
+        "exists": files[suggested]["present"],
+        "split": len(files_with_config) > 1,
+        "config_marker_counts": counts,
+    }
+
+
+def _same_marker_both_files(locations):
+    """Every marker declared in BOTH candidate files — an ambiguity the pipeline skills would also hit
+    (they scan both), so the router asks which file is canonical and plans to remove the duplicate
+    (docs/specs/setup.md Invariants: "Keep each config marker in exactly one file")."""
+    return sorted(
+        marker
+        for marker, where in locations.items()
+        if len([f for f in where if f in CANDIDATE_FILES]) > 1
+    )
+
+
+def _build_attention(inventory):
+    """Script-detectable conditions worth surfacing with evidence (architecture.md §4). These are
+    informational facts the router acts on via its gates — not decision cards from prep."""
+    attention = []
+    malformed = [m["name"] for m in inventory["known_markers"] if m["class"] == "malformed"]
+    if malformed:
+        attention.append(
+            "malformed config block(s) (dup/open) — the operator must fix by hand before setup "
+            "reconciles them: %s" % ", ".join(malformed)
+        )
+    if inventory["legacy_health_checks"]["present"]:
+        attention.append(
+            "legacy `pr-evaluator-health-checks` block present — a re-run offers to split it into "
+            "`pr-evaluator-static-checks` + `pr-evaluator-test-target` (operator-confirmed)"
+        )
+    if inventory["same_marker_both_files"]:
+        attention.append(
+            "config marker(s) declared in BOTH candidate files (ambiguous — one file must win): %s"
+            % ", ".join(inventory["same_marker_both_files"])
+        )
+    return attention
+
+
+# ---------------------------------------------------------------------------
+# Facts-block assembly
+# ---------------------------------------------------------------------------
+
+
+def build_facts(root=".", scratch_dir=None):
+    """Assemble the setup skill's complete facts block and return the envelope dict WITHOUT printing
+    it (the testable core, mirroring ``prep_researcher.build_facts``). Emits no ``needs_decision`` (no
+    `gh` call, and a malformed block is an inventory fact, not a decision — module docstring), so this
+    core always returns a dict."""
+    root = str(Path(root).resolve())
+    if scratch_dir is None:
+        scratch_dir = "/tmp/gh-setup-%s" % Path(root).name
+    Path(scratch_dir).mkdir(parents=True, exist_ok=True)
+
+    files = _file_inventories(root)
+    locations = _marker_locations(files)
+
+    known_markers = [_classify(marker, locations) for marker in MACHINE_PARSED_MARKERS]
+    known_markers.append(_classify(CONFIG_HEADER_MARKER, locations))
+
+    legacy = _classify(LEGACY_HEALTH_CHECKS_MARKER, locations)
+    legacy_health_checks = {
+        "present": legacy["class"] in ("present", "malformed"),
+        "files": legacy["files"],
+    }
+
+    inventory = {
+        "files": files,
+        "known_markers": known_markers,
+        "legacy_health_checks": legacy_health_checks,
+        "stack_profile": _stack_profile_facts(root, locations, scratch_dir),
+        "config_header": _classify(CONFIG_HEADER_MARKER, locations),
+        "same_marker_both_files": _same_marker_both_files(locations),
+    }
+
+    facts = {
+        "scratch": scratch_dir,
+        "root": {"path": root, "sha": _root_sha(root)},
+        "preflight": _preflight(root),
+        "inventory": inventory,
+        "target_file": _target_file_suggestion(files, locations),
+        "attention": _build_attention(inventory),
+        "notices": [],
+    }
+    return facts
+
+
+def main(argv):
+    parser = argparse.ArgumentParser(
+        description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
+    )
+    parser.add_argument("--root", default=".", help="project root (architecture.md §6 vantage)")
+    parser.add_argument(
+        "--scratch-dir",
+        default=None,
+        help="scratch dir for staged block bodies + the stack-profile re-ingest base "
+        "(default: /tmp/gh-setup-<root-basename>)",
+    )
+    args = parser.parse_args(argv)
+
+    facts = build_facts(root=args.root, scratch_dir=args.scratch_dir)
+    notices = facts.pop("notices", [])
+    emit_ok(payload=facts, notices=notices)
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main(sys.argv[1:]))

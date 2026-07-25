@@ -13,7 +13,7 @@ Rails 8.1**, mostly to show the *what (PRD) vs how (architecture.md)* boundary.
 Every other doc in the set is consulted *while building*. The PRD is different on two axes, and
 both shape how you write it.
 
-**1. It's where the pipeline starts.** The `github-issue-drafter` reads the PRD *before drafting
+**1. It's where the pipeline starts.** The `drafter` reads the PRD *before drafting
 any issue* and grounds the issue's framing, language, and personas in it — so the PRD's wording
 propagates into every issue, every epic, every story. Epic bodies trace back to it by design
 (`## Goal` / `## Background` / `## Stories` / `## PRD impact` exist for traceability from
@@ -22,7 +22,7 @@ stays coherent; get it vague and the drift starts at issue #1.
 
 **2. It's re-checked at every stage, as the product source of truth.** It's cited in the
 planner's `## Doc grounding`, in the resolver's grounding statement and PR body, and the
-`github-pr-evaluator` **soft-rejects a PR whose diff contradicts a PRD requirement**. So the PRD
+`evaluator` **soft-rejects a PR whose diff contradicts a PRD requirement**. So the PRD
 isn't write-once context — it's the spec the finished work is measured against.
 
 > **The PRD answers *what* the product does and *why* — never *how* to build it.** "Users export
@@ -39,17 +39,17 @@ around.
 
 ## Know your reader: how the pipeline consumes the doc
 
-- **`github-issue-drafter` (heaviest reader).** Uses the PRD three ways: (1) ground language —
+- **`drafter` (heaviest reader).** Uses the PRD three ways: (1) ground language —
   reuse its persona and feature names rather than inventing new ones; (2) detect tension between
   feedback and the PRD in three patterns — **contradicts / extends / gap**; (3) add a
   `## PRD impact` note (and fire a `PRD conflict` gate) when tension exists.
-- **`github-issue-planner`.** Cites PRD sections in `## Doc grounding`; an accepted product
+- **`planner`.** Cites PRD sections in `## Doc grounding`; an accepted product
   trade-off can be recorded as a watchpoint with a PRD citation (e.g. *"acceptable per PRD §10.3"*).
-- **`github-issue-resolver`.** Cites the PRD in its grounding statement and PR `## Doc grounding`;
+- **`resolver`.** Cites the PRD in its grounding statement and PR `## Doc grounding`;
   reframes "feature X is incomplete" as "feature X doesn't match **PRD §Y**"; treats a documented
   **PRD scope exclusion** as a citable reason to defer out-of-scope work to a follow-up; stops on
   a `Doc conflict` gate if the issue requests something the PRD rules out.
-- **`github-pr-evaluator`.** Verifies the cited PRD sections actually say what the work claims and
+- **`evaluator`.** Verifies the cited PRD sections actually say what the work claims and
   soft-rejects on a clear contradiction of a PRD requirement.
 - **Cited by stable section anchor (`PRD §N`), read per-issue.** The PRD is *not* `@`-included by
   `CLAUDE.md` (the constitution is), so it isn't carried in context on every run — it can be
@@ -158,7 +158,7 @@ a PRD section is for.
 - [ ] Each requirement is acceptance-shaped (a DoD can be written against it).
 - [ ] No transient detail baked into requirement statements.
 
-**Validate against the real consumer:** run `github-issue-drafter` on a piece of feedback that
+**Validate against the real consumer:** run `drafter` on a piece of feedback that
 brushes the PRD. Success looks like the drafter grounding the issue's framing in a cited **PRD §N**
 and — when the feedback strains the spec — surfacing it as a `## PRD impact` note or `PRD conflict`
 gate, rather than silently absorbing or contradicting it. If the drafter invents new persona names

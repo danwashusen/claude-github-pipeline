@@ -2,7 +2,7 @@
 
 The stable schema for a `question`-type issue — a request for a decision or answer from a human, not a
 unit of work to build. Both the **drafter** (filing a question directly or a companion to a build
-issue) and the **`open-questions` sweep** (filing a companion for an untracked OQ) file identical
+issue) and the **`question-sweep`** (filing a companion for an untracked OQ) file identical
 question issues, so the body template, the audience-label rule, and the `## Tracked in` bridge live
 here. This file is the single source of truth for the *schema*; each skill keeps its own
 **orchestration** (review loop, approval gate, paste-ready snippet, handoff).
@@ -64,8 +64,8 @@ Audience labels rarely pre-exist, and `gh issue create --label audience:business
 absent — so the filing skill **offers to create a missing audience label as part of filing** (unlike
 type/priority labels, which it only ever suggests). Flag any audience label that doesn't exist yet at
 the approval gate (`audience:business (will be created)`); approving "File it" approves the create.
-Create each missing one in the main loop right before filing (same place the skill runs `gh label
-list` inline, not through `github-ops`):
+Create each missing one in the main loop right before filing (the same place the skill runs `gh label
+list` inline — label management has no bundled script, so it is a sanctioned raw-`gh` call):
 
 ```bash
 gh label create "audience:business" --description "Question for business stakeholders" --color BFD4F2 2>/dev/null || true

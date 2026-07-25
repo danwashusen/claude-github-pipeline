@@ -1,0 +1,118 @@
+#!/usr/bin/env python3
+"""Fixture-replaying stand-in for the real `gh` CLI, used only by the offline test harness.
+
+Contract (documented in full in tests/README.md):
+
+- Selected fixture case comes from the ``GH_SHIM_FIXTURES`` environment variable, which must
+  point at a directory containing a ``manifest.json``.
+- ``manifest.json`` is a JSON list of entries::
+
+      [
+        {"argv": ["issue", "view", "123", "--json", "body"],
+         "stdout_file": "issue_123.json",
+         "exit_code": 0},
+        ...
+      ]
+
+  ``argv`` is matched by exact equality against this process's ``sys.argv[1:]`` (the arguments
+  `gh` was invoked with, not including the ``gh`` token itself). ``stdout_file`` is a path
+  relative to the fixture case directory; its bytes are written to stdout verbatim (binary-safe —
+  no text re-encoding, so fixtures can carry arbitrary envelope JSON or diff bytes). ``exit_code``
+  is the process exit code to return. An entry may omit ``stdout_file`` (treated as empty stdout)
+  or ``exit_code`` (treated as 0).
+- On a **miss** (no entry's argv matches exactly), this shim writes a diff of "argv received" vs.
+  "argv keys available in this fixture case" to stderr and exits with status 2, so a test that
+  reaches an un-fixtured call fails loudly instead of hanging or silently returning nothing.
+- If ``GH_SHIM_FIXTURES`` is unset, or set to a directory with no ``manifest.json``, this is also
+  treated as a miss (every call is un-fixtured) and reported the same way — never a crash.
+- If a matching entry's ``stdout_file`` does not exist in the case dir (a malformed fixture, not a
+  miss), this shim reports that with a curated ``MISS-LIKE:`` message to stderr and exits 2 —
+  never a bare crash/traceback.
+- This shim never touches the network and never execs the real `gh`. It is stdlib-only Python so
+  it runs identically on macOS and Linux.
+"""
+
+import json
+import os
+import sys
+from pathlib import Path
+
+
+def _load_manifest(fixtures_dir):
+    """Return the manifest list for ``fixtures_dir`` (a Path), or None if it doesn't exist/parse."""
+    manifest_path = fixtures_dir / "manifest.json"
+    try:
+        with open(manifest_path, "r", encoding="utf-8") as fh:
+            data = json.load(fh)
+    except (OSError, ValueError):
+        return None
+    if not isinstance(data, list):
+        return None
+    return data
+
+
+def _find_entry(manifest, argv):
+    for entry in manifest:
+        if entry.get("argv") == argv:
+            return entry
+    return None
+
+
+def _report_miss(fixtures_dir, manifest, argv):
+    lines = []
+    lines.append("gh-shim: MISS — no fixture entry matches the argv this call received.")
+    lines.append("")
+    lines.append("GH_SHIM_FIXTURES = %r" % (str(fixtures_dir) if fixtures_dir else fixtures_dir,))
+    lines.append("argv received     = %r" % (argv,))
+    lines.append("")
+    if manifest is None:
+        lines.append(
+            "No readable manifest.json under that fixtures dir (missing, unset env var, or "
+            "invalid JSON / not a list)."
+        )
+    else:
+        lines.append("argv keys available in this fixture case:")
+        if not manifest:
+            lines.append("  (manifest.json is an empty list — no fixtures defined)")
+        for entry in manifest:
+            lines.append("  - %r" % (entry.get("argv"),))
+    lines.append("")
+    lines.append(
+        "Add a matching entry to manifest.json (see tests/README.md, \"Adding a fixture case\")."
+    )
+    sys.stderr.write("\n".join(lines) + "\n")
+
+
+def main():
+    argv = sys.argv[1:]
+    fixtures_dir_env = os.environ.get("GH_SHIM_FIXTURES")
+    fixtures_dir = Path(fixtures_dir_env) if fixtures_dir_env else None
+
+    manifest = None
+    if fixtures_dir is not None:
+        manifest = _load_manifest(fixtures_dir)
+
+    entry = _find_entry(manifest, argv) if manifest is not None else None
+
+    if entry is None:
+        _report_miss(fixtures_dir, manifest, argv)
+        return 2
+
+    stdout_file = entry.get("stdout_file")
+    if stdout_file:
+        stdout_path = fixtures_dir / stdout_file
+        if not stdout_path.is_file():
+            sys.stderr.write(
+                "MISS-LIKE: manifest entry for argv %r references stdout_file %r which does not "
+                "exist in the case dir (%s).\n" % (argv, stdout_file, fixtures_dir)
+            )
+            return 2
+        with open(stdout_path, "rb") as fh:
+            sys.stdout.buffer.write(fh.read())
+        sys.stdout.buffer.flush()
+
+    return int(entry.get("exit_code", 0))
+
+
+if __name__ == "__main__":
+    sys.exit(main())

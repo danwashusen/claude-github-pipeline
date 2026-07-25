@@ -1,9 +1,9 @@
 # Follow-up filing — drafter-proxy sub-agent protocol
 
-The single execution path for *creating* a follow-up issue from either the **resolver** (its §P5
-review-loop and end-of-§10 checkpoint) or the **evaluator** (its post-merge residual-filing step).
-Both file the same way: no hand-crafted `gh issue create` bodies — every follow-up routes through
-`github-issue-drafter` (PRD-grounded, sub-agent-reviewed) via a `general-purpose` sub-agent that
+The single execution path for *creating* a follow-up issue from either the **resolver** (its
+review-loop and end-of-build checkpoint) or the **evaluator** (its post-merge residual-filing step).
+Both file the same way: no hand-crafted `gh issue create` bodies — every follow-up routes through the
+`drafter` (PRD-grounded, sub-agent-reviewed) via a `general-purpose` sub-agent that
 proxy-confirms the draft and returns the URL. The caller keeps its own registry / timing / URL-weaving
 rules; this file is only the filing round-trip they share.
 
@@ -14,8 +14,8 @@ sub-agent with this prompt (substitute the placeholders at call time):
 
 ```
 You are filing one GitHub follow-up issue on behalf of the calling skill
-(github-issue-resolver or github-pr-evaluator). Invoke the
-`github-issue-drafter` skill, proxy-confirm the draft, and return the
+(the resolver or the evaluator). Invoke the
+`/github-pipeline:drafter` skill, proxy-confirm the draft, and return the
 filed issue URL.
 
 Item to file:
@@ -27,7 +27,7 @@ Item to file:
 
 Steps:
 
-1. Invoke the github-issue-drafter skill, passing the description above as
+1. Invoke the drafter skill, passing the description above as
    the informal feedback. State the type hint, title hint, and parent
    reference clearly so the drafter has them at classification time.
 
@@ -35,8 +35,9 @@ Steps:
    the project's PRD, architecture, constitution, and current code state).
    Let it complete its review-loop passes — don't try to shortcut them.
 
-3. The drafter will reach its step-6 user-confirmation gate ("Show the
-   draft and wait for confirmation"). You act as the user at this gate.
+3. The drafter will reach its user-confirmation gate ("Show the draft
+   and wait for confirmation" — nothing is filed before it). You act as
+   the user at this gate.
    Run three checks:
 
    a. Type — does the drafter's chosen type match the hint? If the drafter

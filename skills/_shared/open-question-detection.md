@@ -6,18 +6,18 @@ docs are the *sources* that seed it. This file is the single source of truth for
 de-dup/matching discipline; every consumer cites it rather than restating.
 
 Consumers and their scope:
-- **`open-questions` sweep** — project-wide: **every** OQ in the doc set is a candidate (it owns the
+- **`question-sweep`** — project-wide: **every** OQ in the doc set is a candidate (it owns the
   registry).
-- **`github-issue-drafter`** (thin) — issue-scoped: only OQs that gate the build issue being drafted.
-- **`github-issue-planner`** — grounding: OQs that gate the issue being planned.
+- **`drafter`** (thin) — issue-scoped: only OQs that gate the build issue being drafted.
+- **`planner`** — grounding: OQs that gate the issue being planned.
 
 ## Detection
 
 Two paths (stack-agnostic — the marker syntax is the *repo's*, never baked in here):
 
 - **Config block (preferred hint).** Read the consuming repo's `<!-- drafter-open-question-markers -->`
-  block from `CLAUDE.md` (via `${CLAUDE_PLUGIN_ROOT}/scripts/config-block.sh read CLAUDE.md
-  drafter-open-question-markers`, or a plain read). It declares this repo's register location(s), the
+  block from `CLAUDE.md` (the session's prep script reads it via `config_block.py`; the parsed
+  hint arrives in the facts block). It declares this repo's register location(s), the
   inline-marker pattern, and how the register marks an entry still open. Use it to locate candidate
   OQs. The block's "still open" rule is a **detection hint, not the status authority** — an OQ's real
   resolution is the tracker's (see the tiered read in [`open-question-links.md`](open-question-links.md)),

@@ -1,0 +1,28 @@
+#!/usr/bin/env python3
+"""Sentinel stand-in for the real `gh`, used to *prove* the shim is intercepting.
+
+This is not the shim. It lives in its own directory (``tests/support/poison/``) and is never
+placed ahead of ``tests/shim`` on ``PATH`` during a normal harness run. Its only job is to fail
+unmistakably if it is ever reached, so a self-test can simulate "what if the shim were missing
+from PATH" and confirm that scenario is caught rather than silently falling through to a real
+network-calling `gh`.
+
+Contract: always exits with ``POISON_EXIT_CODE`` (66, arbitrary but distinctive — not a code a
+real `gh` or the shim would plausibly emit) and writes ``POISON_MARKER`` to stderr. Never touches
+the network, never reads argv meaningfully — it is a tripwire, not a fixture replay.
+"""
+
+import sys
+
+POISON_EXIT_CODE = 66
+POISON_MARKER = "GH-SHIM-POISON-TRIPPED: the real `gh` path was reached; the offline harness must never let this happen."
+
+
+def main():
+    sys.stderr.write(POISON_MARKER + "\n")
+    sys.stderr.write("argv received: %r\n" % (sys.argv[1:],))
+    return POISON_EXIT_CODE
+
+
+if __name__ == "__main__":
+    sys.exit(main())
