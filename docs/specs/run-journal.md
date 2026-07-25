@@ -1065,7 +1065,52 @@ of truth; a **freshly started** resumed session will pick them up by name and ca
   (**PASS, 0 actionable**, 2 advisories: the guard glob [folded]; the S20 carries). **0
   actionable rounds.** All eight skill cutovers are now reviewed.
 
-### S20 — v1 removal & repo truth — PARTIAL (automatable done + committed; the conveyor run PENDING) (2026-07-24)
+### S20 — v1 removal & repo truth — ACCEPTED (automatable 2026-07-24; the conveyor closed 2026-07-25) — **THE RUN IS COMPLETE**
+
+- **The conveyor run (`96002ac`, operator-run, box 4 + GO):** the whole-system claim held —
+  **#101 → PR #102 → sandbox main@461e73c**, five separate sessions bridged by nothing but
+  GitHub artifacts and the `## Handoff`, **4/4 printed next-commands run verbatim**, one state
+  assembly per session, root clean at all six boundaries, zero stale v1 names, every marker
+  verbatim. The operator's four in-run decisions (subject substitution — the suggested wart
+  wasn't sandbox-filable; one disclosed discarded pre-file attempt; one clone across the legs so
+  root-hygiene wasn't vacuous; pytest/flake8 installed user-scope so the sandbox's declared
+  gates were measurable) all sound.
+- **The three whole-system findings (dispositioned 2026-07-25, the run's last fix round):**
+  1. *The drafter never routes to the researcher* — **RESOLVED AS DOC TRUTH**: v1's drafter also
+     forwarded straight to the planner (the S15 scenario-4(b) record); research is and always was
+     a planner-triggered conditional detour that hands back. CLAUDE.md + README corrected; no
+     prompt or script changed.
+  2. *`workspace.py remove` can't complete the evaluator's own teardown post-merge*
+     (`__pycache__` + the structurally-inevitable `unpushed_commits` after squash+delete-branch)
+     — **FILED-CANDIDATE** (needs a merged-verified disposal design; every clean merge hits it).
+  3. *A bug-classified issue carries no DoD* (the template omits it in both versions — the
+     dod-annotations contract skips the most common type) — **FILED-CANDIDATE** (a
+     template/product decision with evaluator/resolver ripple).
+- **Operator verdict: GO** (written into the conveyor go/no-go). All 21 steps ACCEPTED; every
+  DoD box in the plan is ticked.
+
+## THE RUN — CLOSED (2026-07-25)
+
+**Final state:** 78 commits on `rewrite/v2-implementation`, **unpushed** (the never-push boundary
+holds until the operator acts); **1161/1161** offline tests on macOS + Linux; the tree v2-only at
+**2.0.0**; the census re-baselined at **44** v2-only tokens with all 44 drops accounted; nine v2
+skills + eight preps + four executors + pipelib, every skill parity- or landing-proven live.
+
+**The ledger:** 21 steps; 9 operator gates (23 live scenario legs, all PASS); ~17 findings-loop
+rounds — zero fixes landed unreviewed; **7 latent v1 defects** discovered and recorded
+falsifiably (the fuzzy in:body search; the predecessor detection that never fired; the composite
+structural stall; the partial registry sweep with asserted-empty threads; the single-phase
+projection flake; the unaided-companion-patch skip; the audit non-determinism) — v2 reproduces
+none of them; 4 architecture amendments + 8 frozen-spec capture corrections, all truthfully
+cited; 2 authorized freeze deviations (the S18/S19 same-name retirements, riders honored); the
+9,255-line v1 surface replaced by prompts that assemble state in one script call per session.
+
+**Post-run candidates (for the operator, ideally via the pipeline itself once merged):** the
+merged-verified teardown path (conveyor row 3); the bug-template DoD decision (row 1); the
+frozen config-header wart (the S20 ruling-(d) filing); the S18 inline-audit 1/2 defect-candidate
+(reopens on recurrence); the sweep's fetched-but-unused pr-list leg (an optimization note).
+
+**The push/PR decision is the operator's alone.**
 
 - **Commit:** `5ef4266` (`S20: v1 removal & repo truth — the final step's automatable work`).
 - **Status:** **4 of 5 boxes ticked** (1/2/3/5). **Box 4 — the end-to-end conveyor run — is the
@@ -1107,7 +1152,12 @@ of truth; a **freshly started** resumed session will pick them up by name and ca
 
 ## Handback log
 
-### 2026-07-24 handback — STOP at S20's conveyor run (the ninth and FINAL operator gate) — OPEN
+### 2026-07-24 handback — STOP at S20's conveyor run (the ninth and FINAL operator gate) — CLOSED 2026-07-25
+
+**Superseded; retained as a pointer.** The operator ran the conveyor (`96002ac`, box 4 + GO
+recommended), the three findings were dispositioned in the run's last fix round, and the
+operator's verdict — **GO** — closed the go/no-go. **The run is complete**; see "THE RUN —
+CLOSED" above.
 
 The run is stopped at **S20 box 4** — the last box of the last step. Everything else in the
 entire plan is ACCEPTED and committed (**unpushed**; 1161 offline tests green both platforms;

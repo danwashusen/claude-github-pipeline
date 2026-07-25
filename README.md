@@ -11,7 +11,10 @@ draft ──▶ research ──▶ plan ──▶ resolve ──▶ evaluate
 ```
 
 Each stage runs in its own Claude Code session and ends with a copy-pasteable `## Handoff` block
-that starts the next one, so context stays clean across the pipeline.
+that starts the next one, so context stays clean across the pipeline. That's the conceptual order —
+in practice the drafter hands to the **planner**, and research is a detour the planner takes only
+when the work turns on external truth it shouldn't guess at: it routes you to the researcher, which
+posts a cited dossier and hands back to the planner.
 
 ## The pipeline
 

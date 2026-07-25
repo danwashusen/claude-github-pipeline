@@ -64,7 +64,15 @@ draft ──▶ research ──▶ plan ──▶ resolve ──▶ evaluate
 
 The **pipeline stages** are `drafter`, `researcher`, `planner`, `resolver`, `evaluator`; the
 **standalone tools** are `setup`, `question-sweep`, `question-resolver`, `doc-reviewer`
-([prd.md §2](docs/prd.md)). The split is load-bearing, not cosmetic:
+([prd.md §2](docs/prd.md)).
+
+**That is the conceptual order, not the handoff topology:** the drafter forwards to the
+**planner**, and `research` is a conditional detour off `plan` — the planner re-routes to the
+researcher only when the issue has no dossier and the plan turns on external truth with genuine
+currency risk, and the researcher hands **back to the planner**, which ingests the dossier (a
+declined research run hands back too, with `research: ✗`). v1 behaved identically — the S15 parity
+record's Scenario 4(b) has v1's drafter `Next:` pointing at its own planner — so this is doc truth
+being corrected, not a behavior change. The stage/tool split is load-bearing, not cosmetic:
 
 - A pipeline stage runs in **its own Claude Code session** and ends with a `## Handoff` — a
   cold-readable summary plus the copy-pasteable command that starts the next session. There is no
