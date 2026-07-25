@@ -591,8 +591,12 @@ raw `gh` writes in `skills/`); record the final census diff against the S1 basel
 - [x] Census diff reviewed; every removed token is on the deliberate-retirement list.
 - [x] Full offline suite green on macOS and Linux; manifests parse; version bumped; the
       runtime-dependency docs list only `python3` / `git` / `gh` (`jq` and `bash` dropped).
-- [ ] Fresh end-to-end conveyor run on the sandbox — draft → research (decline acceptable) →
-      plan → resolve → evaluate → merge — with every handoff schema-valid.
+- [x] Fresh end-to-end conveyor run on the sandbox — draft → research (decline acceptable) →
+      plan → resolve → evaluate → merge — with every handoff schema-valid. Run 2026-07-25:
+      sandbox #101 → PR #102 → `main@461e73c`, five sessions, four of four printed next-commands
+      run verbatim; recommendation **GO** with two defects to file (the drafter never routes to
+      the researcher; `workspace.py remove` cannot complete the evaluator's post-merge teardown).
+      Full record in `docs/specs/parity/conveyor.md`.
 - [x] `CLAUDE.md` describes only the v2 architecture; guides name only new skills.
 
 **Testing:** the end-to-end sandbox run is the test; all validators re-run and recorded.
