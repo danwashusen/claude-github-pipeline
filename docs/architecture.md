@@ -108,6 +108,9 @@ Every script emits exactly one JSON envelope on stdout.
     `gh_persist.py`.
   - `MARKER_AMBIGUOUS` — more than one candidate marker comment/block where the contract expects
     one; the gathers + `config_block.py`.
+  - `TARGET_IS_PR` — the requested issue number resolves to a pull request, not an issue;
+    `gh_gather.py`, emitted before any further fetch so a composing prep forwards it before any
+    workspace side effect (context carries the linked issue numbers derivable from the PR body).
   - `DOD_MALFORMED` — a DoD bullet or annotation outside the closed set; `parse.py dod`.
   - `PHASES_MALFORMED` — a plan `## Phases` section that doesn't parse; `parse.py phases`.
   - `ROOT_NOT_ON_MAIN` / `ROOT_DIRTY` / `ROOT_DIVERGED` — root-freshness failures;

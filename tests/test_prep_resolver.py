@@ -536,6 +536,43 @@ class MarkerAmbiguousTests(PrepResolverSandboxTestCase):
         self.assertFalse((self.root / ".worktrees").exists())
 
 
+class TargetIsPrTests(PrepResolverSandboxTestCase):
+    """A PR number given as the issue target -> TARGET_IS_PR, forwarded verbatim from gh_gather's
+    own decision BEFORE any workspace ensure (the live-incident regression: prep reported
+    `target.kind: "issue"`, derived a fresh vector, and ensured a work worktree + branch for a
+    target that doesn't exist as an issue — the operator had to diagnose it from the body text
+    and a stray worktree was left on disk)."""
+
+    def test_pr_number_yields_target_is_pr_with_no_workspace_side_effect(self):
+        result = self._run(
+            ["89", "octo/widgets", "--root", str(self.root), "--scratch-dir", self.scratch],
+            fixture_case="prep_resolver_target_is_pr",
+        )
+        self.assertEqual(result.returncode, 0, msg=result.stderr)
+        envelope = _parse_one_envelope(result.stdout)
+        envelope_asserts.assert_full_envelope_conformance(envelope)
+        self.assertEqual(envelope["status"], "needs_decision")
+        self.assertEqual(envelope["decision"]["code"], "TARGET_IS_PR")
+        # The load-bearing half of the fix: NO worktree, NO branch — the decision fires before
+        # any workspace side effect (the fixture manifest carries only the single `issue view`
+        # entry, so any later gh call would be a loud shim miss too).
+        self.assertFalse((self.root / ".worktrees").exists())
+
+    def test_decision_context_offers_the_linked_origin_issue(self):
+        result = self._run(
+            ["89", "octo/widgets", "--root", str(self.root), "--scratch-dir", self.scratch],
+            fixture_case="prep_resolver_target_is_pr",
+        )
+        envelope = _parse_one_envelope(result.stdout)
+        context = envelope["decision"]["context"]
+        self.assertEqual(context["number"], 89)
+        self.assertEqual(context["linked_issues"], [62])
+        self.assertTrue(
+            any("#62" in option for option in envelope["decision"]["options"]),
+            envelope["decision"]["options"],
+        )
+
+
 class AuthRequiredTests(PrepResolverSandboxTestCase):
     def test_auth_failure_on_first_gh_call_yields_auth_required(self):
         result = self._run(

@@ -173,6 +173,91 @@ class MarkerAmbiguousTests(unittest.TestCase):
             self.assertTrue(option)
 
 
+class TargetIsPrTests(unittest.TestCase):
+    """PR-number guard: `gh issue view <N>` silently returns the PR when `<N>` is a PR number
+    (issues and PRs share one number space) — the live-incident failure mode where prep reported
+    `target.kind: "issue"` and ensured a worktree for a target that doesn't exist as an issue.
+    The gather must refuse with a TARGET_IS_PR needs_decision BEFORE any further round-trip
+    (the fixture manifest carries ONLY the first `issue view` entry — a comments/PR-search call
+    would be a shim miss and fail the test loudly).
+    """
+
+    def setUp(self):
+        self.env = shimenv.intercepted_env(
+            base_env=os.environ, fixture_case="gh_gather_target_is_pr"
+        )
+
+    def test_pr_number_produces_needs_decision_target_is_pr(self):
+        result = _run_script(["89", "o/r"], env=self.env)
+        self.assertEqual(result.returncode, 0, msg=result.stderr)  # needs_decision is exit 0
+        envelope = _parse_envelope(result)
+        envelope_asserts.assert_full_envelope_conformance(envelope)
+        self.assertEqual(envelope["status"], "needs_decision")
+        self.assertEqual(envelope["decision"]["code"], "TARGET_IS_PR")
+
+    def test_decision_context_carries_pr_identity_and_linked_issues(self):
+        result = _run_script(["89", "o/r"], env=self.env)
+        envelope = _parse_envelope(result)
+        context = envelope["decision"]["context"]
+        self.assertEqual(context["number"], 89)
+        self.assertEqual(context["url"], "https://github.com/o/r/pull/89")
+        # Body carries "Fixes #62" twice + "Closes: #7" — de-duplicated, order-preserving.
+        self.assertEqual(context["linked_issues"], [62, 7])
+
+    def test_options_offer_resolving_the_linked_issue_instead(self):
+        result = _run_script(["89", "o/r"], env=self.env)
+        envelope = _parse_envelope(result)
+        options = envelope["decision"]["options"]
+        self.assertTrue(any("#62" in option for option in options), options)
+        for option in options:
+            self.assertIsInstance(option, str)
+            self.assertTrue(option)
+
+    def test_marker_prefix_and_scratch_dir_do_not_bypass_the_guard(self):
+        with tempfile.TemporaryDirectory() as scratch:
+            result = _run_script(
+                ["89", "o/r", "<!-- implementation-plan:v1 -->", scratch], env=self.env
+            )
+            self.assertEqual(result.returncode, 0, msg=result.stderr)
+            envelope = _parse_envelope(result)
+            self.assertEqual(envelope["status"], "needs_decision")
+            self.assertEqual(envelope["decision"]["code"], "TARGET_IS_PR")
+            # Nothing was spilled — the guard fires before any section staging.
+            self.assertEqual(os.listdir(scratch), [])
+
+
+class LinkedIssueNumbersPureFunctionTests(unittest.TestCase):
+    """gh_gather.linked_issue_numbers — the closing-keyword parse feeding TARGET_IS_PR's context
+    (pure-function tests, mirroring the _is_unknown_field_error pattern)."""
+
+    def test_closing_keyword_forms(self):
+        self.assertEqual(gh_gather.linked_issue_numbers("Fixes #62"), [62])
+        self.assertEqual(gh_gather.linked_issue_numbers("closes  #7."), [7])
+        self.assertEqual(gh_gather.linked_issue_numbers("Resolved: #12\nfix #3"), [12, 3])
+
+    def test_dedup_preserves_first_seen_order(self):
+        self.assertEqual(gh_gather.linked_issue_numbers("Fixes #62, closes #7, fixes #62"), [62, 7])
+
+    def test_non_closing_references_do_not_match(self):
+        self.assertEqual(gh_gather.linked_issue_numbers("See #62 and relates to #7"), [])
+        self.assertEqual(gh_gather.linked_issue_numbers("Phase 2 prefixes #"), [])
+        self.assertEqual(gh_gather.linked_issue_numbers(None), [])
+
+
+class IsPullRequestPureFunctionTests(unittest.TestCase):
+    """gh_gather._is_pull_request — the /pull/-vs-/issues/ URL discriminator."""
+
+    def test_pull_url_is_a_pr(self):
+        self.assertTrue(gh_gather._is_pull_request({"url": "https://github.com/o/r/pull/89"}))
+
+    def test_issue_url_is_not_a_pr(self):
+        self.assertFalse(gh_gather._is_pull_request({"url": "https://github.com/o/r/issues/89"}))
+
+    def test_missing_url_is_not_a_pr(self):
+        self.assertFalse(gh_gather._is_pull_request({}))
+        self.assertFalse(gh_gather._is_pull_request({"url": None}))
+
+
 class ThresholdSpillTests(unittest.TestCase):
     """Threshold spill: body/thread/marker each go to path mode when > threshold, with a
     scratch_dir supplied; small sections in the SAME run still report their own *_mode

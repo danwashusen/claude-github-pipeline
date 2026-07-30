@@ -37,8 +37,8 @@ type, the mode, the branch name, the audit ref, or the phase list in prose; prep
 **Decision card rule.** If prep exits with `status: needs_decision`, render its `decision` as one
 `AskUserQuestion` card (per [`../_shared/asking-the-user.md`](../_shared/asking-the-user.md)), act on
 the answer, and re-run prep (`--refresh` for volatile facts). This is the single universal handler
-for every closed-set code (`AUTH_REQUIRED`, `MARKER_AMBIGUOUS`, `ROOT_*`, `BRANCH_IN_USE`,
-`DOD_MALFORMED`, `PHASES_MALFORMED`, `AMBIGUOUS`, `PLAN_MISSING`, …).
+for every closed-set code (`AUTH_REQUIRED`, `MARKER_AMBIGUOUS`, `TARGET_IS_PR`, `ROOT_*`,
+`BRANCH_IN_USE`, `DOD_MALFORMED`, `PHASES_MALFORMED`, `AMBIGUOUS`, `PLAN_MISSING`, …).
 
 **Gated-row card.** When `vector.mode == gated`, `vector.gate` carries `{reason, header, options,
 prior_pr}` — an open/stale/foreign-draft PR by **another author** on this issue. Render that card
