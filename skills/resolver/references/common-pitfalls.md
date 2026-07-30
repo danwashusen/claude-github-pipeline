@@ -153,7 +153,12 @@ its §review-loop, its S6 DoD projection) that carry the same numbering v1 used,
   creation, reuse, and the `.worktrees/` exclusion — the prompt never runs `git worktree add`.
 - **Don't auto-clean worktrees.** A worktree may contain unpushed commits or in-flight edits. Cleanup is
   the evaluator's job (the only automatic remover) or the user's manual call — the resolver creates
-  worktrees and never removes them.
+  worktrees and never removes them. When one needs removal mid-run (a mis-identified target, a stale
+  leftover), stop and ask the operator **at that point**, printing
+  `${CLAUDE_PLUGIN_ROOT}/scripts/workspace.py remove --work <branch>` for them to run — it runs the
+  teardown hooks and gates on dirty/unpushed state, which raw `git worktree remove --force` /
+  `git branch -D` silently discard. Don't attempt the removal yourself, and don't defer the flag to
+  the handoff.
 - **Don't open a single feature PR for an epic.** Epics are containers; child stories are where code lands.
   Opening a monolithic PR for an epic conflates resolution with implementation and makes the PR
   unreviewable.

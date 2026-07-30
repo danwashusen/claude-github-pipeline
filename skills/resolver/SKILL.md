@@ -86,7 +86,11 @@ Universal across every route:
   ref yourself. No `git show <ref>:path`, no `git grep <ref>` — grounding SHAs come from the workspace
   facts (the plan's "planned at `<sha>`" *is* its read workspace's HEAD). `audit_ref` is a **bare**
   branch name; the origin-prefixed ref a read workspace checked out rides on
-  `read_workspaces.audit.ref` — hand sub-agents the workspace **path**, never a ref.
+  `read_workspaces.audit.ref` — hand sub-agents the workspace **path**, never a ref. The resolver
+  never removes a worktree: if one needs removal mid-run (e.g. prep ensured it for a mis-identified
+  target), stop and ask the operator, printing
+  `${CLAUDE_PLUGIN_ROOT}/scripts/workspace.py remove --work <branch>` for **them** to run — never
+  raw `git worktree remove` / `git branch -D`, and never a deferred note in the handoff.
 - **Root is never written.** The project root is the read-only `main` vantage; never branch, commit,
   stash, or run tests there. All code work happens in the work workspace; all tracked-file changes
   land via the PR.
