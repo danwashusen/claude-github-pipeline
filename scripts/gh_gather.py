@@ -23,6 +23,11 @@ Behavior preserved from v1 (see module-level comments at each step below for the
   decision** (v1 only reported the count and left the ambiguity call to its caller; the port makes
   it a first-class §3 decision per this step's DoD and architecture.md §3's decision-code table
   naming "the gathers" as a ``MARKER_AMBIGUOUS`` emitter).
+- **PR-number guard (v2-native)** — issues and PRs share one number space and ``gh issue view``
+  silently returns the PR when given a PR number; the fetched ``url`` (``/pull/<N>`` vs
+  ``/issues/<N>``) is the discriminator, and a PR target is a ``TARGET_IS_PR`` decision emitted
+  **before any further round-trip**, with the PR body's closing-keyword issue references
+  (``Fixes #62``) surfaced in the decision context so the operator can re-target the origin issue.
 - **Threshold spill** — body / thread / marker comment body via ``pipelib.spill``.
 - **Native issue dependencies** — ``blocked_by`` / ``blocking`` + ``deps_available``,
   capability-gated: an "unknown field" rejection from `gh` degrades to the base field set plus a
@@ -71,7 +76,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 from pipelib import process  # noqa: E402  (import after sys.path setup, by necessity)
-from pipelib.decisions import AUTH_REQUIRED, MARKER_AMBIGUOUS, needs_decision  # noqa: E402
+from pipelib.decisions import AUTH_REQUIRED, MARKER_AMBIGUOUS, TARGET_IS_PR, needs_decision  # noqa: E402
 from pipelib.envelope import EXIT_OK, emit_needs_decision, emit_ok  # noqa: E402
 from pipelib.spill import resolve_threshold, spill_bytes  # noqa: E402
 
@@ -159,6 +164,59 @@ def _fetch_issue_with_deps_capability_gate(issue, repo, env):
 
     # Any OTHER failure must surface — see _fail_hard's docstring.
     return None, None, with_deps
+
+
+# GitHub's closing keywords (close/closes/closed, fix/fixes/fixed, resolve/resolves/resolved),
+# used only on the TARGET_IS_PR path to derive the PR's linked issue number(s) from the body the
+# fetch already returned — no extra round-trip.
+_CLOSING_KEYWORD_RE = re.compile(
+    r"\b(?:close[sd]?|fix(?:e[sd])?|resolve[sd]?)\s*:?\s+#(\d+)", re.IGNORECASE
+)
+
+
+def linked_issue_numbers(body_text):
+    """Ordered, de-duplicated issue numbers referenced via a GitHub closing keyword (``Fixes
+    #62``, ``Closes: #7``) in `body_text`. Best-effort derivation for the ``TARGET_IS_PR``
+    decision's context — the origin issue of a mistakenly-targeted PR is almost always named this
+    way in the PR body."""
+    seen = []
+    for match in _CLOSING_KEYWORD_RE.finditer(body_text or ""):
+        number = int(match.group(1))
+        if number not in seen:
+            seen.append(number)
+    return seen
+
+
+def _is_pull_request(issue_obj):
+    """`gh issue view <N>` silently returns the pull request when `<N>` is a PR number (issues
+    and PRs share one number space). The fetched `url` is the reliable discriminator in the base
+    field set: an issue lives under `/issues/<N>`, a PR under `/pull/<N>`."""
+    return "/pull/" in ((issue_obj or {}).get("url") or "")
+
+
+def _target_is_pr_decision(issue, repo, issue_obj):
+    linked = linked_issue_numbers(issue_obj.get("body"))
+    options = []
+    for number in linked:
+        options.append(
+            "resolve the linked issue instead — re-run against #%d (the PR body closes it)" % number
+        )
+    options.append("re-run against the intended issue number")
+    options.append("if the PR itself is the target, use the PR-consuming flow (gh_pr_gather / the evaluator)")
+    return needs_decision(
+        TARGET_IS_PR,
+        summary="#%s in %s is a pull request, not an issue — refusing to treat it as an issue target"
+        % (issue, repo),
+        context={
+            "number": issue_obj.get("number"),
+            "repo": repo,
+            "url": issue_obj.get("url"),
+            "title": issue_obj.get("title"),
+            "state": issue_obj.get("state"),
+            "linked_issues": linked,
+        },
+        options=options,
+    )
 
 
 def _fetch_paginated_comments(issue, repo, env):
@@ -326,6 +384,17 @@ def run(issue, repo, marker_prefix=None, scratch_dir=None, extra_json=None, env=
     if issue_obj is None:
         return _fail_hard_or_auth(deps_result, stream)
     notices = list(deps_result) if deps_available is False else []
+
+    # PR-number guard, checked before any further round-trip: `gh issue view` silently returns a
+    # pull request when the number is a PR's (the live-incident failure mode: prep reported
+    # `target.kind: "issue"` and ensured a work worktree for a target that doesn't exist as an
+    # issue). A composing prep forwards this decision at its own step 1, structurally before any
+    # workspace ensure.
+    if _is_pull_request(issue_obj):
+        envelope = emit_needs_decision(
+            _target_is_pr_decision(issue, repo, issue_obj), notices=notices, stream=stream
+        )
+        return EXIT_OK, envelope
 
     raw_comments, err = _fetch_paginated_comments(issue, repo, env)
     if raw_comments is None:

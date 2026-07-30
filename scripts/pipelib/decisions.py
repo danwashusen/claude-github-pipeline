@@ -2,7 +2,7 @@
 builder.
 
 Every script and judgment sub-agent in v2 signals an operator-only choice with one of exactly
-these 13 codes — contract tokens, exact strings, never paraphrased or extended ad hoc. Adding a
+these 14 codes — contract tokens, exact strings, never paraphrased or extended ad hoc. Adding a
 code is a contract change: update architecture.md §3 and this module together, in the same
 change, or ``tests/test_pipelib.py``'s drift-check test (which parses the code list back out of
 the doc and asserts it equals :data:`DECISION_CODES`) fails.
@@ -14,6 +14,9 @@ Meaning + canonical emitter per code (architecture.md §3):
 - ``EMPTY_BODY_FILE`` — body-bearing write given an empty or missing staged file; ``gh_persist.py``.
 - ``MARKER_AMBIGUOUS`` — more than one candidate marker comment/block where the contract expects
   one; the gathers + ``config_block.py``.
+- ``TARGET_IS_PR`` — the requested issue number resolves to a pull request, not an issue;
+  ``gh_gather.py``, emitted before any further fetch so a composing prep forwards it before any
+  workspace side effect.
 - ``DOD_MALFORMED`` — a DoD bullet or annotation outside the closed set; ``parse.py dod``.
 - ``PHASES_MALFORMED`` — a plan ``## Phases`` section that doesn't parse; ``parse.py phases``.
 - ``ROOT_NOT_ON_MAIN`` / ``ROOT_DIRTY`` / ``ROOT_DIVERGED`` — root-freshness failures;
@@ -30,6 +33,7 @@ Meaning + canonical emitter per code (architecture.md §3):
 AUTH_REQUIRED = "AUTH_REQUIRED"
 EMPTY_BODY_FILE = "EMPTY_BODY_FILE"
 MARKER_AMBIGUOUS = "MARKER_AMBIGUOUS"
+TARGET_IS_PR = "TARGET_IS_PR"
 DOD_MALFORMED = "DOD_MALFORMED"
 PHASES_MALFORMED = "PHASES_MALFORMED"
 ROOT_NOT_ON_MAIN = "ROOT_NOT_ON_MAIN"
@@ -49,6 +53,7 @@ DECISION_CODES = frozenset(
         AUTH_REQUIRED,
         EMPTY_BODY_FILE,
         MARKER_AMBIGUOUS,
+        TARGET_IS_PR,
         DOD_MALFORMED,
         PHASES_MALFORMED,
         ROOT_NOT_ON_MAIN,

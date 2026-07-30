@@ -84,13 +84,14 @@ def _parse_decision_codes_from_architecture_md():
 
 
 class DecisionsModuleTests(unittest.TestCase):
-    """pipelib.decisions: the 13 closed decision-code constants + needs_decision()."""
+    """pipelib.decisions: the 14 closed decision-code constants + needs_decision()."""
 
-    def test_decision_codes_are_exactly_the_13_from_the_brief(self):
+    def test_decision_codes_are_exactly_the_closed_set(self):
         expected = {
             "AUTH_REQUIRED",
             "EMPTY_BODY_FILE",
             "MARKER_AMBIGUOUS",
+            "TARGET_IS_PR",
             "DOD_MALFORMED",
             "PHASES_MALFORMED",
             "ROOT_NOT_ON_MAIN",
@@ -103,7 +104,7 @@ class DecisionsModuleTests(unittest.TestCase):
             "BLOCKED_ON_USER",
         }
         self.assertEqual(decisions.DECISION_CODES, frozenset(expected))
-        self.assertEqual(len(decisions.DECISION_CODES), 13)
+        self.assertEqual(len(decisions.DECISION_CODES), 14)
 
     def test_drift_check_doc_codes_equal_lib_codes(self):
         """The load-bearing drift-check: docs/architecture.md §3's decision-code list, parsed
