@@ -206,7 +206,9 @@ re-derivation. Inline-mode sections carry the content in the bare field (`issue_
   component is script-derived.
 - **The routing table lives in `SKILL.md`, visibly**: `vector → playbooks/<file>` rows. Prep
   proposes (`suggested_playbook`); the router confirms against the table and may override only
-  on evidence the script cannot see (e.g. thread supersedes labels), stating why.
+  on evidence the script cannot see (e.g. thread supersedes labels; the drafter's promotion
+  override, where the invocation asks a revise target to be re-shaped as an Epic — the receiving
+  end of the planner's seam-gate off-ramp), stating why.
 - **Parameterize before you playbook.** A branch that differs only in *values* (base ref, branch
   name, merge strategy, cleanup list) is not a branch — the values are facts. A playbook exists
   only for flows that differ in *actions taken* (epic bootstrap files stories; story completion

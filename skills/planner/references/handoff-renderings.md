@@ -181,6 +181,22 @@ fact-check; route to the researcher rather than posting a guess. `research: ✗ 
 **Why:** the plan turns on <dependency> v<X> behaviour that postdates my training cutoff — planning on recall would lock a guess. The researcher posts a cited dossier; re-run `/github-pipeline:planner #142` afterward and it ingests the refreshed dossier.
 ```
 
+**Epic-shaped, planning aborted — re-route to the drafter.** The seam gate's triage chose "Split as
+epic" (`references/seam-dispositions.md`): the planner posted the lean seam-analysis comment and
+stopped. `plan: ✗`, no `Grounding:` (no plan posted), no `planned` label.
+
+```
+## Handoff
+
+**Issue:** #142 — Build patient dashboard · open · feature · plan: ✗
+
+**Next:** revise #142 as an Epic in a fresh session, splitting per the seam-analysis comment.
+
+    /github-pipeline:drafter revise #142 as an Epic — split per the seam-analysis comment
+
+**Why:** planning surfaced 4 seams outside #142's Definition of done; a single-issue plan would pin contracts this issue doesn't own. The epic machinery (`## Story contracts` + just-in-time story plans) is built to hold that seam registry. The seam-analysis comment on #142 carries the inventory and suggested story boundaries; after promotion, re-run `/github-pipeline:planner #142` for the epic plan.
+```
+
 **Open question blocks the whole plan — re-route to answer it.** Every plannable part is gated by an
 unresolved open question the planner must not resolve. Terminal-style: no follow-up skill (a human
 answers), with a re-run breadcrumb. `plan: ✗`.

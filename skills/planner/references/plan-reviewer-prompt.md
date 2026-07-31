@@ -94,7 +94,8 @@ Run only the dimensions named in the inputs.
    delivers them. Every criterion maps to something in `## Changes` or `## Test plan`? A `## Changes` item
    with no criterion is scope creep. Does `## Test plan` cover the behaviours the project's testing rules
    require (e.g. constitution §5)? A criterion with no coverage is a BLOCKER; an orphaned change is a
-   SUGGESTION.
+   SUGGESTION — except a contract-only seam pin whose boundary bullet defers the body to `#M`
+   (Dimension 4's seam carve-out): that is sanctioned residue of an operator scope cut, not scope creep.
 
 4. **Implementation readiness.** The executable-vs-vague bar. **Every place the plan defers a decision a
    developer would have to make before writing code is a BLOCKER** — the plan is where those decisions
@@ -119,7 +120,13 @@ Run only the dimensions named in the inputs.
    in scope. **Carve-out — a tracked open question is not a hedge:** a deferral attributed in `## Open
    questions` (OQ id + `question: #N` + a `planned-around`/`recorded-blocked` treatment) is **not** a
    dim-4 BLOCKER (the planner is forbidden from resolving it — see Dimension 10); an **unattributed** punt
-   still is.
+   still is. **Carve-out — a dispositioned seam boundary is not a hedge:** an `## Architecture decisions`
+   boundary bullet attributed `[user decision <date>]` that pins a signature/shape and defers only the
+   body to a named follow-up ("body deferred to #M") is a sanctioned seam disposition (the planner's seam
+   gate), not a deficiency — but verify the reference: `gh issue view <M> --json number,state` must
+   return a real issue (a dangling `#M` is a BLOCKER, same rule as Dimension 10's companion check), and a
+   "deferred" bullet **without** the `[user decision <date>]` attribution or a real `#M` is still a
+   dim-4 BLOCKER.
 
 5. **Sequencing** *(epic-level plan only; reads the plan's own `## Story contracts`)*. Build a dependency
    graph from `## Story contracts` (each entry's `delivers` / `consumes`), compute a topological order,

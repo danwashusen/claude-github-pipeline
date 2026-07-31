@@ -1,9 +1,11 @@
-# Epic split — fresh Epic batch and epic-revise
+# Epic split — fresh Epic batch, epic-revise, and promotion
 
-Route for the Epic shape (`vector.mode: epic-revise`, or a new-mode session the router overrode after
-classifying the feedback as **Epic** — SKILL.md §2). One playbook serves both: a fresh Epic files the
-whole set in one batch; an epic-revise reconciles the existing set. An Epic decomposes into
-**independently shippable** stories — each a separate PR, review, and merge.
+Route for the Epic shape (`vector.mode: epic-revise`; a new-mode session the router overrode after
+classifying the feedback as **Epic**; or a revise-mode session the router overrode to **promote** the
+target into an Epic — SKILL.md §2). One playbook serves all three: a fresh Epic files the whole set in
+one batch; an epic-revise reconciles the existing set; a promotion rewrites #N in place as the Epic and
+batch-files its stories (values below). An Epic decomposes into **independently shippable** stories —
+each a separate PR, review, and merge.
 
 This route uses the shared spine's primitives — read [`draft-spine.md`](draft-spine.md) for the review
 loop, the Step-3.5 open-question resolution, and the staged-filing discipline; the E1–E3 sequence below is
@@ -62,6 +64,23 @@ ${CLAUDE_PLUGIN_ROOT}/scripts/gh_persist.py edit-body <owner/repo> <epic-#> "<fa
 All-or-nothing per batch, sequenced Epic → stories → patch. On a mid-batch `create` failure, **stop and
 report exactly what filed and what didn't** — don't blind-retry. On `EMPTY_BODY_FILE`, re-stage that one
 body and re-run with the same path.
+
+## Promotion — an existing standard issue becomes the Epic
+
+A revise-mode session the router overrode to promote (SKILL.md §2) runs E1–E3 with these values. A
+planner seam-analysis comment in the thread (prep spills it) pre-seeds E1's candidate story list; the
+split reviewer may disagree with those suggested boundaries — ground its verdict as usual. E2's bodies
+redistribute #N's original content across the Epic and Story bodies (edit history preserves the
+original).
+
+- **The Epic body lands on #N via `edit-body`, not `create`.** That rewrite is destructive where a
+  fresh `create` is not, so it does **not** ride E3's gate-skip: inherit `revise.md`'s discipline —
+  diff-show the old→new body (Title; Labels ±; changed/added/removed sections) and wait for **explicit
+  confirmation** before applying, and preserve any `> 📋 **Implementation plan:**` pointer line
+  verbatim (the superseded plan comment is the planner's artifact; the Epic's own re-plan replaces it).
+- **Label swap in the same step:** `gh_persist.py edit-labels <owner/repo> <N> --add epic --remove feature`.
+- **Stories still file via `create`** (E3 unchanged, its gate-skip intact — the clean E1+E2 pass plus
+  the confirmed #N rewrite cover the batch), then patch #N's `## Stories` exactly as E3 does.
 
 ## Epic-revise reconciliation
 

@@ -70,7 +70,10 @@ The **pipeline stages** are `drafter`, `researcher`, `planner`, `resolver`, `eva
 **planner**, and `research` is a conditional detour off `plan` — the planner re-routes to the
 researcher only when the issue has no dossier and the plan turns on external truth with genuine
 currency risk, and the researcher hands **back to the planner**, which ingests the dossier (a
-declined research run hands back too, with `research: ✗`). v1 behaved identically — the S15 parity
+declined research run hands back too, with `research: ✗`). The planner also re-routes **backward to
+the drafter** when its seam gate finds a standard issue epic-shaped (most seams outside the issue's
+DoD): it aborts with a lean seam-analysis comment and the drafter promotes #N into an Epic in place
+(`skills/planner/references/seam-dispositions.md`). v1 behaved identically — the S15 parity
 record's Scenario 4(b) has v1's drafter `Next:` pointing at its own planner — so this is doc truth
 being corrected, not a behavior change. The stage/tool split is load-bearing, not cosmetic:
 
@@ -237,8 +240,9 @@ where that threat model cannot apply.
   reads and extends it, never resolving an OQ; the resolver and evaluator read the native
   `blocked_by` and hard-gate the in-scope-blocked case, treating the section as a
   tracked-dependency registry, not buildable scope or DoD.
-- `follow-up-filing.md` — the drafter-proxy sub-agent protocol both the resolver and the evaluator
-  use to file a follow-up issue (never a hand-crafted `gh issue create` body).
+- `follow-up-filing.md` — the drafter-proxy sub-agent protocol the resolver, the evaluator, and the
+  planner (seam-disposition follow-ups) use to file a follow-up issue (never a hand-crafted
+  `gh issue create` body).
 - `asking-the-user.md` — the `AskUserQuestion` card shape, and the rule that a sub-agent returns a
   §3 decision code instead of asking.
 
