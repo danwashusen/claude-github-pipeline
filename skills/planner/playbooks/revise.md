@@ -26,6 +26,9 @@ this route supplies:
 - **Reviewer dimensions (spine S7).** The same set the issue's fresh route would pass, keyed on
   `facts.vector.type` (a bug adds 9; multi-phase adds 7; an epic uses 1, 2, 3, 5, 6), plus 10 when the
   plan carries `## Open questions`.
+- **Off-ramp (spine S4).** Keyed on `facts.vector.type` like the dimension set: `offered` for a
+  standalone issue, `not offered` for an epic revise. On "Split as epic" the superseded plan comment
+  stays put — the promoted Epic's own re-plan supersedes it via `--delete-marker-id`.
 - **Show + confirm (spine S8 variant).** Show the diff-style plan update **and** the proposed body-edit
   diff together, then gate: SOFT → **Apply** / **Cancel**; HARD → **Start fresh (recommended)** /
   **Apply in place anyway** / **Cancel**. **SOFT-Apply** runs the spine's persist immediately as written
@@ -95,3 +98,5 @@ Read [`../references/handoff-renderings.md`](../references/handoff-renderings.md
   draft PR is open, else `/github-pipeline:resolver #<N>`. `Why:` names what changed (the renamed symbol,
   the resolved OQ) — and, on HARD Start-fresh, that the superseded PR was closed with the supersession
   note.
+- **Epic-shaped, planning aborted** (seam gate chose "Split as epic"): `plan: ✗`, no `Grounding:`;
+  `Next: /github-pipeline:drafter` revising #N as an Epic per the seam-analysis comment.

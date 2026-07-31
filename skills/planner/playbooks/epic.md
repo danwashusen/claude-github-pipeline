@@ -23,6 +23,8 @@ this route supplies:
 - **Open questions at the epic grain.** A story *fully* gated by an unresolved OQ is scoped out of
   `## Story breakdown` (a follow-up story once the question is answered); a story merely *touched* by an
   OQ carries the dependency into its own just-in-time plan.
+- **Off-ramp (spine S4).** `off-ramp: not offered` — the target is already an Epic; its seam registry
+  *is* `## Story contracts`.
 
 Everything below runs only after the spine returns.
 

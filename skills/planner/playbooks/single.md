@@ -17,6 +17,8 @@ ground → gates → draft → hedge sweep → verify → show → persist). The
 - **Reviewer dimensions (spine S7).** `1, 2, 3, 4, 6`; add `9` for a bug fix (coverage-gap closure); add
   `7` for a multi-phase issue (phase coherence). Dimension 10 is added by the spine whenever the plan
   carries `## Open questions`.
+- **Off-ramp (spine S4).** `off-ramp: offered` — a standalone issue whose seam inventory is mostly
+  out-of-slice is structurally an Epic filed as one issue; the seam gate may offer the split.
 
 Everything below runs only after the spine returns; on a re-route or trivial-skip exit, emit the
 matching handoff instead.
@@ -32,6 +34,8 @@ Read [`../references/handoff-renderings.md`](../references/handoff-renderings.md
   `Next: /github-pipeline:resolver #<N>`.
 - **Knowledge-gap re-route** (S3 hit ungroundable external truth): `research: ✗ · plan: ✗`; `Next:
   /github-pipeline:researcher #<N> — <the ungroundable fact>`; `Why:` names it verbatim.
+- **Epic-shaped, planning aborted** (seam gate chose "Split as epic"): `plan: ✗`, no `Grounding:`;
+  `Next: /github-pipeline:drafter` revising #N as an Epic per the seam-analysis comment.
 - **Open-question total block** (every plannable part gated by an unresolved OQ): terminal-style, `plan:
   ✗`, `Next:` names no follow-up skill (a human answers), with a re-run breadcrumb; if no companion
   question is filed yet, point at `/github-pipeline:drafter` to file one first.

@@ -1,25 +1,27 @@
 # Follow-up filing — drafter-proxy sub-agent protocol
 
-The single execution path for *creating* a follow-up issue from either the **resolver** (its
-review-loop and end-of-build checkpoint) or the **evaluator** (its post-merge residual-filing step).
-Both file the same way: no hand-crafted `gh issue create` bodies — every follow-up routes through the
-`drafter` (PRD-grounded, sub-agent-reviewed) via a `general-purpose` sub-agent that
-proxy-confirms the draft and returns the URL. The caller keeps its own registry / timing / URL-weaving
-rules; this file is only the filing round-trip they share.
+The single execution path for *creating* a follow-up issue from the **resolver** (its review-loop and
+end-of-build checkpoint), the **evaluator** (its post-merge residual-filing step), or the **planner**
+(a seam disposition's follow-up — "contract only" / "own issue", filed before the plan posts so its
+boundary bullets cite real issue numbers). All file the same way: no hand-crafted `gh issue create`
+bodies — every follow-up routes through the `drafter` (PRD-grounded, sub-agent-reviewed) via a
+`general-purpose` sub-agent that proxy-confirms the draft and returns the URL. The caller keeps its own
+registry / timing / URL-weaving rules; this file is only the filing round-trip they share.
 
 ## Protocol — sub-agent proxy-confirms via the drafter
 
-For each item the user (resolver) or the evaluator has approved for filing, spawn a `general-purpose`
-sub-agent with this prompt (substitute the placeholders at call time):
+For each item the caller's own gate has approved for filing (the resolver's user, the evaluator's
+residual step, the planner's seam-disposition answer), spawn a `general-purpose` sub-agent with this
+prompt (substitute the placeholders at call time):
 
 ```
 You are filing one GitHub follow-up issue on behalf of the calling skill
-(the resolver or the evaluator). Invoke the
+(the resolver, the evaluator, or the planner). Invoke the
 `/github-pipeline:drafter` skill, proxy-confirm the draft, and return the
 filed issue URL.
 
 Item to file:
-- Type: <bug | incomplete-feature | deferred-test | revise-existing>
+- Type: <bug | incomplete-feature | feature | deferred-test | revise-existing>
 - Title hint: <one-line summary>
 - Description: <2–5 sentences explaining the follow-up>
 - Parent reference: PR <URL>, issue #<N>, epic #<E> (if applicable)
@@ -64,8 +66,9 @@ Steps:
    if the third draft still fails any check, stop and return an error to
    the parent with the latest draft inline so the parent can decide.
 
-5. After approval, the drafter runs `gh issue create` (or `gh issue edit`
-   in revise mode) and returns the URL. Capture that URL.
+5. After approval, the drafter files through its staged write path
+   (`gh_persist.py create`, or `edit-body` in revise mode) and returns the
+   URL. Capture that URL.
 
 Return only:
 - The filed URL (or "error: <reason>" if you stopped at step 4's cap)

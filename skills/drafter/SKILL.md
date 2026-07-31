@@ -78,6 +78,14 @@ route per session; do **not** interleave type branches inside a playbook body �
 **Feature-vs-Epic is a gate, not a silent promotion.** When Epic signals fire but scope is genuinely the
 user's call, `new.md`'s Step 1 asks (`header: "Issue size"`) before the override — confirm, don't promote.
 
+**Promotion override (revise → Epic split).** A revise-mode session reads `epic-split.md` instead of
+`revise.md` when the invocation itself says to re-shape the target as an Epic (e.g. a planner handoff's
+"revise #N as an Epic — split per the seam-analysis comment"). If only the *thread* carries that
+recommendation and the invocation doesn't, the size call is still the user's — ask first
+(`header: "Issue size"`), never promote silently. State the override reason. Promotion rewrites #N in
+place, so it inherits `revise.md`'s diff-show + explicit-confirm and plan-pointer preservation
+(`epic-split.md`, "Promotion").
+
 ## 3. Invariants
 
 Universal across every route:

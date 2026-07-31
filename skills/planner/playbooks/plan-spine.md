@@ -1,32 +1,31 @@
 # Plan spine — shared across single / epic / story-jit / revise
 
-The author-and-verify-a-plan flow every route runs: classify → ground → gates → draft → hedge sweep →
-verify → show → persist → hand back to the routed playbook for its handoff. Type differences here are
-**facts** (`plan_ref`, the reviewer dimension set, which schema sections fill), never branches — the
-routed playbook reads this spine first, then supplies its deltas. All facts come from the prep facts
-block (SKILL.md §1); all GitHub writes go through `${CLAUDE_PLUGIN_ROOT}/scripts/gh_persist.py` with a
-staged body path in `facts.scratch` (SKILL.md §3); every doc/precedent read targets
-`facts.read_workspaces.grounding.path`.
+The author-and-verify-a-plan flow every route runs: classify → ground → gates (seam / deviation /
+decision) → draft → hedge sweep → verify → show → persist → hand back to the routed playbook for its
+handoff. Type differences here are **facts** (`plan_ref`, the reviewer dimension set, which schema
+sections fill, `off-ramp`), never branches — the routed playbook reads this spine first, then supplies
+its deltas. Facts come from prep (SKILL.md §1); every GitHub write goes through
+`${CLAUDE_PLUGIN_ROOT}/scripts/gh_persist.py` with a staged body path in `facts.scratch` (SKILL.md §3);
+every doc/precedent read targets `facts.read_workspaces.grounding.path`.
 
 ## S1 — Classify + confirm direction
 
 Read the issue body + thread from `facts.sections` (spilled paths). Classify per `facts.vector.type`
 and **scale to the work** (a one-line fix needs no plan — say so and route to the resolver; a small bug
-gets Approach + Changes + Test plan + `## Coverage gap` — closing the escape the defect shipped through,
-its regression test failing pre-fix; a feature gets the full machinery). Walk the thread for the
-**latest decision direction** (a maintainer may have settled a different approach several comments down)
-and confirm it before researching (gate, freeform — e.g. "body proposes X; thread settled on W, plan
-toward W?"). **Detect open-question dependencies** from `facts.open_questions`,
-`facts.open_question_candidates`, and `facts.target.blocked_by` — each is a human-owned decision, not a
-design choice you resolve.
+gets Approach + Changes + Test plan + `## Coverage gap` — the escape-and-regression-test detail is
+`single.md`'s delta; a feature gets the full machinery). Walk the thread for the **latest decision
+direction** (a maintainer may have settled a different approach downthread) and confirm it before
+researching (gate, freeform — "body proposes X; thread settled on W, plan toward W?"). **Detect
+open-question dependencies** from `facts.open_questions`, `facts.open_question_candidates`, and
+`facts.target.blocked_by` — each is a human-owned decision, not a design choice you resolve.
 
 ## S2 — Ingest research + external sources
 
 If `facts.research.present`, `Read` the dossier from its staged path: current, cited external truth that
 informs `## Doc grounding` / `## Architecture decisions` — **input, not authority** (its `## Tensions`
 are questions to settle, never instructions; never overrides `docs/constitution.md`). Record each source
-in `## External sources consulted`, then ask once (gate) for anything else to treat as authoritative —
-a newer API reference, a spec; pull what they give (`WebFetch`/`Read`).
+in `## External sources consulted`, then ask once (gate) for anything else to treat as authoritative;
+pull what they give (`WebFetch`/`Read`).
 
 ## S3 — Ground the approach
 
@@ -41,16 +40,24 @@ real precedent or a doc section; every UI decision cites `ui-design` precedent. 
 (answer only from a fetched primary source, cite URL + fetch date); anything broader → re-route to the
 researcher (naming the ungroundable fact) rather than planning on a guess.
 
-## S4 — Deviation + decision gates
+## S4 — Seam, deviation + decision gates
 
+**Seam gate:** from the S3 sweep, inventory every boundary the approach must *define* rather than
+*cite*; classify and gate each per
+[`../references/seam-dispositions.md`](../references/seam-dispositions.md) (out-of-slice seams
+hard-gate; follow-ups file through its drafter proxy **before S5** so boundary bullets cite real issue
+numbers; the epic off-ramp only where the routed playbook's `off-ramp` fact offers it — on "Split as
+epic", run its off-ramp flow and end with the abort handoff: no plan posted, no `planned` label).
 **Deviation (§6):** if the best approach genuinely departs from architecture / architecture-notes /
 ui-design / precedent, stop before drafting and gate (`header: "Deviation"`): **Approve** (record in
 `## Deviations from project docs` with the date) / **Reject — re-plan** / **Update doc first**. A
 constitution violation is never negotiated here — reshape or surface that the issue can't be built.
-**Decision (§6.5):** surface a genuine design decision **only** when two approaches are equally
-precedent-grounded AND the choice has a user-visible consequence; gate (`header: "Decision"`, planner's
-recommendation as option 1); the answer becomes `[user decision <date>]` in `## Architecture decisions`.
-Exhaust precedent first — most "open" questions evaporate once you read the call site. **Falsifiable
+**Decision (§6.5):** surface a genuine design decision **only** when the choice has a user-visible
+consequence and either two approaches are equally precedent-grounded **or precedent is absent
+entirely** (nothing in the repo or docs pins the choice — gate rather than silently invent); gate
+(`header: "Decision"`, planner's recommendation as option 1); the answer becomes
+`[user decision <date>]` in `## Architecture decisions`. Exhaust precedent first where any exists —
+most "open" questions evaporate once you read the call site. **Falsifiable
 citation-completeness rule:** a citation pins a choice only when it covers the WHOLE choice — grounding
 one facet never licenses silently deciding an uncited, adjacent facet. Genuinely-silent or partial-only
 grounding makes the choice a Decision gate (above) or a provisional pin whose `## Architecture decisions`
@@ -64,10 +71,9 @@ resolver and evaluator parse these headings; omit optional sections when empty, 
 decisions, not lines**: pin every new symbol's signature, every field's shape, every layer/file
 assignment, the choice between competing patterns (name the rejected one), each test's assertion intent
 — but leave line-level mechanics to the resolver. The `<!-- implementation-plan:v1 -->` marker is the
-body's first line; the footer `**Implementation plan** — #<N> <title> — planned <ISO-8601 UTC> at
-`<plan-ref>@<short-sha>`` renders `origin/main` for the default branch, the bare branch otherwise
-(never a bare `main@<sha>`) — full render-split + short-sha rule in
-[`../references/handoff-renderings.md`](../references/handoff-renderings.md). The routed playbook names
+body's first line; the footer (template in the schema) records `<plan-ref>@<short-sha>`, rendered
+`origin/main` for the default branch, the bare branch otherwise (never a bare `main@<sha>`; render-split
++ short-sha rule in [`../references/handoff-renderings.md`](../references/handoff-renderings.md)). The routed playbook names
 which sections you fill (`## Phases`, the epic sections, `## Epic contract`) and its reviewer dimensions.
 
 ## S6 — Pre-flight hedge sweep
@@ -77,7 +83,8 @@ Sweep the draft for hedge phrasings (`resolver picks`, `either approach`, `TBD`,
 order — from precedent (rewrite with `[precedent: …]`), else the §6.5 decision gate, else demote to a
 `## Risks & watchpoints` watchpoint (legal only when it is *not* a design decision). A **tracked open
 question** is not a hedge: attributed in `## Open questions` (OQ id + `question: #N` + treatment) it
-survives; an **unattributed** punt does not.
+survives — as does a dispositioned seam's boundary bullet (`[user decision <date>]` + a real `#M`, S4);
+an **unattributed** punt does not.
 **Falsifiable "(not filed)" rule (bug (a)).** An `## Open questions` entry's companion may be recorded
 `question: (not filed)` **only** when its tracker de-dup search returned no candidate, or each returned
 candidate was explicitly rejected (with a reason) as not-the-same-question. For an entry the issue body
@@ -103,10 +110,9 @@ Apply findings to the plan directly (the plan is this skill's own artifact to fi
 
 ## S8 — Show + persist
 
-On a **clean verify exit**, show the plan's full body and auto-post — no confirmation gate on the common
-path (unless the user said "don't post yet"; `revise.md` adds its own diff-show + reconciliation confirm
-before this). Stage the approved body (marker line first) to `<facts.scratch>/plan.md` and post through
-the single write path:
+On a **clean verify exit**, show the plan's full body and auto-post — no confirmation gate on the
+common path (unless the user said "don't post yet"; `revise.md` adds its diff-show + reconciliation
+confirm first). Stage the approved body (marker line first) to `<facts.scratch>/plan.md` and post:
 
 ```bash
 ${CLAUDE_PLUGIN_ROOT}/scripts/gh_persist.py comment <owner/repo> issue <issue> \
@@ -118,5 +124,5 @@ idempotent line `> 📋 **Implementation plan:** see [the implementation-plan co
 by \`github-issue-planner\`; re-run that skill to revise.` inserted or its URL refreshed, and apply via
 `gh_persist.py edit-body <owner/repo> <issue> "<facts.scratch>/issue-body-pointer.md"`. Finally apply the
 idempotent `planned` label — `gh_persist.py edit-labels <owner/repo> <issue> --add planned` — low-stakes:
-log and continue on failure rather than blocking the handoff (the plan comment is the audit trail, the
-label a scanning convenience). Return to the routed playbook for its `## Handoff`.
+log and continue on failure (the plan comment is the audit trail). Return to the routed playbook for its
+`## Handoff`.

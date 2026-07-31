@@ -110,6 +110,7 @@ A re-route is a handoff whose `Next:` points at a prior skill — typically:
 - resolver → drafter (the issue body fails the resolver's fitness-to-implement audit, or contradicts a doc the resolver can't reconcile)
 - planner → researcher (the plan needs current external truth the model can't reliably recall — a dependency/API/version at or past the training cutoff; gather and verify the research first, then re-run the planner)
 - planner → (answer the open question) (every plannable part of the issue is gated by an unresolved open question the planner must not resolve itself; a human answers the companion `question` issue, then the planner re-runs). Terminal-style: the `Next:` names no follow-up skill — the decision is a human's — but carries a re-run breadcrumb. If no companion question is filed yet, point at the drafter to file it first.
+- planner → drafter (the seam gate found a standard issue epic-shaped — most of its seams fall outside the issue's Definition of done; the planner aborts, posts a lean seam-analysis comment, and the drafter promotes #N into an Epic in place, splitting per that comment)
 
 (The reverse, researcher → planner, is the *forward* route this pipeline normally takes — research is the planner's input — and follows the standard schema, not these re-route rules.)
 
@@ -121,6 +122,7 @@ The schema does not change. The `Why:` line is the load-bearing piece — it mus
 - Drafter re-routes: quote the body's claim verbatim, name the missing or contradictory symbol, and cite the closest-match `file:line`.
 - Researcher re-routes (planner → researcher): name the specific ungroundable fact verbatim (the dependency/API/version and what's unknown), so the researcher targets exactly that gap rather than re-researching the whole issue.
 - Open-question re-routes (planner → answer the question): name the blocking OQ id and the companion `question` issue `#N` (and its `audience:*`), so the reader knows exactly which decision unblocks the plan.
+- Epic-shape re-routes (planner → drafter): name how many seams fell outside the issue's Definition of done and point at the seam-analysis comment carrying the inventory and suggested story boundaries.
 
 The resolver does **not** invoke the prior skill via the `Skill` tool on a re-route. The handoff is the only signal; the user runs the revise command in a fresh session. This is intentional: session-per-skill is the architectural choice that lets each skill stay context-clean, and crossing session boundaries silently from inside a skill defeats it.
 
