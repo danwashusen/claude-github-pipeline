@@ -8,7 +8,7 @@
     {
       "name": "github-pipeline",
       "source": "./",
-      "version": "2.0.0",
+      "version": "2.1.0",
       "description": "GitHub issue/PR pipeline — draft, research, plan, resolve, and evaluate issues end-to-end via the gh CLI, plus standalone setup, question, and doc-review tools. Deterministic work runs in bundled stdlib-only Python scripts."
     }
   ]
