@@ -169,6 +169,7 @@ import config_block  # noqa: E402  (import after sys.path setup, by necessity; i
 import gh_gather  # noqa: E402
 import gh_pr_gather  # noqa: E402
 import oq_tracker  # noqa: E402
+import refblocks  # noqa: E402  (the origin/main pin — root.sha provenance, uniform across preps)
 import parse  # noqa: E402  (no longer called directly by this module's own code — kept as an
 # import so `prep_planner.parse` still resolves for tests/test_prep_planner.py's one direct
 # `prep_planner.parse.parse_oq_links(...)` call, matching the S14-promotion's "tests unmodified"
@@ -760,7 +761,10 @@ def build_facts(issue_number, repo, root=".", scratch_dir=None, refresh=False, c
     it (the testable core, mirroring `prep_resolver.build_facts` / `prep_evaluator.build_facts`).
     Returns `None` after a `needs_decision` envelope has already been emitted on stdout.
     """
-    root = str(Path(root).resolve())
+    # Normalize to the MAIN checkout (v3): the session may sit inside a worktree (epic-branch
+    # grounding for a story, a plan-PR head on the revise row); ls-remote discovery and the
+    # origin/main pin key off the main checkout regardless.
+    root = str(workspace._resolve_main_root(root))
     if scratch_dir is None:
         scratch_dir = "/tmp/gh-planner-%s" % issue_number
     Path(scratch_dir).mkdir(parents=True, exist_ok=True)
@@ -948,16 +952,29 @@ def build_facts(issue_number, repo, root=".", scratch_dir=None, refresh=False, c
         issue_type, epic_branch_name, open_pr_headref, parent_epic_open=parent_epic_open
     )
 
-    # 6) Root freshness + the ONE read workspace this skill ever gets, grounded at plan_ref
-    #    (architecture.md §6/prd §8.4: the planner never gets a work workspace). Skipped on
-    #    --refresh, mirroring prep_resolver.py's / prep_evaluator.py's identical contract.
+    # 6) Ambient grounding (v3): the planner grounds on the CHECKOUT THE SESSION WAS STARTED IN,
+    #    asserted against the selected plan_ref — never a script-created read worktree. For a
+    #    `main` plan_ref (the fresh-standard default), any clean up-to-date `main` checkout —
+    #    including the project root — passes (`allow_main_root`; plan-before-open is the canonical
+    #    posture). For a non-main plan_ref (the parent-epic branch for a story, an open plan-PR's
+    #    head on the revise row, the epic branch for epic-level planning) the operator must sit
+    #    inside the matching worktree, or the assertion is a WORKSPACE_MISMATCH decision. A
+    #    checkout strictly behind origin/<plan_ref> is WORKSPACE_MISMATCH(stale_checkout) — a
+    #    stale footer SHA would be an immediate `plan: stale` downstream. No hooks (grounding is
+    #    read-only; unchanged from the read-workspace era). Skipped on --refresh, mirroring
+    #    prep_resolver.py's / prep_evaluator.py's identical contract. `root.sha` is the
+    #    origin/main pin (refblocks), keeping the root fact's provenance uniform across the three
+    #    stage preps even though the planner reads no gate config.
     if not refresh:
-        root_status, _rs_notices, root_status_decision = workspace._build_root_status(root)
-        if _forward_decision(root_status_decision):
-            return None
-        root_sha = root_status["sha"]
+        root_sha = refblocks.fetch_pin(root)
 
-        grounding_envelope, _gw_notices, gw_decision = workspace._build_ensure_read(root, plan_ref)
+        grounding_envelope, _gw_notices, gw_decision = workspace._build_attach(
+            cwd if cwd is not None else ".",
+            plan_ref,
+            run_hooks=False,
+            allow_main_root=(plan_ref == ROOT_MAIN_BRANCH),
+            check_remote_staleness=True,
+        )
         if _forward_decision(gw_decision):
             return None
         grounding_docs = _grounding_doc_inventory(grounding_envelope["path"])
@@ -995,7 +1012,7 @@ def build_facts(issue_number, repo, root=".", scratch_dir=None, refresh=False, c
     facts = {
         "repo": repo,
         "scratch": scratch_dir,
-        "root": {"path": root, "sha": root_sha, "fresh": not refresh},
+        "root": {"path": root, "sha": root_sha, "source": "origin/main", "fresh": not refresh},
         "target": {
             "kind": "issue",
             "number": issue_envelope["number"],
@@ -1024,13 +1041,21 @@ def build_facts(issue_number, repo, root=".", scratch_dir=None, refresh=False, c
     if revise_facts is not None:
         facts["revise"] = revise_facts
     if grounding_envelope is not None:
-        facts["read_workspaces"] = {
-            "grounding": {
-                "path": grounding_envelope["path"],
-                "ref": grounding_envelope["ref"],
-                "sha": grounding_envelope.get("sha"),
-            }
+        # v3: the OBSERVED ambient checkout, asserted against plan_ref — replaces the
+        # read_workspaces.grounding ro-* view. `grounding.sha` feeds the plan footer's
+        # `@<short-sha>` and `revise.grounding_sha`.
+        facts["grounding"] = {
+            "path": grounding_envelope["path"],
+            "ref": plan_ref,
+            "branch": grounding_envelope.get("branch"),
+            "sha": grounding_envelope.get("sha"),
+            "dirty": grounding_envelope.get("dirty"),
         }
+        if grounding_envelope.get("dirty"):
+            facts["attention"].append(
+                "grounding checkout has uncommitted changes — the plan footer SHA may not "
+                "reflect the files read"
+            )
 
     sections = {}
     for key, value in issue_envelope.items():
