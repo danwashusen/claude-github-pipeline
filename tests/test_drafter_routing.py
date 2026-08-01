@@ -870,5 +870,141 @@ class BookendStoriesTests(unittest.TestCase):
         self.assertRegex(seams, re.compile(r"double-file", re.IGNORECASE))
 
 
+class ReviewTierAndAnchorRuleTests(unittest.TestCase):
+    """The 2026-08-01 lean-review + essence-body contract (plan: drafter essence-first bodies +
+    proportional review depth). Pins: the spine's two review tiers with the route-neutral full
+    default; the exact proxy handshake phrase kept in sync between the spine and
+    _shared/follow-up-filing.md; the essence-only proxy Description rule (the incident's caller-side
+    seed); the reviewer prompt's delta-scope, anchor-rule + carve-out, absolute-path grounding, and
+    parent-PR-attribution rules; and the templates' anchor/altitude block. All prose gates — no
+    offline test can run the loop itself."""
+
+    HANDSHAKE = "proxy-filed follow-up (lean review)"
+
+    @staticmethod
+    def _flat(text):
+        return re.sub(r"\s+", " ", text)
+
+    def setUp(self):
+        self.spine = (PLAYBOOKS_DIR / SPINE).read_text(encoding="utf-8")
+        self.spine_flat = self._flat(self.spine)
+        self.filing = (SHARED / "follow-up-filing.md").read_text(encoding="utf-8")
+        self.filing_flat = self._flat(self.filing)
+        self.prompt = (REFERENCES_DIR / "issue-reviewer-prompt.md").read_text(encoding="utf-8")
+        self.prompt_flat = self._flat(self.prompt)
+        self.templates = (REFERENCES_DIR / "issue-templates.md").read_text(encoding="utf-8")
+        self.templates_flat = self._flat(self.templates)
+
+    def test_spine_defines_both_tiers_with_route_neutral_full_default(self):
+        self.assertIn("exactly one pass", self.spine_flat, "lean tier must be a single pass")
+        self.assertIn(
+            "show suggestions and nits **unapplied** at the filing gate",
+            self.spine_flat,
+            "lean tier must surface suggestions unapplied (auto-apply is the ratchet)",
+        )
+        self.assertIn(
+            "default **full** absent a stated tier",
+            self.spine_flat,
+            "the spine's tier default must be route-neutral (no per-route enumeration)",
+        )
+        # Full tier keeps the literal mechanics epic-split.md cross-references by name.
+        self.assertIn("3-pass cap", self.spine)
+        self.assertIn("**circular** exit", self.spine)
+
+    def test_spine_full_tier_carries_delta_scope(self):
+        self.assertIn(
+            "never re-verify an unchanged claim",
+            self.spine_flat,
+            "full-tier passes 2+ must be delta-scoped (pass 2 of the incident re-verified everything)",
+        )
+
+    def test_spine_binds_grounding_to_absolute_root(self):
+        self.assertIn(
+            "by absolute path",
+            self.spine_flat,
+            "review-loop grounding must bind to facts.root.path by absolute path, never ambient cwd",
+        )
+
+    def test_handshake_phrase_in_sync_between_spine_and_filing_protocol(self):
+        self.assertIn(self.HANDSHAKE, self.spine_flat, "spine must name the provenance-floor phrase")
+        self.assertIn(self.HANDSHAKE, self.filing_flat, "follow-up-filing must state the same phrase")
+
+    def test_filing_protocol_is_lean_and_essence_only(self):
+        self.assertNotIn(
+            "don't try to shortcut",
+            self.filing_flat,
+            "the don't-shortcut instruction must be gone (a follow-up gets the lean tier)",
+        )
+        self.assertIn("single lean review pass", self.filing_flat)
+        self.assertIn(
+            "never pasted grep output",
+            self.filing_flat,
+            "the caller Description must be essence-only (the incident's caller-side seed)",
+        )
+        self.assertIn(
+            "approve on step 3's checks alone",
+            self.filing_flat,
+            "surfaced-unapplied suggestions are informational at the proxy gate",
+        )
+
+    def test_filing_protocol_carries_parent_pr_attribution(self):
+        self.assertIn(
+            "never asserted as current-repo truth",
+            self.filing_flat,
+            "parent-PR-introduced state must be attributed to the PR in the body",
+        )
+
+    def test_resolver_registry_description_bar_matches(self):
+        # follow-up-tracking.md restates the Description bar (render, don't restate — keep in sync).
+        tracking = self._flat(
+            (REPO_ROOT / "skills" / "resolver" / "references" / "follow-up-tracking.md").read_text(
+                encoding="utf-8"
+            )
+        )
+        self.assertIn("never pasted grep output", tracking)
+
+    def test_reviewer_prompt_carries_tier_and_delta_scope_inputs(self):
+        self.assertIn("<<review_tier>>", self.prompt)
+        self.assertIn("<<changed_summary>>", self.prompt)
+        self.assertIn(
+            "never re-verify an unchanged claim you already confirmed",
+            self.prompt_flat,
+        )
+
+    def test_reviewer_prompt_anchor_rule_has_the_carve_out(self):
+        self.assertIn("Anchor rule", self.prompt)
+        self.assertIn(
+            "verbatim-quoted tool output",
+            self.prompt_flat,
+            "the reviewer is context-blind — the carve-out must be restated in its own prompt",
+        )
+
+    def test_reviewer_prompt_binds_grounding_and_pr_attribution(self):
+        self.assertIn(
+            "never a bare relative path in the ambient working directory",
+            self.prompt_flat,
+            "the incident's reviews grepped a worktree on an unmerged PR branch via ambient cwd",
+        )
+        self.assertIn("Parent-PR attribution", self.prompt)
+        self.assertIn("never verify it against the checkout", self.prompt_flat)
+
+    def test_templates_carry_anchor_rule_and_criterion_form_dod(self):
+        self.assertIn("Issue bodies cite durable anchors", self.templates_flat)
+        self.assertIn("never a frozen enumerated hit list", self.templates_flat)
+        self.assertIn(
+            "verbatim-quoted tool output",
+            self.templates_flat,
+            "the carve-out must ride the rule everywhere it is rendered",
+        )
+
+    def test_lean_capable_playbooks_name_the_tier_as_a_fact(self):
+        new_text = self._flat((PLAYBOOKS_DIR / "new.md").read_text(encoding="utf-8"))
+        revise_text = self._flat((PLAYBOOKS_DIR / "revise.md").read_text(encoding="utf-8"))
+        self.assertIn("**Review tier.**", new_text)
+        self.assertIn("→ **lean**", new_text)
+        self.assertIn("**Review tier.**", revise_text)
+        self.assertIn(self.HANDSHAKE, revise_text)
+
+
 if __name__ == "__main__":
     unittest.main()

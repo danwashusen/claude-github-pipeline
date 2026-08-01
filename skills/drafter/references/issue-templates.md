@@ -4,6 +4,22 @@ Fallback issue-body templates for when the repo provides no issue template of it
 (`facts.repo_context.templates.present == false`). Use the section shapes verbatim; omit any section whose
 guidance says "omit if none." Prefer the repo's own template when one exists.
 
+**Anchor rule (every template, repo template included).** Issue bodies cite durable anchors — files by
+path, code by symbol, docs by §heading or register ID (`PRD-OQ-05`-style), issues by `#N` — and never an
+**authored** `path:line` citation: line numbers rot silently the moment content moves, and the very work
+an issue mandates is what invalidates them. Sole carve-out: a line number inside verbatim-quoted tool
+output (a stack trace, a failing-test line) — evidence of an observed event, not a claim about current
+source.
+
+**Grounding altitude — freeze judgment, not facts.** Capture what took judgment and won't be re-derived:
+dispositions, rulings, exemption classes, constraints, the why, an outcome-level Definition of done. Do
+**not** freeze mechanically re-derivable facts — grep output, enumerated hit lists, current-state code
+forensics: the planner grounds code state just-in-time at current HEAD, so draft-time forensics is stale
+by plan time. A DoD sweep bullet states the **falsifiable criterion + its exemption classes** (e.g. "a
+repo-wide search returns no reference presenting a retired path as live; dated run-log rows are
+historical record — the owning command rules"), **never a frozen enumerated hit list** — enumeration is
+the resolver's build-time grounding, re-derived fresh (≤2 examples marked non-exhaustive are fine).
+
 **Bug template:**
 
 ```markdown
@@ -35,7 +51,7 @@ guidance says "omit if none." Prefer the repo's own template when one exists.
 
 ```markdown
 ## What exists today
-<what currently works>
+<what currently works — the behavior a user or developer observes, not code forensics>
 
 ## What's missing
 <the specific gap>
@@ -98,7 +114,8 @@ As a **<persona>**, I want **<capability>** so that **<benefit>**.
 **Epic:** #<epic-#> — <Epic title>
 
 ## What exists today
-<what currently works in this area, and what limitation prompted this story>
+<what currently works in this area and the limitation prompting this story — behavior-level, not code
+forensics; the planner grounds code state just-in-time>
 
 ## What's missing
 <the specific gap this story closes; reference architecture/PRD sections where relevant>

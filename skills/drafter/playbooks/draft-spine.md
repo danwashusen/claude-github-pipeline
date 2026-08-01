@@ -1,12 +1,10 @@
 # Draft spine — shared across new / revise / epic-split / question
 
-The draft-and-verify-and-file backbone every route runs: gather the missing context → resolve open
-questions → draft against the template → run the adversarial review loop → show + filing gate → stage
-the body and file through the single write path → hand back to the routed playbook for its handoff. Type
-differences here are **facts** (which template, which reviewer dimensions, single-vs-batch filing), never
-branches — the routed playbook reads this spine first, then supplies its deltas. All facts come from the
-prep facts block (SKILL.md §1); all GitHub writes go through
-`${CLAUDE_PLUGIN_ROOT}/scripts/gh_persist.py` with a staged body path in `facts.scratch`.
+The draft-and-verify-and-file backbone every route runs, ending in a hand-back to the routed playbook
+for its handoff. Type differences here are **facts** (which template, which reviewer dimensions, which
+review tier, single-vs-batch filing), never branches — the routed playbook reads this spine first, then
+supplies its deltas. All facts come from the prep facts block (SKILL.md §1); all GitHub writes go
+through `${CLAUDE_PLUGIN_ROOT}/scripts/gh_persist.py` with a staged body path in `facts.scratch`.
 
 ## Gather missing context
 
@@ -16,14 +14,12 @@ thinner issue. The per-type minimum-viable set is a **fact of the classification
 - **Bug** — what happened, what was expected, and repro (or at least what they were doing); ask about
   environment only when it could plausibly matter.
 - **Incomplete feature** — what works today, what's missing, what "done" looks like.
-- **New feature** — the persona, the goal, and the underlying motivation (the "so that"); acceptance
-  criteria are a stretch, not a gate.
+- **New feature** — persona, goal, the "so that" motivation; acceptance criteria are a stretch, not a gate.
 - **Question** — the question, the audience(s), enough context to answer it cold, the grounding
   references, what the answer unblocks, and any **hard external constraints** (regulation, legal, SLA,
   platform limits) each paired with the force that fixes it (`../_shared/question-issue.md` `## Constraints`).
 
-Never invent reproduction steps, error messages, or behavior the user didn't describe — say
-`[to be filled in]` or ask.
+Never invent repro steps, error messages, or behavior the user didn't describe — `[to be filled in]` or ask.
 
 ## Resolving open questions (Step 3.5) — build issues only
 
@@ -75,7 +71,9 @@ templates encode the team's expectations. Otherwise use the built-in fallbacks i
 **existing** labels (`facts.repo_context.labels`) — don't invent `bug` when the repo uses `kind/bug`, or
 `priority:high` when it uses `P1`. Three labels max unless asked. Title conventions and the routed
 playbook's schema sections (`## Open questions`, `## Related issues`, `## PRD impact`, the Story
-`**Epic:**` backlink) are named by the routed playbook.
+`**Epic:**` backlink) are named by the routed playbook. **Anchor rule + grounding altitude** (top of
+that reference, binding every body): durable anchors only, never an authored `path:line`; DoD sweeps
+state criterion + exemption classes, never a frozen hit list; freeze judgment, not re-derivable facts.
 
 **PRD tension → `## PRD impact`.** When a PRD exists (`facts.repo_context.docs.prd`), ground language in
 its personas/terminology and watch for tension — the feedback **contradicts** the PRD, **extends** it into
@@ -101,17 +99,23 @@ the source didn't mark.
 ## Review loop
 
 Before showing the draft, hand it to the isolated review sub-agent
-[`../references/issue-reviewer-prompt.md`](../references/issue-reviewer-prompt.md) — it runs **without the
-conversation history**, so it tests whether the issue stands on its own the way a teammate reading it cold
-would. Dispatch an `Explore` sub-agent, inlining the draft (title/body/labels/priority/type), the `mode`
-(`draft` / `revise <N>` / `split`), `facts.root.path` (its sole code/doc source — the current checkout,
-never a ref), `facts.config.oq_markers`, the **dimension set the routed playbook names**, and (Epic) the
-sibling drafts. It returns findings by dimension with mandatory evidence — findings without evidence are
-dropped. Loop up to **3 passes**: drop unevidenced findings; empty findings → exit clean; a finding
-repeated across two passes with no progress → **circular** exit; three passes with findings left → **cap**
-exit. On a cap/circular exit, show the draft + a "Review notes" block and gate (`header: "Review loop"`):
-**It's real, keep fixing** / **Override and file**. Apply blockers always, suggestions by default, nits
-silently. The review loop runs for both new drafts and revisions — don't skip it.
+[`../references/issue-reviewer-prompt.md`](../references/issue-reviewer-prompt.md) — it runs **without
+the conversation history**, so it tests whether the issue stands on its own the way a teammate reading
+it cold would; it runs for both new drafts and revisions — don't skip it. Dispatch an `Explore`
+sub-agent, inlining the draft, the `mode` (`draft` / `revise <N>` / `split`), the **review tier**,
+`facts.root.path` (ground every read there **by absolute path** — the ambient cwd may be a different
+checkout), `facts.config.oq_markers`, and the **dimension set the routed playbook names**, plus (Epic)
+the sibling drafts. The routed playbook names the tier — default **full** absent a stated tier; a
+**proxy-filed follow-up (lean review)** invocation is always **lean** (the provenance floor).
+
+- **lean** — exactly one pass: drop unevidenced findings, apply blockers; show suggestions and nits
+  **unapplied** at the filing gate (auto-applying is the ratchet — it regrows the review surface).
+- **full** — up to **3 passes** (the 3-pass cap): drop unevidenced findings; none left → exit clean; a
+  finding repeated across two passes with no progress → **circular** exit; three passes with findings
+  left → **cap** exit; passes 2+ get a changed-since-last-pass summary and verify only changed claims +
+  prior findings' resolutions — never re-verify an unchanged claim. On a cap/circular exit, show the
+  draft + a "Review notes" block and gate (`header: "Review loop"`): **It's real, keep fixing** /
+  **Override and file**. Apply blockers always, suggestions by default, nits silently.
 
 ## Show + filing gate
 
@@ -132,9 +136,8 @@ ${CLAUDE_PLUGIN_ROOT}/scripts/gh_persist.py create <owner/repo> "<facts.scratch>
   [--blocked-by <companion #N for each filed-companion in-scope-blocked OQ, plus any user-stated blocker>]
 ```
 
-`create` returns the new issue URL, `#NN`, `body_bytes`, and `body_sha256` (cross-check against
-`shasum -a 256 <path>` if you want a byte-for-byte close). An empty/missing staged file exits with
-`EMPTY_BODY_FILE` and posts nothing — re-stage and re-run with the same path. Native deps are
+`create` returns the new issue URL, `#NN`, `body_bytes`, and `body_sha256`. An empty/missing staged file
+exits with `EMPTY_BODY_FILE` and posts nothing — re-stage and re-run with the same path. Native deps are
 **capability-gated**: on a repo/gh without the feature `create` files the issue and returns a
 `DEPS_UNSUPPORTED` notice instead of failing — the prose `Blocked by #N.` / `## Open questions` /
 `Related to #N` links are the always-present fallback, so keep them regardless. `scoped-out`,

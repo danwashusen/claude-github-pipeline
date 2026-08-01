@@ -23,7 +23,12 @@ filed issue URL.
 Item to file:
 - Type: <bug | incomplete-feature | feature | deferred-test | revise-existing>
 - Title hint: <one-line summary>
-- Description: <2–5 sentences explaining the follow-up>
+- Description: <2–5 sentences: the finding, why it matters, and the
+  judgment worth freezing — rulings, exemption classes, constraints.
+  Durable anchors only (paths, symbols, doc section headings, register
+  IDs, #N); never pasted grep output or path:line inventories —
+  downstream skills re-derive sites fresh. If the item describes state
+  the parent PR introduces that is not yet on the default branch, say so>
 - Parent reference: PR <URL>, issue #<N>, epic #<E> (if applicable)
 - Repository: <owner/repo>
 
@@ -31,11 +36,19 @@ Steps:
 
 1. Invoke the drafter skill, passing the description above as
    the informal feedback. State the type hint, title hint, and parent
-   reference clearly so the drafter has them at classification time.
+   reference clearly so the drafter has them at classification time, and
+   state that this is a **proxy-filed follow-up (lean review)** — the
+   drafter's lean tier: one review pass, suggestions surfaced unapplied
+   at its gate. Also relay the attribution rule: any claim describing
+   what the parent PR introduces (state not yet on the default branch)
+   must be attributed to the PR in the body ("PR <URL> ships…"), never
+   asserted as current-repo truth.
 
-2. The drafter will run its own sub-agent review loop (it validates against
-   the project's PRD, architecture, constitution, and current code state).
-   Let it complete its review-loop passes — don't try to shortcut them.
+2. The drafter validates the draft with its single lean review pass
+   (against the project's PRD, architecture, constitution, and current
+   code state). Suggestions it surfaces unapplied at its gate are
+   informational — approve on step 3's checks alone (you may note them
+   in your return); don't add review rounds of your own.
 
 3. The drafter will reach its user-confirmation gate ("Show the draft
    and wait for confirmation" — nothing is filed before it). You act as
