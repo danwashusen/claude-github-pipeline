@@ -14,7 +14,7 @@ this route's own (the batch filing skips the single-issue confirmation gate — 
 ## Step E1 — Settle the split (coalescing + adversarial loop)
 
 Produce the candidate story list — each a short title plus a one-line scope naming the files, layer, and
-test surface it will touch. Apply the **coalescing pass** yourself first: "independently shippable" is a
+test surface it will touch (the two bookend slots below carry slot-level scopes instead). Apply the **coalescing pass** yourself first: "independently shippable" is a
 ceiling, not a target — every story pays a fixed tax (worktree + per-worktree resources, baseline, cold
 build/boot, targeted test run, review round-trip) before its own work counts, so aim for the **coarsest**
 slicing that still keeps each story independently shippable. **Merge** a pair/cluster when any fire:
@@ -29,6 +29,25 @@ slicing that still keeps each story independently shippable. **Merge** a pair/cl
 contract, *and* a cheaper isolated test surface (the clearest case: pure functions/models with fast unit
 tests and no build/UI/snapshot cost). Thin is not the same as mergeable.
 
+**Bookend stories (default slots, planner-filled).** After coalescing, the candidate list includes two
+bookends by default:
+
+- **Technical-foundation story, first** — the slot for shared groundwork that two or more later stories
+  will consume (contracts, schema, scaffolding, build plumbing). Keep its one-line scope at the slot
+  level; never enumerate the seams — identifying and pinning them is the planner's job (seam
+  dispositions + the epic plan's `## Story contracts`).
+- **Finalization story, last** — the slot for the end-of-epic sweep: cleanup of what the epic
+  accumulated, updating the project docs to reflect what actually shipped, epic-level DoD verification.
+  Never itemize the sweep — its just-in-time plan grounds on the epic delivery log, which exists only
+  after the other stories land.
+
+The slots exist at draft time because the planner never files issues and needs filed issues to plan
+into; their first/last positions bracket the listed story order. Omission is
+allowed but **never silent**: record the omitted bookend and a one-line reason as a note in the Epic
+body directly under `## Stories` (e.g. `_No foundation story: the shared groundwork is story #1's
+entire scope._`) so it survives the E2 re-confirm and every epic-revise; the split reviewer may
+challenge the justification.
+
 Then hand the split to the review sub-agent in **`split` mode** (dimensions **5 and 7 only**, adversarial,
 grepping the codebase to ground every surface-overlap claim). Apply its merges/reorders and re-loop under
 the standard control (3-pass cap + circular guard, per the spine's review loop).
@@ -41,6 +60,12 @@ Draft the Epic body and every Story body per the built-in templates
 `1, 2, 3, 6` on each body **plus a re-confirm of 5 and 7** on the real bodies (a body can reveal a slice is
 bigger/smaller than its one-line scope claimed). Resolve OQs per the spine's Step 3.5 for the Epic and each
 Story that a gating OQ touches.
+
+Bookend bodies use the Story template with **explicit deferral placeholders**, never invented specifics —
+e.g. a DoD entry "Deliver the shared groundwork pinned by the epic plan's `## Story contracts` (specified
+at planning time)" or "Cleanup + doc-reality sweep per the just-in-time plan (grounded on the epic
+delivery log)". Deferral is the sanctioned placeholder form here; a fabricated seam list or cleanup list
+in a bookend body is the defect (anti-fabrication), not the placeholder.
 
 ## Step E3 — File the batch (hands-off on a clean run)
 
@@ -89,7 +114,9 @@ against live per-story state (`facts.attention` flags a checkbox/live-state mism
 body write). Reconcile the checkboxes (closed → checked; open → unchecked) and re-run the **dependency-graph
 ordering (5)** and **sizing / over-split (7)** dimensions against the current story set. Surface findings
 with evidence + a proposed re-order/merge for the user to confirm — don't silently swap or merge bullets
-(a sizing finding can't un-file a story; it's a recommendation). Then batch-file only genuinely **new**
+(a sizing finding can't un-file a story; it's a recommendation). Dimension 7's bookend check rides this
+same re-run: a missing-bookend finding is a recommendation like any sizing finding, and a confirmed new
+bookend files through the new-stories path below. Then batch-file only genuinely **new**
 stories (the same E2/E3 discipline) and `edit-body` the reconciled Epic body.
 
 ## Handoff

@@ -39,10 +39,12 @@ you're here to surface.
   - `revise <N>` — issue #N is already filed; fetch the live state with `gh issue view <N> --comments
     --json …` and walk the thread.
   - `split` — Epic *split loop*: no story bodies exist yet. The proposed split (each story's title + a
-    one-line scope naming the files, layer, and test surface it will touch) is in `<<related_drafts>>`, and
-    the Epic body is in **Draft**. Run **dimensions 5 and 7 only**, adversarially, and ground every claim
-    by grepping the codebase — you're reasoning from scopes, not bodies, so a claim you can't grep is a
-    dropped finding.
+    one-line scope naming the files, layer, and test surface it will touch — bookend slots carry
+    slot-level scopes instead) is in `<<related_drafts>>`, and
+    the Epic body is in **Draft**. Run **dimensions 5 and 7 only**, adversarially, and ground every
+    overlap claim by grepping the codebase — you're reasoning from scopes, not bodies, so an overlap
+    claim you can't grep is a dropped finding. (Dimension 7's bookend structural checks are the
+    exception: their evidence is the Epic body and the story list, not a grep.)
 - **Repo root**: `<<repo_root>>` — absolute path (the drafter's current checkout, `facts.root.path`; the
   drafter grounds on the working tree, not a pinned ref). Read `docs/prd.md`, `docs/architecture.md`,
   `docs/constitution.md`, `CLAUDE.md` if they exist; grep the source tree from this root.
@@ -55,8 +57,8 @@ you're here to surface.
   dimensions. Don't fabricate findings outside the list.
 - **Related drafts**: `<<related_drafts>>` — for an Epic, the sibling stories so you can reason across them
   for dimensions 5 and 7. In `split` mode it carries each story's **title + one-line scope** (files /
-  layer / test surface). In the body re-confirm it carries each story's **title + full body**. Empty
-  unless type is `epic`.
+  layer / test surface; bookend slots carry slot-level scopes). In the body re-confirm it carries each
+  story's **title + full body**. Empty unless type is `epic`.
 
 ## Dimensions
 
@@ -112,7 +114,9 @@ Run only the dimensions named in the inputs.
    features. Definition of done for stories. Steps to reproduce + expected vs. actual for bugs. Goal +
    Background + Stories for Epics. Question + Audience + Context for questions (a question with no Context,
    or whose References cite nothing a reader could follow, is incomplete). If a section is missing, flag
-   it; if a section exists but is empty or a placeholder, flag that too.
+   it; if a section exists but is empty or a placeholder, flag that too — with one exception: a bookend
+   story's explicit deferral placeholder ("specified at planning time" / "grounded on the epic delivery
+   log") is the sanctioned form for content the planner owns, not an empty section; don't flag it.
 
 7. **Story sizing / over-split** *(only when type is `epic` and `<<related_drafts>>` contains sibling
    stories; adversarial)*. Your job is to attack the proposed split — find the strongest case it is
@@ -134,6 +138,22 @@ Run only the dimensions named in the inputs.
      distinct pure-function or model layers covered by fast unit tests with no build/UI/snapshot cost. Thin
      alone is not mergeable; a small slice introducing a real contract worth reviewing on its own (a schema
      field, a new public type with its own suite) earns its own story.
+   - **Bookend check.** A split defaults to two planner-filled bookend slots: an opening
+     technical-foundation story (shared groundwork two or more later stories consume) and a closing
+     finalization story (cleanup + doc-reality sweep). Three findings:
+     1. No foundation story while ≥2 stories' scopes each introduce/consume the same new groundwork →
+        BLOCKER (grep-grounded like every claim here); remediation: extract the shared groundwork into
+        an opening foundation story.
+     2. Either bookend absent with no omission justification — the Epic body carries it as a note
+        directly under `## Stories` — → SUGGESTION. A stated justification the evidence contradicts →
+        flag at the severity the evidence supports.
+     3. Leakage: a feature story *defining* shared groundwork a foundation story exists to hold →
+        SUGGESTION to move the claim there; a bookend body enumerating concrete seams or cleanup items
+        (content the planner owns, via seam dispositions and the delivery-log-grounded just-in-time
+        plan) → SUGGESTION to restore the deferral placeholder. The body branch runs only where bodies
+        exist (the re-confirm and revise modes, never `split`).
+     A bookend's deferral body is planner-owned by design: its thinness is not evidence for merge
+     signals 2 or 3 and draws no merge recommendation on that basis.
 
    You are reasoning from scope descriptors (files / layer / test surface), not full bodies, so **ground
    every overlap claim by grepping the codebase**: confirm two stories really touch the same files or the
