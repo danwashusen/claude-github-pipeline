@@ -70,12 +70,12 @@ class RouterStructureTests(unittest.TestCase):
     def setUp(self):
         self.router_text = ROUTER.read_text(encoding="utf-8")
 
-    def test_router_exists_and_frontmatter_pins(self):
+    def test_router_exists_and_frontmatter(self):
         self.assertTrue(ROUTER.is_file())
         head = "\n".join(self.router_text.splitlines()[:8])
         self.assertIn("name: question-sweep", head)
-        self.assertIn("model: opus", head)
-        self.assertIn("effort: high", head)
+        self.assertNotIn("model:", head)
+        self.assertNotIn("effort:", head)
         # DoD box 5 (S18 rule): the sweep DOES carry the key (unlike setup) — its v1 predecessor carried it
         # and CLAUDE.md:73 names it among the three standalone tools that keep it.
         self.assertIn("disable-model-invocation: true", head)

@@ -148,13 +148,13 @@ class RouterRoutingTableTests(unittest.TestCase):
         self.rows = _parse_router_routing_table(self.router_text)
         self.playbooks = [pb for _, pb in self.rows]
 
-    def test_router_exists_and_has_frontmatter_pins(self):
-        # Frontmatter model/effort pins carried verbatim from the v1 drafter (opus / high).
+    def test_router_exists_and_has_no_model_effort_pins(self):
+        # Model/effort are not pinned — skills inherit the invoking session's model and effort.
         self.assertTrue(ROUTER.is_file(), "router SKILL.md must exist")
         head = "\n".join(self.router_text.splitlines()[:8])
         self.assertIn("name: drafter", head)
-        self.assertIn("model: opus", head)
-        self.assertIn("effort: high", head)
+        self.assertNotIn("model:", head)
+        self.assertNotIn("effort:", head)
 
     def test_routing_table_covers_exactly_the_four_routable_playbooks(self):
         self.assertEqual(

@@ -318,8 +318,9 @@ result or a typed §3 decision code, cannot call `AskUserQuestion`, and never wr
 | review-loop | resolver | PR + review verdict file | items-addressed JSON |
 | question-status reader | question-sweep, question-resolver | question thread (path) | status or `AMBIGUOUS` |
 
-Model pins carry over from v1 frontmatter verbatim (skills stay `opus` at their existing effort
-levels); changing a pin is a deviation through the normal gate. There are no mechanical-relay
+Skill frontmatter carries no `model:` or `effort:` keys — every skill inherits the invoking
+session's model and effort level (the v1 pins were removed 2026-08-01; reintroducing one is a
+deviation through the normal gate). There are no mechanical-relay
 agents: if a task is deterministic it is a script, not a sub-agent.
 
 ## §9 Skill anatomy

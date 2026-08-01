@@ -79,13 +79,13 @@ class RouterRoutingTableTests(unittest.TestCase):
         self.router_text = ROUTER.read_text(encoding="utf-8")
         self.table = _parse_router_routing_table(self.router_text)
 
-    def test_router_exists_and_has_frontmatter_pins(self):
-        # Frontmatter model/effort pins carried verbatim from v1 (S7 DoD box 4).
+    def test_router_exists_and_has_no_model_effort_pins(self):
+        # Model/effort are not pinned — skills inherit the invoking session's model and effort.
         self.assertTrue(ROUTER.is_file(), "router SKILL.md must exist")
         head = "\n".join(self.router_text.splitlines()[:8])
         self.assertIn("name: evaluator", head)
-        self.assertIn("model: opus", head)
-        self.assertIn("effort: xhigh", head)
+        self.assertNotIn("model:", head)
+        self.assertNotIn("effort:", head)
 
     def test_routing_table_covers_exactly_the_three_pr_types(self):
         # The vector.type set the evaluator can see is exactly {standard, story, epic-integration}

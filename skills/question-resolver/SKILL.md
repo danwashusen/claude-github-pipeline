@@ -1,7 +1,5 @@
 ---
 name: question-resolver
-model: opus
-effort: high
 disable-model-invocation: true
 description: Assisted closing of an open `question`-type GitHub issue. Evaluates the question and its thread against the project docs (especially hard constraints — regulatory / legal / contractual), discusses a decision with the operator, records the operator's approved decision as a durable `<!-- question-decision:v1 -->` comment, offers to close the issue, and produces detailed **proposals** for folding the decision back into the docs (state-now; never applied). It **does not make the decision** — the operator does — and it never edits docs. Explicit-invocation only — run it as `/github-pipeline:question-resolver <issue>`. Not a pipeline stage; not for build issues (that's `/github-pipeline:resolver`) or for filing a new question (that's `/github-pipeline:drafter`).
 ---

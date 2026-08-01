@@ -1,7 +1,5 @@
 ---
 name: evaluator
-model: opus
-effort: xhigh
 description: Evaluate a pull request against its origin issue, post a formal GitHub approval or soft-rejection review, and merge it with the right strategy for a clean history. Use whenever the user references a PR to evaluate, approve, or merge — "is PR #N ready to merge?", "approve that PR if it looks good", "evaluate PR #N", "what's the right merge strategy?", "give me the squash title for #N", or "the review loop is done, what's next?". Use even after the code-review `/review` command has run (that covers code quality; this covers issue-fit, scope, doc grounding, and merge strategy) and even when the PR was opened manually. Do NOT approve or merge a PR outside this skill.
 ---
 

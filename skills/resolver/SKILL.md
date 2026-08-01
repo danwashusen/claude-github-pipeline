@@ -1,7 +1,5 @@
 ---
 name: resolver
-model: opus
-effort: xhigh
 description: Implement a planned GitHub issue end-to-end — read the issue and its full thread, audit the body for fitness-to-implement, consume the verified plan, do the code (or comment-only) work in a git worktree, loop with the `review` skill until approved, and open or continue a PR. Trigger when the user gives an issue number/URL or asks to "work on", "fix", "implement", "resolve", "continue", or "respond to" an issue — bugs, features, refactors, epics (long-lived `epic/<N>-<slug>` integration branch), and stories under an open epic (PR base = the epic branch). Continues an in-flight PR (`continue #<N>`), refuses code work on an issue hard-gated by an open in-scope-blocked question, and re-routes to the planner when the plan doesn't survive contact with the code. Use even on casual mentions ("look at #423?", "keep going on the auth epic").
 ---
 

@@ -303,10 +303,9 @@ the *consuming* repo provides — not by plugin config:
 - **Plugin namespace is baked in.** Skills resolve as `/github-pipeline:<skill>`; cross-session
   handoff commands are namespaced to match. Renaming the plugin means updating every such
   reference.
-- **Model/effort are pinned per skill** in frontmatter — all nine are `opus`, at `medium`
-  (`researcher`, `setup`), `high` (`drafter`, `question-sweep`, `question-resolver`,
-  `doc-reviewer`), or `xhigh` (`planner`, `resolver`, `evaluator`). Pins carried from v1 verbatim;
-  changing one is a deviation through the normal gate.
+- **Model/effort are not pinned.** Skill frontmatter carries no `model:` or `effort:` keys — every
+  skill inherits the invoking session's model and effort level. The v1 per-skill pins were removed
+  2026-08-01; reintroducing one is a deviation through the normal gate.
 - **`disable-model-invocation: true` is exactly the three-tool trio** — `doc-reviewer`,
   `question-sweep`, `question-resolver`. **`setup` is the deliberate exception**: it is a
   standalone tool but stays model-invocable, because v1 never carried the key on it and the S17
@@ -367,13 +366,14 @@ the *consuming* repo provides — not by plugin config:
     stack's worked example as "the canonical shape". State the generic principle first, then
     illustrate. `skills/setup/references/block-authoring.md`'s worked examples and the
     test-selection sub-agent's SwiftUI/Rails branches are the reference patterns.
-- **Compressing a prompt without losing precision.** These skill bodies are Opus instruction
-  prompts (`opus` at `medium`/`high`/`xhigh`), not chat prompts — so when reducing tokens the
+- **Compressing a prompt without losing precision.** These skill bodies are agent instruction
+  prompts run at whatever model/effort the invoking session uses (typically a frontier model at
+  medium-or-higher effort), not chat prompts — so when reducing tokens the
   target is the *smallest set of high-signal tokens that fully specifies the behaviour*, **not the
   shortest text** (Anthropic's "minimal ≠ short"; corroborated by OpenAI and Google prompt
-  guidance). This is load-bearing because Opus follows instructions **literally** at these effort
-  levels: it will not silently generalise a scope you trimmed or re-infer an intent you dropped,
-  and no offline test reads prose. Cut low-signal prose; keep every token that carries scope,
+  guidance). This is load-bearing because these models follow instructions **literally** at these
+  effort levels: they will not silently generalise a scope you trimmed or re-infer an intent you
+  dropped, and no offline test reads prose. Cut low-signal prose; keep every token that carries scope,
   intent, or contract.
   - **Compress — token wins with no precision cost:** delete filler and hedging ("in order to",
     "it's worth noting", restated context); de-duplicate against the point-of-use copy (an intro

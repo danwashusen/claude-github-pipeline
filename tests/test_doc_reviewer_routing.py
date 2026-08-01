@@ -92,12 +92,12 @@ class RouterStructureTests(unittest.TestCase):
     def setUp(self):
         self.router_text = ROUTER.read_text(encoding="utf-8")
 
-    def test_router_exists_and_frontmatter_pins(self):
+    def test_router_exists_and_frontmatter(self):
         self.assertTrue(ROUTER.is_file())
         head = "\n".join(self.router_text.splitlines()[:8])
         self.assertIn("name: doc-reviewer", head)
-        self.assertIn("model: opus", head)
-        self.assertIn("effort: high", head)
+        self.assertNotIn("model:", head)
+        self.assertNotIn("effort:", head)
         # DoD box 4 (S17/S18 rule): doc-reviewer RETAINS the key — it is one of the three CLAUDE.md:73
         # standalone tools that keep it (setup was the sole exception).
         self.assertIn("disable-model-invocation: true", head)
