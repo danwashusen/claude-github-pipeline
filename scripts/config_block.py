@@ -197,21 +197,29 @@ def _scan_marker(lines, name):
 # ---------------------------------------------------------------------------
 
 
-def find_includes_one_level(file_path):
-    """Return the `@`-included paths (one level) found in `file_path` — matches a token that looks
-    like a file path (has a slash or a dotted extension), which excludes bare `@mentions`.
-    Existence is re-checked by the caller (`candidate_config_files`), so a stray match here is
-    harmless.
+def extract_include_tokens(text):
+    """Return the `@`-include path tokens found in `text` — matches an `@`-prefixed token that
+    looks like a file path (has a slash or a dotted extension), which excludes bare `@mentions`.
+    Pure text -> tokens, no filesystem access: `find_includes_one_level` composes it over a file
+    on disk, and `refblocks.py` composes it over a blob read at a pinned ref (`git show`), so the
+    working-tree and at-ref discovery loops share ONE include parser.
     """
-    path = Path(file_path)
-    if not path.is_file():
-        return []
-    text = path.read_text(encoding="utf-8")
     return [
         tok
         for tok in re.findall(r"@([A-Za-z0-9._/-]+)", text)
         if re.search(r"(/|\.[A-Za-z0-9]+$)", tok)
     ]
+
+
+def find_includes_one_level(file_path):
+    """Return the `@`-included paths (one level) found in `file_path` — see
+    `extract_include_tokens` for the token grammar. Existence is re-checked by the caller
+    (`candidate_config_files`), so a stray match here is harmless.
+    """
+    path = Path(file_path)
+    if not path.is_file():
+        return []
+    return extract_include_tokens(path.read_text(encoding="utf-8"))
 
 
 def candidate_config_files(root, candidate_filenames=DEFAULT_CONFIG_CANDIDATE_FILES):

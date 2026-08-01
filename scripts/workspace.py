@@ -21,6 +21,8 @@ Subcommands
 -----------
     workspace.py ensure --work <branch> --base <ref> [--root <path>]
     workspace.py ensure --read <ref>                 [--root <path>]
+    workspace.py attach --expect-branch <branch>     [--path <p>] [--base <ref>] [--no-hooks]
+                        [--allow-root] [--pin-sha <sha>] [--expect-remote-sha <sha>]
     workspace.py remove --work <branch>              [--root <path>]
     workspace.py gc [--max-age <days>]               [--root <path>]
     workspace.py root-status                         [--root <path>]
@@ -29,7 +31,19 @@ Subcommands
 ``--root`` defaults to ``.`` purely so a caller already sitting at the project root doesn't have
 to repeat the obvious — every internal git call is still scoped with an explicit ``cwd`` derived
 from the resolved ``--root`` or a resolved workspace path, never from the invoking process's
-ambient cwd (architecture.md §6, "no ambient cwd").
+ambient cwd (architecture.md §6, "no ambient cwd"). Every ``--root``-taking subcommand first
+normalizes to the MAIN checkout via :func:`_resolve_main_root`, so ``--root .`` from *inside* a
+linked worktree still lands ``.worktrees/``, gc, removal, and ``info/exclude`` under the main
+checkout — the v3 posture, where sessions run inside worktrees, depends on this.
+
+``attach`` (v3) is the ONE deliberate exception to the no-ambient-cwd rule: its *subject* is the
+ambient checkout — the worktree the operator started the session in — so its default ``--path .``
+reads the invoking cwd on purpose. It verifies the checkout (expected branch, not the project
+root, not detached, not stale against ``--expect-remote-sha``), records ``sha``/``dirty``/
+``unpushed_commits``, and re-runs the ``<!-- worktree-setup -->`` hooks discovered at the
+``origin/main`` pin (``refblocks``) — every mismatch is a ``WORKSPACE_MISMATCH`` decision, never a
+silent proceed. ``remove --work`` also emits ``WORKSPACE_MISMATCH`` (reason ``cwd_inside_target``)
+when invoked from inside the worktree it would remove.
 
 Path conventions (architecture.md §6)
 --------------------------------------
@@ -81,6 +95,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 import config_block  # noqa: E402  (import after sys.path setup, by necessity; in-process composition)
+import refblocks  # noqa: E402  (attach-path hook discovery at the origin/main pin)
 from pipelib import hooks, process  # noqa: E402
 from pipelib.decisions import (  # noqa: E402
     AMBIGUOUS,
@@ -88,6 +103,7 @@ from pipelib.decisions import (  # noqa: E402
     ROOT_DIRTY,
     ROOT_DIVERGED,
     ROOT_NOT_ON_MAIN,
+    WORKSPACE_MISMATCH,
     needs_decision,
 )
 from pipelib.envelope import EXIT_OK, emit_needs_decision, emit_ok  # noqa: E402
@@ -241,6 +257,19 @@ def _read_path(root, ref):
 # mechanism, just the correct one for a tool-authored exclusion no consuming repo should have to
 # commit.
 # ---------------------------------------------------------------------------
+
+
+def _resolve_main_root(root):
+    """Normalize ``root`` to the MAIN checkout: the parent of ``git rev-parse --git-common-dir``.
+    Identity when ``root`` already is the main checkout (common dir = ``<root>/.git``); hops to
+    the main checkout when ``root`` — or the ambient cwd behind ``--root .`` — is a linked
+    worktree. Every ``_build_*`` core applies this first, so ``.worktrees/`` placement, gc,
+    removal, branch exclusivity, and ``info/exclude`` behave identically no matter which checkout
+    the invoking session sits in (the v3 operator-owned-worktree posture). Assumes a non-bare main
+    checkout (the common dir's parent IS the checkout) — true for every ``git clone``; exotica
+    (bare repos, detached git dirs) hard-fail earlier in ``_git_common_dir``'s rev-parse with
+    faithful stderr rather than being guessed at."""
+    return _git_common_dir(str(Path(root).resolve())).parent
 
 
 def _git_common_dir(root):
@@ -436,6 +465,41 @@ def _tail_lines(text, n):
     return "\n".join(lines[-n:])
 
 
+def _execute_setup_commands(phase_present, commands, workspace_path):
+    """The shared fail-fast setup-command executor behind :func:`_run_setup_hooks`
+    (working-tree discovery — the ensure path) and :func:`_run_setup_hooks_at_ref` (origin/main
+    pin discovery — the attach path). Same result shape as always: ``{"phase_present",
+    "commands_run", "succeeded", "first_failure"?}``."""
+    result = {"phase_present": phase_present, "commands_run": 0, "succeeded": True}
+    for step, command_text in enumerate(commands, start=1):
+        hook_result = hooks.run_repo_owned_hook_command(command_text, cwd=workspace_path)
+        result["commands_run"] += 1
+        if hook_result.returncode != 0:
+            result["succeeded"] = False
+            result["first_failure"] = {
+                "step": step,
+                "command": command_text,
+                "output_tail": _tail_lines(hook_result.stdout + (hook_result.stderr or ""), 50),
+            }
+            break
+    return result
+
+
+def _run_setup_hooks_at_ref(root, pin_sha, workspace_path):
+    """Attach-path setup-hook runner (v3): discover the ``<!-- worktree-setup -->`` block from the
+    ``origin/main`` **blobs at the pin SHA** (``refblocks.read_block_at_ref`` — the same
+    COMMANDS.md -> CLAUDE.md -> one-level-``@``-include order, resolved at the ref) and run the
+    commands fail-fast inside ``workspace_path``. Pinning hook *content* to trust matters here for
+    the same reason gate config is pinned: attach runs inside a PR-branch worktree, and hook
+    commands are arbitrary repo-owned shell run automatically on session entry — they must come
+    from ``origin/main``, never from whatever the ambient checkout (or any working tree) contains.
+    Consequence, documented in ``skills/_shared/worktree-lifecycle.md``: a hook block that exists
+    only as an uncommitted local edit is not seen by attach."""
+    present, interior, _source = refblocks.read_block_at_ref(root, pin_sha, "worktree-setup")
+    commands = _parse_command_list(interior) if present else []
+    return _execute_setup_commands(present, commands, workspace_path)
+
+
 def _run_setup_hooks(root, workspace_path):
     """Fail-fast: run every discovered setup command inside ``workspace_path`` in declaration
     order; stop at the first non-zero exit. Returns ``{"phase_present", "commands_run",
@@ -476,19 +540,7 @@ def _run_setup_hooks(root, workspace_path):
     malformed candidate file when a later candidate (or "no block at all") would have been fine.
     """
     phase_present, commands = _discover_hook_commands(root, "setup")
-    result = {"phase_present": phase_present, "commands_run": 0, "succeeded": True}
-    for step, command_text in enumerate(commands, start=1):
-        hook_result = hooks.run_repo_owned_hook_command(command_text, cwd=workspace_path)
-        result["commands_run"] += 1
-        if hook_result.returncode != 0:
-            result["succeeded"] = False
-            result["first_failure"] = {
-                "step": step,
-                "command": command_text,
-                "output_tail": _tail_lines(hook_result.stdout + (hook_result.stderr or ""), 50),
-            }
-            break
-    return result
+    return _execute_setup_commands(phase_present, commands, workspace_path)
 
 
 def _run_teardown_hooks(root, workspace_path):
@@ -535,7 +587,7 @@ def _build_ensure_work(root, branch, base):
       - a hard `git` failure still ``sys.exit(1)`` with faithful stderr and no envelope (§3
         exit-code contract — unchanged), not a returnable decision.
     """
-    root = str(Path(root).resolve())
+    root = str(_resolve_main_root(root))
     freshness = _root_freshness(root)
     if isinstance(freshness, dict):
         return None, [], freshness
@@ -673,7 +725,7 @@ def _build_ensure_read(root, ref):
     freshly fetched ``origin/<ref>``), so ``decision`` is always ``None`` here; the tuple shape is
     kept uniform with every other retrofitted core. A hard `git` failure still ``sys.exit(1)`` with
     faithful stderr and no envelope (§3 — unchanged)."""
-    root = str(Path(root).resolve())
+    root = str(_resolve_main_root(root))
 
     fetch_result = _git(["fetch", "origin", ref], root)
     if fetch_result.returncode != 0:
@@ -726,26 +778,229 @@ def _cmd_ensure_read(args):
 
 
 # ---------------------------------------------------------------------------
+# attach (v3) — verify the AMBIENT checkout is the expected workspace, record its facts, re-run
+# the setup hooks. The observe-and-assert replacement for ensure --work on the pipeline stages:
+# the operator opens the worktree (workspace-open) and starts the session inside it; the session's
+# prep attaches instead of creating.
+# ---------------------------------------------------------------------------
+
+# The code-wide closed reason set for WORKSPACE_MISMATCH decisions, with per-operation
+# applicability: attach emits the first four; remove --work emits only `cwd_inside_target`
+# (attach runs *inside* the worktree by design, so that reason can never gate attach).
+ATTACH_MISMATCH_REASONS = ("at_project_root", "detached_head", "branch_mismatch", "stale_checkout")
+REMOVE_MISMATCH_REASON = "cwd_inside_target"
+
+
+def _workspace_mismatch(reason, summary, context, options):
+    context = dict(context)
+    context["reason"] = reason
+    return needs_decision(WORKSPACE_MISMATCH, summary=summary, context=context, options=options)
+
+
+def _build_attach(
+    path,
+    expected_branch,
+    base_for_unpushed=ROOT_BRANCH,
+    run_hooks=True,
+    allow_main_root=False,
+    pin_sha=None,
+    expected_remote_sha=None,
+    require_exact_remote_sha=False,
+):
+    """Pure ``attach`` core (v3): verify the checkout at ``path`` (default the ambient cwd — the
+    ONE deliberate ambient read in this module; attach's subject IS the checkout the session was
+    started in), record its facts, and re-run the setup hooks. Returns
+    ``(payload, notices, decision)`` — **never emits**.
+
+    Checks, in order (each failure is a ``WORKSPACE_MISMATCH`` decision with ``context.reason``
+    from :data:`ATTACH_MISMATCH_REASONS`):
+
+    1. ``at_project_root`` — the checkout is the main checkout itself, and ``allow_main_root`` is
+       False (the "operator forgot workspace-open" surface; the planner passes True for a ``main``
+       plan_ref, where planning from the project root is the canonical posture).
+    2. ``detached_head`` — always a mismatch, ``allow_main_root`` or not.
+    3. ``branch_mismatch`` — ambient branch != ``expected_branch``.
+    4. ``stale_checkout`` — only when ``expected_remote_sha`` is supplied: ambient HEAD is not
+       equal to it and not ahead of it (i.e. behind or diverged — "ahead" means the remote SHA is
+       an ancestor of HEAD, which is the normal unpushed-local-work shape and passes). With
+       ``require_exact_remote_sha`` (the evaluator: never health-check or cache against code the
+       checkout doesn't contain), any inequality is the mismatch.
+
+    Hooks: with ``run_hooks``, the ``<!-- worktree-setup -->`` commands are discovered at the
+    ``origin/main`` pin (:func:`_run_setup_hooks_at_ref`) and run fail-fast inside the checkout —
+    the every-session-entry hook cadence ``skills/_shared/worktree-lifecycle.md`` requires.
+    ``pin_sha`` is the caller's own pin (a prep passes the same SHA it reads gate config at, so
+    hooks and gates come from ONE origin/main commit); when omitted — the bare-CLI convenience —
+    attach pins for itself via ``refblocks.fetch_pin``. A setup-hook failure is the same
+    partial-but-honest payload shape as ``ensure --work`` (``setup.succeeded: false``, no
+    ``sha``/``dirty``/``unpushed_commits``), mapped to process exit 1 by the emit wrapper.
+    """
+    top_result = _git(["rev-parse", "--show-toplevel"], str(Path(path).resolve()))
+    if top_result.returncode != 0:
+        sys.stderr.write(top_result.stderr)
+        sys.exit(1)
+    top = str(Path(top_result.stdout.strip()).resolve())
+    main_root = str(_resolve_main_root(top))
+
+    if top == main_root and not allow_main_root:
+        return None, [], _workspace_mismatch(
+            "at_project_root",
+            summary="session is running at the project root, not inside a work worktree",
+            context={"path": top, "expected_branch": expected_branch, "main_root": main_root},
+            options=[
+                "run the workspace-open skill for this issue, then start this session inside the "
+                "worktree it prints",
+                "if a worktree already exists under .worktrees/, start the session there instead",
+            ],
+        )
+
+    branch = _current_branch(top)
+    if branch == "HEAD":
+        return None, [], _workspace_mismatch(
+            "detached_head",
+            summary="session checkout is on a detached HEAD, not branch %r" % expected_branch,
+            context={"path": top, "expected_branch": expected_branch, "main_root": main_root},
+            options=["checkout the expected branch in this worktree, then re-run"],
+        )
+
+    if branch != expected_branch:
+        return None, [], _workspace_mismatch(
+            "branch_mismatch",
+            summary="session checkout is on branch %r but the target expects branch %r"
+            % (branch, expected_branch),
+            context={
+                "path": top,
+                "actual_branch": branch,
+                "expected_branch": expected_branch,
+                "main_root": main_root,
+            },
+            options=[
+                "start this session inside the worktree for %r instead" % expected_branch,
+                "if this checkout is intentional, re-run against the issue/PR this branch belongs to",
+            ],
+        )
+
+    sha = _current_sha(top)
+    if expected_remote_sha is not None and sha != expected_remote_sha:
+        # "Ahead" = the remote SHA is an ancestor of HEAD (unpushed local work — normal for the
+        # resolver). Anything else (behind, or diverged) means the checkout does not contain the
+        # remote's state — a decision, never a silent proceed on stale code.
+        ancestor_result = _git(
+            ["merge-base", "--is-ancestor", expected_remote_sha, sha], top
+        )
+        ahead = ancestor_result.returncode == 0
+        if require_exact_remote_sha or not ahead:
+            return None, [], _workspace_mismatch(
+                "stale_checkout",
+                summary="session checkout HEAD %s does not match the expected remote state %s"
+                % (sha[:7], expected_remote_sha[:7]),
+                context={
+                    "path": top,
+                    "branch": branch,
+                    "head_sha": sha,
+                    "expected_remote_sha": expected_remote_sha,
+                    "ahead_of_remote": ahead,
+                    "main_root": main_root,
+                },
+                options=[
+                    "pull/fast-forward this worktree to the remote state, then re-run",
+                    "if the divergence is intentional, resolve it (push or rebase) and re-run",
+                ],
+            )
+
+    hooks_pin_sha = None
+    setup_result = None
+    if run_hooks:
+        hooks_pin_sha = pin_sha if pin_sha is not None else refblocks.fetch_pin(main_root)
+        setup_result = _run_setup_hooks_at_ref(main_root, hooks_pin_sha, top)
+        if not setup_result["succeeded"]:
+            return {
+                "op": "attach",
+                "kind": "work",
+                "path": top,
+                "branch": branch,
+                "expected_branch": expected_branch,
+                "main_root": main_root,
+                "hooks_pin_sha": hooks_pin_sha,
+                "setup": setup_result,
+            }, [], None
+
+    payload = {
+        "op": "attach",
+        "kind": "work",
+        "path": top,
+        "branch": branch,
+        "expected_branch": expected_branch,
+        "main_root": main_root,
+        "sha": sha,
+        "dirty": _is_dirty(top),
+        "unpushed_commits": _unpushed_commits(top, branch, base_for_unpushed),
+        "hooks_pin_sha": hooks_pin_sha,
+    }
+    if setup_result is not None:
+        payload["setup"] = setup_result
+    return payload, [], None
+
+
+def _cmd_attach(args):
+    payload, notices, decision = _build_attach(
+        args.path,
+        args.expected_branch,
+        base_for_unpushed=args.base,
+        run_hooks=not args.no_hooks,
+        allow_main_root=args.allow_root,
+        pin_sha=args.pin_sha,
+        expected_remote_sha=args.expected_remote_sha,
+    )
+    if decision is not None:
+        emit_needs_decision(decision, notices=notices)
+        return EXIT_OK
+    emit_ok(payload=payload, notices=notices)
+    # A setup-hook failure is an ok envelope but a non-zero process exit (mirrors ensure --work).
+    if not (payload.get("setup") or {"succeeded": True}).get("succeeded", True):
+        return 1
+    return EXIT_OK
+
+
+# ---------------------------------------------------------------------------
 # remove --work
 # ---------------------------------------------------------------------------
 
 
-def _build_remove_work(root, branch):
+def _build_remove_work(root, branch, invoker_cwd=None):
     """Pure ``remove --work`` core (S8 pattern lock): tear down and remove the work worktree for
     ``branch`` and return ``(payload, notices, decision)`` — **never emits**.
 
     Return contract (the type-level distinction the S8 retro asks for):
       - ``decision is not None`` → ``AMBIGUOUS`` when the worktree is dirty or has unpushed commits
-        (architecture.md §6: "dirty or unpushed state is a decision, never a silent discard");
+        (architecture.md §6: "dirty or unpushed state is a decision, never a silent discard"), or
+        ``WORKSPACE_MISMATCH`` (reason ``cwd_inside_target``) when ``invoker_cwd`` sits inside the
+        very worktree being removed — a typed decision instead of git's own hard failure, since
+        removing the checkout a session is standing in can never be what the operator meant;
         ``payload`` is ``None`` and the worktree is left in place.
       - ``decision is None`` → success, carrying the removal receipt (or the ``removed: False,
         reason: not_found`` no-op when nothing is there to remove).
       - a hard `git` failure still ``sys.exit(1)`` with faithful stderr and no envelope (§3 —
         unchanged).
     """
-    root = str(Path(root).resolve())
+    root = str(_resolve_main_root(root))
 
     target_path = _work_path(root, branch)
+
+    if invoker_cwd is not None:
+        resolved_cwd = Path(invoker_cwd).resolve()
+        if resolved_cwd == target_path or target_path in resolved_cwd.parents:
+            return None, [], _workspace_mismatch(
+                REMOVE_MISMATCH_REASON,
+                summary="refusing to remove the worktree the invoking session is inside",
+                context={
+                    "branch": branch,
+                    "path": str(target_path),
+                    "invoker_cwd": str(resolved_cwd),
+                    "main_root": root,
+                },
+                options=["re-run from the project root (%s)" % root],
+            )
     worktrees = _list_worktrees(root)
     entry = _find_worktree_at_path(worktrees, target_path)
     if entry is None:
@@ -811,7 +1066,7 @@ def _build_remove_work(root, branch):
 
 
 def _cmd_remove_work(args):
-    payload, notices, decision = _build_remove_work(args.root, args.branch)
+    payload, notices, decision = _build_remove_work(args.root, args.branch, invoker_cwd=Path.cwd())
     if decision is not None:
         emit_needs_decision(decision, notices=notices)
         return EXIT_OK
@@ -828,7 +1083,7 @@ def _build_gc(root, max_age):
     """Pure ``gc`` core (S8 pattern lock): age out ``ro-*`` read workspaces older than ``max_age``
     days (work worktrees are never touched) and return ``(payload, notices, decision)`` — **never
     emits**. ``gc`` has no ``needs_decision`` path, so ``decision`` is always ``None`` here."""
-    root = str(Path(root).resolve())
+    root = str(_resolve_main_root(root))
     max_age_seconds = max_age * 86400
     now = time.time()
 
@@ -877,7 +1132,7 @@ def _build_root_status(root):
     decision rides in ``decision`` (``payload`` is ``None``); on success the fresh-SHA status rides
     in ``payload``. A hard `git` failure (e.g. ``fetch`` itself failing) still raises out of
     ``_root_freshness`` (§3 — unchanged)."""
-    root = str(Path(root).resolve())
+    root = str(_resolve_main_root(root))
     outcome = _root_freshness(root)
     if isinstance(outcome, dict):
         return None, [], outcome
@@ -902,7 +1157,12 @@ def _cmd_root_status(args):
 def _build_lint(root, phase):
     """Pure ``lint`` core (S8 pattern lock): discover the ``<!-- worktree-<phase> -->`` block's
     commands (no execution, no worktree) and return ``(payload, notices, decision)`` — **never
-    emits**. ``lint`` has no ``needs_decision`` path, so ``decision`` is always ``None`` here."""
+    emits**. ``lint`` has no ``needs_decision`` path, so ``decision`` is always ``None`` here.
+
+    Deliberately NOT normalized via :func:`_resolve_main_root`: ``lint``'s subject is the block
+    text at exactly the path it was given — the setup skill lints the STAGED (edited) blocks
+    inside its landing workspace (``lint setup --root <workspace>``), and hopping to the main
+    checkout would silently lint the un-edited originals instead."""
     root = str(Path(root).resolve())
     phase_present, commands = _discover_hook_commands(root, phase)
     return {
@@ -939,6 +1199,15 @@ def _build_parser():
     group.add_argument("--read", dest="ref", metavar="REF")
     p_ensure.add_argument("--base", default=None, help="required with --work")
 
+    p_attach = sub.add_parser("attach")
+    p_attach.add_argument("--expect-branch", dest="expected_branch", metavar="BRANCH", required=True)
+    p_attach.add_argument("--path", default=".", help="the checkout to attach to (default: ambient cwd — attach's subject)")
+    p_attach.add_argument("--base", default=ROOT_BRANCH, help="fallback base for the unpushed-commit count")
+    p_attach.add_argument("--no-hooks", dest="no_hooks", action="store_true")
+    p_attach.add_argument("--allow-root", dest="allow_root", action="store_true")
+    p_attach.add_argument("--pin-sha", dest="pin_sha", default=None, metavar="SHA")
+    p_attach.add_argument("--expect-remote-sha", dest="expected_remote_sha", default=None, metavar="SHA")
+
     p_remove = sub.add_parser("remove")
     p_remove.add_argument("--root", default=".")
     p_remove.add_argument("--work", dest="branch", metavar="BRANCH", required=True)
@@ -967,6 +1236,8 @@ def main(argv):
                 subparsers_by_name["ensure"].error("--work requires --base <ref>")
             return _cmd_ensure_work(args)
         return _cmd_ensure_read(args)
+    if args.subcommand == "attach":
+        return _cmd_attach(args)
     if args.subcommand == "remove":
         return _cmd_remove_work(args)
     if args.subcommand == "gc":

@@ -113,9 +113,15 @@ Every script emits exactly one JSON envelope on stdout.
     workspace side effect (context carries the linked issue numbers derivable from the PR body).
   - `DOD_MALFORMED` — a DoD bullet or annotation outside the closed set; `parse.py dod`.
   - `PHASES_MALFORMED` — a plan `## Phases` section that doesn't parse; `parse.py phases`.
-  - `ROOT_NOT_ON_MAIN` / `ROOT_DIRTY` / `ROOT_DIVERGED` — root-freshness failures;
+  - `ROOT_NOT_ON_MAIN` / `ROOT_DIRTY` / `ROOT_DIVERGED` — root-freshness failures on the
+    workspace-creating paths (the landing tools' staging `ensure --work` and workspace-open);
     `workspace.py`.
-  - `BRANCH_IN_USE` — the branch is checked out in another worktree; `workspace.py`.
+  - `BRANCH_IN_USE` — the branch is checked out in another worktree (`ensure --work`, reached via
+    the landing tools and workspace-open); `workspace.py`.
+  - `WORKSPACE_MISMATCH` — the ambient checkout is not the expected workspace (wrong or detached
+    branch, session at the project root, checkout stale against the expected remote state, or
+    removal attempted from inside the target worktree); `workspace.py`, forwarded by the stage
+    preps.
   - `PLAN_MISSING` — a required plan is absent; prep scripts + the state-distiller.
   - `THREAD_SUPERSEDED_PLAN` — thread direction supersedes the recorded plan; the
     state-distiller.

@@ -89,6 +89,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 import config_block  # noqa: E402  (import after sys.path setup, by necessity; in-process composition)
 import gh_gather  # noqa: E402
+import branching  # noqa: E402  (shared branch/type/prior-PR cores; aliased below)
 import parse  # noqa: E402
 import workspace  # noqa: E402
 from pipelib import process  # noqa: E402
@@ -122,425 +123,46 @@ _FALLBACK_TEST_TARGET_MARKER = "pr-evaluator-test-target"
 
 ROOT_MAIN_BRANCH = "main"
 
-# State-vector `type` detection (docs/specs/resolver.md "State-vector derivation: labels -> type";
-# the spec's "Epic-branch discovery" row): case-insensitive `epic`/`story` label match, OR a
-# title `Epic:` prefix (case-insensitive) for the epic arm — the fresh-slug derivation uses the
-# identical prefix test, so the type-detection prefix check mirrors it exactly.
-_EPIC_TITLE_PREFIX_RE = re.compile(r"^\s*epic\s*:", re.IGNORECASE)
-
-# Epic branch pattern: `epic/<N>-<slug>` (docs/specs/resolver.md "Epic-branch discovery").
-_EPIC_BRANCH_LS_REMOTE_PATTERN = "epic/%s-*"
-_EPIC_BRANCH_NAME_RE = re.compile(r"^epic/(\d+)-(.+)$")
-
-# Branch-collision suffixing: `<issue>-<slug>` optionally followed by `-v<N>`
-# (docs/specs/resolver.md's "Branch-collision suffixing (`-vN`)" row; unsuffixed counts as v1).
-_BRANCH_VERSION_SUFFIX_RE = re.compile(r"^-v(\d+)$")
-
-
 # ---------------------------------------------------------------------------
-# git ls-remote — no existing executor core covers this query shape (architecture.md §1 permits
-# any script to spawn git/gh directly via pipelib.process.run; prep_evaluator.py's repo-merge-
-# config gh call is the precedent for "a prep-owned direct call when no executor covers it").
+# Branch naming, type detection, epic discovery, prior-PR classification — extracted to
+# `branching.py` at the v3 workspace-model inversion so `prep_workspace_open.py` (which owns
+# branch creation) and this prep (which asserts the ambient branch) share ONE implementation.
+# Module-level aliases keep this prep's public surface — and the direct-call tests against it —
+# unchanged (the `build_oq_query = oq_tracker.build_oq_query` precedent in prep_planner.py).
 # ---------------------------------------------------------------------------
 
+_EPIC_TITLE_PREFIX_RE = branching.EPIC_TITLE_PREFIX_RE
+_EPIC_BRANCH_LS_REMOTE_PATTERN = branching.EPIC_BRANCH_LS_REMOTE_PATTERN
+_EPIC_BRANCH_NAME_RE = branching.EPIC_BRANCH_NAME_RE
+_BRANCH_VERSION_SUFFIX_RE = branching.BRANCH_VERSION_SUFFIX_RE
 
-def _list_remote_branches(root, pattern):
-    """`git ls-remote --heads origin <pattern>` -> sorted list of bare branch names (the
-    `refs/heads/` prefix stripped). Returns `(names, decision_or_none)` — a hard git failure other
-    than "no matches" still `sys.exit(1)`s with faithful stderr (§3, unchanged); "no matches" is
-    `git ls-remote`'s own exit 0 with empty stdout, not a failure.
-    """
-    result = process.run(["git", "ls-remote", "--heads", "origin", pattern], cwd=str(root))
-    if result.returncode != 0:
-        sys.stderr.write(result.stderr)
-        sys.exit(1)
-    names = []
-    for line in result.stdout.splitlines():
-        line = line.strip()
-        if not line:
-            continue
-        parts = line.split("\t")
-        ref = parts[-1]
-        if ref.startswith("refs/heads/"):
-            names.append(ref[len("refs/heads/") :])
-    return sorted(names), None
+_list_remote_branches = branching.list_remote_branches
+_detect_type = branching.detect_type
 
+PRIOR_PR_ROW_OPEN_YOURS = branching.PRIOR_PR_ROW_OPEN_YOURS
+PRIOR_PR_ROW_OPEN_OTHER_ACTIVE = branching.PRIOR_PR_ROW_OPEN_OTHER_ACTIVE
+PRIOR_PR_ROW_OPEN_OTHER_STALE = branching.PRIOR_PR_ROW_OPEN_OTHER_STALE
+PRIOR_PR_ROW_DRAFT = branching.PRIOR_PR_ROW_DRAFT
+PRIOR_PR_ROW_CLOSED_RESOLVED = branching.PRIOR_PR_ROW_CLOSED_RESOLVED
+PRIOR_PR_ROW_CLOSED_NOT_RESOLVED = branching.PRIOR_PR_ROW_CLOSED_NOT_RESOLVED
+PRIOR_PR_ROW_NONE = branching.PRIOR_PR_ROW_NONE
 
-# ---------------------------------------------------------------------------
-# State-vector: type detection, prior-PR-row -> mode (docs/specs/resolver.md's 7-row table)
-# ---------------------------------------------------------------------------
+MODE_CONTINUE = branching.MODE_CONTINUE
+MODE_GATED = branching.MODE_GATED
+MODE_FRESH = branching.MODE_FRESH
 
+_CONTINUE_ROWS = branching.CONTINUE_ROWS
+_GATED_ROWS = branching.GATED_ROWS
+_GATE_CARDS = branching.GATE_CARDS
+_STALE_ACTIVITY_DAYS = branching.STALE_ACTIVITY_DAYS
 
-def _detect_type(labels, title):
-    """Case-insensitive `epic`/`story` label match, or a title `Epic:` prefix (docs/specs/
-    resolver.md "State-vector derivation: labels -> type"). `epic` takes precedence over `story`
-    if (pathologically) both labels are present, matching the spec's listed priority order.
-    """
-    lowered_labels = {(label or "").strip().lower() for label in labels or []}
-    if "epic" in lowered_labels or _EPIC_TITLE_PREFIX_RE.match(title or ""):
-        return "epic"
-    if "story" in lowered_labels:
-        return "story"
-    return "standard"
-
-
-# The v1 step-5 prior-PR state table (docs/specs/resolver.md "Fresh/continue mode from the
-# prior-PR state table" — its seven rows), carried as the row name -> mode mapping.
-#
-# `mode` is one of three values — NOT the two-value fresh/continue this prep started with:
-#   - `continue` — a worktree is safe to ensure NOW, no operator input needed first:
-#     open-pr-yours, and draft-by-the-SAME-author ("Treat the same as an open PR by the same
-#     author" — the table's "Draft PR" row is scoped to your own draft, not any draft).
-#   - `gated` — an operator decision is required BEFORE any work-workspace side effect:
-#     open-pr-other-active, open-pr-other-stale, and draft-by-ANOTHER-author (the table's "Open PR
-#     by someone else" rows, both gated via AskUserQuestion — "Review it"/"Leave a comment"/"Wait"
-#     for active, "Take it over"/"Start fresh" for stale; a foreign draft is still claimed work
-#     someone else owns, so it gates the same way, never silently treated as available to continue
-#     on). `mode: "gated"` is a deliberate THIRD value, not an overload of `fresh` — S10's router
-#     must render the operator gate on `gated` and must NOT fall through to the fresh-branch flow,
-#     which is exactly the failure `fresh` would silently invite (a bare boolean would also lose
-#     the case distinction the router needs to pick which AskUserQuestion card to render — active
-#     vs stale vs foreign-draft each has its own header/options in the spec's "Operator gates"
-#     table, so `prior_pr_row`
-#     plus `vector.gate` below carry that distinction, not `mode` alone).
-#   - `fresh` — no usable prior work exists to continue or gate on: no-prior-pr, and (mirroring
-#     v1's own "proceed as the no-prior-PR case") closed-not-resolved. closed-resolved never
-#     reaches mode derivation as a real branch decision — the issue is already closed — but is
-#     still reported as `fresh` for schema uniformity (`comment_only`/`suggested_playbook` already
-#     drive the actual behavior for a closed issue via the router, not `mode`).
-#
-# Assembly still emits `status: "ok"` on a `gated` row — this is a flow gate S10's router must
-# raise, not an assembly failure this prep should short-circuit on (identical reasoning to the
-# `open_questions_gate` hard gate below: prep's job is to make the gate an unmissable FACT, never
-# to pre-empt it with a side effect).
-PRIOR_PR_ROW_OPEN_YOURS = "open-pr-yours"
-PRIOR_PR_ROW_OPEN_OTHER_ACTIVE = "open-pr-other-active"
-PRIOR_PR_ROW_OPEN_OTHER_STALE = "open-pr-other-stale"
-PRIOR_PR_ROW_DRAFT = "draft"
-PRIOR_PR_ROW_CLOSED_RESOLVED = "closed-resolved"
-PRIOR_PR_ROW_CLOSED_NOT_RESOLVED = "closed-not-resolved"
-PRIOR_PR_ROW_NONE = "no-prior-pr"
-
-MODE_CONTINUE = "continue"
-MODE_GATED = "gated"
-MODE_FRESH = "fresh"
-
-_CONTINUE_ROWS = frozenset({PRIOR_PR_ROW_OPEN_YOURS, PRIOR_PR_ROW_DRAFT})
-_GATED_ROWS = frozenset({PRIOR_PR_ROW_OPEN_OTHER_ACTIVE, PRIOR_PR_ROW_OPEN_OTHER_STALE})
-
-# Per-gated-row AskUserQuestion shape S10's router renders (the exact headers/options in
-# docs/specs/resolver.md "Operator gates"),
-# carried as a fact so the router never re-derives which card goes with which row. A foreign draft
-# reuses whichever of the two "someone else" rows its activity classifies as (see
-# _classify_prior_pr_row) — there is no third, draft-specific card in v1.
-_GATE_CARDS = {
-    PRIOR_PR_ROW_OPEN_OTHER_ACTIVE: {
-        "header": "Open PR",
-        "options": ["Review it", "Leave a comment", "Wait"],
-    },
-    PRIOR_PR_ROW_OPEN_OTHER_STALE: {
-        "header": "Stale PR",
-        "options": ["Take it over", "Start fresh"],
-    },
-}
-
-# "Stale" activity threshold in days. The spec row's text is deliberately unquantified ("no recent
-# activity ... for a long time") — this is a CHOSEN deterministic default this prep needs in order
-# to classify open-other PRs at all, not a value derived from any other doc in this repo (no
-# retry-ladder/epic-flow inactivity window exists at this order of magnitude; an earlier revision
-# of this comment claimed one and was wrong). Surfaced as `prior_pr.stale_cutoff_days` (see
-# _classify_prior_pr_row) so the operator/router can see the exact driver rather than trust an
-# opaque classification. With the mode fix above, active vs stale changes ONLY which gate card is
-# shown (_GATE_CARDS) — both rows are `mode: "gated"`; the cutoff no longer decides
-# continue-vs-not, only the gate's framing.
-_STALE_ACTIVITY_DAYS = 14
-
-
-def _search_closed_prs(repo, issue_number, cwd=None):
-    """Targeted closed/merged-PR search referencing this issue (docs/specs/resolver.md step-5
-    table's two "closed" rows; mirrors the spec's own predecessor-PR-detection search convention:
-    `gh pr list --state closed --search "<N> in:body"`). Returns `(prs, decision_or_none)`; each
-    PR dict carries `number`/`state`/`mergedAt` (`state == "MERGED"` classifies resolved, since a
-    merged PR referencing the issue closed it — v1's "closed PR that resolved the issue" row).
-
-    The raw search result is filtered through `gh_gather.references_issue` before being returned
-    (a fix authorized/scoped alongside S12: `--search "<N> in:body"` is a GitHub full-text search,
-    not a literal-string containment check — live evidence against the sandbox repo showed it
-    returning PRs whose body merely contains the digit `<N>` in unrelated prose, e.g. "Phase 2",
-    never referencing issue `#<N>` at all; see `gh_gather.py`'s module docstring "Open-PR search
-    false-positive fix" for the full evidence and `docs/specs/resolver.md`'s "Known bugs/gaps" for
-    the newly-discovered v1-inherited defect this closes).
-    """
-    result = process.run(
-        [
-            "gh",
-            "pr",
-            "list",
-            "--repo",
-            repo,
-            "--state",
-            "closed",
-            "--search",
-            "%s in:body" % issue_number,
-            "--json",
-            "number,title,author,state,mergedAt,headRefName,url,updatedAt,body,closingIssuesReferences",
-        ],
-        cwd=cwd,
-    )
-    if result.auth_required:
-        from pipelib.decisions import AUTH_REQUIRED
-
-        return None, needs_decision(
-            AUTH_REQUIRED,
-            summary="gh authentication required",
-            context={"stderr": result.stderr, "returncode": result.returncode},
-            options=["run: gh auth login"],
-        )
-    if result.returncode != 0:
-        sys.stderr.write(result.stderr)
-        sys.exit(1)
-    return gh_gather._filter_and_strip_reference_fields(json.loads(result.stdout), issue_number), None
-
-
-def _classify_prior_pr_row(open_prs, current_user, closed_prs, issue_state):
-    """Classify the issue's prior-PR state into exactly one of the 7 named rows, returning
-    ``(row_name, prior_pr_fact_or_none)``. ``open_prs`` is `gh_gather`'s `open_prs` list (from the
-    `gh pr list ... "<N> in:body"` search); ``closed_prs`` is :func:`_search_closed_prs`'s result
-    (only consulted when no open PR exists); ``issue_state`` (`OPEN`/`CLOSED`) disambiguates the
-    two closed-PR rows exactly as docs/specs/resolver.md's table does ("closed PR that resolved
-    the issue" implies the issue itself is closed; a merged PR against a still-open issue is the
-    partial-fix/abandoned case).
-
-    Authorship is decided BEFORE draft state (the ordering bug this function was previously
-    written with, fixed here): the prior-PR table's "Draft PR" row explicitly scopes to "the same
-    author" — it is not a draft-vs-ready split independent of who owns the PR. So an open PR by
-    someone else classifies via :func:`_classify_open_other_activity` regardless of its draft
-    state; only YOUR own open PR can ever land on `open-pr-yours` or `draft`.
-    """
-    if open_prs:
-        # Prefer a PR by the current user (matches v1's per-row priority: "yours" outranks
-        # "other's" when the caller happens to own more than one referencing PR).
-        yours = [pr for pr in open_prs if (pr.get("author") or {}).get("login") == current_user]
-        chosen = yours[0] if yours else open_prs[0]
-        if yours:
-            row = PRIOR_PR_ROW_DRAFT if chosen.get("isDraft") else PRIOR_PR_ROW_OPEN_YOURS
-        else:
-            # Someone else's PR — draft or not, it's still claimed work someone else owns
-            # ("Drafts are still claimed work" — that rule is about protecting
-            # ANY author's draft, not just your own; a foreign draft therefore gates exactly like
-            # a foreign ready PR, classified by the same activity check).
-            row = _classify_open_other_activity(chosen)
-        fact = {
-            "number": chosen.get("number"),
-            "author": (chosen.get("author") or {}).get("login"),
-            "isDraft": chosen.get("isDraft"),
-            "headRefName": chosen.get("headRefName"),
-            "updatedAt": chosen.get("updatedAt"),
-            "url": chosen.get("url"),
-            "stale_cutoff_days": _STALE_ACTIVITY_DAYS,
-        }
-        return row, fact
-
-    if closed_prs:
-        chosen = closed_prs[0]
-        merged = (chosen.get("state") or "").upper() == "MERGED" or bool(chosen.get("mergedAt"))
-        # "Resolved" per the spec's row split: a merged PR against an issue GitHub itself now
-        # shows closed is the "closed PR that resolved the issue" row; anything else (merged PR
-        # but the issue is still open, or a closed-without-merge/abandoned PR) is the
-        # "closed/merged PR that did NOT resolve the issue" row (partial fix, reverted, abandoned).
-        resolved = merged and (issue_state or "").upper() == "CLOSED"
-        row = PRIOR_PR_ROW_CLOSED_RESOLVED if resolved else PRIOR_PR_ROW_CLOSED_NOT_RESOLVED
-        fact = {
-            "number": chosen.get("number"),
-            "author": (chosen.get("author") or {}).get("login"),
-            "headRefName": chosen.get("headRefName"),
-            "merged": merged,
-            "resolved": resolved,
-            "url": chosen.get("url"),
-        }
-        return row, fact
-
-    return PRIOR_PR_ROW_NONE, None
-
-
-def _classify_open_other_activity(pr):
-    """Active vs stale for an open PR authored by someone else, including a foreign draft
-    (docs/specs/resolver.md step-5 table's two "someone else" rows) — `updatedAt` age vs
-    :data:`_STALE_ACTIVITY_DAYS` (a chosen default, not a derived one — see that constant's
-    docstring). Missing `updatedAt` defaults to "active" (never silently downgrade a PR to stale
-    on absent data). Both outcomes are `mode: "gated"` (see `_GATED_ROWS`) — this only decides
-    WHICH `AskUserQuestion` card the router shows (`_GATE_CARDS`), never whether the row gates."""
-    import datetime
-
-    updated_at = pr.get("updatedAt")
-    if not updated_at:
-        return PRIOR_PR_ROW_OPEN_OTHER_ACTIVE
-    try:
-        updated = datetime.datetime.strptime(updated_at, "%Y-%m-%dT%H:%M:%SZ").replace(
-            tzinfo=datetime.timezone.utc
-        )
-    except ValueError:
-        return PRIOR_PR_ROW_OPEN_OTHER_ACTIVE
-    age = datetime.datetime.now(datetime.timezone.utc) - updated
-    if age.days >= _STALE_ACTIVITY_DAYS:
-        return PRIOR_PR_ROW_OPEN_OTHER_STALE
-    return PRIOR_PR_ROW_OPEN_OTHER_ACTIVE
-
-
-# ---------------------------------------------------------------------------
-# Fresh-slug computation (bootstrap only) — the spec's 6-step derivation, verbatim.
-# ---------------------------------------------------------------------------
-
-_SLUG_STRIP_EPIC_PREFIX_RE = re.compile(r"^\s*epic\s*:\s*", re.IGNORECASE)
-_SLUG_NON_ALNUM_RUN_RE = re.compile(r"[^a-z0-9]+")
-_SLUG_MAX_LENGTH = 50
-
-
-def compute_fresh_slug(title):
-    """The 6-step epic-title -> slug derivation (docs/specs/resolver.md "Fresh-slug computation
-    (bootstrap only)"):
-    strip an `Epic:` prefix, lowercase, replace non-`[a-z0-9]` runs with `-`, strip leading/
-    trailing `-`, truncate to <=50 chars on a `-` boundary. Used ONLY on the bootstrap path (zero
-    `git ls-remote` matches) — an existing branch's slug is always taken from the discovered
-    branch name verbatim, never recomputed (the spec's "Discover the epic branch slug by prefix;
-    only compute fresh on bootstrap" invariant).
-    """
-    stripped = _SLUG_STRIP_EPIC_PREFIX_RE.sub("", title or "").strip()
-    lowered = stripped.lower()
-    collapsed = _SLUG_NON_ALNUM_RUN_RE.sub("-", lowered)
-    trimmed = collapsed.strip("-")
-    if len(trimmed) <= _SLUG_MAX_LENGTH:
-        return trimmed
-    truncated = trimmed[:_SLUG_MAX_LENGTH]
-    # "if the truncation would land mid-word ... keep truncating back to the previous '-'."
-    if len(trimmed) > _SLUG_MAX_LENGTH and trimmed[_SLUG_MAX_LENGTH] not in ("-",):
-        last_dash = truncated.rfind("-")
-        if last_dash != -1:
-            truncated = truncated[:last_dash]
-    return truncated.rstrip("-")
-
-
-# ---------------------------------------------------------------------------
-# Epic-branch discovery (zero/one/multiple) + story parent-epic search
-# ---------------------------------------------------------------------------
-
-
-def _discover_epic_branch(root, epic_number, epic_title):
-    """Discover `epic/<epic_number>-*` on origin (docs/specs/resolver.md "Epic-branch discovery").
-    Returns `(facts_dict, decision_or_none)`:
-      - zero matches -> `{"match_count": 0, "branch": None, "bootstrap_slug": <computed>}`.
-      - one match -> `{"match_count": 1, "branch": <name>}`.
-      - multiple matches -> `(None, AMBIGUOUS decision)` (context lists every candidate).
-    """
-    matches, _ = _list_remote_branches(root, _EPIC_BRANCH_LS_REMOTE_PATTERN % epic_number)
-    if len(matches) == 0:
-        return {
-            "match_count": 0,
-            "branch": None,
-            "bootstrap_slug": compute_fresh_slug(epic_title),
-        }, None
-    if len(matches) == 1:
-        return {"match_count": 1, "branch": matches[0]}, None
-    return None, needs_decision(
-        AMBIGUOUS,
-        summary="%d candidate epic branches match 'epic/%s-*' on origin — expected at most one"
-        % (len(matches), epic_number),
-        context={"epic_number": epic_number, "candidates": matches},
-        options=[
-            "pick the canonical branch and re-run with it recorded",
-            "delete or rename the orphaned/duplicate branch, then re-run",
-        ],
-    )
-
-
-def _search_parent_epic(repo, story_number, cwd=None):
-    """Story parent-epic search (docs/specs/resolver.md "Epic-branch discovery"; the "gh issue list --label epic
-    --state all --search '#<N> in:body'"). Returns `(matches, decision_or_none)` where `matches`
-    is the `gh issue list` result list, filtered (empty on zero genuine matches).
-
-    Filtered through `gh_gather.references_issue` — live evidence (see `gh_gather.py`'s module
-    docstring) showed `--search "#<N> in:body"` (the hash-prefixed form this call already uses)
-    returns the SAME false-positive set as the bare-digit form on a `gh pr list` search; GitHub's
-    server-side full-text search does not use `#` as an anchor either way. This repo's current
-    sandbox data never manifested a false positive here only because it has a single epic-labelled
-    issue whose body happens to contain no stray digits — the underlying exposure is identical to
-    the PR searches, so the same client-side filter applies here too (docs/specs/resolver.md's
-    "Known bugs/gaps").
-    """
-    result = process.run(
-        [
-            "gh",
-            "issue",
-            "list",
-            "--repo",
-            repo,
-            "--label",
-            "epic",
-            "--state",
-            "all",
-            "--search",
-            "#%s in:body" % story_number,
-            "--json",
-            "number,title,state,body",
-        ],
-        cwd=cwd,
-    )
-    if result.auth_required:
-        from pipelib.decisions import AUTH_REQUIRED
-
-        return None, needs_decision(
-            AUTH_REQUIRED,
-            summary="gh authentication required",
-            context={"stderr": result.stderr, "returncode": result.returncode},
-            options=["run: gh auth login"],
-        )
-    if result.returncode != 0:
-        sys.stderr.write(result.stderr)
-        sys.exit(1)
-    matches = gh_gather._filter_and_strip_reference_fields(json.loads(result.stdout), story_number)
-    if len(matches) <= 1:
-        return matches, None
-    return None, needs_decision(
-        AMBIGUOUS,
-        summary="%d candidate parent epics reference story #%s — expected at most one"
-        % (len(matches), story_number),
-        context={"story_number": story_number, "candidates": matches},
-        options=[
-            "pick the canonical parent epic and re-run",
-            "correct the sibling issue bodies so only one epic references this story",
-        ],
-    )
-
-
-# ---------------------------------------------------------------------------
-# Branch naming + collision suffixing
-# ---------------------------------------------------------------------------
-
-
-def compute_branch_name(root, issue_number, slug):
-    """`<issue>-<slug>` with collision suffixing (docs/specs/resolver.md "Branch-collision
-    suffixing"; the spec's branch-creation convention): inspect
-    `git ls-remote --heads origin "<issue>-<slug>*"`, take the highest existing `-vN` suffix + 1
-    (an unsuffixed match counts as v1 — the first collision yields `-v2`). Returns
-    `(branch_name, collided_with_or_none)`.
-    """
-    base = "%s-%s" % (issue_number, slug)
-    matches, _ = _list_remote_branches(root, base + "*")
-    # Only exact-base or exact-base+`-vN` count as a real collision — a match that merely starts
-    # with the same prefix by coincidence (e.g. "<N>-<slug>-extra-words") is not a versioned
-    # sibling of this branch and must not perturb the version count.
-    relevant = [m for m in matches if m == base or _BRANCH_VERSION_SUFFIX_RE.match(m[len(base) :])]
-    if not relevant:
-        return base, None
-    highest = 1
-    for match in relevant:
-        if match == base:
-            highest = max(highest, 1)
-            continue
-        suffix_match = _BRANCH_VERSION_SUFFIX_RE.match(match[len(base) :])
-        if suffix_match:
-            highest = max(highest, int(suffix_match.group(1)))
-    return "%s-v%d" % (base, highest + 1), sorted(relevant)
+_search_closed_prs = branching.search_closed_prs
+_classify_prior_pr_row = branching.classify_prior_pr_row
+_classify_open_other_activity = branching.classify_open_other_activity
+compute_fresh_slug = branching.compute_fresh_slug
+_discover_epic_branch = branching.discover_epic_branch
+_search_parent_epic = branching.search_parent_epic
+compute_branch_name = branching.compute_branch_name
 
 
 # ---------------------------------------------------------------------------
