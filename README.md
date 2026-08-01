@@ -1,7 +1,7 @@
 # github-pipeline
 
 A Claude Code plugin that runs a complete GitHub issue/PR workflow through the `gh` CLI — five
-session-per-stage skills that hand off to one another, plus four standalone maintenance tools,
+session-per-stage skills that hand off to one another, plus six standalone tools,
 backed by stdlib-only Python scripts that do every deterministic step (fetching, parsing, state
 derivation, worktree lifecycle, and every write).
 
@@ -23,8 +23,8 @@ posts a cited dossier and hands back to the planner.
 | `/github-pipeline:drafter` | Turns informal feedback into a well-structured issue (or Epic + stories) and files it. Never silently absorbs an unresolved open question — each is matched against the `question`-issue registry, filed if untracked, and recorded on the build issue. |
 | `/github-pipeline:researcher` | Web-researches version/API/migration questions and posts a dated, cited dossier on the issue — or declines outright when the issue carries no currency risk. |
 | `/github-pipeline:planner` | Designs the implementation approach, grounded in repo precedent + project docs at a recorded commit SHA, and posts a reviewed `<!-- implementation-plan:v1 -->` comment. Epic plans pin cross-story contracts; story plans are authored just-in-time. |
-| `/github-pipeline:resolver` | Implements one issue against its verified plan in a git worktree, opens/continues a PR, projects Definition-of-done ticks as phases ship, and loops with code review until approved. |
-| `/github-pipeline:evaluator` | Evaluates a PR against its origin issue, gates on branch health (CI plus your declared checks, cached per head SHA), posts a formal approve/soft-reject review, merges per your configured policy, and cleans up the worktree. |
+| `/github-pipeline:resolver` | Implements one issue against its verified plan **in the worktree you opened with `workspace-open`** (the session starts inside it and is verified there), opens/continues a PR, projects Definition-of-done ticks as phases ship, and loops with code review until approved. |
+| `/github-pipeline:evaluator` | Evaluates a PR against its origin issue (in the PR's own worktree, verified at exactly the PR head), gates on branch health (CI plus your declared checks, cached per head SHA), posts a formal approve/soft-reject review, merges per your configured policy, and hands you the `workspace-close` command. |
 
 ## The standalone tools
 
@@ -34,16 +34,26 @@ posts a cited dossier and hands back to the planner.
 | `/github-pipeline:question-sweep` | Reconciles the project's open questions between its docs and the GitHub `question`-issue tracker (the registry of record): files the untracked ones, flags docs left stale by an answered question, and repairs the doc↔issue back-links. Reports first, applies on confirmation. |
 | `/github-pipeline:question-resolver` | Assisted closing of one open `question` issue: evaluates it and its thread against the project docs, records your approved decision as a durable `<!-- question-decision:v1 -->` comment, offers to close the issue, and **proposes** the doc fold-back. It never decides for you and never edits docs. |
 | `/github-pipeline:doc-reviewer` | Reviews one project doc against its bundled authoring guide and offers to apply the findings you accept. |
+| `/github-pipeline:workspace-open` | Opens the work workspace for an issue: creates or adopts its GitHub-linked branch ("create a branch for this issue"), creates the worktree under `.worktrees/`, runs your worktree-setup hooks, and prints the path to start the next session in. |
+| `/github-pipeline:workspace-close` | Releases a workspace (branch or issue number): runs your worktree-teardown hooks, then removes the worktree — gated on dirty/unpushed state, never a silent discard. The routine last step after a merge, and the one reclamation path for abandoned workspaces. |
 
-The tools are report-then-apply and end with a plain summary, not a handoff. The three that edit
+All tools end with a plain summary, not a handoff.
+
+**The workspace lifecycle** (v3): plan first, then `workspace-open <issue>`, then start the
+resolver session **inside the worktree it prints** — the resolver and evaluator verify they're in
+the right checkout (and politely refuse anywhere else) instead of creating worktrees themselves.
+After the evaluator merges, its handoff hands you the `workspace-close` command; run it to release
+the worktree (it runs your teardown hooks and refuses to discard dirty or unpushed work).
+
+The report-then-apply tools change nothing without showing you the proposal first. The three that edit
 tracked files (`setup`, `question-sweep`, `doc-reviewer`) stage their edits in a worktree and offer
 the landing (commit + push + PR) as one final gate — decline it and nothing is committed, with the
 workspace path and ready-to-run commands printed instead.
 
 `skills/_shared/` holds the cross-skill contracts (handoff schema, Definition-of-done annotations,
 the open-question contracts, the worktree hook-block format); `scripts/` holds the Python scripts
-the skills invoke — the `gh`/git executors, `workspace.py`, `parse.py`, and one `prep_*.py`
-state-assembly script per skill.
+the skills invoke — the `gh`/git executors, `workspace.py`, `refblocks.py`, `branching.py`,
+`parse.py`, and one `prep_*.py` state-assembly script per skill.
 
 ## Requirements
 
@@ -59,7 +69,7 @@ state-assembly script per skill.
 ```
 
 Then invoke any skill by its namespaced name, e.g. `/github-pipeline:drafter`, or just describe the
-task ("file an issue for…", "plan #142", "resolve #287") and Claude will pick the skill. The four
+task ("file an issue for…", "plan #142", "resolve #287") and Claude will pick the skill. The
 standalone tools except `setup` are explicit-invocation only.
 
 ## Conventions a consuming repo should provide
@@ -67,11 +77,12 @@ standalone tools except `setup` are explicit-invocation only.
 These skills are **convention-driven** rather than fully parameterised. They degrade gracefully
 when a convention is absent, but work best when the repo provides:
 
-- **A write-protected `main`.** Everything the pipeline changes lands through a PR; the project
-  root checkout is treated as read-only and stays on `main`. All work happens in worktrees under
-  `.worktrees/`.
-- **Epic integration branches** named `epic/<N>-<slug>` (the resolver creates them; resolver and
-  evaluator classify Epic and story PRs by this pattern).
+- **A write-protected `main`.** Everything the pipeline changes lands through a PR. All work
+  happens in worktrees under `.worktrees/`, opened by `workspace-open` and released by
+  `workspace-close`; the pipeline reads its gate configuration from `origin/main` directly, so a
+  PR branch can never weaken the checks that judge it.
+- **Epic integration branches** named `epic/<N>-<slug>` (`workspace-open` creates them; resolver
+  and evaluator classify Epic and story PRs by this pattern).
 - **Test / build / static-check commands** declared in `CLAUDE.md` or `COMMANDS.md` inside these
   marker blocks, which the resolver and evaluator read to learn how to test and gate your project:
   - `<!-- issue-resolver-test-target -->`, `<!-- issue-resolver-fast-checks -->`,
@@ -85,7 +96,8 @@ when a convention is absent, but work best when the repo provides:
   project's commands, proposes drafts, and writes the blocks idempotently.
 - **Worktree hooks** (optional) — `<!-- worktree-setup -->` / `<!-- worktree-teardown -->` blocks
   declaring the commands that provision and release per-worktree resources (a simulator, a port, a
-  scratch database). Setup runs on every worktree entry, so the commands must be idempotent.
+  scratch database). Setup runs at workspace-open and again on every resolver/evaluator session
+  entry, so the commands must be idempotent; the committed block on `origin/main` is what runs.
 - **An open-question marker convention** (optional) — `<!-- drafter-open-question-markers -->`
   tells the drafter and planner how this repo marks unresolved open questions; without it they fall
   back to built-in heuristic cues.
