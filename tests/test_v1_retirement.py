@@ -347,14 +347,26 @@ class RuntimeDependencyTests(unittest.TestCase):
 
 
 class ManifestTests(unittest.TestCase):
-    def test_manifests_parse_and_carry_a_2x_version(self):
+    def test_manifests_parse_and_carry_a_v2_or_later_version(self):
+        # v1 shipped as 1.x; the rewrite re-baselined at 2.0.0 and the v3 workspace-model
+        # inversion bumped the major again. The retirement claim is "never 1.x again", not a
+        # forever-pin to one major — and BOTH manifests must carry the same version (the updater
+        # compares manifest version strings, so a split would strand consumers).
         import json
 
         for rel in (".claude-plugin/plugin.json", ".claude-plugin/marketplace.json"):
             data = json.loads((REPO_ROOT / rel).read_text(encoding="utf-8"))
             self.assertIsInstance(data, dict, "%s must be a JSON object" % rel)
         plugin = json.loads((REPO_ROOT / ".claude-plugin" / "plugin.json").read_text(encoding="utf-8"))
-        self.assertRegex(plugin.get("version", ""), r"^2\.\d+\.\d+$", "plugin.json version must be 2.x")
+        marketplace = json.loads(
+            (REPO_ROOT / ".claude-plugin" / "marketplace.json").read_text(encoding="utf-8")
+        )
+        version = plugin.get("version", "")
+        self.assertRegex(version, r"^[2-9]\d*\.\d+\.\d+$", "plugin.json version must be >= 2.0.0")
+        self.assertEqual(
+            marketplace["plugins"][0]["version"], version,
+            "both manifests must carry the same version, bumped together",
+        )
 
 
 if __name__ == "__main__":

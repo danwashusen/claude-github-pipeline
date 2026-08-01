@@ -1,7 +1,7 @@
 {
   "name": "github-pipeline",
-  "version": "2.3.0",
-  "description": "GitHub issue/PR pipeline — draft, research, plan, resolve, and evaluate issues end-to-end via the gh CLI, plus standalone setup, question, and doc-review tools. Deterministic work runs in bundled stdlib-only Python scripts.",
+  "version": "3.0.0",
+  "description": "GitHub issue/PR pipeline — draft, research, plan, resolve, and evaluate issues end-to-end via the gh CLI, plus standalone setup, question, doc-review, and workspace-lifecycle tools. Deterministic work runs in bundled stdlib-only Python scripts.",
   "author": {
     "name": "Dan Washusen",
     "email": "dan@reactive.org"
