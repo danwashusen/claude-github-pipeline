@@ -990,7 +990,7 @@ def _cmd_attach(args):
 # ---------------------------------------------------------------------------
 
 
-def _build_remove_work(root, branch, invoker_cwd=None):
+def _build_remove_work(root, branch, invoker_cwd=None, merged_pr=None):
     """Pure ``remove --work`` core (S8 pattern lock): tear down and remove the work worktree for
     ``branch`` and return ``(payload, notices, decision)`` — **never emits**.
 
@@ -1005,6 +1005,16 @@ def _build_remove_work(root, branch, invoker_cwd=None):
         reason: not_found`` no-op when nothing is there to remove).
       - a hard `git` failure still ``sys.exit(1)`` with faithful stderr and no envelope (§3 —
         unchanged).
+
+    ``merged_pr`` (v3, the routine post-merge close): ``{"number": N, "head_oid": <sha>}`` for a
+    branch whose PR has MERGED. Without it, squash-merge + delete-branch-on-merge makes every
+    routine close trip the unpushed gate — ``_unpushed_commits`` falls back to ``origin/main``
+    when ``origin/<branch>`` is gone, and a squashed branch's commits are never ancestors of
+    main, so they all count "unpushed" with a nonsensical "push first" option. With it: a clean
+    worktree whose HEAD **is exactly the merged PR's head OID** is removable (those commits ARE
+    the merged content — GitHub holds them via the PR even after the branch delete); a merged
+    branch with extra post-merge local commits gets a merged-specific ``AMBIGUOUS`` card instead
+    of the generic push-first wording. ``dirty`` still always gates.
     """
     root = str(_resolve_main_root(root))
 
@@ -1046,14 +1056,45 @@ def _build_remove_work(root, branch, invoker_cwd=None):
     # since remove's CLI has no --base to give a tighter answer.
     unpushed = _unpushed_commits(str(target_path), branch, ROOT_BRANCH)
 
-    if dirty or unpushed > 0:
+    head_sha = _current_sha(str(target_path))
+    merged_at_head = (
+        merged_pr is not None
+        and not dirty
+        and merged_pr.get("head_oid") is not None
+        and head_sha == merged_pr["head_oid"]
+    )
+
+    if (dirty or unpushed > 0) and not merged_at_head:
         # architecture.md §6: "dirty or unpushed state is a decision, never a silent discard." The
         # closed decision-code set (architecture.md §3) has no bespoke code for this hazard; per
         # prd.md's own framing ("a dirty root" is grouped under "ambiguous state" as a mechanical
         # blocker), AMBIGUOUS is the closed-set code for a residual, listable-options blocker that
-        # isn't one of the twelve narrowly-named codes. Teardown is intentionally NOT run here: a
+        # isn't one of the narrowly-named codes. Teardown is intentionally NOT run here: a
         # failing or resource-releasing teardown must not run against a workspace we are about to
         # leave in place specifically so the operator can recover its uncommitted/unpushed state.
+        if merged_pr is not None and not dirty:
+            # Merged PR, but the worktree has moved past its merged head — a merged-specific
+            # card, never the generic push-first wording (pushing a squash-merged branch back is
+            # nonsense).
+            return None, [], needs_decision(
+                AMBIGUOUS,
+                summary=(
+                    "PR #%s merged, but the worktree for branch %r has local commits past the "
+                    "merged head — refusing to remove" % (merged_pr.get("number"), branch)
+                ),
+                context={
+                    "branch": branch,
+                    "path": str(target_path),
+                    "dirty": dirty,
+                    "unpushed_commits": unpushed,
+                    "merged_pr": merged_pr,
+                    "head_sha": head_sha,
+                },
+                options=[
+                    "discard the post-merge local commits if they were scratch work, then re-run",
+                    "salvage them onto a new branch first (they are NOT in the merged PR), then re-run",
+                ],
+            )
         hazard = "uncommitted changes" if dirty else "%d unpushed commit(s)" % unpushed
         return None, [], needs_decision(
             AMBIGUOUS,

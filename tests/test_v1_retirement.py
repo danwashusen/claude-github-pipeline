@@ -172,7 +172,7 @@ class RemovedSurfaceTests(unittest.TestCase):
             still_there, [], "v1 skill director(ies) still present: %r" % still_there
         )
 
-    def test_only_the_nine_v2_skill_directories_remain(self):
+    def test_only_the_eleven_v2_skill_directories_remain(self):
         found = sorted(p.name for p in (REPO_ROOT / "skills").iterdir() if p.is_dir())
         self.assertEqual(
             found,
@@ -188,9 +188,12 @@ class RemovedSurfaceTests(unittest.TestCase):
                     "researcher",
                     "resolver",
                     "setup",
+                    "workspace-close",
+                    "workspace-open",
                 ]
             ),
-            "skills/ must hold exactly _shared + the nine prd.md §2 skills",
+            "skills/ must hold exactly _shared + the eleven prd.md §2 skills (v3 added "
+            "workspace-open/workspace-close)",
         )
 
     def test_the_retired_shared_contracts_are_gone(self):

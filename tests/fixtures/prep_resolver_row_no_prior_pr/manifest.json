@@ -56,7 +56,7 @@
             "--search",
             "100 in:body",
             "--json",
-            "number,title,author,state,mergedAt,headRefName,url,updatedAt,body,closingIssuesReferences"
+            "number,title,author,state,mergedAt,headRefName,headRefOid,url,updatedAt,body,closingIssuesReferences"
         ],
         "stdout_file": "closed_prs_empty.json",
         "exit_code": 0

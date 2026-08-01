@@ -155,7 +155,7 @@ def search_closed_prs(repo, issue_number, cwd=None):
             "--search",
             "%s in:body" % issue_number,
             "--json",
-            "number,title,author,state,mergedAt,headRefName,url,updatedAt,body,closingIssuesReferences",
+            "number,title,author,state,mergedAt,headRefName,headRefOid,url,updatedAt,body,closingIssuesReferences",
         ],
         cwd=cwd,
     )
