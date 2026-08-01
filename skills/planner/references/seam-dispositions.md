@@ -48,6 +48,13 @@ options omit.
    - **It's an open question** — a human outside this session owes the answer: route it through the
      existing `## Open questions` machinery (companion issue + treatment), not a seam disposition.
 
+**Foundation-slot default.** When the target is an epic (or a story under one) whose story set
+carries a drafter-filed technical-foundation slot — an opening story whose body defers its content
+to planning time — a shared-groundwork seam's home is that story: pin the contract into its
+`## Story contracts` entry rather than filing a new issue ("Contract only" / "Own issue" would
+double-file groundwork the slot exists to hold). Offer those dispositions only for a seam that
+does not belong to the foundation slot.
+
 **Follow-up filing.** A "contract only" / "own issue" answer files its follow-up through the drafter
 proxy in [`../../_shared/follow-up-filing.md`](../../_shared/follow-up-filing.md) (type hint
 `feature`, parent reference `#<N>`) **before S5 drafts**, so every boundary bullet cites a real

@@ -792,5 +792,83 @@ class CarriedReferenceTests(unittest.TestCase):
             self.assertIn(section, templates, "built-in template fragment %r missing" % section)
 
 
+class BookendStoriesTests(unittest.TestCase):
+    """An epic split defaults to two planner-filled bookend slots (technical-foundation first,
+    finalization last); the drafter never decides their content, omission is justified in the Epic
+    body, and the split reviewer's dimension 7 carries the matching adversarial check. Pinned by
+    grep in BOTH files so a compression pass can't drop one side of the pair."""
+
+    def setUp(self):
+        self.split = (PLAYBOOKS_DIR / "epic-split.md").read_text(encoding="utf-8")
+        self.prompt = (REFERENCES_DIR / "issue-reviewer-prompt.md").read_text(encoding="utf-8")
+
+    def test_split_playbook_carries_both_bookends(self):
+        self.assertIn("Bookend stories", self.split)
+        self.assertRegex(self.split, r"[Ff]oundation story")
+        self.assertRegex(self.split, r"[Ff]inali[sz]ation story")
+
+    def test_split_playbook_defers_content_to_the_planner(self):
+        # The drafter files slots; the planner fills them (seam dispositions / delivery log).
+        self.assertRegex(self.split, re.compile(r"specified\s+at planning time"))
+        self.assertRegex(self.split, re.compile(r"grounded on the epic\s+delivery log"))
+        self.assertIn("deferral placeholder", self.split)
+
+    def test_omission_is_justified_and_durable_in_the_epic_body(self):
+        self.assertIn("never silent", self.split)
+        self.assertRegex(
+            self.prompt,
+            re.compile(r"Epic body carries it as a note\s+directly under `## Stories`"),
+            "the reviewer must be told where the omission justification lives",
+        )
+        self.assertRegex(
+            self.split,
+            re.compile(r"Epic\s+body directly under `## Stories`"),
+            "the playbook must record the omission reason in the Epic body under ## Stories",
+        )
+
+    def test_reviewer_dimension_seven_carries_the_matching_check(self):
+        self.assertIn("Bookend check", self.prompt)
+        self.assertRegex(self.prompt, r"[Ff]oundation story")
+        self.assertRegex(self.prompt, r"[Ff]inali[sz]ation story")
+        # Missing-foundation with grep-proven duplicated groundwork is the one BLOCKER.
+        self.assertRegex(
+            self.prompt,
+            re.compile(r"No foundation story.*?→\s*BLOCKER", re.DOTALL),
+            "finding 1 must carry BLOCKER severity",
+        )
+        # Thin-by-design exemption: a deferral body is not merge-signal evidence (signals 2 or 3).
+        self.assertRegex(
+            self.prompt,
+            re.compile(r"thinness is not evidence for merge\s+signals 2 or 3"),
+            "the bookend merge-signal exemption is missing from dimension 7",
+        )
+        # Dimension 6 must not flag the sanctioned deferral placeholder as incomplete, and must
+        # quote the same exemplar deferral strings the playbook stages (the cross-file pair).
+        self.assertRegex(
+            self.prompt,
+            re.compile(r"deferral placeholder.*not an empty section", re.DOTALL),
+            "the dimension-6 deferral-placeholder exemption is missing",
+        )
+        self.assertRegex(self.prompt, re.compile(r"specified\s+at planning time"))
+        self.assertRegex(self.prompt, re.compile(r"grounded on the epic\s+delivery\s+log"))
+
+    def test_epic_revise_rerun_carries_the_bookend_check(self):
+        self.assertRegex(
+            self.split,
+            re.compile(r"bookend check rides this\s+same re-run"),
+            "epic-revise must re-run the dimension-7 bookend check",
+        )
+
+    def test_planner_seam_gate_defaults_shared_groundwork_to_the_foundation_slot(self):
+        # Cross-skill pair: the split playbook delegates seam pinning to the planner's seam
+        # dispositions; the planner side must default a shared-groundwork seam into the foundation
+        # slot instead of double-filing a follow-up issue.
+        seams = (
+            REPO_ROOT / "skills" / "planner" / "references" / "seam-dispositions.md"
+        ).read_text(encoding="utf-8")
+        self.assertIn("Foundation-slot default", seams)
+        self.assertRegex(seams, re.compile(r"double-file", re.IGNORECASE))
+
+
 if __name__ == "__main__":
     unittest.main()
