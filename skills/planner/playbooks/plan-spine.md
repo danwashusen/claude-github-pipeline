@@ -6,7 +6,7 @@ handoff. Type differences here are **facts** (`plan_ref`, the reviewer dimension
 sections fill, `off-ramp`), never branches — the routed playbook reads this spine first, then supplies
 its deltas. Facts come from prep (SKILL.md §1); every GitHub write goes through
 `${CLAUDE_PLUGIN_ROOT}/scripts/gh_persist.py` with a staged body path in `facts.scratch` (SKILL.md §3);
-every doc/precedent read targets `facts.read_workspaces.grounding.path`.
+every doc/precedent read targets `facts.grounding.path`.
 
 ## S1 — Classify + confirm direction
 
@@ -99,7 +99,7 @@ its `## Risks & watchpoints` entry.
 
 Dispatch the isolated, context-blind plan-reviewer `Explore` sub-agent per
 [`../references/plan-reviewer-prompt.md`](../references/plan-reviewer-prompt.md) with the plan body,
-`mode`, `facts.target`, `facts.read_workspaces.grounding.path` (its sole code/doc source — never a ref),
+`mode`, `facts.target`, `facts.grounding.path` (its sole code/doc source — never a ref),
 the routed playbook's `dimensions` **plus Dimension 10 whenever the plan has an `## Open questions`
 section**, `external_sources`, and (story-under-epic only) the epic plan + delivery-log staged paths; it
 returns findings by dimension. Loop up to 3 passes: drop findings without evidence; on empty findings

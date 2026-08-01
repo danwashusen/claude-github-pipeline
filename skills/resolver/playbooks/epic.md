@@ -9,11 +9,12 @@ the integration PR that lands the accumulated diff on `main`. It does **not** re
 spine.
 
 All facts come from the prep facts block (SKILL.md §1); `facts.epic` carries the branch discovery
-(`match_count` / `branch` / `bootstrap_slug`); `facts.workspace` is the epic-branch work worktree prep
-ensured (its `base_ref` is `main`); the audit read workspace (`facts.read_workspaces.audit`) is at the
+(`match_count` / `branch` / `bootstrap_slug`); `facts.workspace` is the ambient epic-branch worktree
+prep asserted — the one the operator opened with `/github-pipeline:workspace-open <epic>` (its
+`base_ref` is `main`); the audit read workspace (`facts.read_workspaces.audit`) is at the
 epic branch. All GitHub writes go through `${CLAUDE_PLUGIN_ROOT}/scripts/gh_persist.py` with a staged
-body path (SKILL.md §3); every git worktree command runs against the work workspace by absolute path
-(SKILL.md §3 — the root is never written). Baseline comment renderings are in
+body path (SKILL.md §3); every git command runs against the workspace by absolute path
+(SKILL.md §3 — `main` changes only via PR). Baseline comment renderings are in
 [`../references/epic-baseline.md`](../references/epic-baseline.md); the full runbooks (canonical suite,
 drift rectification, bootstrap, legacy recovery) are in
 [`../references/epic-flow.md`](../references/epic-flow.md) — **read that file before any bootstrap or
@@ -25,8 +26,9 @@ rectification step**.
 - **One match** (`facts.epic.branch`) → use it verbatim; never recompute the slug from the title (an
   independent run's stricter slug rule would orphan the original branch's commits — the #102 incident).
 - **Zero matches** (`facts.epic.bootstrap_slug` present, `attention` names "bootstrap required") →
-  **bootstrap** per `epic-flow.md`'s "Bootstrap a new epic branch": create `epic/<N>-<slug>` off
-  `origin/main` in the work workspace, run the canonical suite (S3), push the branch, and post the
+  **bootstrap** per `epic-flow.md`'s "Bootstrap a new epic branch": workspace-open already created
+  `epic/<N>-<slug>` off `origin/main` and this session sits in its worktree (prep asserted the
+  ambient `epic/<N>-…` branch); run the canonical suite (S3), push the branch, and post the
   first `Baseline established` comment. Story runs deliberately redirect here rather than bootstrap
   silently, so a missing step stays visible.
 - **Multiple matches** never reaches here — prep raised an `AMBIGUOUS` decision the router already
@@ -34,7 +36,7 @@ rectification step**.
 
 ## S2 — Assess epic-vs-main drift
 
-From the work workspace, assess whether `epic/<N>-<slug>` has drifted behind `main` and, if so, whether
+From the asserted workspace, assess whether `epic/<N>-<slug>` has drifted behind `main` and, if so, whether
 to rebase or merge, per `epic-flow.md`'s "Drift rectification" (the 4-rule strategy table: commits-behind
 × open-story-PR count × file-overlap). **Rebase force-pushes the epic branch; merge does not** — choose
 rebase only when no open story PRs exist against the branch, else merge, so in-flight sibling story PRs

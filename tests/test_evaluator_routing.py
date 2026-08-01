@@ -376,7 +376,9 @@ class ArtifactRenderingByteCompatTests(unittest.TestCase):
         self.assertEqual(mine, example, "delivery-log rendering diverges from the S1 example")
 
     def test_handoff_standard_terminal_byte_compatible(self):
-        example = self._fenced_blocks(self.EXAMPLES_DIR / "handoff-evaluator.md", "```")[0]
+        # v3: pinned against handoff-evaluator-v3.md (the operator-owned-workspace rendering,
+        # which supersedes the S1 capture; that file stays unedited as the v2 historical record).
+        example = self._fenced_blocks(self.EXAMPLES_DIR / "handoff-evaluator-v3.md", "```")[0]
         mine_blocks = self._fenced_blocks(self.REFERENCES_DIR / "handoff-renderings.md", "```")
         match = next(
             (b for b in mine_blocks if b.startswith("## Handoff") and "Add CSV export (#142) · merged" in b),
@@ -384,6 +386,30 @@ class ArtifactRenderingByteCompatTests(unittest.TestCase):
         )
         self.assertIsNotNone(match, "the standard-terminal handoff shape must be present")
         self.assertEqual(match, example, "standard-terminal handoff diverges from the S1 example")
+
+
+class WorkspaceModelV3Tests(unittest.TestCase):
+    """v3 workspace-model pins: no cleanup fence removes the worktree (the evaluator runs inside
+    it), and the terminal/cleanup language hands the operator workspace-close."""
+
+    def test_no_remove_work_invocation_anywhere(self):
+        skill_dir = REPO_ROOT / "skills" / "evaluator"
+        for path in sorted(skill_dir.rglob("*.md")):
+            text = path.read_text(encoding="utf-8")
+            self.assertNotIn(
+                "remove --work", text,
+                "%s still invokes worktree removal — that is workspace-close's, exclusively"
+                % path.name,
+            )
+
+    def test_terminal_and_cleanup_language_hand_off_workspace_close(self):
+        renderings = (REPO_ROOT / "skills" / "evaluator" / "references" / "handoff-renderings.md").read_text(encoding="utf-8")
+        self.assertIn("worktree retained — release with workspace-close", renderings)
+        self.assertIn("/github-pipeline:workspace-close", renderings)
+
+    def test_router_names_workspace_mismatch(self):
+        router = (REPO_ROOT / "skills" / "evaluator" / "SKILL.md").read_text(encoding="utf-8")
+        self.assertIn("WORKSPACE_MISMATCH", router)
 
 
 if __name__ == "__main__":

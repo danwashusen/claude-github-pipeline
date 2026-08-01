@@ -768,5 +768,25 @@ class ReRouteHandoffMarkerTests(unittest.TestCase):
         )
 
 
+class WorkspaceModelV3Tests(unittest.TestCase):
+    """v3 workspace-model pins: the router names WORKSPACE_MISMATCH (the ambient-assertion
+    decision), and no resolver prose or fence invokes worktree removal — every removal is the
+    operator's workspace-close."""
+
+    def test_router_names_workspace_mismatch(self):
+        router = (SKILL_DIR / "SKILL.md").read_text(encoding="utf-8")
+        self.assertIn("WORKSPACE_MISMATCH", router)
+        self.assertIn("workspace-open", router)
+
+    def test_no_remove_work_invocation_anywhere(self):
+        for path in sorted(SKILL_DIR.rglob("*.md")):
+            text = path.read_text(encoding="utf-8")
+            self.assertNotIn(
+                "remove --work", text,
+                "%s still invokes worktree removal — that is workspace-close's, exclusively"
+                % path.name,
+            )
+
+
 if __name__ == "__main__":
     unittest.main()

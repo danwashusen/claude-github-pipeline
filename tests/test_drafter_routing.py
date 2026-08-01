@@ -981,9 +981,9 @@ class ReviewTierAndAnchorRuleTests(unittest.TestCase):
 
     def test_reviewer_prompt_binds_grounding_and_pr_attribution(self):
         self.assertIn(
-            "never a bare relative path in the ambient working directory",
+            "never a bare relative path in YOUR OWN ambient working directory",
             self.prompt_flat,
-            "the incident's reviews grepped a worktree on an unmerged PR branch via ambient cwd",
+            "the reviewer must stay pinned to <<repo_root>> — a sub-agent's cwd is not the drafter's",
         )
         self.assertIn("Parent-PR attribution", self.prompt)
         self.assertIn("never verify it against the checkout", self.prompt_flat)

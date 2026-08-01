@@ -304,8 +304,8 @@ gh pr merge <PR> --repo <owner/repo> --merge [--delete-branch]
 ```
 Append `--delete-branch` only when `facts.merge_config.delete_branch_on_merge` is false. Never
 `--auto` (repo `allow_auto_merge` is false). On non-zero exit, surface the `gh` output and stop — do
-**not** proceed to the routed playbook's post-merge actions or cleanup; the worktree stays in place for
-a retry.
+**not** proceed to the routed playbook's post-merge actions or cleanup. (The worktree is retained on
+every exit under v3 — success included; what a failed merge preserves is the *retry*, not the tree.)
 
 **S7-skip** (APPROVE but DIRTY/BLOCKED, or operator-deferred). Print the recommended `gh pr merge`
 command for the user to run after clearing the blocker, name the blocker (`DIRTY` → conflicts;

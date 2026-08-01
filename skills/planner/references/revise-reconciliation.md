@@ -97,13 +97,16 @@ happens **first**, `plan_ref` is **re-selected** off the row table against a fre
      --comment-file "<facts.scratch>/close-comment.md"
    ```
 
-3. **Re-run `prep_planner.py` in the same clone** — safe now that the D6 fix moved the `.worktrees/`
-   bootstrap write to `info/exclude`, so a second prep can never trip its own `ROOT_DIRTY`. With the PR
-   closed, the open-PR-head row no longer fires; `plan_ref` re-selects deterministically off the row
-   table (`main` for a standalone issue, the parent epic's branch for a story) — never hardcoded.
+3. **Stop and hand off** (`revise.md` step 3's rule verbatim): with the PR closed, `plan_ref`
+   re-selects deterministically off the row table (`main` for a standalone issue, the parent
+   epic's branch for a story — never hardcoded), but this session's ambient checkout is the superseded PR's worktree,
+   which no longer matches — a prep re-run here would refuse with `WORKSPACE_MISMATCH`. The
+   handoff names the target checkout on its `Workspace:` line and carries the captured
+   predecessor facts.
 
-4. **Re-ground at the fresh `facts.read_workspaces.grounding` workspace, finalize the plan body against
-   that ref, then post.** Re-verify every precedent citation still resolves there. Insert a
+4. **The fresh planner run re-grounds at its asserted `facts.grounding` checkout, finalizes the
+   plan body against that ref, then posts.** Re-verify every precedent citation still resolves
+   there. Insert a
    `## Predecessor` section immediately after `## Approach` (built from step 1's captured facts):
 
    ```

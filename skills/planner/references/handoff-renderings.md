@@ -1,5 +1,11 @@
 # Handoff renderings — planner
 
+**`Workspace:` lines** (v3, `_shared/handoff-format.md`): a forward-to-resolver shape names
+where that session must start — `(none yet — run /github-pipeline:workspace-open <N> first)`
+when the operator hasn't opened the issue's worktree (the usual plan-before-open case), or the
+existing worktree's path when one is already open (e.g. the resume-implementation shape).
+Planner-bound and terminal shapes omit the line (a `main`-ref planner run is checkout-agnostic).
+
 Every clean run of the planner ends with a single `## Handoff` block. The schema, omission rules, and
 closed-set state-marker vocabulary are owned by [`../../_shared/handoff-format.md`](../../_shared/handoff-format.md);
 this file holds the planner's worked rendering shapes, the footer rule, and the open-question line. Match
@@ -20,7 +26,7 @@ The plan-comment footer (`plan-spine.md` S5) and the handoff `Grounding:` line r
   non-default branch). Never emit a bare `main@<sha>` — the default branch always carries the `origin/`
   prefix; every other branch never does. This exact string is the resolver's PR base, so eliding the
   branch would break that reuse.
-- `<short-sha>` is a 7-character hex prefix of `facts.read_workspaces.grounding.sha` — the read
+- `<short-sha>` is a 7-character hex prefix of `facts.grounding.sha` — the read
   workspace's own HEAD, so the plan's "planned at `<sha>`" *is* the ref the docs were read at.
 
 `Grounding:` is planner-only and appears only on clean exits that **posted a plan**. It opens `read at
@@ -48,6 +54,8 @@ The trailing summary is the planner's pointer, `see the plan's ## Open questions
 
 **Issue:** #142 — Add CSV export · open · feature · plan: ✓ (https://github.com/owner/repo/issues/142#issuecomment-XXXXX)
 **Grounding:** read at origin/main@a1b2c3d · docs/architecture.md §3 (service layer), §7 (export pipeline); docs/constitution.md §6 (logging) · external: RFC 4180 CSV spec (fetched 2026-06-20) · full detail in the plan's ## Doc grounding
+
+**Workspace:** (none yet — run /github-pipeline:workspace-open 142 first)
 
 **Next:** implement the plan in a fresh session.
 
@@ -85,6 +93,8 @@ Forward to the resolver on that story.
 **Epic:** #150 — Chat & session UX polish · open (0 of 5 stories closed)
 **Grounding:** read at epic/150-chat-ux@c3d4e5f · docs/architecture.md §3 (service layer); docs/constitution.md §8 (schema/migrations) · full detail in the plan's ## Doc grounding
 
+**Workspace:** (none yet — run /github-pipeline:workspace-open 151 first)
+
 **Next:** implement the story in a fresh session.
 
     /github-pipeline:resolver #151
@@ -109,6 +119,8 @@ Open questions`" is an always-checked condition, not because a hybrid worked exa
 **Epic:** #160 — Notifications: email digests · open (0 of 2 stories closed)
 **Grounding:** read at origin/main@f6a7b8c · docs/prd.md §5 (digest frequency) · full detail in the plan's ## Doc grounding
 **Open questions:** (not filed) (audience:developer) provisional-default — see the plan's ## Open questions
+
+**Workspace:** (none yet — run /github-pipeline:workspace-open 161 first)
 
 **Next:** implement the story in a fresh session.
 
@@ -144,6 +156,8 @@ plannable scope; forward to the resolver (`plan: ✓`) with the `**Open question
 **Grounding:** read at origin/main@a1b2c3d · docs/ui-design.md §7 (portal shell); docs/constitution.md §2 (layering) · full detail in the plan's ## Doc grounding
 **Open questions:** #211 (audience:business) planned-around, #212 (audience:clinical) recorded-blocked — see the plan's ## Open questions
 
+**Workspace:** (none yet — run /github-pipeline:workspace-open 142 first)
+
 **Next:** implement the decided scope in a fresh session.
 
     /github-pipeline:resolver #142
@@ -158,6 +172,8 @@ plannable scope; forward to the resolver (`plan: ✓`) with the `**Open question
 ## Handoff
 
 **Issue:** #142 — Fix typo in onboarding copy · open · bug · plan: ✗
+
+**Workspace:** (none yet — run /github-pipeline:workspace-open 142 first)
 
 **Next:** implement the fix in a fresh session.
 
@@ -225,6 +241,8 @@ the closed branch; `Why:` names the closed PR # and that it carries the superses
 
 **Issue:** #142 — Add CSV export · open · feature · plan: ✓ (https://github.com/owner/repo/issues/142#issuecomment-YYYYY)
 **Grounding:** read at 142-add-csv-export@e5f6a7b · docs/architecture.md §3 (service layer), §7 (export pipeline); docs/constitution.md §6 (logging) · full detail in the plan's ## Doc grounding
+
+**Workspace:** <the PR's worktree under .worktrees/> — start the next session there
 
 **Next:** resume implementation in a fresh session.
 

@@ -44,13 +44,10 @@ on the merge into `main`.
 File residual non-blocking follow-ups (shared with the other routes): de-dup against the PR body's
 `## Follow-ups` *Filed* entries, file each via
 [`../../_shared/follow-up-filing.md`](../../_shared/follow-up-filing.md) (parent reference = this PR +
-the epic issue), post the URLs as a brief PR comment. Then tear down + remove the work workspace and
-purge the scratch dir:
-
-```bash
-${CLAUDE_PLUGIN_ROOT}/scripts/workspace.py remove --work <facts.workspace.branch> --root <root>
-```
-(teardown hooks best-effort before removal, then `git worktree remove`), then `rm -rf "<facts.scratch>"`.
+the epic issue), post the URLs as a brief PR comment. Then purge the scratch dir only
+(`rm -rf "<facts.scratch>"`) — the worktree is **deliberately retained** (this session runs inside
+it); the terminal handoff's fence hands the operator
+`/github-pipeline:workspace-close <facts.workspace.branch>` for the teardown + gated removal.
 
 ## Handoff
 

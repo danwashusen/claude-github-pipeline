@@ -11,8 +11,12 @@ work; your judgment is the verdict, the merge call, and the handoff `Why:`.
 
 ## 1. Prep
 
-Assemble the entire starting state in **one** call. `<PR>` is the PR number (from the user, a URL,
-or the current branch); `<owner/repo>` is the repo:
+This session runs **inside** the PR-head worktree (opened with `/github-pipeline:workspace-open`;
+the resolver's handoff named it on its `Workspace:` line) — prep asserts the ambient checkout is
+on the PR's head branch at **exactly** `pr.headRefOid` and re-runs the repo's setup hooks; it
+never creates a worktree, and it refuses (a `WORKSPACE_MISMATCH` card) to evaluate code the
+checkout doesn't contain. Assemble the entire starting state in **one** call. `<PR>` is the PR
+number (from the user, a URL, or the current branch); `<owner/repo>` is the repo:
 
 ```bash
 ${CLAUDE_PLUGIN_ROOT}/scripts/prep_evaluator.py <PR> <owner/repo>
@@ -20,8 +24,8 @@ ${CLAUDE_PLUGIN_ROOT}/scripts/prep_evaluator.py <PR> <owner/repo>
 
 It returns one JSON **facts block** (`architecture.md §4`): `target`, `vector`, `suggested_playbook`,
 `pr` (with `mergeStateStatus`/`reviewDecision`/`closingIssuesReferences`), `pr_type`, `ci` (`class` +
-`fail_checks`), `health_cache` (`hit`/`sha`), `self_review`, `config` (the four gate blocks pinned at
-the root `main` SHA), `merge_config` (repo `allow_*` booleans), `dod`/`blocked_by`/`deps_available`
+`fail_checks`), `health_cache` (`hit`/`sha`), `self_review`, `config` (the four gate blocks read from the
+`origin/main` pin — never any working tree, so a PR cannot weaken its own gates), `merge_config` (repo `allow_*` booleans), `dod`/`blocked_by`/`deps_available`
 (keyed per closing-issue number), `sections` (spilled PR body/thread/reviews/marker paths), and
 `attention`. Consume every fact as **data** — never re-derive PR type, CI class, or cache-hit in
 prose; prep already did.
@@ -29,8 +33,10 @@ prose; prep already did.
 **Decision card rule.** If prep exits with `status: needs_decision`, render its `decision` as one
 `AskUserQuestion` card (per [`../_shared/asking-the-user.md`](../_shared/asking-the-user.md)), act on
 the answer, and re-run prep (`--refresh` for volatile facts). This is the single universal handler
-for every closed-set code (`AUTH_REQUIRED`, `MARKER_AMBIGUOUS`, `ROOT_*`, `BRANCH_IN_USE`,
-`DOD_MALFORMED`, …).
+for every closed-set code (`AUTH_REQUIRED`, `MARKER_AMBIGUOUS`, `WORKSPACE_MISMATCH`,
+`DOD_MALFORMED`, …). A `WORKSPACE_MISMATCH` means the wrong checkout (wrong branch, the project
+root, or ambient HEAD ≠ the PR's head OID — stale or diverged): the fix is the operator's (start
+the session in the PR's worktree / pull it to the head), never a checkout this session performs.
 
 **Draft-PR guard.** If `target.state` is `DRAFT` (surfaced in `attention`), stop: tell the user to
 mark it ready before evaluating. A draft reaching here is genuinely in-progress work — the resolver
@@ -65,7 +71,8 @@ branches inside a body — the route *is* the branch; one route per session.
 
 Universal across every route:
 
-- **Single workspace.** Your workspace is `facts.workspace.path` (the PR head worktree prep ensured).
+- **Single workspace.** Your workspace is the ambient checkout, reported as `facts.workspace`
+  (the PR-head worktree prep asserted at exactly `pr.headRefOid`).
   Every Read/Grep/Explore/test/command targets it by absolute path. When a flow needs a second view,
   prep hands out a named read workspace; never select a ref yourself. No `git show <ref>:path`, no
   `git grep <ref>` — grounding SHAs come from the workspace facts.

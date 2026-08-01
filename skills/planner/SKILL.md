@@ -24,8 +24,8 @@ It returns one JSON **facts block** (`architecture.md §4`): `target` (number/ti
 `blocked_by`/`blocking`), `vector` (`type` × `mode` × `plan_ref_row`), `suggested_playbook`, `plan_ref`
 (a **bare** branch name), `plan` (present/SHA/comment-id/url — a present plan is the **revise**
 trigger), `research` (dossier present + staged path), `grounding_docs` (present at `plan_ref`),
-`open_questions` + `open_question_candidates` (the Bug (a) tracker search), `read_workspaces.grounding`
-(the ONE read workspace this skill gets — detached at `plan_ref`, its `sha` the footer records),
+`open_questions` + `open_question_candidates` (the Bug (a) tracker search), `grounding` (the
+observed ambient checkout, asserted against `plan_ref`; its `sha` the footer records),
 `epic`/`story` (stories + state; parent epic + plan + delivery log), `revise` (prior-plan SHA vs
 grounding SHA + any open PR's `## Phase tracker`), `sections` (spilled issue-body/thread/plan-marker
 paths), and `attention`. Consume every fact as **data** — never re-derive the type, the mode, the
@@ -34,7 +34,10 @@ paths), and `attention`. Consume every fact as **data** — never re-derive the 
 **Decision card rule.** If prep exits with `status: needs_decision`, render its `decision` as one
 `AskUserQuestion` card (per [`../_shared/asking-the-user.md`](../_shared/asking-the-user.md)), act on
 the answer, and re-run prep (`--refresh` for volatile facts). This is the single universal handler for
-every closed-set code (`AUTH_REQUIRED`, `MARKER_AMBIGUOUS`, `ROOT_*`, `AMBIGUOUS`, …).
+every closed-set code (`AUTH_REQUIRED`, `MARKER_AMBIGUOUS`, `WORKSPACE_MISMATCH`, `AMBIGUOUS`, …).
+`WORKSPACE_MISMATCH`: the checkout isn't `plan_ref`'s vantage — `main` passes from any clean, current
+`main` checkout **including the project root** (plan-before-open); a non-main `plan_ref` (parent-epic
+branch / plan-PR head / epic branch) needs the matching worktree. The operator fixes it — never you.
 
 **Newly-detected OQ lookup.** When grounding surfaces an open question the issue body does **not**
 already record (so prep's body-driven `open_question_candidates` never searched it), run the tracker
@@ -71,19 +74,18 @@ route per session.
 
 Universal across every route:
 
-- **Grounding is read-only, one workspace.** The planner never gets a work workspace and writes no
+- **Grounding is read-only, ambient.** The planner never gets a work workspace and writes no
   code (`architecture.md §6`). Every doc/precedent Read/Grep/Explore targets
-  `facts.read_workspaces.grounding.path` (a detached checkout at `plan_ref`) by absolute path. No
-  `git show <ref>:path`, no `git grep <ref>` — the workspace is already at the right ref, and its
-  `sha` is the footer's `@<short-sha>` (`architecture.md §6` "no ref arithmetic in prompts"). The
-  project root is the read-only `main` vantage — never branch, commit, or stash there.
+  `facts.grounding.path` (the asserted ambient checkout, already at `plan_ref`) by absolute path.
+  No `git show <ref>:path`, no `git grep <ref>` — its `sha` is the footer's `@<short-sha>`. Never
+  branch, commit, or stash there; the planner's only write surface is the plan comment.
 - **Marker is always the comment's first line.** Every consumer (resolver, drafter, this skill's own
   revise lookup) locates the plan by matching `<!-- implementation-plan:v1 -->` with `startswith` — any
   character before it makes the plan invisible. For a story, the `**Epic:**` backlink goes on the line
   *immediately after* the marker, never above it.
 - **Footer/handoff record the branch, never elide it.** `<plan-ref>@<short-sha>` is also the resolver's
   PR base — `origin/main` for the default branch, the **bare, un-truncated** `epic/<N>-<slug>` or PR
-  `headRefName` otherwise; `@<short-sha>` is `facts.read_workspaces.grounding.sha` (rendering rule in
+  `headRefName` otherwise; `@<short-sha>` is `facts.grounding.sha` (rendering rule in
   `plan-spine.md` S5 + [`references/handoff-renderings.md`](references/handoff-renderings.md)).
 - **Staged-body writes.** Every GitHub write goes through
   `${CLAUDE_PLUGIN_ROOT}/scripts/gh_persist.py` via Bash: stage the verbatim body to

@@ -5,15 +5,18 @@ runbook, the drift-rectification execution paths, and the bootstrap + legacy-rec
 extracted here so they don't consume the load budget on the hotter story / single-issue paths; read this
 file before any rectification or bootstrap step (epic.md S1/S2/S3).
 
-**Workspace ownership (v2).** Prep (`prep_resolver.py` → `workspace.py`) ensures the epic-branch **work
-workspace** — for a discovered branch it reuses/creates a worktree at the branch; on the bootstrap path
-(zero `git ls-remote` matches) it creates the branch off `origin/main` and ensures the worktree — so
-`facts.workspace.path` is the epic worktree and its setup hooks already ran. This file's git commands
-(rebase / merge / rebase-continue / push / the canonical suite) run **inside that workspace by absolute
-path** (`git -C <facts.workspace.path> …` or a `cd "<facts.workspace.path>"` on its own line) — never in
-the root (SKILL.md §3). The prompt does **not** run `git worktree add` itself; where a runbook below shows
-a bare `git worktree add` it is the v1 mechanic that prep now performs — read it as "operate in the
-prep-ensured worktree." The assess-step values (`FORK_POINT`, commits-behind, open-story-PR count,
+**Workspace ownership (v3).** The operator opened the epic-branch **work workspace** with
+`/github-pipeline:workspace-open <epic>` (which also owns creating the `epic/<N>-<slug>`
+integration branch, discovered or bootstrap) and started this session inside it; prep asserted
+the ambient checkout is that worktree and re-ran its setup hooks — so `facts.workspace.path` is
+the epic worktree, verified. This file's git commands (rebase / merge / rebase-continue / push /
+the canonical suite) run **inside that workspace by absolute path**
+(`git -C <facts.workspace.path> …` or a `cd "<facts.workspace.path>"` on its own line) — the
+session's shell cwd is the worktree by design, but sub-shells and background commands are not
+guaranteed to inherit it, so the absolute-path discipline stays (SKILL.md §3). The prompt does
+**not** run `git worktree add` itself; where a runbook below shows a bare `git worktree add` it
+is the v1 mechanic that workspace-open now performs — read it as "operate in the asserted
+worktree." The assess-step values (`FORK_POINT`, commits-behind, open-story-PR count,
 file-overlap) are computed inline in epic.md S2 before you reach the rectification runbooks.
 
 ## Running the full canonical suite (epic baseline / bootstrap / post-rectification)
@@ -68,7 +71,7 @@ canonical suite is the documented exception.
 Reached from epic.md S2 once the epic branch is behind `main` and the strategy step has picked rebase or
 merge (the 4-rule table: commits-behind × open-story-PR count × file-overlap). Run the matching path,
 handle conflicts via the shared "Conflict handling" procedure, then "Post-rectification". Every command
-runs in `facts.workspace.path` (the epic worktree prep ensured).
+runs in `facts.workspace.path` (the epic worktree prep asserted).
 
 ### Path A — Rebase
 
@@ -187,7 +190,7 @@ The epic infrastructure hasn't been bootstrapped yet (`facts.epic.match_count ==
 runs deliberately stop and redirect here rather than bootstrap silently, so a missing step in the user's
 workflow stays visible. Bootstrap now (this includes a remote write).
 
-Prep already ensured the work worktree for the bootstrap branch (`epic/<N>-<slug>` off `origin/main`,
+workspace-open already created the bootstrap branch and its worktree (`epic/<N>-<slug>` off `origin/main`,
 where `<slug>` = `facts.epic.bootstrap_slug`), ran its setup hooks, and reports `facts.workspace.path`. The
 worktree's HEAD equals `origin/main` at creation time, preserving the SHA invariant. From that worktree:
 
@@ -212,7 +215,7 @@ worktree's HEAD equals `origin/main` at creation time, preserving the SHA invari
 
 The branch exists (`facts.epic.match_count == 1`) but the epic issue has no `Baseline established`
 comment (epic predates this rule, or the comment was never posted) → offer to establish one now on the
-epic branch HEAD. Prep ensured the work worktree at the discovered branch (`facts.workspace.path`); run
+epic branch HEAD. The asserted worktree is at the discovered branch (`facts.workspace.path`); run
 the canonical suite *in the worktree* (per "Running the full canonical suite"), and on green post the
 comment with the current epic-branch SHA and the current
 `git -C "<facts.workspace.path>" merge-base origin/main HEAD` as `Main SHA`. Without this comment, every

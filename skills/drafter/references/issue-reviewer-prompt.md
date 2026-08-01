@@ -46,11 +46,12 @@ you're here to surface.
     claim you can't grep is a dropped finding. (Dimension 7's bookend structural checks are the
     exception: their evidence is the Epic body and the story list, not a grep.)
 - **Repo root**: `<<repo_root>>` — absolute path (the drafter's current checkout, `facts.root.path`; the
-  drafter grounds on the working tree, not a pinned ref). Read `docs/prd.md`, `docs/architecture.md`,
+  drafter grounds on the working tree, not a pinned ref — the checkout the session was started in IS
+  the vantage by design). Read `docs/prd.md`, `docs/architecture.md`,
   `docs/constitution.md`, `CLAUDE.md` if they exist; grep the source tree from this root. Run **every**
-  grep/find/Read from this root **by absolute path — never a bare relative path in the ambient working
-  directory**, which may be a different checkout (e.g. a worktree on an unmerged PR branch) and would
-  silently ground your verdicts on the wrong tree.
+  grep/find/Read from this root **by absolute path — never a bare relative path in YOUR OWN ambient
+  working directory**: a sub-agent's cwd is not the drafter's, and a relative read would silently
+  ground your verdicts on the wrong tree.
 - **Review tier**: `<<review_tier>>` — `lean` or `full`. `lean`: this single pass is your only look —
   findings must be final and self-contained. `full`: the orchestrator may re-invoke you (see the
   changed-summary input below).

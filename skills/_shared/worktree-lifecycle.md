@@ -6,12 +6,16 @@ commands that provision and release per-worktree resources; the plugin discovers
 them.
 
 **Scope of this file.** The block format and the semantics a repo must honor when authoring one.
-The *mechanics* — where workspaces live, reuse and branch-exclusivity rules, when hooks fire, how
-failures are classified — belong to `scripts/workspace.py` and
+The *mechanics* — where workspaces live, reuse rules, when hooks fire, how failures are
+classified — belong to `scripts/workspace.py` and
 [architecture.md §6](../../docs/architecture.md); this file does not restate them. `setup` authors
-these blocks (see `skills/setup/references/block-authoring.md`); `workspace.py ensure` runs the
-setup commands on every ensure (the `resolver`'s work workspace), and `workspace.py remove --work`
-runs the teardown commands before removing a merged workspace (the `evaluator`).
+these blocks (see `skills/setup/references/block-authoring.md`). The setup commands run at three
+trigger points, all "ensures" in this file's sense: **workspace-open** creates or reuses the
+worktree (`workspace.py ensure`), and **every resolver or evaluator session entry** re-runs them
+via the prep's workspace assertion (`workspace.py attach` — hook commands are discovered from the
+`origin/main` pin there, so a block that exists only as an uncommitted local edit is not seen);
+the landing tools' self-created staging workspaces keep the plain ensure wiring. The teardown
+commands run once, by **workspace-close** (`workspace.py remove --work`), before removal.
 
 ## The blocks a consuming repo declares
 
@@ -64,12 +68,14 @@ against a missing resource); teardown failure is logged and never blocks removal
 fixed by `workspace.py`; the *idempotency* of the commands themselves is the consuming repo's
 responsibility.
 
-## Abandoned work
+## Releasing a workspace
 
-Teardown and removal happen only on the evaluator's post-merge path, so a PR abandoned or closed
-without merging leaves its workspace — and any scarce resource its setup allocated (a license-limited
-simulator, a bound port, a scratch DB) — until an operator reclaims it. A repo that provisions a
-scarce per-worktree resource should expect to do that by hand on abandoned PRs.
+Every workspace — merged, abandoned, or mis-opened — is reclaimed the same way: the operator runs
+`/github-pipeline:workspace-close <branch-or-issue>`, which runs the teardown commands and then
+the gated removal. Run it promptly after a merge or an abandonment when setup allocates a scarce
+per-worktree resource (a license-limited simulator, a bound port, a scratch DB) — until it runs,
+the resource stays held. The evaluator's post-merge handoff hands the exact command; nothing
+removes a workspace automatically.
 
 Comment-only / no-code responses (questions, blocked issues, duplicates) never open a workspace at
 all, so neither hook fires.

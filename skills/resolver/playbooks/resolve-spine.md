@@ -23,8 +23,8 @@ the planner (the thread moved past a locked decision); `AMBIGUOUS` → read the 
 proceed; `PHASES_MALFORMED` → re-route to the planner. Lift the distiller's `## Doc grounding` citations
 verbatim — that is your S3 grounding, so the main loop never re-reads project docs.
 
-**Continue mode** (`vector.mode == continue`, `prior_pr` present, `workspace.reused`): you are
-resuming an in-flight PR. The distiller still runs (the thread may have moved), but the PR's own
+**Continue mode** (`vector.mode == continue`, `prior_pr` present — the ambient worktree carries
+the in-flight work prep asserted): you are resuming an in-flight PR. The distiller still runs (the thread may have moved), but the PR's own
 `## Phase tracker` — re-read from the existing PR body — is the authoritative record of which phases
 shipped; reconcile the issue-body DoD ticks against it per S6 before shipping the next phase. Skip the
 S2 audit on continue mode (the audit is a fresh-implementation-start gate, not a per-push gate).
@@ -111,7 +111,7 @@ path:
 ```bash
 ${CLAUDE_PLUGIN_ROOT}/scripts/gh_persist.py create-pr <owner/repo> "<facts.scratch>/pr.md" \
   --title "Fix: <summary> (#<issue-number>)" --base "<facts.workspace.base_ref>" \
-  --head "<facts.branch.name>" [--draft]   # --draft only for a multi-phase issue (S4)
+  --head "<facts.workspace.branch>" [--draft]   # --draft only for a multi-phase issue (S4)
 ```
 
 `--base`/`--head` are always explicit facts from the workspace (never inferred from cwd). Continue-mode:

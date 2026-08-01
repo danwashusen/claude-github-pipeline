@@ -26,21 +26,18 @@ If nothing is residual, say nothing.
 
 ## Cleanup (merge ran)
 
-Tear down and remove the work workspace, then purge the scratch dir:
-
-```bash
-${CLAUDE_PLUGIN_ROOT}/scripts/workspace.py remove --work <facts.workspace.branch> --root <root>
-```
-`remove --work` runs the consuming repo's `<!-- worktree-teardown -->` hooks (best-effort — a leaked
-resource is recoverable; a stuck worktree blocks every future run against the branch) **before** the
-`git worktree remove`, because the teardown commands live inside the worktree. Then
-`rm -rf "<facts.scratch>"`.
+Purge the scratch dir only: `rm -rf "<facts.scratch>"`. The worktree is **deliberately retained** —
+this session is running inside it and must never remove its own checkout; the handoff hands the
+operator `/github-pipeline:workspace-close <facts.workspace.branch>`, which runs the repo's
+`<!-- worktree-teardown -->` hooks and the gated removal from outside.
 
 ## Handoff
 
 Read [`../references/handoff-renderings.md`](../references/handoff-renderings.md) and emit the
 **Standard PR clean merged — terminal** shape: Issue line, PR line (`merge: squash → main@<sha>`),
-Cleanup line, `Next: (terminal — no follow-up skill)`, and a `Why:`. `review:` is `APPROVE` (auto
+Cleanup line (`scratch dir purged; worktree retained — release with workspace-close`), a
+`Next:` of `pipeline terminal — release the workspace:` whose fence carries
+`/github-pipeline:workspace-close <facts.workspace.branch>`, and a `Why:`. `review:` is `APPROVE` (auto
 policy) or `APPROVE (operator)` (gate path). The issue closes via GitHub's auto-close on merge into
 `main` — the pipeline ends here.
 
