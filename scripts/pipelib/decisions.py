@@ -2,7 +2,7 @@
 builder.
 
 Every script and judgment sub-agent in v2 signals an operator-only choice with one of exactly
-these 14 codes — contract tokens, exact strings, never paraphrased or extended ad hoc. Adding a
+these 15 codes — contract tokens, exact strings, never paraphrased or extended ad hoc. Adding a
 code is a contract change: update architecture.md §3 and this module together, in the same
 change, or ``tests/test_pipelib.py``'s drift-check test (which parses the code list back out of
 the doc and asserts it equals :data:`DECISION_CODES`) fails.
@@ -19,9 +19,15 @@ Meaning + canonical emitter per code (architecture.md §3):
   workspace side effect.
 - ``DOD_MALFORMED`` — a DoD bullet or annotation outside the closed set; ``parse.py dod``.
 - ``PHASES_MALFORMED`` — a plan ``## Phases`` section that doesn't parse; ``parse.py phases``.
-- ``ROOT_NOT_ON_MAIN`` / ``ROOT_DIRTY`` / ``ROOT_DIVERGED`` — root-freshness failures;
+- ``ROOT_NOT_ON_MAIN`` / ``ROOT_DIRTY`` / ``ROOT_DIVERGED`` — root-freshness failures on the
+  workspace-creating paths (the landing tools' staging ``ensure --work`` and workspace-open);
   ``workspace.py``.
-- ``BRANCH_IN_USE`` — the branch is checked out in another worktree; ``workspace.py``.
+- ``BRANCH_IN_USE`` — the branch is checked out in another worktree (``ensure --work``, reached
+  via the landing tools and workspace-open); ``workspace.py``.
+- ``WORKSPACE_MISMATCH`` — the ambient checkout is not the expected workspace (wrong or detached
+  branch, session at the project root, checkout stale against the expected remote state, or
+  removal attempted from inside the target worktree); ``workspace.py``, forwarded by the stage
+  preps.
 - ``PLAN_MISSING`` — a required plan is absent; prep scripts + the state-distiller.
 - ``THREAD_SUPERSEDED_PLAN`` — thread direction supersedes the recorded plan; the state-distiller.
 - ``AMBIGUOUS`` — residual non-marker ambiguity (e.g. multiple epic-branch matches); scripts +
@@ -40,6 +46,7 @@ ROOT_NOT_ON_MAIN = "ROOT_NOT_ON_MAIN"
 ROOT_DIRTY = "ROOT_DIRTY"
 ROOT_DIVERGED = "ROOT_DIVERGED"
 BRANCH_IN_USE = "BRANCH_IN_USE"
+WORKSPACE_MISMATCH = "WORKSPACE_MISMATCH"
 PLAN_MISSING = "PLAN_MISSING"
 THREAD_SUPERSEDED_PLAN = "THREAD_SUPERSEDED_PLAN"
 AMBIGUOUS = "AMBIGUOUS"
@@ -60,6 +67,7 @@ DECISION_CODES = frozenset(
         ROOT_DIRTY,
         ROOT_DIVERGED,
         BRANCH_IN_USE,
+        WORKSPACE_MISMATCH,
         PLAN_MISSING,
         THREAD_SUPERSEDED_PLAN,
         AMBIGUOUS,

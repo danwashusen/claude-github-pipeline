@@ -86,23 +86,49 @@ class PrepPlannerSandboxTestCase(unittest.TestCase):
         self.scratch = self._tmp_ctx.name
         self.addCleanup(self._tmp_ctx.cleanup)
 
-    def _run(self, args, fixture_case=None, extra_env=None):
+    def _mk_ambient(self, branch):
+        """Create (or reuse) `.worktrees/<branch>` in the sandbox clone — the worktree a
+        non-main `plan_ref` grounding session would be started in. Attaches an existing local
+        branch, else forks at origin/main. Returns its Path."""
+        wt = self.root / ".worktrees" / branch
+        if not wt.is_dir():
+            wt.parent.mkdir(parents=True, exist_ok=True)
+            has_local = (
+                subprocess.run(
+                    ["git", "show-ref", "--verify", "--quiet", "refs/heads/%s" % branch],
+                    cwd=str(self.root),
+                ).returncode
+                == 0
+            )
+            if has_local:
+                _git(["worktree", "add", str(wt), branch], self.root)
+            else:
+                _git(["worktree", "add", "-b", branch, str(wt), "origin/main"], self.root)
+        return wt
+
+    def _run(self, args, fixture_case=None, extra_env=None, cwd=None):
         env = shimenv.intercepted_env(base_env=os.environ, fixture_case=fixture_case)
         if extra_env:
             env.update(extra_env)
         return subprocess.run(
             [sys.executable, str(SCRIPT)] + args,
             env=env,
+            cwd=cwd,
             capture_output=True,
             encoding="utf-8",
             check=False,
         )
 
-    def _envelope(self, issue="200", repo="octo/widgets", fixture_case="prep_planner_row_default", extra_args=None):
+    def _envelope(self, issue="200", repo="octo/widgets", fixture_case="prep_planner_row_default", extra_args=None, ambient=None):
+        """v3: the prep asserts the AMBIENT checkout against the selected plan_ref. The default
+        posture runs the subprocess from the sandbox root itself — a clean `main` checkout, which
+        a `main` plan_ref accepts (`allow_main_root`, plan-before-open). A non-main plan_ref test
+        passes `ambient=<branch>` to run from inside the matching worktree instead."""
         args = [issue, repo, "--root", str(self.root), "--scratch-dir", self.scratch]
         if extra_args:
             args += extra_args
-        result = self._run(args, fixture_case=fixture_case)
+        run_cwd = str(self._mk_ambient(ambient)) if ambient is not None else str(self.root)
+        result = self._run(args, fixture_case=fixture_case, cwd=run_cwd)
         self.assertEqual(result.returncode, 0, msg="stderr: %s" % result.stderr)
         envelope = _parse_one_envelope(result.stdout)
         envelope_asserts.assert_full_envelope_conformance(envelope)
@@ -135,7 +161,7 @@ class HappyPathFactsSchemaTests(PrepPlannerSandboxTestCase):
         for key in (
             "repo", "scratch", "root", "target", "vector", "suggested_playbook", "plan_ref",
             "plan", "research", "grounding_docs", "open_questions", "open_question_candidates",
-            "read_workspaces", "sections", "attention", "notices",
+            "grounding", "sections", "attention", "notices",
         ):
             self.assertIn(key, envelope, "missing architecture.md §4 facts-block key %r" % key)
 
@@ -143,6 +169,9 @@ class HappyPathFactsSchemaTests(PrepPlannerSandboxTestCase):
         envelope = self._envelope()
         self.assertEqual(envelope["root"]["path"], str(self.root))
         self.assertEqual(len(envelope["root"]["sha"]), 40)
+        # v3: root.sha IS the origin/main pin — the fetched remote tip.
+        self.assertEqual(envelope["root"]["sha"], _git(["rev-parse", "origin/main"], self.root))
+        self.assertEqual(envelope["root"]["source"], "origin/main")
         self.assertTrue(envelope["root"]["fresh"])
 
     def test_target_facts_shape(self):
@@ -161,11 +190,15 @@ class HappyPathFactsSchemaTests(PrepPlannerSandboxTestCase):
 
     def test_planner_never_gets_a_work_workspace(self):
         # architecture.md §6 / prd §8.4: grounding is read-only; the planner never has a `workspace`
-        # key the way the resolver does.
+        # key the way the resolver does — and under v3 no `read_workspaces` either: it grounds on
+        # the AMBIENT checkout, reported as the top-level `grounding` fact.
         envelope = self._envelope()
         self.assertNotIn("workspace", envelope)
-        self.assertIn("read_workspaces", envelope)
-        self.assertIn("grounding", envelope["read_workspaces"])
+        self.assertNotIn("read_workspaces", envelope)
+        self.assertIn("grounding", envelope)
+        self.assertEqual(Path(envelope["grounding"]["path"]), Path(self.root).resolve())
+        self.assertEqual(envelope["grounding"]["branch"], "main")
+        self.assertFalse(envelope["grounding"]["dirty"])
 
     def test_no_open_questions_no_candidates(self):
         envelope = self._envelope()
@@ -202,9 +235,9 @@ class PlanRefRowTests(PrepPlannerSandboxTestCase):
         envelope = self._envelope(issue="200", fixture_case="prep_planner_row_default")
         self.assertEqual(envelope["vector"]["plan_ref_row"], prep_planner.PLAN_REF_ROW_DEFAULT)
         self.assertEqual(envelope["plan_ref"], "main")
-        self.assertEqual(envelope["read_workspaces"]["grounding"]["ref"], "main")
-        self.assertEqual(len(envelope["read_workspaces"]["grounding"]["sha"]), 40)
-        self.assertTrue(Path(envelope["read_workspaces"]["grounding"]["path"]).is_dir())
+        self.assertEqual(envelope["grounding"]["ref"], "main")
+        self.assertEqual(len(envelope["grounding"]["sha"]), 40)
+        self.assertTrue(Path(envelope["grounding"]["path"]).is_dir())
 
     def test_row_open_pr_head_wins_revise_mode(self):
         _git(["fetch", "origin"], self.root)
@@ -215,21 +248,26 @@ class PlanRefRowTests(PrepPlannerSandboxTestCase):
         _git(["push", "origin", "201-fix-gadget"], self.root)
         _git(["checkout", "main"], self.root)
 
-        envelope = self._envelope(issue="201", fixture_case="prep_planner_row_open_pr_revise")
+        envelope = self._envelope(
+            issue="201", fixture_case="prep_planner_row_open_pr_revise", ambient="201-fix-gadget"
+        )
         self.assertEqual(envelope["vector"]["plan_ref_row"], prep_planner.PLAN_REF_ROW_OPEN_PR_HEAD)
         self.assertEqual(envelope["plan_ref"], "201-fix-gadget")
         self.assertEqual(envelope["vector"]["mode"], "revise")
-        self.assertEqual(envelope["read_workspaces"]["grounding"]["ref"], "201-fix-gadget")
-        self.assertEqual(len(envelope["read_workspaces"]["grounding"]["sha"]), 40)
+        self.assertEqual(envelope["grounding"]["ref"], "201-fix-gadget")
+        self.assertEqual(len(envelope["grounding"]["sha"]), 40)
 
     def test_row_story_under_open_epic(self):
         self._push_branch("epic/100-sandbox-fixture")
-        envelope = self._envelope(issue="202", fixture_case="prep_planner_row_story_under_epic")
+        envelope = self._envelope(
+            issue="202", fixture_case="prep_planner_row_story_under_epic",
+            ambient="epic/100-sandbox-fixture",
+        )
         self.assertEqual(envelope["vector"]["type"], "story")
         self.assertEqual(envelope["vector"]["plan_ref_row"], prep_planner.PLAN_REF_ROW_STORY_PARENT_BRANCH)
         self.assertEqual(envelope["plan_ref"], "epic/100-sandbox-fixture")
-        self.assertEqual(envelope["read_workspaces"]["grounding"]["ref"], "epic/100-sandbox-fixture")
-        self.assertEqual(len(envelope["read_workspaces"]["grounding"]["sha"]), 40)
+        self.assertEqual(envelope["grounding"]["ref"], "epic/100-sandbox-fixture")
+        self.assertEqual(len(envelope["grounding"]["sha"]), 40)
         self.assertEqual(envelope["story"]["parent_epic"]["number"], 100)
         self.assertTrue(envelope["story"]["parent_epic_open"])
         self.assertEqual(envelope["story"]["epic_branch"]["branch"], "epic/100-sandbox-fixture")
@@ -252,8 +290,8 @@ class PlanRefRowTests(PrepPlannerSandboxTestCase):
             envelope["vector"]["plan_ref_row"], prep_planner.PLAN_REF_ROW_STORY_NO_PARENT
         )
         self.assertEqual(envelope["plan_ref"], "main")
-        self.assertEqual(envelope["read_workspaces"]["grounding"]["ref"], "main")
-        self.assertEqual(len(envelope["read_workspaces"]["grounding"]["sha"]), 40)
+        self.assertEqual(envelope["grounding"]["ref"], "main")
+        self.assertEqual(len(envelope["grounding"]["sha"]), 40)
         self.assertEqual(envelope["story"]["parent_epic"]["number"], 101)
         self.assertTrue(envelope["story"]["parent_epic_open"])
         self.assertEqual(envelope["story"]["epic_branch"]["match_count"], 0)
@@ -266,11 +304,13 @@ class PlanRefRowTests(PrepPlannerSandboxTestCase):
 
     def test_row_epic_as_target_branch_found(self):
         self._push_branch("epic/300-sandbox-epic")
-        envelope = self._envelope(issue="300", fixture_case="prep_planner_row_epic")
+        envelope = self._envelope(
+            issue="300", fixture_case="prep_planner_row_epic", ambient="epic/300-sandbox-epic"
+        )
         self.assertEqual(envelope["vector"]["type"], "epic")
         self.assertEqual(envelope["vector"]["plan_ref_row"], prep_planner.PLAN_REF_ROW_EPIC_BRANCH)
         self.assertEqual(envelope["plan_ref"], "epic/300-sandbox-epic")
-        self.assertEqual(envelope["read_workspaces"]["grounding"]["ref"], "epic/300-sandbox-epic")
+        self.assertEqual(envelope["grounding"]["ref"], "epic/300-sandbox-epic")
         self.assertEqual(envelope["epic"]["branch"]["match_count"], 1)
         self.assertEqual(len(envelope["epic"]["branch"]["sha"]), 40)
         self.assertTrue(envelope["epic"]["stories_filed"])
@@ -313,7 +353,7 @@ class GroundingDocInventoryTests(PrepPlannerSandboxTestCase):
         envelope = self._envelope(issue="200", fixture_case="prep_planner_row_default")
         by_doc = {d["doc"]: d for d in envelope["grounding_docs"]}
         self.assertTrue(by_doc["CLAUDE.md"]["present"])
-        self.assertIn(envelope["read_workspaces"]["grounding"]["path"], by_doc["CLAUDE.md"]["path"])
+        self.assertIn(envelope["grounding"]["path"], by_doc["CLAUDE.md"]["path"])
         self.assertFalse(by_doc["docs/prd.md"]["present"])
         self.assertIsNone(by_doc["docs/prd.md"]["path"])
 
@@ -398,7 +438,9 @@ class MarkerDetectionVariantTests(PrepPlannerSandboxTestCase):
         _git(["push", "origin", "201-fix-gadget"], self.root)
         _git(["checkout", "main"], self.root)
 
-        envelope = self._envelope(issue="201", fixture_case="prep_planner_row_open_pr_revise")
+        envelope = self._envelope(
+            issue="201", fixture_case="prep_planner_row_open_pr_revise", ambient="201-fix-gadget"
+        )
         self.assertTrue(envelope["plan"]["present"])
         self.assertFalse(envelope["research"]["present"])
         self.assertEqual(envelope["vector"]["mode"], "revise")
@@ -429,7 +471,9 @@ class ReviseFactsTests(PrepPlannerSandboxTestCase):
         _git(["push", "origin", "900-large-plan"], self.root)
         _git(["checkout", "main"], self.root)
 
-        envelope = self._envelope(issue="900", fixture_case="prep_planner_revise_large_plan")
+        envelope = self._envelope(
+            issue="900", fixture_case="prep_planner_revise_large_plan", ambient="900-large-plan"
+        )
         self.assertEqual(envelope["vector"]["mode"], "revise")
         self.assertEqual(envelope["plan"]["body_mode"], "path")
         self.assertTrue(Path(envelope["plan"]["body_path"]).is_file())
@@ -529,19 +573,63 @@ class DecisionCodeTests(PrepPlannerSandboxTestCase):
         self.assertEqual(entries_or_decision, "raised")
 
 
-class RootDecisionPropagationTests(PrepPlannerSandboxTestCase):
-    def test_root_not_on_main_propagates(self):
-        _git(["checkout", "-b", "not-main"], self.root)
-        self.addCleanup(lambda: _git(["checkout", "main"], self.root))
-        envelope = self._envelope(fixture_case="prep_planner_row_default")
-        self.assertEqual(envelope["status"], "needs_decision")
-        self.assertEqual(envelope["decision"]["code"], "ROOT_NOT_ON_MAIN")
+class GroundingMismatchTests(PrepPlannerSandboxTestCase):
+    """v3: the ambient-grounding assertion — WORKSPACE_MISMATCH decisions replace the retired
+    ROOT_* propagation coverage (the planner no longer polices root state; a `main` plan_ref
+    accepts any clean up-to-date main checkout including the project root)."""
 
-    def test_root_dirty_propagates(self):
+    def _mismatch(self, envelope, reason):
+        self.assertEqual(envelope["status"], "needs_decision")
+        self.assertEqual(envelope["decision"]["code"], "WORKSPACE_MISMATCH")
+        self.assertEqual(envelope["decision"]["context"]["reason"], reason)
+
+    def test_main_plan_ref_from_the_project_root_passes(self):
+        # plan-before-open: fresh standard planning happens on a main checkout — the project root
+        # itself is the canonical posture, not a mismatch.
+        envelope = self._envelope(fixture_case="prep_planner_row_default")
+        self.assertEqual(envelope["status"], "ok")
+        self.assertEqual(envelope["plan_ref"], "main")
+
+    def test_main_plan_ref_from_a_non_main_checkout_is_a_mismatch(self):
+        envelope = self._envelope(
+            fixture_case="prep_planner_row_default", ambient="999-unrelated-work"
+        )
+        self._mismatch(envelope, "branch_mismatch")
+        self.assertEqual(envelope["decision"]["context"]["expected_branch"], "main")
+
+    def test_non_main_plan_ref_from_the_project_root_is_a_mismatch(self):
+        # A story under an open epic grounds on the epic branch — sitting at the root's main
+        # checkout is the wrong vantage (a stale footer SHA / wrong-tree read otherwise). The
+        # at-root check fires first, and its card carries the expected branch the operator
+        # should open.
+        self._push_branch("epic/100-sandbox-fixture")
+        envelope = self._envelope(issue="202", fixture_case="prep_planner_row_story_under_epic")
+        self._mismatch(envelope, "at_project_root")
+        self.assertEqual(
+            envelope["decision"]["context"]["expected_branch"], "epic/100-sandbox-fixture"
+        )
+
+    def test_grounding_behind_origin_is_stale(self):
+        # The ambient main checkout is strictly behind origin/main (someone pushed) — a stale
+        # footer SHA would be an immediate `plan: stale` downstream, so this is a decision, not
+        # the silent auto-ff the v2 root-freshness protocol performed.
+        other = gitsandbox.mk_clone(self.origin)
+        self.addCleanup(other.cleanup)
+        _write(Path(other.path) / "moved.txt", "origin moved\n")
+        _git(["add", "moved.txt"], other.path)
+        _git(["commit", "-m", "origin-side commit"], other.path)
+        _git(["push", "origin", "HEAD:main"], other.path)
+        envelope = self._envelope(fixture_case="prep_planner_row_default")
+        self._mismatch(envelope, "stale_checkout")
+
+    def test_dirty_grounding_is_reported_as_attention_not_a_block(self):
         _write(self.root / "dirty.txt", "uncommitted\n")
         envelope = self._envelope(fixture_case="prep_planner_row_default")
-        self.assertEqual(envelope["status"], "needs_decision")
-        self.assertEqual(envelope["decision"]["code"], "ROOT_DIRTY")
+        self.assertEqual(envelope["status"], "ok")
+        self.assertTrue(envelope["grounding"]["dirty"])
+        self.assertTrue(
+            any("plan footer SHA" in item for item in envelope["attention"]), envelope["attention"]
+        )
 
     def test_second_prep_planner_run_in_the_same_clone_is_not_root_dirty(self):
         # D6 regression at the prep-script level: the live-observed symptom was a composite
@@ -572,9 +660,10 @@ class RefreshModeTests(PrepPlannerSandboxTestCase):
     grounding read workspace (mirrors tests/test_prep_resolver.py's / tests/test_prep_evaluator.py's
     identical `--refresh` contract; architecture.md §4)."""
 
-    def test_refresh_never_touches_root_freshness_or_grounding_workspace(self):
+    def test_refresh_never_touches_the_grounding_assertion_or_the_pin(self):
         envelope = self._envelope(fixture_case="prep_planner_row_default", extra_args=["--refresh"])
         self.assertEqual(envelope["status"], "ok")
+        self.assertNotIn("grounding", envelope)
         self.assertNotIn("read_workspaces", envelope)
         self.assertEqual(envelope["grounding_docs"], [])
         self.assertFalse(envelope["root"]["fresh"])

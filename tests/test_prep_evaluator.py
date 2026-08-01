@@ -93,23 +93,88 @@ class PrepEvaluatorSandboxTestCase(unittest.TestCase):
         self.scratch = self._tmp_ctx.name
         self.addCleanup(self._tmp_ctx.cleanup)
 
-    def _run(self, args, fixture_case=None, extra_env=None):
+    # The fixtures' canned PR head OID. v3's attach asserts ambient HEAD == pr.headRefOid
+    # EXACTLY, and a sandbox worktree's HEAD is a real, run-specific SHA — so the harness stamps
+    # a fixture copy, replacing this sentinel with the actual worktree HEAD across every fixture
+    # file (view_88.json AND the cache-hit marker body, which deliberately share it).
+    CANNED_HEAD_OID = "deadbeef00112233445566778899aabbccddeeff"
+
+    def _mk_ambient(self, branch):
+        """Create (or reuse) `.worktrees/<branch>` in the sandbox clone — the PR-head worktree the
+        operator would have opened via workspace-open. Returns its Path."""
+        wt = self.root / ".worktrees" / branch
+        if not wt.is_dir():
+            wt.parent.mkdir(parents=True, exist_ok=True)
+            _git(["worktree", "add", "-b", branch, str(wt), "origin/main"], self.root)
+        return wt
+
+    def _head_branch_from_fixture(self, fixture_case):
+        case_dir = shimenv.fixture_case_dir(fixture_case)
+        for f in sorted(case_dir.glob("*.json")):
+            if f.name == "manifest.json":
+                continue
+            try:
+                data = json.loads(f.read_text(encoding="utf-8"))
+            except ValueError:
+                continue
+            if isinstance(data, dict) and "headRefName" in data:
+                return data["headRefName"]
+        return None
+
+    def _stamped_fixture(self, fixture_case, head_sha):
+        """Copy the fixture dir and replace the canned head OID with the real worktree HEAD."""
+        import shutil
+
+        src = shimenv.fixture_case_dir(fixture_case)
+        dst = Path(tempfile.mkdtemp(prefix="gh-evaluator-stamp-"))
+        self.addCleanup(lambda: shutil.rmtree(str(dst), ignore_errors=True))
+        for f in src.iterdir():
+            content = f.read_bytes().replace(
+                self.CANNED_HEAD_OID.encode("ascii"), head_sha.encode("ascii")
+            )
+            (dst / f.name).write_bytes(content)
+        return dst
+
+    def _run(self, args, fixture_case=None, extra_env=None, cwd=None):
         env = shimenv.intercepted_env(base_env=os.environ, fixture_case=fixture_case)
         if extra_env:
             env.update(extra_env)
         return subprocess.run(
             [sys.executable, str(SCRIPT)] + args,
             env=env,
+            cwd=cwd,
             capture_output=True,
             encoding="utf-8",
             check=False,
         )
 
-    def _envelope(self, pr="88", repo="octo/widgets", fixture_case="prep_evaluator_happy_standard", extra_args=None):
+    def _envelope(self, pr="88", repo="octo/widgets", fixture_case="prep_evaluator_happy_standard",
+                  extra_args=None, ambient=True, ambient_branch=None, stamp=True):
+        """Run the prep and return its envelope. With `ambient` (the default), the subprocess runs
+        with its cwd INSIDE a worktree on the fixture PR's head branch (v3's operator posture) and
+        the fixture is stamped so pr.headRefOid == that worktree's HEAD. `ambient_branch`
+        overrides the branch (a wrong-branch mismatch test); `stamp=False` leaves the canned OID
+        in place (a stale-checkout mismatch test). Flows that decide before the workspace
+        assertion (auth, marker-ambiguous, --refresh) pass ambient=False and run as before."""
         args = [pr, repo, "--root", str(self.root), "--scratch-dir", self.scratch]
         if extra_args:
             args += extra_args
-        result = self._run(args, fixture_case=fixture_case)
+        run_cwd = None
+        fixtures_dir = None
+        if ambient:
+            branch = ambient_branch or self._head_branch_from_fixture(fixture_case)
+            if branch is not None:
+                wt = self._mk_ambient(branch)
+                run_cwd = str(wt)
+                if stamp:
+                    fixtures_dir = self._stamped_fixture(fixture_case, _git(["rev-parse", "HEAD"], wt))
+        if fixtures_dir is not None:
+            result = self._run(
+                args, fixture_case=None,
+                extra_env={"GH_SHIM_FIXTURES": str(fixtures_dir)}, cwd=run_cwd,
+            )
+        else:
+            result = self._run(args, fixture_case=fixture_case, cwd=run_cwd)
         self.assertEqual(result.returncode, 0, msg="stderr: %s" % result.stderr)
         envelope = _parse_one_envelope(result.stdout)
         envelope_asserts.assert_full_envelope_conformance(envelope)
@@ -146,6 +211,9 @@ class HappyPathFactsSchemaTests(PrepEvaluatorSandboxTestCase):
         envelope = self._envelope()
         self.assertEqual(envelope["root"]["path"], str(self.root))
         self.assertEqual(len(envelope["root"]["sha"]), 40)
+        # v3: root.sha IS the origin/main pin — the fetched remote tip.
+        self.assertEqual(envelope["root"]["sha"], _git(["rev-parse", "origin/main"], self.root))
+        self.assertEqual(envelope["root"]["source"], "origin/main")
         self.assertTrue(envelope["root"]["fresh"])
 
     def test_target_facts_shape(self):
@@ -168,18 +236,25 @@ class HappyPathFactsSchemaTests(PrepEvaluatorSandboxTestCase):
         self.assertEqual(envelope["vector"]["type"], "standard")
         self.assertEqual(envelope["suggested_playbook"], "standard.md")
 
-    def test_workspace_fact_is_the_ensured_work_worktree_on_pr_head_branch(self):
+    def test_workspace_fact_records_the_ambient_pr_head_checkout(self):
         envelope = self._envelope()
         self.assertEqual(envelope["workspace"]["branch"], "88-fix-widget")
+        self.assertEqual(envelope["workspace"]["expected_branch"], "88-fix-widget")
         self.assertEqual(envelope["workspace"]["base_ref"], "main")
-        self.assertFalse(envelope["workspace"]["reused"])
+        self.assertEqual(envelope["workspace"]["source"], "ambient")
+        self.assertNotIn("reused", envelope["workspace"])
         self.assertFalse(envelope["workspace"]["dirty"])
         self.assertEqual(envelope["workspace"]["unpushed_commits"], 0)
         self.assertTrue(Path(envelope["workspace"]["path"]).is_dir())
+        # attach asserted ambient HEAD == pr.headRefOid — by construction here, but the identity
+        # is the contract: the sha fact IS the checkout the evaluator will health-check.
+        wt = self.root / ".worktrees" / "88-fix-widget"
+        self.assertEqual(envelope["workspace"]["sha"], _git(["rev-parse", "HEAD"], wt))
 
-    def test_config_pinned_at_root_sha(self):
+    def test_config_pinned_at_origin_main_sha(self):
         envelope = self._envelope()
         self.assertEqual(envelope["config"]["sha"], envelope["root"]["sha"])
+        self.assertEqual(envelope["config"]["sha"], _git(["rev-parse", "origin/main"], self.root))
 
     def test_merge_config_facts_from_repo_api(self):
         envelope = self._envelope()
@@ -262,10 +337,13 @@ class HappyPathFactsSchemaTests(PrepEvaluatorSandboxTestCase):
         envelope = self._envelope()
         self.assertEqual(envelope["notices"], [])
 
-    def test_second_run_reports_reused_workspace(self):
-        self._envelope()
-        envelope = self._envelope()
-        self.assertTrue(envelope["workspace"]["reused"])
+    def test_second_run_reasserts_the_same_workspace(self):
+        # v3: re-entry is another attach against the same ambient checkout — no `reused` flag
+        # (there is nothing to reuse; the worktree is the operator's), same facts both runs.
+        first = self._envelope()
+        second = self._envelope()
+        self.assertEqual(first["workspace"]["path"], second["workspace"]["path"])
+        self.assertNotIn("reused", second["workspace"])
 
     def test_failed_setup_hook_surfaces_as_fact_not_a_hard_exit(self):
         # workspace.py's `ensure --work` exits 1 when a setup hook fails, but STILL emits an
@@ -323,9 +401,12 @@ class HealthCacheTests(PrepEvaluatorSandboxTestCase):
         self.assertEqual(envelope["health_cache"], {"sha": None, "hit": False})
 
     def test_matching_sha_is_a_hit(self):
+        # The fixture's marker body and pr.headRefOid share the canned OID sentinel; the harness
+        # stamps BOTH to the real worktree HEAD, so the hit relation (cached sha == head OID)
+        # survives stamping and the reported sha is the checkout's own HEAD.
         envelope = self._envelope(fixture_case="prep_evaluator_cache_hit")
         self.assertTrue(envelope["health_cache"]["hit"])
-        self.assertEqual(envelope["health_cache"]["sha"], "deadbeef00112233445566778899aabbccddeeff")
+        self.assertEqual(envelope["health_cache"]["sha"], envelope["workspace"]["sha"])
 
     def test_mismatched_sha_is_a_miss_but_reports_the_stale_sha(self):
         envelope = self._envelope(fixture_case="prep_evaluator_cache_miss_sha_mismatch")
@@ -420,65 +501,49 @@ class AuthRequiredTests(PrepEvaluatorSandboxTestCase):
         self.assertEqual(envelope["decision"]["code"], "AUTH_REQUIRED")
 
 
-class RootDecisionPropagationTests(PrepEvaluatorSandboxTestCase):
-    """ROOT_NOT_ON_MAIN / ROOT_DIRTY / ROOT_DIVERGED — workspace.py's own decisions, forwarded
-    verbatim through prep's composition (never re-derived or re-worded)."""
+class WorkspaceMismatchTests(PrepEvaluatorSandboxTestCase):
+    """v3: the ambient-checkout assertion on the PR head — WORKSPACE_MISMATCH decisions
+    (workspace.py's, forwarded verbatim). These replace the retired ROOT_*/BRANCH_IN_USE
+    propagation coverage: the evaluator no longer polices root state or creates worktrees (those
+    gates live on the workspace-creating paths — the landing tools and workspace-open)."""
 
-    def test_root_not_on_main_propagates(self):
-        _git(["checkout", "-b", "not-main"], self.root)
-        self.addCleanup(lambda: _git(["checkout", "main"], self.root))
-        envelope = self._envelope(fixture_case="prep_evaluator_happy_standard")
+    def _mismatch(self, envelope, reason):
         self.assertEqual(envelope["status"], "needs_decision")
-        self.assertEqual(envelope["decision"]["code"], "ROOT_NOT_ON_MAIN")
+        self.assertEqual(envelope["decision"]["code"], "WORKSPACE_MISMATCH")
+        self.assertEqual(envelope["decision"]["context"]["reason"], reason)
 
-    def test_root_dirty_propagates(self):
-        _write(self.root / "dirty.txt", "uncommitted\n")
-        envelope = self._envelope(fixture_case="prep_evaluator_happy_standard")
-        self.assertEqual(envelope["status"], "needs_decision")
-        self.assertEqual(envelope["decision"]["code"], "ROOT_DIRTY")
+    def test_wrong_branch_is_a_branch_mismatch(self):
+        envelope = self._envelope(
+            fixture_case="prep_evaluator_happy_standard", ambient_branch="999-unrelated-work"
+        )
+        self._mismatch(envelope, "branch_mismatch")
+        self.assertEqual(envelope["decision"]["context"]["expected_branch"], "88-fix-widget")
 
-    def test_root_diverged_propagates(self):
-        other_clone = gitsandbox.mk_clone(self.origin)
-        self.addCleanup(other_clone.cleanup)
-        _write(other_clone.path / "origin-side.txt", "origin moved\n")
-        _git(["add", "origin-side.txt"], other_clone.path)
-        _git(["commit", "-m", "origin-side commit"], other_clone.path)
-        _git(["push", "origin", "HEAD:main"], other_clone.path)
-        _write(self.root / "root-side.txt", "root moved locally\n")
-        _git(["add", "root-side.txt"], self.root)
-        _git(["commit", "-m", "root-side local commit"], self.root)
-        envelope = self._envelope(fixture_case="prep_evaluator_happy_standard")
-        self.assertEqual(envelope["status"], "needs_decision")
-        self.assertEqual(envelope["decision"]["code"], "ROOT_DIVERGED")
-
-    def test_root_decision_short_circuits_before_any_gh_call(self):
-        # No gh fixture case at all (fixture_case=None) — a ROOT_* short-circuit happens entirely
-        # inside workspace.py, BEFORE prep_evaluator would even reach its first `gh` call... but
-        # prep's own composition order calls gh_pr_gather FIRST (it needs headRefName/baseRefName
-        # to call `ensure --work`). So root-freshness is actually checked only after the PR fetch
-        # succeeds — this test documents that real ordering rather than assuming the opposite.
-        _git(["checkout", "-b", "not-main"], self.root)
-        self.addCleanup(lambda: _git(["checkout", "main"], self.root))
+    def test_session_at_the_project_root_names_workspace_open(self):
         result = self._run(
             ["88", "octo/widgets", "--root", str(self.root), "--scratch-dir", self.scratch],
             fixture_case="prep_evaluator_happy_standard",
+            cwd=str(self.root),
         )
         self.assertEqual(result.returncode, 0, msg=result.stderr)
         envelope = _parse_one_envelope(result.stdout)
-        self.assertEqual(envelope["decision"]["code"], "ROOT_NOT_ON_MAIN")
-        self.assertFalse((self.root / ".worktrees").exists())
+        self._mismatch(envelope, "at_project_root")
+        self.assertTrue(
+            any("workspace-open" in option for option in envelope["decision"]["options"])
+        )
 
-
-class BranchInUseTests(PrepEvaluatorSandboxTestCase):
-    def test_branch_checked_out_elsewhere_propagates_branch_in_use(self):
-        elsewhere_ctx = tempfile.TemporaryDirectory()
-        self.addCleanup(elsewhere_ctx.cleanup)
-        elsewhere = Path(elsewhere_ctx.name) / "elsewhere-wt"
-        _git(["worktree", "add", str(elsewhere), "-b", "88-fix-widget"], self.root)
-        envelope = self._envelope(fixture_case="prep_evaluator_happy_standard")
-        self.assertEqual(envelope["status"], "needs_decision")
-        self.assertEqual(envelope["decision"]["code"], "BRANCH_IN_USE")
-        self.assertFalse((self.root / ".worktrees" / "88-fix-widget").exists())
+    def test_head_oid_drift_is_stale_checkout(self):
+        # The fixture's canned headRefOid deliberately NOT stamped to the worktree HEAD: the
+        # ambient checkout does not contain the PR's recorded head — the evaluator must never
+        # health-check or cache against it (require_exact, review finding M1).
+        envelope = self._envelope(fixture_case="prep_evaluator_happy_standard", stamp=False)
+        self._mismatch(envelope, "stale_checkout")
+        self.assertEqual(
+            envelope["decision"]["context"]["expected_remote_sha"],
+            self.CANNED_HEAD_OID,
+        )
+        # Even an AHEAD checkout is a mismatch on the exact-OID contract — context records it.
+        self.assertIn("ahead_of_remote", envelope["decision"]["context"])
 
 
 class RefreshModeTests(unittest.TestCase):

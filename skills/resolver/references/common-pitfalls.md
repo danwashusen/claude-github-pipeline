@@ -147,17 +147,19 @@ its §review-loop, its S6 DoD projection) that carry the same numbering v1 used,
   hunting.
 - **Don't assume the issue is still relevant.** If the thread has gone quiet for a long time, flag this and
   ask whether to proceed.
-- **Don't nest worktrees or write the root.** The root is the read-only `main` vantage — never branch,
-  commit, stash, or test there. All code work happens in `facts.workspace.path` (prep ensured it); when a
-  second view is needed, read `facts.read_workspaces.audit.path`. Prep + `workspace.py` own worktree
-  creation, reuse, and the `.worktrees/` exclusion — the prompt never runs `git worktree add`.
-- **Don't hand-clean worktrees.** A worktree may contain unpushed commits or in-flight edits. Routine
-  cleanup is the evaluator's job (after merge); when this run surfaces one needing removal (a
-  mis-identified target, a stale leftover), remove it with
-  `${CLAUDE_PLUGIN_ROOT}/scripts/workspace.py remove --work <branch>` — it runs the teardown hooks
-  and surfaces dirty/unpushed state as a decision, which raw `git worktree remove --force` /
-  `git branch -D` silently discard. If that invocation fails or is blocked, stop and print the
-  command for the operator to run **at that point** — don't defer the flag to the handoff.
+- **Don't work outside the asserted workspace, and don't nest worktrees.** All code work happens
+  in `facts.workspace.path` — the ambient worktree the operator opened (workspace-open) and prep
+  asserted; when a second view is needed, read `facts.read_workspaces.audit.path`. `main` changes
+  only via PR — never commit, branch, or stash in any other checkout. workspace-open +
+  `workspace.py` own worktree creation, reuse, and the `.worktrees/` exclusion — the prompt never
+  runs `git worktree add`.
+- **Never remove or `git worktree`-manipulate a worktree — least of all the one this session is
+  running in.** A worktree may contain unpushed commits or in-flight edits, and removing the
+  session's own checkout pulls the floor out from under it. Every removal — merged, abandoned,
+  mis-opened — is the operator's `/github-pipeline:workspace-close <branch>`, which runs the
+  teardown hooks and gates dirty/unpushed state as a decision (raw `git worktree remove --force` /
+  `git branch -D` silently discard both). When this run surfaces a stale or mis-opened worktree,
+  say so and name that command **at that point** — don't defer the flag to the handoff.
 - **Don't open a single feature PR for an epic.** Epics are containers; child stories are where code lands.
   Opening a monolithic PR for an epic conflates resolution with implementation and makes the PR
   unreviewable.
@@ -179,9 +181,10 @@ its §review-loop, its S6 DoD projection) that carry the same numbering v1 used,
   existence check would have orphaned all the story commits already on the original branch. Prep discovers
   by prefix (`git ls-remote --heads origin "epic/<N>-*"`) and reports `facts.epic.branch`; recompute only
   on the bootstrap path (`facts.epic.bootstrap_slug`, zero matches).
-- **Don't run epic baseline in the root.** Both bootstrap and legacy recovery use the work worktree prep
-  ensured. Running the canonical suite in the root would force a checkout, prevent the user from using the
-  root for unrelated work during the long suite run, and contradict the "root stays untouched" invariant.
+- **Don't run epic baseline in the main checkout.** Both bootstrap and legacy recovery use the asserted
+  epic worktree. Running the canonical suite in the main checkout would force a checkout, prevent the
+  user from using it for unrelated work during the long suite run, and put a long-lived process outside
+  the workspace the run owns.
 - **Don't cold-rebuild the canonical suite on every re-run, and don't background it with a relative `cd`.**
   Re-issuing `full-suite` on a re-run re-pays the cold build that dominates wall time (what turned one
   re-baseline into a multi-hour hang), and a relative `cd .worktrees/<branch> && …` `&&`-short-circuits to

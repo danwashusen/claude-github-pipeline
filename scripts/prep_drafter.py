@@ -66,15 +66,13 @@ distinguishable behavior.
 happens to be — `ls .github/ISSUE_TEMPLATE/`, `gh label list`, `ls docs/prd.md ...` all run inline,
 with no requirement that the tree be clean or on `main` (the skill's own primary trigger is "the user
 is mid-development ... notices things," i.e. very plausibly *while* the tree is dirty on a feature
-branch). Unlike the planner/resolver/evaluator (each of which forks a pinned-ref workspace off a
-verified-fresh root specifically to gate a build/merge decision — architecture.md §6's "Gate config
-is pinned to trust" applies to *their* test-target/checks/merge-policy blocks, which weaken a real
-merge gate if read from an untrusted ref), the drafter's OQ-marker block only informs a **detection
-hint** for drafting, never a merge/build gate — and root here is never a PR-head checkout (that's
-what `.worktrees/` is for), so reading it "as-is" already satisfies the invariant's actual threat
-model ("never from a PR head") without forcing `workspace._build_root_status`'s fetch+ff-merge+
-clean/main requirement, which would make this prep fail on the exact mid-feature-branch working tree
-its most common real trigger describes. `root` therefore carries only `{path, sha}` (a plain,
+branch). Unlike the resolver/evaluator (whose gate config — test-target/checks/merge-policy — would weaken
+a real merge gate if read from an untrusted ref, which is why their preps read those blocks from
+the `origin/main` pin via `refblocks`, never any working tree), the drafter's OQ-marker block only
+informs a **detection hint** for drafting, never a merge/build gate — so reading the ambient
+checkout "as-is" carries no gate-weakening exposure, and asserting or pinning anything here would
+make this prep fail on the exact mid-feature-branch working tree its most common real trigger
+describes. `root` therefore carries only `{path, sha}` (a plain,
 non-gating `git rev-parse HEAD` — informational, never enforced) — no `workspace.py` import, no
 `fresh` key (there is no freshness protocol here for that key to describe). Flagged for reviewer
 scrutiny in the implementor report; not a defect if the reviewer weighs the threat model the same way.

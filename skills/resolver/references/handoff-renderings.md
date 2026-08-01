@@ -7,7 +7,13 @@ vocabulary live in [`../../_shared/handoff-format.md`](../../_shared/handoff-for
 renders them at point of use, it does not restate the schema.
 
 Next-command skills are the v2 pipeline names (`evaluator`, `planner`, `drafter`, `resolver`),
-namespaced `/github-pipeline:<name>`. **The `PR:` line's `review:`/`health:`/`merge:` markers are
+namespaced `/github-pipeline:<name>`. **`Workspace:` lines** (the v3 "start the next session
+here" carrier — see `_shared/handoff-format.md`) substitute `<workspace-path>` from
+`facts.workspace.path`: present on every route whose next session must run inside this PR's
+worktree (→ evaluator, → resolver continue, → planner revise **with** a draft PR, whose plan
+grounds on the PR head); on a planner revise **without** a PR the planner grounds on `main`,
+so render `**Workspace:** any clean main checkout — not this worktree` instead; omitted on
+drafter re-routes and terminals (checkout-agnostic). **The `PR:` line's `review:`/`health:`/`merge:` markers are
 `not run` on every resolver-authored handoff whose PR hasn't reached the evaluator yet — forward exits
 AND every re-route (including a mid-phases continue-mode re-route back to the resolver itself).** Per
 `_shared/handoff-format.md`'s closed set, `review:` is the **evaluator's** posted GitHub review verdict
@@ -28,6 +34,7 @@ The default code-change outcome. For a story PR under an open epic, the `Issue:`
 
 **Issue:** #142 — Add CSV export · open · feature · plan: ✓
 **PR:** #287 — Add CSV export (#142) · open · base main · review: not run · health: not run · merge: not run
+**Workspace:** <workspace-path> — start the next session here
 
 **Next:** evaluate the PR in a fresh session.
 
@@ -46,6 +53,7 @@ next session continues the same multi-phase resolution.
 
 **Issue:** #640 — Spike: Mitigate Gemini thinking-token truncation · open · feature · plan: ✓ (multi-phase: 2 of 4 phases shipped)
 **PR:** #649 — feat(llm): #640 spike harness · draft · base main · review: not run · health: not run · merge: not run
+**Workspace:** <workspace-path> — start the next session here
 
 **Next:** continue with the next phase in a fresh session.
 
@@ -64,6 +72,7 @@ action; surface it verbatim from the plan's `deliverable` so whoever runs it doe
 
 **Issue:** #640 — Spike: Mitigate Gemini thinking-token truncation · open · feature · plan: ✓ (multi-phase: 2 of 4 phases shipped)
 **PR:** #649 — feat(llm): #640 spike harness · draft · base main · review: not run · health: not run · merge: not run
+**Workspace:** <workspace-path> — start the follow-up resolver session here
 
 **Next:** run the operator phase, then return to the resolver.
 
@@ -94,6 +103,7 @@ post-flip state.
 **PR:** #649 — feat(llm): #640 spike harness · open · base main · review: not run · health: not run · merge: not run
 
 **Phases:** all 4 planned phases shipped at 9f0a112; PR flipped to ready for the evaluator (`gh pr ready 649`).
+**Workspace:** <workspace-path> — start the next session here
 
 **Next:** evaluate the PR in a fresh session.
 
@@ -113,6 +123,7 @@ canonical-suite escalation so the user knows what the evaluator will do differen
 **Epic:** #150 — Chat & session UX polish · open · epic · plan: ✓
 **Stories:** 5 of 5 closed
 **PR:** #300 — Chat & session UX polish (epic #150) · open · base main · review: not run · health: not run · merge: not run
+**Workspace:** <workspace-path> — start the next session here
 
 **Next:** evaluate the Epic integration PR in a fresh session.
 
@@ -134,6 +145,7 @@ branch after the plan is refreshed.
 
 **Issue:** #142 — Add CSV export · open · feature · plan: stale
 **PR:** #287 — Add CSV export (#142) · draft · base main · review: not run · health: ❌ at abc1234 · merge: not run
+**Workspace:** <workspace-path> — the plan revise grounds on this PR's head; start the planner session here
 
 **Next:** revise the plan in a fresh session — implementation revealed a locked decision is unbuildable.
 
@@ -142,8 +154,9 @@ branch after the plan is refreshed.
 **Why:** the plan's `## Architecture decisions` line "<quoted decision>" assumed <X>, but `<path:line>` reveals <Y>. The plan-currency check failed (alternatively: the plan-invalidation gate fired mid-implementation). Refresh the plan against today's surface before resuming. The draft PR stays open; re-run the resolver in continue mode after the plan revise lands.
 ```
 
-If no PR was opened yet, omit the PR line entirely and the resolver continues with
-`/github-pipeline:resolver #142` instead of `continue #287`.
+If no PR was opened yet, omit the PR line entirely, render `**Workspace:** any clean main
+checkout — not this worktree` (a PR-less revise grounds on `main`), and the resolver continues
+with `/github-pipeline:resolver #142` instead of `continue #287`.
 
 ## Re-route → drafter (fitness audit)
 

@@ -453,7 +453,10 @@ class FooterRuleTests(unittest.TestCase):
         )
 
     def test_short_sha_bound_to_grounding_workspace(self):
-        self.assertIn("facts.read_workspaces.grounding.sha", self.renderings + self.spine)
+        # v3: the footer SHA binds to the ambient grounding fact (the asserted checkout's HEAD),
+        # not the retired read_workspaces.grounding ro-* view.
+        self.assertIn("facts.grounding.sha", self.renderings + self.spine)
+        self.assertNotIn("facts.read_workspaces.grounding", self.renderings + self.spine)
 
     def test_spine_states_the_footer_rendering_rule(self):
         self.assertIn("origin/main", self.spine)
@@ -643,32 +646,33 @@ class HardReviseSequenceTests(unittest.TestCase):
                 return i
         return None
 
-    def test_close_pr_fenced_command_precedes_the_reprep_mention_precedes_the_post_step(self):
-        # Per-file needle for the ACTUAL step-4 post action (not the section heading, which also
-        # contains the words "then post" earlier in the file, before the numbered sequence).
+    def test_close_pr_precedes_the_stop_handoff_precedes_the_fresh_run_post(self):
+        # v3 sequence: close-pr -> STOP (this session's ambient checkout is the superseded PR's
+        # worktree; a re-prep would refuse with WORKSPACE_MISMATCH; hand off with the target
+        # checkout on a Workspace: line) -> the FRESH planner run (in the right checkout) grounds
+        # and posts. The v2 in-session re-prep + repost is retired by design (review B1).
         post_needle_by_label = {
-            "revise.md": "Then post through the single write path",
-            "revise-reconciliation.md": "Post the plan (footer pinned",
+            "revise.md": "The fresh planner run",
+            "revise-reconciliation.md": "The fresh planner run",
         }
         for text, label, path in (
             (self.revise, "revise.md", self.revise_path),
             (self.reconciliation, "revise-reconciliation.md", self.reconciliation_path),
         ):
             close_line = self._first_fenced_line_containing(text, "close-pr")
-            reprep_line = self._first_line_containing(text, "prep_planner.py")
+            stop_line = self._first_line_containing(text, "WORKSPACE_MISMATCH")
             post_line = self._first_line_containing(text, post_needle_by_label[label])
             self.assertIsNotNone(close_line, "%s: no fenced close-pr command found" % label)
-            self.assertIsNotNone(reprep_line, "%s: no prep_planner.py re-run mention found" % label)
-            self.assertIsNotNone(post_line, "%s: no post-step action line found" % label)
+            self.assertIsNotNone(stop_line, "%s: no stop-with-WORKSPACE_MISMATCH rationale" % label)
+            self.assertIsNotNone(post_line, "%s: no fresh-run post step found" % label)
             self.assertLess(
-                close_line, reprep_line,
-                "%s:%d close-pr must precede the prep_planner.py re-run at :%d"
-                % (label, close_line, reprep_line),
+                close_line, stop_line,
+                "%s:%d close-pr must precede the stop/handoff at :%d" % (label, close_line, stop_line),
             )
             self.assertLess(
-                reprep_line, post_line,
-                "%s:%d the prep_planner.py re-run must precede the post step at :%d"
-                % (label, reprep_line, post_line),
+                stop_line, post_line,
+                "%s:%d the stop/handoff must precede the fresh-run post at :%d"
+                % (label, stop_line, post_line),
             )
 
     def test_soft_persist_runs_immediately_hard_persist_is_deferred(self):
@@ -678,13 +682,16 @@ class HardReviseSequenceTests(unittest.TestCase):
             self.revise, r"HARD-Start-fresh does NOT run the spine's persist"
         )
 
-    def test_reprep_cites_the_d6_fix_as_why_a_second_prep_is_safe(self):
+    def test_hard_revise_hands_off_with_a_workspace_line_never_re_grounds_in_session(self):
+        # v3 replacement for the retired D6-citation test (no second in-session prep exists to be
+        # made safe): both files must carry the cannot-re-ground rule and the Workspace: carrier.
         for text, label in (
             (self.revise, "revise.md"),
             (self.reconciliation, "revise-reconciliation.md"),
         ):
-            self.assertIn("ROOT_DIRTY", text, "%s must cite why a second prep is safe (D6)" % label)
-            self.assertIn("info/exclude", text, "%s must name the D6 fix mechanism" % label)
+            self.assertIn("Workspace:", text, "%s must carry the handoff Workspace: line" % label)
+            self.assertIn("WORKSPACE_MISMATCH", text, "%s must state why re-grounding here refuses" % label)
+        self.assertRegex(self.revise, r"cannot re-ground itself")
 
     def test_plan_ref_re_selection_is_row_table_driven_never_hardcoded(self):
         for text, label in (

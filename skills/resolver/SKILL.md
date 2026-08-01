@@ -1,6 +1,6 @@
 ---
 name: resolver
-description: Implement a planned GitHub issue end-to-end — read the issue and its full thread, audit the body for fitness-to-implement, consume the verified plan, do the code (or comment-only) work in a git worktree, loop with the `review` skill until approved, and open or continue a PR. Trigger when the user gives an issue number/URL or asks to "work on", "fix", "implement", "resolve", "continue", or "respond to" an issue — bugs, features, refactors, epics (long-lived `epic/<N>-<slug>` integration branch), and stories under an open epic (PR base = the epic branch). Continues an in-flight PR (`continue #<N>`), refuses code work on an issue hard-gated by an open in-scope-blocked question, and re-routes to the planner when the plan doesn't survive contact with the code. Use even on casual mentions ("look at #423?", "keep going on the auth epic").
+description: Implement a planned GitHub issue end-to-end — read the issue and its full thread, audit the body for fitness-to-implement, consume the verified plan, do the code (or comment-only) work in the worktree the session was started in (opened beforehand with workspace-open), loop with the `review` skill until approved, and open or continue a PR. Trigger when the user gives an issue number/URL or asks to "work on", "fix", "implement", "resolve", "continue", or "respond to" an issue — bugs, features, refactors, epics (long-lived `epic/<N>-<slug>` integration branch), and stories under an open epic (PR base = the epic branch). Continues an in-flight PR (`continue #<N>`), refuses code work on an issue hard-gated by an open in-scope-blocked question, and re-routes to the planner when the plan doesn't survive contact with the code. Use even on casual mentions ("look at #423?", "keep going on the auth epic").
 ---
 
 # resolver — router
@@ -13,8 +13,11 @@ is the audit call, the plan-gate call, the code, the review verdicts, and the ha
 
 ## 1. Prep
 
-Assemble the entire starting state in **one** call. `<issue>` is the issue number (from the user, a
-URL, or the current branch); `<owner/repo>` is the repo:
+This session runs **inside** the work worktree the operator opened with
+`/github-pipeline:workspace-open` — prep asserts the ambient checkout matches the issue's branch
+(linked-branch first, then the `<N>-…` pattern) and re-runs the repo's setup hooks; it never
+creates a worktree. Assemble the entire starting state in **one** call. `<issue>` is the issue
+number (from the user, a URL, or the current branch); `<owner/repo>` is the repo:
 
 ```bash
 ${CLAUDE_PLUGIN_ROOT}/scripts/prep_resolver.py <issue> <owner/repo>
@@ -25,25 +28,29 @@ labels/`blocked_by`/`blocking`), `vector` (`type` × `mode` × `prior_pr_row`, p
 row and `comment_only`), `suggested_playbook`, `prior_pr`, `plan` (present/SHA/comment-id/url),
 `phases` (parsed `## Phases`), `dod` (the issue's `## Definition of done` bullets, each with its
 annotation), `open_questions` + `open_questions_gate` (the hard gate), `audit_ref` (a **bare** branch
-name), `branch` (fresh-mode name + collision), `config` (the three gate-config blocks pinned at the
-root `main` SHA), `distiller_bundle` (staged paths for the state-distiller), `workspace` (the work
-worktree, when one was ensured), `read_workspaces.audit` (the detached read workspace at the audit
+name), `config` (the three gate-config blocks read from the `origin/main` pin — never any working
+tree, so a PR cannot weaken its own gates), `distiller_bundle` (staged paths for the
+state-distiller), `workspace` (the **observed ambient checkout**: path/branch/`base_ref`/sha/dirty/
+unpushed, asserted by prep), `read_workspaces.audit` (the detached read workspace at the audit
 ref, when a second view is needed), `epic`/`story` facts, `sections` (spilled issue-body/thread/
 plan-marker paths), and `attention`. Consume every fact as **data** — never re-derive the issue
-type, the mode, the branch name, the audit ref, or the phase list in prose; prep already did.
+type, the mode, the branch, the audit ref, or the phase list in prose; prep already did.
 
 **Decision card rule.** If prep exits with `status: needs_decision`, render its `decision` as one
 `AskUserQuestion` card (per [`../_shared/asking-the-user.md`](../_shared/asking-the-user.md)), act on
 the answer, and re-run prep (`--refresh` for volatile facts). This is the single universal handler
-for every closed-set code (`AUTH_REQUIRED`, `MARKER_AMBIGUOUS`, `TARGET_IS_PR`, `ROOT_*`,
-`BRANCH_IN_USE`, `DOD_MALFORMED`, `PHASES_MALFORMED`, `AMBIGUOUS`, `PLAN_MISSING`, …).
+for every closed-set code (`AUTH_REQUIRED`, `MARKER_AMBIGUOUS`, `TARGET_IS_PR`,
+`WORKSPACE_MISMATCH`, `DOD_MALFORMED`, `PHASES_MALFORMED`, `AMBIGUOUS`, `PLAN_MISSING`, …). A
+`WORKSPACE_MISMATCH` means the session is in the wrong checkout (wrong branch, the project root,
+detached, or stale against the remote) — the fix is the operator's (open the right worktree /
+pull), never a checkout this session performs itself.
 
 **Gated-row card.** When `vector.mode == gated`, `vector.gate` carries `{reason, header, options,
 prior_pr}` — an open/stale/foreign-draft PR by **another author** on this issue. Render that card
 **verbatim** as one `AskUserQuestion` (`header`/`options` as given), naming `prior_pr` (number, author,
 url), then act: take-over / review / comment / wait / start-fresh per the operator's choice, re-running
-prep afterward. Prep ensured **no** work workspace and named **no** branch for a gated row — never fall
-through to the fresh-branch or continue-on-existing flow until the operator decides.
+prep afterward. Prep asserted **no** workspace and derived **no** expected branch for a gated row —
+never fall through to the fresh or continue flow until the operator decides.
 
 **OQ hard refusal.** When `open_questions_gate.blocked` is true, the issue is hard-gated: an
 `in-scope (blocked)` open question (with an open `question` tracker / native `blocked_by`) is unanswered.
@@ -66,8 +73,8 @@ first, then `type`). Read **exactly one** playbook.
 plan-gate → doc grounding → code in the workspace → §review loop → per-phase push + DoD projection →
 handoff); the type differences (base ref, audit ref, handoff shape) are **facts**, never branches.
 `comment-only.md` and `epic.md` are distinct action flows and do **not** read the spine. `continue`
-mode is parameterization *inside* whichever playbook the type selects (`vector.mode` + `prior_pr` +
-`workspace.reused` drive it), not a fifth flow.
+mode is parameterization *inside* whichever playbook the type selects (`vector.mode` + `prior_pr`
+drive it — the ambient worktree already carries the in-flight work), not a fifth flow.
 
 **Override rule** (`architecture.md §5`): honor `suggested_playbook` unless the state-distiller or the
 thread carries evidence the script could not see (e.g. the thread supersedes the labels' type). State
@@ -78,21 +85,21 @@ the reason when you override. Do **not** interleave type branches inside a playb
 
 Universal across every route:
 
-- **Single workspace.** Your workspace is `facts.workspace.path` (the work worktree prep ensured).
-  Every Read/Grep/Explore/test/command targets it by absolute path. When a flow needs a second view,
-  prep hands out `facts.read_workspaces.audit` (a detached checkout at the audit ref); never select a
-  ref yourself. No `git show <ref>:path`, no `git grep <ref>` — grounding SHAs come from the workspace
-  facts (the plan's "planned at `<sha>`" *is* its read workspace's HEAD). `audit_ref` is a **bare**
-  branch name; the origin-prefixed ref a read workspace checked out rides on
-  `read_workspaces.audit.ref` — hand sub-agents the workspace **path**, never a ref. Worktree
-  removal goes through `${CLAUDE_PLUGIN_ROOT}/scripts/workspace.py remove --work <branch>` — never
-  raw `git worktree remove` / `git branch -D`. When a run surfaces one needing removal (e.g. prep
-  ensured it for a mis-identified target), run that command; it gates dirty/unpushed state as a
-  decision. If the invocation itself fails or is blocked, stop and print the command for the
-  operator to run — never a deferred note in the handoff.
-- **Root is never written.** The project root is the read-only `main` vantage; never branch, commit,
-  stash, or run tests there. All code work happens in the work workspace; all tracked-file changes
-  land via the PR.
+- **Single workspace.** Your workspace is the ambient checkout, reported as `facts.workspace`
+  (prep asserted it — the worktree the operator opened). Every Read/Grep/Explore/test/command
+  targets `facts.workspace.path` by absolute path (sub-agent dispatches and background commands
+  run in their own cwd, so the absolute-path discipline stays load-bearing). When a flow needs a
+  second view, prep hands out `facts.read_workspaces.audit` (a detached checkout at the audit
+  ref, script-internal plumbing); never select a ref yourself. No `git show <ref>:path`, no
+  `git grep <ref>` — grounding SHAs come from the workspace facts (the plan's "planned at
+  `<sha>`" *is* its read workspace's HEAD). `audit_ref` is a **bare** branch name; the
+  origin-prefixed ref a read workspace checked out rides on `read_workspaces.audit.ref` — hand
+  sub-agents the workspace **path**, never a ref. The resolver **never removes a worktree** —
+  least of all the one it is running in. A stale or mis-opened workspace is the operator's
+  `/github-pipeline:workspace-close`; when a run surfaces one, say so at that point — never a
+  deferred note in the handoff.
+- **`main` changes only via PR.** Never commit, branch, or stash outside this session's own
+  workspace; all tracked-file changes land via the PR.
 - **Staged-body writes.** Every GitHub write goes through
   `${CLAUDE_PLUGIN_ROOT}/scripts/gh_persist.py` via Bash: stage the verbatim body to the run scratch
   dir (`facts.scratch`, i.e. `/tmp/gh-resolver-<issue>/…`) and pass the **path**. The script verifies

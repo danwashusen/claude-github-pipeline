@@ -107,7 +107,7 @@ optimisation. Skip this block on projects that have no "epic" flow; the resolver
 
 The evaluator's equivalent of `issue-resolver-fast-checks` — fail-fast always-run hygiene, run first
 at every gate. Same command-list shape and the same "no test invocations here" rule. Commands use
-repo-root-relative paths (the evaluator `cd`s into the branch worktree first).
+repo-root-relative paths (the evaluator session runs inside the PR's worktree).
 
 ```markdown
 <!-- pr-evaluator-static-checks -->

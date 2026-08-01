@@ -1,0 +1,1 @@
+[{"number": 41, "title": "Fix the widget", "author": {"login": "reviewer-bot"}, "state": "MERGED", "mergedAt": "2026-07-30T10:00:00Z", "headRefName": "100-custom-linked", "headRefOid": "deadbeef00112233445566778899aabbccddeeff", "url": "https://example.invalid/pr/41", "updatedAt": "2026-07-30T10:00:00Z", "body": "Fixes #100", "closingIssuesReferences": [{"number": 100}]}]

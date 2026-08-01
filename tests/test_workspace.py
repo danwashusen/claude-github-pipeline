@@ -875,5 +875,230 @@ class UsageErrorTests(unittest.TestCase):
         self.assertEqual(out, "")
 
 
+class MainRootNormalizationTests(WorkspaceGitSandboxTestCase):
+    """v3: every --root-taking subcommand normalizes to the MAIN checkout via _resolve_main_root,
+    so `--root .` from inside a linked worktree still lands `.worktrees/` under the main checkout
+    (sessions now run inside worktrees; the scripts must behave identically from there)."""
+
+    def test_resolve_main_root_is_identity_at_the_main_checkout(self):
+        self.assertEqual(workspace._resolve_main_root(self.root), Path(self.root).resolve())
+
+    def test_ensure_read_from_inside_a_linked_worktree_lands_ro_under_the_main_checkout(self):
+        work_env = self._envelope(["ensure", "--work", "feature-x", "--base", "main"])
+        rc, out, err = _run_cli(
+            ["ensure", "--read", "main", "--root", work_env["path"]]
+        )
+        self.assertEqual(rc, EXIT_OK, "stderr: %s" % err)
+        envelope = _parse_one_envelope(out)
+        self.assertEqual(
+            Path(envelope["path"]),
+            (Path(self.root) / ".worktrees" / "ro-main").resolve(),
+        )
+
+    def test_ensure_work_from_inside_a_linked_worktree_lands_under_the_main_checkout(self):
+        first = self._envelope(["ensure", "--work", "feature-x", "--base", "main"])
+        rc, out, err = _run_cli(
+            ["ensure", "--work", "feature-y", "--base", "main", "--root", first["path"]]
+        )
+        self.assertEqual(rc, EXIT_OK, "stderr: %s" % err)
+        envelope = _parse_one_envelope(out)
+        self.assertEqual(
+            Path(envelope["path"]),
+            (Path(self.root) / ".worktrees" / "feature-y").resolve(),
+        )
+
+
+class AttachTests(WorkspaceGitSandboxTestCase):
+    """v3 `attach`: verify the ambient checkout, record its facts, re-run setup hooks at the
+    origin/main pin — every mismatch a WORKSPACE_MISMATCH decision with a closed-set reason."""
+
+    def _mk_worktree(self, branch="feature-x"):
+        envelope = self._envelope(["ensure", "--work", branch, "--base", "main"])
+        return Path(envelope["path"])
+
+    def _attach(self, args):
+        rc, out, err = _run_cli(["attach"] + args)
+        return rc, out, err
+
+    def _attach_envelope(self, args, expect_rc=EXIT_OK):
+        rc, out, err = self._attach(args)
+        self.assertEqual(rc, expect_rc, "stderr: %s" % err)
+        envelope = _parse_one_envelope(out)
+        envelope_asserts.assert_full_envelope_conformance(envelope)
+        return envelope
+
+    def _assert_mismatch(self, envelope, reason):
+        self.assertEqual(envelope["status"], "needs_decision")
+        self.assertEqual(envelope["decision"]["code"], "WORKSPACE_MISMATCH")
+        self.assertEqual(envelope["decision"]["context"]["reason"], reason)
+
+    def test_happy_attach_records_the_ambient_checkout_facts(self):
+        wt = self._mk_worktree()
+        envelope = self._attach_envelope(
+            ["--expect-branch", "feature-x", "--path", str(wt), "--no-hooks"]
+        )
+        self.assertEqual(envelope["status"], "ok")
+        self.assertEqual(envelope["op"], "attach")
+        self.assertEqual(envelope["branch"], "feature-x")
+        self.assertEqual(Path(envelope["path"]), wt)
+        self.assertEqual(Path(envelope["main_root"]), Path(self.root).resolve())
+        self.assertEqual(envelope["sha"], _git(["rev-parse", "HEAD"], wt))
+        self.assertFalse(envelope["dirty"])
+        self.assertEqual(envelope["unpushed_commits"], 0)
+        self.assertNotIn("setup", envelope)
+
+    def test_attach_records_dirty_and_unpushed_state(self):
+        wt = self._mk_worktree()
+        _write(wt / "new.txt", "local\n")
+        _git(["add", "new.txt"], wt)
+        _git(["commit", "-m", "local work"], wt)
+        _write(wt / "uncommitted.txt", "dirt\n")
+        envelope = self._attach_envelope(
+            ["--expect-branch", "feature-x", "--path", str(wt), "--no-hooks"]
+        )
+        self.assertTrue(envelope["dirty"])
+        self.assertEqual(envelope["unpushed_commits"], 1)
+
+    def test_branch_mismatch_is_a_workspace_mismatch_decision(self):
+        wt = self._mk_worktree("feature-x")
+        envelope = self._attach_envelope(
+            ["--expect-branch", "other-branch", "--path", str(wt), "--no-hooks"]
+        )
+        self._assert_mismatch(envelope, "branch_mismatch")
+        self.assertEqual(envelope["decision"]["context"]["actual_branch"], "feature-x")
+        self.assertEqual(envelope["decision"]["context"]["expected_branch"], "other-branch")
+
+    def test_at_project_root_is_a_workspace_mismatch_decision_naming_workspace_open(self):
+        envelope = self._attach_envelope(
+            ["--expect-branch", "feature-x", "--path", str(self.root), "--no-hooks"]
+        )
+        self._assert_mismatch(envelope, "at_project_root")
+        self.assertTrue(
+            any("workspace-open" in option for option in envelope["decision"]["options"]),
+            "the at_project_root card must name workspace-open: %r"
+            % envelope["decision"]["options"],
+        )
+
+    def test_allow_root_permits_a_main_checkout_at_the_project_root(self):
+        envelope = self._attach_envelope(
+            ["--expect-branch", "main", "--path", str(self.root), "--no-hooks", "--allow-root"]
+        )
+        self.assertEqual(envelope["status"], "ok")
+        self.assertEqual(envelope["branch"], "main")
+
+    def test_detached_head_is_a_workspace_mismatch_decision(self):
+        detached = Path(self.root) / ".worktrees" / "detached-view"
+        detached.parent.mkdir(parents=True, exist_ok=True)
+        _git(["worktree", "add", "--detach", str(detached), "main"], self.root)
+        self.addCleanup(lambda: _git(["worktree", "remove", "-f", str(detached)], self.root))
+        envelope = self._attach_envelope(
+            ["--expect-branch", "feature-x", "--path", str(detached), "--no-hooks"]
+        )
+        self._assert_mismatch(envelope, "detached_head")
+
+    def test_behind_the_expected_remote_sha_is_stale_checkout(self):
+        wt = self._mk_worktree()
+        _git(["push", "-u", "origin", "feature-x"], wt)
+        other = gitsandbox.mk_clone(self.origin)
+        self.addCleanup(other.cleanup)
+        _git(["fetch", "origin", "feature-x"], other.path)
+        _git(["checkout", "feature-x"], other.path)
+        _write(Path(other.path) / "pushed.txt", "newer\n")
+        _git(["add", "pushed.txt"], other.path)
+        _git(["commit", "-m", "pushed elsewhere"], other.path)
+        _git(["push", "origin", "feature-x"], other.path)
+        new_tip = _git(["rev-parse", "HEAD"], other.path)
+        _git(["fetch", "origin", "feature-x"], wt)  # the sha must be known locally to compare
+        envelope = self._attach_envelope(
+            [
+                "--expect-branch", "feature-x", "--path", str(wt), "--no-hooks",
+                "--expect-remote-sha", new_tip,
+            ]
+        )
+        self._assert_mismatch(envelope, "stale_checkout")
+        self.assertFalse(envelope["decision"]["context"]["ahead_of_remote"])
+
+    def test_ahead_of_the_expected_remote_sha_passes(self):
+        wt = self._mk_worktree()
+        remote_tip = _git(["rev-parse", "HEAD"], wt)
+        _write(wt / "ahead.txt", "local\n")
+        _git(["add", "ahead.txt"], wt)
+        _git(["commit", "-m", "unpushed local work"], wt)
+        envelope = self._attach_envelope(
+            [
+                "--expect-branch", "feature-x", "--path", str(wt), "--no-hooks",
+                "--expect-remote-sha", remote_tip,
+            ]
+        )
+        self.assertEqual(envelope["status"], "ok")
+        self.assertEqual(envelope["unpushed_commits"], 1)
+
+    def test_hooks_rerun_on_every_attach(self):
+        _seed_repo_with_hooks(self.root, setup_block=["- `echo ran >> .hook-log`"])
+        wt = self._mk_worktree()  # ensure itself runs the hook once (working-tree discovery)
+        self._attach_envelope(["--expect-branch", "feature-x", "--path", str(wt)])
+        self._attach_envelope(["--expect-branch", "feature-x", "--path", str(wt)])
+        log = (wt / ".hook-log").read_text(encoding="utf-8")
+        self.assertEqual(log.count("ran"), 3, "ensure once + two attaches must each run the hook")
+
+    def test_attach_hooks_read_the_origin_main_blob_not_the_working_tree(self):
+        _seed_repo_with_hooks(self.root, setup_block=["- `echo blob >> .hook-source`"])
+        wt = self._mk_worktree()
+        # Mutate the ROOT working tree's block without committing — the pinned read must not see it.
+        _write(
+            Path(self.root) / "CLAUDE.md",
+            "<!-- worktree-setup -->\n- `echo working-tree >> .hook-source`\n<!-- /worktree-setup -->\n",
+        )
+        self._attach_envelope(["--expect-branch", "feature-x", "--path", str(wt)])
+        log = (wt / ".hook-source").read_text(encoding="utf-8")
+        self.assertIn("blob", log)
+        self.assertNotIn("working-tree", log)
+
+    def test_attach_setup_hook_failure_is_partial_but_honest_exit_1(self):
+        _seed_repo_with_hooks(self.root, setup_block=["- `false`"])
+        wt = self._mk_worktree_expect_hook_failure()
+        rc, out, err = self._attach(["--expect-branch", "feature-x", "--path", str(wt)])
+        self.assertEqual(rc, 1)
+        envelope = _parse_one_envelope(out)
+        self.assertEqual(envelope["status"], "ok")
+        self.assertFalse(envelope["setup"]["succeeded"])
+        self.assertNotIn("sha", envelope)
+
+    def _mk_worktree_expect_hook_failure(self, branch="feature-x"):
+        rc, out, err = self._run(["ensure", "--work", branch, "--base", "main"])
+        self.assertEqual(rc, 1, "seeded failing hook: ensure exits 1; stderr: %s" % err)
+        return Path(_parse_one_envelope(out)["path"])
+
+
+class RemoveWorkGuardTests(WorkspaceGitSandboxTestCase):
+    """v3 remove --work guard: refuse (typed) when invoked from inside the target worktree; keep
+    working when invoked from inside a SIBLING worktree (root normalization)."""
+
+    def test_remove_from_inside_the_target_worktree_is_a_workspace_mismatch(self):
+        envelope = self._envelope(["ensure", "--work", "feature-x", "--base", "main"])
+        wt = Path(envelope["path"])
+        rc, out, err = _run_cli(
+            ["remove", "--work", "feature-x", "--root", str(self.root)], cwd=str(wt)
+        )
+        self.assertEqual(rc, EXIT_OK, "stderr: %s" % err)
+        result = _parse_one_envelope(out)
+        self.assertEqual(result["status"], "needs_decision")
+        self.assertEqual(result["decision"]["code"], "WORKSPACE_MISMATCH")
+        self.assertEqual(result["decision"]["context"]["reason"], "cwd_inside_target")
+        self.assertTrue(wt.is_dir(), "the worktree must be left in place")
+
+    def test_remove_from_a_sibling_worktree_normalizes_root_and_removes(self):
+        target = self._envelope(["ensure", "--work", "feature-x", "--base", "main"])
+        sibling = self._envelope(["ensure", "--work", "feature-y", "--base", "main"])
+        rc, out, err = _run_cli(
+            ["remove", "--work", "feature-x", "--root", "."], cwd=sibling["path"]
+        )
+        self.assertEqual(rc, EXIT_OK, "stderr: %s" % err)
+        result = _parse_one_envelope(out)
+        self.assertEqual(result["status"], "ok")
+        self.assertTrue(result["removed"])
+        self.assertFalse(Path(target["path"]).is_dir())
+
+
 if __name__ == "__main__":
     unittest.main()

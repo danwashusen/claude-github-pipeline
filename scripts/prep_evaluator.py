@@ -15,11 +15,16 @@ external processes any script may spawn are git/gh")::
 
     gh_pr_gather.build_pr_facts(...)      -- PR facts + thread + the health-cache marker comment
     gh_gather.run(..., stream=)           -- the closing issue's body + thread (per issue)
-    workspace._build_ensure_work / _build_root_status
-                                          -- root-freshness + "ensure --work" on the PR head branch
+    workspace._build_attach(...)          -- assert the AMBIENT checkout IS the PR-head worktree
+                                             (v3: the operator opened it via workspace-open and
+                                             started this session inside it; ambient HEAD must
+                                             equal pr.headRefOid — never health-check or cache
+                                             against code the checkout doesn't contain)
     parse.parse_dod_bullets(...)          -- the closing issue's ## Definition of done, parsed
-    config_block._read_lines_or_empty / _scan_marker
-                                          -- the four gate-config blocks, read at the root main SHA
+    refblocks.fetch_pin / read_block_at_ref
+                                          -- the origin/main pin + the four gate-config blocks,
+                                             read from the pinned BLOBS — never any working tree,
+                                             so a PR cannot weaken its own gates
 
 Every executor exposes a **pure, non-emitting core** — ``build_*(...) -> (payload, notices,
 decision|None)`` — as of the S8 pattern lock (docs/specs/baseline.md §5): ``gh_pr_gather``,
@@ -35,12 +40,13 @@ Usage::
 
     prep_evaluator.py <pr-number> <owner/repo> [--root PATH] [--scratch-dir DIR] [--refresh]
 
-``--root`` defaults to ``.`` (the project root — architecture.md §6's read-only trust vantage).
-``--scratch-dir`` defaults to ``/tmp/gh-evaluator-<pr-number>`` (CLAUDE.md's ``/tmp/gh-<skill>-
-<N>/`` convention) when omitted. ``--refresh`` re-derives the volatile facts (PR state, CI rollup
-class, health-cache hit/miss) without re-running ``ensure --work``'s setup hooks or re-fetching
-the closing issue/gate config — architecture.md §4: "prep supports --refresh and is re-run at the
-points where currency matters."
+``--root`` defaults to ``.`` and is normalized to the MAIN checkout via
+``workspace._resolve_main_root`` — under v3 the session (and therefore the ambient cwd) sits
+INSIDE the PR-head worktree. ``--scratch-dir`` defaults to ``/tmp/gh-evaluator-<pr-number>``
+(CLAUDE.md's ``/tmp/gh-<skill>-<N>/`` convention) when omitted. ``--refresh`` re-derives the
+volatile facts (PR state, CI rollup class, health-cache hit/miss) without re-asserting the
+workspace, re-running the setup hooks, or re-reading the gate config — architecture.md §4: "prep
+supports --refresh and is re-run at the points where currency matters."
 
 Exit codes (architecture.md §3): 0 with the facts-block envelope present (``status`` is ``"ok"``
 or ``"needs_decision"``); 2 on a usage error (no envelope). Any other non-zero is an unclassified
@@ -59,6 +65,7 @@ import config_block  # noqa: E402  (import after sys.path setup, by necessity; i
 import gh_gather  # noqa: E402
 import gh_pr_gather  # noqa: E402
 import parse  # noqa: E402
+import refblocks  # noqa: E402  (origin/main pin + at-ref gate-config reads)
 import workspace  # noqa: E402
 from pipelib import process  # noqa: E402
 from pipelib.decisions import AMBIGUOUS, needs_decision  # noqa: E402
@@ -196,10 +203,11 @@ def _parse_merge_policy(interior_lines):
     return policy
 
 
-def _read_gate_config(root):
+def _read_gate_config(root, pin_sha):
     """Read all four gate-config blocks (plus the legacy single-block fallback) once, at the
-    caller-verified root `main` SHA. Returns the ``config`` facts-block sub-object (without
-    ``sha``, added by the caller once the root SHA is known) plus a ``notices`` list for
+    ``origin/main`` pin (v3: refblocks blob reads — never any working tree, so a PR-branch
+    session cannot weaken the gates that judge it). Returns the ``config`` facts-block sub-object
+    (without ``sha``, added by the caller from the same pin) plus a ``notices`` list for
     graceful-degradation cases the evaluator playbook should know about (e.g. "legacy block
     only") — mirroring architecture.md §3's ``notices: []`` channel for non-blocking
     degradations. Never itself asks the operator anything (gates-only-for-decisions,
@@ -208,20 +216,20 @@ def _read_gate_config(root):
     """
     notices = []
 
-    static_present, static_lines, static_source = config_block.read_block_anywhere(
-        root, _STATIC_CHECKS_MARKER
+    static_present, static_lines, static_source = refblocks.read_block_at_ref(
+        root, pin_sha, _STATIC_CHECKS_MARKER
     )
-    test_target_present, test_target_lines, test_target_source = config_block.read_block_anywhere(
-        root, _TEST_TARGET_MARKER
+    test_target_present, test_target_lines, test_target_source = refblocks.read_block_at_ref(
+        root, pin_sha, _TEST_TARGET_MARKER
     )
-    escalation_present, escalation_lines, _escalation_source = config_block.read_block_anywhere(
-        root, _ESCALATION_LABELS_MARKER
+    escalation_present, escalation_lines, _escalation_source = refblocks.read_block_at_ref(
+        root, pin_sha, _ESCALATION_LABELS_MARKER
     )
-    merge_policy_present, merge_policy_lines, _merge_policy_source = config_block.read_block_anywhere(
-        root, _MERGE_POLICY_MARKER
+    merge_policy_present, merge_policy_lines, _merge_policy_source = refblocks.read_block_at_ref(
+        root, pin_sha, _MERGE_POLICY_MARKER
     )
-    legacy_present, legacy_lines, legacy_source = config_block.read_block_anywhere(
-        root, _LEGACY_HEALTH_CHECKS_MARKER
+    legacy_present, legacy_lines, legacy_source = refblocks.read_block_at_ref(
+        root, pin_sha, _LEGACY_HEALTH_CHECKS_MARKER
     )
 
     if not static_present and legacy_present:
@@ -494,7 +502,10 @@ def build_facts(pr_number, repo, root=".", scratch_dir=None, refresh=False, cwd=
     workspace setup, per this step's Work list: "--refresh re-derives volatile facts without
     re-running hooks").
     """
-    root = str(Path(root).resolve())
+    # Normalize to the MAIN checkout: under v3 the session — and therefore any relative --root —
+    # sits inside the PR-head worktree. NOT on --refresh: that path touches no git at all (its
+    # contract is "never requires a root"), so it must not spawn the normalizing rev-parse either.
+    root = str(Path(root).resolve()) if refresh else str(workspace._resolve_main_root(root))
     if scratch_dir is None:
         scratch_dir = "/tmp/gh-evaluator-%s" % pr_number
     Path(scratch_dir).mkdir(parents=True, exist_ok=True)
@@ -511,30 +522,35 @@ def build_facts(pr_number, repo, root=".", scratch_dir=None, refresh=False, cwd=
     if _forward_decision(pr_decision):
         return None  # already emitted — main() reads EXIT_OK regardless (needs_decision is exit 0)
 
-    # 2) Root freshness + "ensure --work" on the PR head branch — compose workspace's per-subcommand
-    #    pure cores directly. _build_root_status alone performs the freshness protocol without
-    #    creating anything, so a ROOT_* decision surfaces before any worktree side effect — matching
-    #    workspace.py's own "freshness failure short-circuits the whole subcommand" contract, now
-    #    short-circuiting prep's own assembly the same way.
+    # 2) Workspace ASSERTION on the PR head branch (v3) — the operator opened the worktree
+    #    (workspace-open) and started this session inside it; prep verifies the ambient checkout
+    #    IS that worktree, at exactly the PR's head OID (require_exact: the evaluator must never
+    #    health-check, diff-read, or cache against code the checkout doesn't contain — a stale or
+    #    diverged checkout is WORKSPACE_MISMATCH(stale_checkout), a decision, never a silent
+    #    proceed), and re-runs the setup hooks from the same origin/main pin the gate config
+    #    reads (pin once, read many).
     if not refresh:
-        root_status, _rs_notices, root_status_decision = workspace._build_root_status(root)
-        if _forward_decision(root_status_decision):
-            return None
-        root_sha = root_status["sha"]
+        pin_sha = refblocks.fetch_pin(root)
 
-        workspace_envelope, _ws_notices, ws_decision = workspace._build_ensure_work(
-            root, pr_envelope["headRefName"], pr_envelope["baseRefName"]
+        workspace_envelope, _ws_notices, ws_decision = workspace._build_attach(
+            cwd if cwd is not None else ".",
+            pr_envelope["headRefName"],
+            base_for_unpushed=pr_envelope["baseRefName"],
+            run_hooks=True,
+            pin_sha=pin_sha,
+            expected_remote_sha=pr_envelope["headRefOid"],
+            require_exact_remote_sha=True,
         )
         if _forward_decision(ws_decision):
             return None
         # A setup-hook failure is a partial-but-honest payload (setup.succeeded == False) that the
         # evaluator playbook reads off `workspace.setup` + an `attention` line — never a hard exit.
-        # A hard git failure (fetch/worktree add) already sys.exit(1)'d inside the core with faithful
-        # stderr and no envelope (§3), so there is nothing to guard for here anymore.
+        # A hard git failure already sys.exit(1)'d inside the core with faithful stderr and no
+        # envelope (§3), so there is nothing to guard for here anymore.
 
-        # 3) Gate config, pinned at the root main SHA just recorded.
-        gate_config, config_notices = _read_gate_config(root)
-        gate_config["sha"] = root_sha
+        # 3) Gate config, read at the origin/main pin just fetched.
+        gate_config, config_notices = _read_gate_config(root, pin_sha)
+        gate_config["sha"] = pin_sha
     else:
         # --refresh: re-derive only PR state + CI + health-cache hit/miss. Root freshness,
         # workspace ensure (and its setup hooks), and gate config are NOT re-run/re-read — the S6
@@ -610,7 +626,7 @@ def build_facts(pr_number, repo, root=".", scratch_dir=None, refresh=False, cwd=
     facts = {
         "repo": repo,
         "scratch": scratch_dir,
-        "root": {"path": root, "sha": gate_config.get("sha"), "fresh": not refresh},
+        "root": {"path": root, "sha": gate_config.get("sha"), "source": "origin/main", "fresh": not refresh},
         "target": {
             "kind": "pr",
             "number": pr_envelope["number"],
@@ -650,14 +666,17 @@ def build_facts(pr_number, repo, root=".", scratch_dir=None, refresh=False, cwd=
         "notices": list(config_notices) + list(issue_gather_notices),
     }
     if workspace_envelope is not None:
+        # v3: the OBSERVED ambient checkout (attach), asserted at exactly pr.headRefOid.
+        # `base_ref` is the PR's own baseRefName — a derived fact (attach cannot observe a base).
         facts["workspace"] = {
             "path": workspace_envelope["path"],
             "branch": workspace_envelope["branch"],
-            "base_ref": workspace_envelope["base_ref"],
+            "expected_branch": workspace_envelope.get("expected_branch"),
+            "base_ref": pr_envelope["baseRefName"],
             "sha": workspace_envelope.get("sha"),
-            "reused": workspace_envelope.get("reused"),
             "dirty": workspace_envelope.get("dirty"),
             "unpushed_commits": workspace_envelope.get("unpushed_commits"),
+            "source": "ambient",
             # Carried through so a failed setup hook is visible to the evaluator playbook (also
             # surfaced as an `attention` line, per _build_attention) rather than silently
             # dropped — `sha`/`dirty`/`unpushed_commits` are null on this path (workspace.py

@@ -31,8 +31,8 @@ session's loaded instructions contain no other type's flow — a router plus one
   configuration via marker blocks in its `CLAUDE.md`/`COMMANDS.md`. Its `main` is write-protected:
   every change lands via PR.
 - **Skills** — fixed names. Pipeline stages: `drafter`, `researcher`, `planner`, `resolver`,
-  `evaluator`. Standalone tools: `setup`, `question-sweep`, `question-resolver`, `doc-reviewer`.
-  Invoked as `/github-pipeline:<name>`.
+  `evaluator`. Standalone tools: `setup`, `question-sweep`, `question-resolver`, `doc-reviewer`,
+  `workspace-open`, `workspace-close`. Invoked as `/github-pipeline:<name>`.
 - **Session** — one Claude Code run of one skill. **Handoff** — the summary + copy-pasteable
   next-command block a pipeline session emits on clean exit; the only bridge between sessions.
 - **Gate** — an explicit decision question put to the operator.
@@ -41,14 +41,15 @@ session's loaded instructions contain no other type's flow — a router plus one
 - **Currency** — whether recorded knowledge still matches the present state of the world (docs
   vs code, plan vs code, external facts vs today).
 - **Workspace** — a git worktree under the consuming repo's `.worktrees/`. Two kinds: a **work
-  workspace** (branch checkout, where changes are made) and a **read workspace** (a pinned,
-  read-only checkout used for grounding).
+  workspace** (branch checkout, where changes are made — opened by the operator with
+  `workspace-open`, the session started inside it, released with `workspace-close`) and a
+  **read workspace** (a pinned, read-only checkout, script-internal grounding plumbing).
 - **Question registry** — the set of `question`-labelled issues; the registry of record for open
   questions (docs are sources, never the registry).
 
 ## §3 Scope
 
-**In scope for v2:** all nine skills, the bundled scripts, the shared cross-skill contracts, the
+**In scope for v2:** all nine skills (v3 adds the two workspace tools, making eleven), the bundled scripts, the shared cross-skill contracts, the
 plugin manifests, and offline tests for the deterministic layer.
 
 **Out of scope / non-goals:**
@@ -125,7 +126,8 @@ ground these are produced by implementation step S1. Lettered items are individu
   - (b) Before building: audits fitness (including plan-vs-code currency) and hard-refuses an
     issue whose open questions leave it `in-scope (blocked)` with the blocking question still
     open.
-  - (c) Builds only in a work workspace (§8.3).
+  - (c) Builds only in the work workspace the session was started in, verified at session
+    start (§8.3); refuses on a mismatched, stale, or root-seated checkout.
   - (d) Projects Definition-of-done ticks with annotations as phases ship.
   - (e) Loops with code review until approved.
   - (f) Multi-phase issues ship one phase per PR, tracked in a `## Phase tracker` section of the
@@ -144,13 +146,16 @@ ground these are produced by implementation step S1. Lettered items are individu
     the PR's shape.
   - (g) On story merge: closes the story, ticks the epic checkbox, appends the epic delivery
     log.
-  - (h) Tears down and removes the work workspace after merge.
+  - (h) Leaves the work workspace in place after merge and hands the operator the
+    `workspace-close` command (the one reclamation path — merged, abandoned, or mis-opened).
 
 ## §6 Standalone tool requirements
 
-All four run only on explicit invocation, are report-then-apply (nothing changes without the
-operator seeing the proposal), and end with a plain summary — not a pipeline handoff.
-Tracked-file edits follow §8.2: staged in a workspace, with the landing offered as a final gate.
+All six run only on explicit invocation and end with a plain summary — not a pipeline handoff.
+The four report-then-apply tools change nothing without the operator seeing the proposal;
+tracked-file edits follow §8.2: staged in a workspace, with the landing offered as a final gate.
+The two workspace tools (§6.5/§6.6) edit no tracked files — their action is the workspace
+lifecycle itself, and the explicit invocation is the authorization.
 
 - **§6.1 setup.** Proposes and reconciles the consuming repo's configuration blocks: inventories
   existing blocks, drafts grounded candidates from repo evidence, interviews the operator for
@@ -164,6 +169,16 @@ Tracked-file edits follow §8.2: staged in a workspace, with the landing offered
   decides; the skill records.
 - **§6.4 doc-reviewer.** Reviews a single project doc against its bundled authoring guide and
   offers to apply accepted findings.
+- **§6.5 workspace-open.** Opens the work workspace for an issue: adopts or creates the issue's
+  GitHub-linked branch (the native "create a branch for this issue"; degrades to a local branch
+  with a notice where linking is unsupported), owns epic integration-branch creation, creates or
+  reuses the worktree under `.worktrees/`, runs the repo's worktree-setup hooks, and tells the
+  operator where to start the next session. A foreign open/draft PR gates before any side
+  effect. Never plans or resolves anything itself.
+- **§6.6 workspace-close.** Releases a work workspace (branch name or issue number): runs the
+  worktree-teardown hooks, then removes the worktree — gated on dirty/unpushed state (never a
+  silent discard; merged-PR-aware so the routine post-merge close isn't false-flagged), and
+  refused from inside the target worktree. Removes worktrees, never remote branches.
 
 ## §7 Persisted artifacts (the compatibility contract)
 
@@ -187,8 +202,9 @@ an artifact written by a v1 skill is consumed correctly by its v2 counterpart, a
 
 ## §8 Grounding & workspace requirements
 
-- **§8.1 Root is read-only.** The project root checkout stays on `main`; no skill modifies
-  tracked files, switches branches, or creates commits there.
+- **§8.1 `main` is write-protected.** No skill commits to a checkout other than its own
+  session's workspace; the landing tools treat the checkout they were started in as read-only;
+  every change reaches `main` through a PR.
 - **§8.2 Everything lands via PR; landing is operator-gated.** All tracked-file changes a skill
   produces — code, docs, and configuration blocks — are made in a workspace on a branch, never
   in the root, and reach `main` only through a PR, gated per change or by a standing
@@ -197,13 +213,16 @@ an artifact written by a v1 skill is consumed correctly by its v2 counterpart, a
   `question-sweep`, `doc-reviewer`) stage approved edits in the workspace and **offer** the
   landing (commit + push + PR) as one explicit final gate: on decline they perform no git
   actions, and the summary reports the workspace path and the ready-to-run landing commands.
-- **§8.3 Workspaces.** A session's reads and writes of repo files happen in `.worktrees/`
-  workspaces; the root serves only as the pinned `main` vantage that scripts read state from
-  (§8.1). A session reports which workspace it used.
+- **§8.3 Workspaces.** A building or evaluating session runs **inside** the work worktree the
+  operator opened (`workspace-open`) and starts the session in; its prep asserts that checkout
+  before judgment runs and reports it as the session's workspace. Gate config is read at the
+  `origin/main` pin via git plumbing — checkout-independent — and pinned-ref grounding views are
+  script-internal.
 - **§8.4 Pinned grounding.** Plans, audits, and evaluations ground on an explicitly recorded
   commit SHA, and their artifacts state it.
-- **§8.5 Root state is respected.** A dirty, diverged, or off-`main` root is surfaced as a
-  decision gate; it is never auto-corrected.
+- **§8.5 Checkout state is respected.** A mismatched, stale, diverged, or root-seated session
+  checkout is surfaced as a decision gate (`WORKSPACE_MISMATCH`); a dirty or off-`main` checkout
+  on a workspace-creating path is likewise a gate (`ROOT_*`); neither is ever auto-corrected.
 
 ## §9 Engineering-quality requirements
 

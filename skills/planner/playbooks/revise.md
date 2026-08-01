@@ -68,21 +68,23 @@ this route supplies:
        --comment-file "<facts.scratch>/close-comment.md"
      ```
 
-  3. **Re-run `prep_planner.py` in the same clone** (`SKILL.md` §1) — safe to call a second time now:
-     the D6 fix moved the `.worktrees/` bootstrap write to `info/exclude`, so a second prep in one
-     clone can never trip its own `ROOT_DIRTY`. With the PR now closed, the open-PR-head row no longer
-     fires, so `plan_ref` re-selects **deterministically off the row table** — `main` for a standalone
-     issue, the parent epic's branch for a story revised here as an epic (never hardcode `main`; let
-     the fresh facts decide).
-  4. **Re-ground at the fresh `facts.read_workspaces.grounding` workspace** (spine S3) and finalize the
-     plan body against **that** ref — re-verify every precedent citation the diff-shown draft made
-     still resolves there (a HARD revise already changed a locked decision, so treat this as the
-     drafting step's own re-run, not a footer-only patch). Then post through the single write path
-     (the spine's persist, run now instead of at the earlier gate): delete the stale comment via
-     `--delete-marker-id`, repost with the footer pinned to `<new plan_ref>@<new grounding SHA>` and
-     the `## Predecessor` section (built from step 1's captured facts, inserted after `## Approach`),
-     and un-tick the DoD bullets to the predecessor annotation form via `edit-body` (from step 1's
-     captured tracker state).
+  3. **Stop — this session cannot re-ground itself.** With the PR closed, the open-PR-head row no
+     longer fires and `plan_ref` re-selects deterministically off the row table — `main` for a
+     standalone issue, the parent epic's branch for a story (never hardcode `main`; the fresh
+     facts decide). But this session's AMBIENT checkout is the superseded PR's worktree, which no
+     longer matches that fresh `plan_ref` — a re-run of prep here would (correctly) refuse with
+     `WORKSPACE_MISMATCH`. Emit the HARD-revise handoff instead, with the remedy matched to the
+     fresh `plan_ref`: `main` → "re-run `/github-pipeline:planner <N>` from a clean `main`
+     checkout" (**not** workspace-open — no branch should exist before a plan does); the parent
+     epic's branch → "re-run from the parent-epic worktree". Carry a `Workspace:` line naming that
+     target checkout, plus the captured predecessor facts (step 1) the fresh run needs: the closed
+     PR number/branch, the stale plan's comment id, and the DoD bullets to un-tick.
+  4. **The fresh planner run** (the operator's next session, in the right checkout) grounds
+     normally (spine S3), re-verifies every precedent citation against the new ref, posts via the
+     single write path — delete the stale comment via `--delete-marker-id`, repost with the footer
+     pinned to `<new plan_ref>@<new grounding SHA>` and the `## Predecessor` section (from the
+     handoff's captured facts, inserted after `## Approach`) — and un-ticks the DoD bullets to the
+     predecessor annotation form via `edit-body`.
 
   Leave the closed PR's branch in place — the `## Predecessor` reminder is the user's cue to clean it
   up after the new PR lands.

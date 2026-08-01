@@ -13,6 +13,7 @@ This file is the single source of truth for the schema, the omission rules, and 
 **Grounding:** read at <plan-ref>@<short-sha> · <docs the plan was built on, with §refs> · external: <sources> · full detail in the plan's ## Doc grounding
 **PR:** #M — <title> · <state> · base <ref> · review: <verdict | not run> · health: <✅/❌ at <short-sha> | not run> · merge: <strategy → <ref>@<short-sha> | skipped (<reason>) | not run>
 **Cleanup:** <one-line worktree / branch / scratch summary>
+**Workspace:** <absolute worktree path> — start the next session here
 
 **Next:** <one-line description of what the fresh session will do>.
 
@@ -34,8 +35,9 @@ The block is always present on a clean exit. Lines are omitted (not blanked, not
 - **`Grounding:`** — planner-only, and only on clean exits that **posted a plan**. Opens with `read at <plan-ref>@<short-sha>` — the integration ref the docs were read at (the same `<plan-ref>@<short-sha>` the plan footer records), so the reader knows *which branch's* version of those docs grounded the plan (the same section can differ between `main`, an epic branch, and a PR head). Then lists the project docs (with §refs) the plan was grounded on, summarized from the plan's `## Doc grounding`, plus — when present — the external sources from `## External sources consulted` as a `· external: <sources>` segment, and a pointer to the plan's `## Doc grounding` for the full reasoning. Omitted when no plan was posted (the planner's trivial-change and knowledge-gap re-route exits, both `plan: ✗`) and when the plan grounded against no docs (no `## Doc grounding` section). It is **free-form text, not a state marker** — so it has no entry in the closed-set state-marker vocabulary table.
 - **`Open questions:`** — optional, drafter and planner; placed after `Grounding:` and before `PR:` / the fenced next-action block. When the issue (drafter) or plan (planner) gates on unresolved open questions (see [`open-question-links.md`](open-question-links.md)), the handoff carries a free-form `**Open questions:** #<N> | (not filed) (audience:…) [<disposition-or-treatment>], … — <trailing summary>` line listing the companion `question` issues, each in whichever vocabulary the emitting skill uses — the drafter's build-issue set (`scoped-out` / `in-scope (blocked)` / `provisional-default`) or the planner's plan-level set (`planned-around` / `recorded-blocked` / `provisional-default`). The per-entry disposition/treatment token is there when each companion question maps to one clean disposition (the planner's usual case); when several gated scopes share one companion question or the dispositions read more clearly summarized (the drafter's usual case), fold them into the trailing summary instead and skip the per-entry token — either way, always end with a trailing summary in that skill's own style (the drafter's count, e.g. `1 scoped out / 1 blocked-by`; the planner's pointer, e.g. `see the plan's ## Open questions`). Like `Grounding:`, it is **free-form text, not a state marker** — no closed-set entry. Omit when the issue gated no open questions.
 - **`PR:`** — omit entirely when no PR exists. Drafter clean exits and the planner's plan-comment-only clean exits skip this line. Resolver clean exits always have a PR. Evaluator clean exits always have a PR.
-- **`Cleanup:`** — evaluator-only, and only after the merge ran (the post-merge workspace teardown / removal / scratch purge sequence has executed). Omit on the evaluator's no-merge branches (soft-reject, DIRTY/BLOCKED-skip, operator-deferred merge, operator Needs-Revision / Reject) and on every other skill's clean exit.
-- **Fenced next-action block** — replaced with the literal `(terminal — no follow-up skill)` for terminal endings (evaluator clean merge of a standard PR, evaluator clean merge of an Epic integration PR). The `Why:` line still appears and explains why the pipeline ends here.
+- **`Cleanup:`** — evaluator-only, and only after the merge ran. Its value under the v3 workspace model is `scratch dir purged; worktree retained — release with workspace-close` (the story variant adds its bookkeeping segments): the evaluator no longer removes the worktree — the operator releases it with `/github-pipeline:workspace-close`, which the terminal fence carries. Omit on the evaluator's no-merge branches (soft-reject, DIRTY/BLOCKED-skip, operator-deferred merge, operator Needs-Revision / Reject) and on every other skill's clean exit.
+- **`Workspace:`** — the "where to start the next session" line, present whenever the `Next:` command must run in a session **started inside a specific checkout**: resolver → evaluator (this PR's worktree), evaluator → resolver continue (the same worktree), evaluator story-merge → planner (the parent-epic worktree, where the next story's plan grounds), planner → resolver (the issue's worktree — or `(none yet — run /github-pipeline:workspace-open <N> first)` when the operator hasn't opened one). Omitted on checkout-agnostic routes (drafter, researcher, question flows, a `main`-ref planner run — any clean `main` checkout serves) and on terminal endings. Like `Grounding:`, it is **free-form text, not a state marker** — no closed-set entry; the fixed lead token is the word `Workspace:` and the payload is a path or the workspace-open breadcrumb.
+- **Fenced next-action block** — on terminal endings the pipeline names no follow-up *skill*, but an evaluator merge terminal still carries one housekeeping command in the fence: `/github-pipeline:workspace-close <branch>` (the operator releases the retained worktree — precedent: the DIRTY/BLOCKED shape already carries a raw `gh pr merge` in its fence). The drafter's question-issue terminal keeps the literal `(terminal — no follow-up skill)` with no fence. The `Why:` line still appears and explains why the pipeline ends here.
 - **`Why:`** — always present, on both forward and backward routes. For forward routes, name what the next session will accomplish. For re-routes, name the specific finding (audit dimension, plan-decision quote, doc citation, file:line evidence) that triggered the regression — vague Whys aren't useful weeks later when the user picks the issue back up.
 
 ## State-marker vocabulary (closed sets)
@@ -88,16 +90,20 @@ The Grounding / Open questions / PR / Cleanup / Next / Why lines follow the stan
 
 ## Terminal endings
 
-Some clean exits end the pipeline for this issue — there's no next skill to invoke. Drop the fenced command block and keep everything else:
+Some clean exits end the pipeline for this issue — there's no next skill to invoke. An evaluator merge terminal keeps a fence carrying the one housekeeping command (releasing the retained worktree):
 
 ```
-**Next:** (terminal — no follow-up skill)
+**Next:** pipeline terminal — release the workspace:
+
+    /github-pipeline:workspace-close <branch>
 
 **Why:** the PR satisfied every dimension cleanly and merged into main. The issue is closed by GitHub's auto-close; no follow-up skill is required for this issue.
 ```
 
+The drafter's question-issue terminal has no workspace and no fence — its `Next:` is the literal `(terminal — no follow-up skill)` and its `Why:` explains it awaits a human answer.
+
 Terminal endings exist on:
-- the **drafter**, when it files or revises a `question`-type issue — answered by a human in the thread, not by a downstream skill (the example above is the evaluator's; a question's `Why:` instead explains it awaits a human answer);
+- the **drafter**, when it files or revises a `question`-type issue — answered by a human in the thread, not by a downstream skill;
 - the **evaluator**, on a standard PR clean merge and on an Epic integration PR clean merge.
 
 Story PR clean merges are **not** terminal — they hand off to the **planner** to plan the next story just-in-time (or to the resolver in Epic-integration mode if every child story is now closed). See "Forward re-entry of the planner" under Re-routes.

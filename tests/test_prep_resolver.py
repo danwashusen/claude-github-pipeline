@@ -83,28 +83,61 @@ class PrepResolverSandboxTestCase(unittest.TestCase):
         self.scratch = self._tmp_ctx.name
         self.addCleanup(self._tmp_ctx.cleanup)
 
-    def _run(self, args, fixture_case=None, extra_env=None):
+    # v3 harness: a test whose flow reaches the workspace ASSERTION (fresh/continue rows) must run
+    # the prep subprocess with its cwd INSIDE an ambient worktree — the operator posture the
+    # inversion introduces. A class sets `ambient_default` (or a test passes `ambient=`) to the
+    # branch name the worktree should be on; None (the base default) runs from the test process's
+    # own cwd, which only flows that never reach the assertion (gated, comment-only, --refresh,
+    # early decisions) may use.
+    ambient_default = None
+
+    def _mk_ambient(self, branch):
+        """Create (or reuse) `.worktrees/<branch>` in the sandbox clone, forked at origin/main —
+        the worktree the operator would have opened via workspace-open. Returns its Path."""
+        wt = self.root / ".worktrees" / branch
+        if not wt.is_dir():
+            wt.parent.mkdir(parents=True, exist_ok=True)
+            has_local = (
+                subprocess.run(
+                    ["git", "show-ref", "--verify", "--quiet", "refs/heads/%s" % branch],
+                    cwd=str(self.root),
+                ).returncode
+                == 0
+            )
+            if has_local:
+                _git(["worktree", "add", str(wt), branch], self.root)
+            else:
+                _git(["worktree", "add", "-b", branch, str(wt), "origin/main"], self.root)
+        return wt
+
+    def _run(self, args, fixture_case=None, extra_env=None, cwd=None):
         env = shimenv.intercepted_env(base_env=os.environ, fixture_case=fixture_case)
         if extra_env:
             env.update(extra_env)
         return subprocess.run(
             [sys.executable, str(SCRIPT)] + args,
             env=env,
+            cwd=cwd,
             capture_output=True,
             encoding="utf-8",
             check=False,
         )
 
-    def _envelope(self, issue="100", repo="octo/widgets", fixture_case="prep_resolver_row_no_prior_pr", extra_args=None, fixtures_dir=None):
+    _AMBIENT_UNSET = object()
+
+    def _envelope(self, issue="100", repo="octo/widgets", fixture_case="prep_resolver_row_no_prior_pr", extra_args=None, fixtures_dir=None, ambient=_AMBIENT_UNSET):
         args = [issue, repo, "--root", str(self.root), "--scratch-dir", self.scratch]
         if extra_args:
             args += extra_args
+        if ambient is self._AMBIENT_UNSET:
+            ambient = self.ambient_default
+        run_cwd = str(self._mk_ambient(ambient)) if ambient is not None else None
         # A `fixtures_dir` overrides the named case with an explicit (e.g. run-time-stamped) fixture dir
         # via GH_SHIM_FIXTURES — see PriorPrRowTests._stamped_active_fixture (the time-bomb fix).
         if fixtures_dir is not None:
-            result = self._run(args, fixture_case=None, extra_env={"GH_SHIM_FIXTURES": str(fixtures_dir)})
+            result = self._run(args, fixture_case=None, extra_env={"GH_SHIM_FIXTURES": str(fixtures_dir)}, cwd=run_cwd)
         else:
-            result = self._run(args, fixture_case=fixture_case)
+            result = self._run(args, fixture_case=fixture_case, cwd=run_cwd)
         self.assertEqual(result.returncode, 0, msg="stderr: %s" % result.stderr)
         envelope = _parse_one_envelope(result.stdout)
         envelope_asserts.assert_full_envelope_conformance(envelope)
@@ -124,7 +157,10 @@ class ScriptExistsTests(unittest.TestCase):
 
 
 class HappyPathFactsSchemaTests(PrepResolverSandboxTestCase):
-    """Facts schema matches architecture.md §4's common core + resolver extensions."""
+    """Facts schema matches architecture.md §4's common core + resolver extensions (v3: the
+    workspace fact is the OBSERVED ambient checkout, asserted — not an ensured worktree)."""
+
+    ambient_default = "100-fix-the-widget"
 
     def test_conformant_ok_envelope_with_resolver_facts(self):
         envelope = self._envelope()
@@ -140,6 +176,10 @@ class HappyPathFactsSchemaTests(PrepResolverSandboxTestCase):
         envelope = self._envelope()
         self.assertEqual(envelope["root"]["path"], str(self.root))
         self.assertEqual(len(envelope["root"]["sha"]), 40)
+        # v3: root.sha IS the origin/main pin — recorded from the fetched remote tip, never a
+        # local checkout's HEAD.
+        self.assertEqual(envelope["root"]["sha"], _git(["rev-parse", "origin/main"], self.root))
+        self.assertEqual(envelope["root"]["source"], "origin/main")
         self.assertTrue(envelope["root"]["fresh"])
 
     def test_target_facts_shape(self):
@@ -154,23 +194,50 @@ class HappyPathFactsSchemaTests(PrepResolverSandboxTestCase):
         self.assertEqual(envelope["vector"]["type"], "standard")
         self.assertEqual(envelope["suggested_playbook"], "standard.md")
 
-    def test_workspace_fact_is_the_ensured_work_worktree_on_computed_branch(self):
+    def test_workspace_fact_records_the_ambient_checkout(self):
         envelope = self._envelope()
         self.assertEqual(envelope["workspace"]["branch"], "100-fix-the-widget")
         self.assertEqual(envelope["workspace"]["base_ref"], "main")
-        self.assertFalse(envelope["workspace"]["reused"])
-        self.assertEqual(envelope["branch"]["name"], "100-fix-the-widget")
-        self.assertIsNone(envelope["branch"]["collided_with"])
-        self.assertTrue(Path(envelope["workspace"]["path"]).is_dir())
+        self.assertEqual(envelope["workspace"]["source"], "ambient")
+        self.assertEqual(
+            Path(envelope["workspace"]["path"]),
+            (self.root / ".worktrees" / "100-fix-the-widget").resolve(),
+        )
+        self.assertFalse(envelope["workspace"]["dirty"])
+        self.assertEqual(envelope["workspace"]["unpushed_commits"], 0)
+        self.assertNotIn("reused", envelope["workspace"])
+        self.assertNotIn("branch", envelope)  # the minted-branch fact is retired with the ladder
 
     def test_audit_ref_is_main_for_standard_type(self):
         envelope = self._envelope()
         self.assertEqual(envelope["audit_ref"], "main")
         self.assertNotIn("read_workspaces", envelope)
 
-    def test_config_pinned_at_root_sha(self):
+    def test_config_pinned_at_origin_main_sha(self):
         envelope = self._envelope()
         self.assertEqual(envelope["config"]["sha"], envelope["root"]["sha"])
+        self.assertEqual(envelope["config"]["sha"], _git(["rev-parse", "origin/main"], self.root))
+
+    def test_config_reads_the_pinned_blob_never_the_working_tree(self):
+        # The TOCTOU the v2 shape carried: a committed gate block + an UNCOMMITTED working-tree
+        # weakening. v3 reads origin/main blobs, so the weakening is invisible — and prep must
+        # SUCCEED despite the dirty root, because stage sessions no longer police root state
+        # (that gate now lives on the workspace-creating paths only).
+        _write(
+            self.root / "COMMANDS.md",
+            "<!-- issue-resolver-fast-checks -->\n- `make lint` — hygiene\n<!-- /issue-resolver-fast-checks -->\n",
+        )
+        _git(["add", "COMMANDS.md"], self.root)
+        _git(["commit", "-m", "add committed gate block"], self.root)
+        _git(["push", "origin", "HEAD:main"], self.root)
+        _write(
+            self.root / "COMMANDS.md",
+            "<!-- issue-resolver-fast-checks -->\n- `true` — weakened\n<!-- /issue-resolver-fast-checks -->\n",
+        )
+        envelope = self._envelope()
+        self.assertEqual(envelope["status"], "ok")
+        self.assertEqual(envelope["config"]["static_checks"], ["make lint"])
+        self.assertIn(":COMMANDS.md", envelope["config"]["static_checks_source"])
 
     def test_config_fallback_chain_reads_pr_evaluator_blocks_when_resolver_blocks_absent(self):
         _write(
@@ -222,10 +289,24 @@ class HappyPathFactsSchemaTests(PrepResolverSandboxTestCase):
         envelope = self._envelope()
         self.assertEqual(envelope["attention"], [])
 
-    def test_second_run_reports_reused_workspace(self):
+    def test_setup_hooks_rerun_on_every_session_entry(self):
+        # The hook cadence worktree-lifecycle.md requires: the setup hooks run on EVERY session
+        # start (attach), fresh and re-entry alike — two prep runs, two hook executions. The block
+        # must be committed+pushed: attach discovers hooks at the origin/main pin (blob reads).
+        _write(
+            self.root / "CLAUDE.md",
+            "<!-- worktree-setup -->\n- `echo ran >> .hook-log`\n<!-- /worktree-setup -->\n",
+        )
+        _git(["add", "CLAUDE.md"], self.root)
+        _git(["commit", "-m", "add setup hook block"], self.root)
+        _git(["push", "origin", "HEAD:main"], self.root)
         self._envelope()
         envelope = self._envelope()
-        self.assertTrue(envelope["workspace"]["reused"])
+        self.assertEqual(envelope["status"], "ok")
+        wt = self.root / ".worktrees" / "100-fix-the-widget"
+        log = (wt / ".hook-log").read_text(encoding="utf-8")
+        self.assertEqual(log.count("ran"), 2)
+        self.assertTrue(envelope["workspace"]["setup"]["succeeded"])
 
 
 class PriorPrRowTests(PrepResolverSandboxTestCase):
@@ -264,11 +345,15 @@ class PriorPrRowTests(PrepResolverSandboxTestCase):
         return dst
 
     def test_open_pr_yours(self):
-        envelope = self._envelope(fixture_case="prep_resolver_row_open_yours")
+        envelope = self._envelope(
+            fixture_case="prep_resolver_row_open_yours", ambient="100-fix-the-widget"
+        )
         self.assertEqual(envelope["vector"]["prior_pr_row"], "open-pr-yours")
         self.assertEqual(envelope["vector"]["mode"], "continue")
         self.assertEqual(envelope["prior_pr"]["number"], 55)
+        # continue mode asserts the ambient checkout is on the prior PR's own head branch.
         self.assertEqual(envelope["workspace"]["branch"], "100-fix-the-widget")
+        self.assertEqual(envelope["workspace"]["expected_branch"], "100-fix-the-widget")
 
     def test_open_pr_other_active(self):
         # An open PR by ANOTHER author, actively worked, is operator-gated — SKILL.md:646:
@@ -295,7 +380,7 @@ class PriorPrRowTests(PrepResolverSandboxTestCase):
         # No work-workspace side effect — never a worktree impersonating carol's branch.
         self.assertNotIn("workspace", envelope)
         self.assertFalse((self.root / ".worktrees").exists())
-        self.assertIsNone(envelope["branch"])
+        self.assertNotIn("branch", envelope)
         self.assertTrue(
             any("actively worked" in item for item in envelope["attention"]), envelope["attention"]
         )
@@ -312,7 +397,7 @@ class PriorPrRowTests(PrepResolverSandboxTestCase):
         self.assertEqual(gate["options"], ["Take it over", "Start fresh"])
         self.assertNotIn("workspace", envelope)
         self.assertFalse((self.root / ".worktrees").exists())
-        self.assertIsNone(envelope["branch"])
+        self.assertNotIn("branch", envelope)
         self.assertTrue(
             any("stale" in item for item in envelope["attention"]), envelope["attention"]
         )
@@ -321,13 +406,15 @@ class PriorPrRowTests(PrepResolverSandboxTestCase):
         # v1 SKILL.md:648: "Draft PR ... Treat the same as an open PR by the same author" — this
         # row is scoped to YOUR OWN draft. Authorship assertion added per the S9 review finding so
         # the isDraft-first ordering bug (which routed ANY draft into continue) cannot regress.
-        envelope = self._envelope(fixture_case="prep_resolver_row_draft")
+        envelope = self._envelope(
+            fixture_case="prep_resolver_row_draft", ambient="100-fix-the-widget"
+        )
         self.assertEqual(envelope["vector"]["prior_pr_row"], "draft")
         self.assertEqual(envelope["vector"]["mode"], "continue")
         self.assertNotIn("gate", envelope["vector"])
         self.assertEqual(envelope["prior_pr"]["author"], "reviewer-bot")  # the fixture's current_user
         self.assertTrue(envelope["prior_pr"]["isDraft"])
-        # continue mode DOES ensure the work worktree, on the draft PR's own branch.
+        # continue mode DOES assert the ambient workspace, on the draft PR's own branch.
         self.assertEqual(envelope["workspace"]["branch"], "100-fix-the-widget")
 
     def test_draft_by_another_author_is_gated_not_continue(self):
@@ -345,13 +432,17 @@ class PriorPrRowTests(PrepResolverSandboxTestCase):
         self.assertFalse((self.root / ".worktrees").exists())
 
     def test_closed_resolved(self):
-        envelope = self._envelope(fixture_case="prep_resolver_row_closed_resolved")
+        envelope = self._envelope(
+            fixture_case="prep_resolver_row_closed_resolved", ambient="100-fix-the-widget"
+        )
         self.assertEqual(envelope["vector"]["prior_pr_row"], "closed-resolved")
         self.assertEqual(envelope["vector"]["mode"], "fresh")
         self.assertTrue(envelope["prior_pr"]["resolved"])
 
     def test_closed_not_resolved(self):
-        envelope = self._envelope(fixture_case="prep_resolver_row_closed_not_resolved")
+        envelope = self._envelope(
+            fixture_case="prep_resolver_row_closed_not_resolved", ambient="100-fix-the-widget"
+        )
         self.assertEqual(envelope["vector"]["prior_pr_row"], "closed-not-resolved")
         self.assertEqual(envelope["vector"]["mode"], "fresh")
         self.assertFalse(envelope["prior_pr"]["resolved"])
@@ -360,7 +451,9 @@ class PriorPrRowTests(PrepResolverSandboxTestCase):
         )
 
     def test_no_prior_pr(self):
-        envelope = self._envelope(fixture_case="prep_resolver_row_no_prior_pr")
+        envelope = self._envelope(
+            fixture_case="prep_resolver_row_no_prior_pr", ambient="100-fix-the-widget"
+        )
         self.assertEqual(envelope["vector"]["prior_pr_row"], "no-prior-pr")
         self.assertEqual(envelope["vector"]["mode"], "fresh")
         self.assertIsNone(envelope["prior_pr"])
@@ -370,7 +463,10 @@ class EpicBranchDiscoveryTests(PrepResolverSandboxTestCase):
     """Epic-branch discovery: zero / one / multiple matches (S9 DoD's second box)."""
 
     def test_zero_matches_computes_bootstrap_slug(self):
-        envelope = self._envelope(issue="100", fixture_case="prep_resolver_epic_zero")
+        envelope = self._envelope(
+            issue="100", fixture_case="prep_resolver_epic_zero",
+            ambient="epic/100-sandbox-fixture",
+        )
         self.assertEqual(envelope["vector"]["type"], "epic")
         self.assertEqual(envelope["epic"]["match_count"], 0)
         self.assertEqual(envelope["epic"]["bootstrap_slug"], "sandbox-fixture")
@@ -382,7 +478,10 @@ class EpicBranchDiscoveryTests(PrepResolverSandboxTestCase):
         _git(["branch", "epic/100-sandbox-fixture", "origin/main"], self.root)
         _git(["push", "origin", "epic/100-sandbox-fixture"], self.root)
 
-        envelope = self._envelope(issue="100", fixture_case="prep_resolver_epic_one")
+        envelope = self._envelope(
+            issue="100", fixture_case="prep_resolver_epic_one",
+            ambient="epic/100-sandbox-fixture",
+        )
         self.assertEqual(envelope["epic"]["match_count"], 1)
         self.assertEqual(envelope["epic"]["branch"], "epic/100-sandbox-fixture")
         self.assertEqual(envelope["audit_ref"], "epic/100-sandbox-fixture")
@@ -452,7 +551,10 @@ class StoryParentEpicSearchTests(PrepResolverSandboxTestCase):
         _git(["branch", "epic/100-sandbox-fixture", "origin/main"], self.root)
         _git(["push", "origin", "epic/100-sandbox-fixture"], self.root)
 
-        envelope = self._envelope(issue="101", fixture_case="prep_resolver_story_parent_search")
+        envelope = self._envelope(
+            issue="101", fixture_case="prep_resolver_story_parent_search",
+            ambient="101-story-work",
+        )
         self.assertEqual(envelope["vector"]["type"], "story")
         self.assertEqual(envelope["story"]["parent_epic"]["number"], 100)
         self.assertEqual(envelope["audit_ref"], "epic/100-sandbox-fixture")
@@ -480,7 +582,9 @@ class OpenQuestionHardGateTests(PrepResolverSandboxTestCase):
         self.assertEqual(envelope["open_questions_gate"]["blocking"][0]["oq_id"], entry["oq_id"])
 
     def test_question_decision_comment_clears_the_gate(self):
-        envelope = self._envelope(fixture_case="prep_resolver_oq_blocked_cleared")
+        envelope = self._envelope(
+            fixture_case="prep_resolver_oq_blocked_cleared", ambient="100-fix-the-widget"
+        )
         entry = envelope["open_questions"][0]
         self.assertEqual(entry["disposition"], "in-scope (blocked)")
         self.assertEqual(entry["status"], "clear")
@@ -495,6 +599,8 @@ class OpenQuestionHardGateTests(PrepResolverSandboxTestCase):
 class DistillerBundleThresholdTests(PrepResolverSandboxTestCase):
     """Distiller bundle is staged paths, never above-threshold inline bytes (S9 DoD's fifth box)."""
 
+    ambient_default = "100-fix-the-widget"
+
     def test_above_threshold_body_is_staged_as_a_path_not_inline_bytes(self):
         envelope = self._envelope(fixture_case="prep_resolver_distiller_spilled")
         self.assertEqual(envelope["sections"]["issue_body_mode"], "path")
@@ -507,6 +613,8 @@ class DistillerBundleThresholdTests(PrepResolverSandboxTestCase):
 
 
 class PhasesParsingTests(PrepResolverSandboxTestCase):
+    ambient_default = "100-fix-the-widget"
+
     def test_plan_with_phases_is_parsed_and_sha_extracted(self):
         envelope = self._envelope(fixture_case="prep_resolver_plan_with_phases")
         self.assertTrue(envelope["plan"]["present"])
@@ -586,22 +694,112 @@ class AuthRequiredTests(PrepResolverSandboxTestCase):
         self.assertEqual(envelope["decision"]["code"], "AUTH_REQUIRED")
 
 
-class RootDecisionPropagationTests(PrepResolverSandboxTestCase):
-    """ROOT_NOT_ON_MAIN / ROOT_DIRTY — workspace.py's own decisions, forwarded verbatim through
-    prep's composition (mirrors tests/test_prep_evaluator.py's identical coverage)."""
+class WorkspaceMismatchTests(PrepResolverSandboxTestCase):
+    """v3: the ambient-checkout assertion — WORKSPACE_MISMATCH decisions (workspace.py's, forwarded
+    verbatim through prep's composition), the linked-branch adoption rung, and the `-vN`
+    no-recompute acceptance. These replace the retired ROOT_* propagation coverage: stage preps no
+    longer police root state (that gate lives on the workspace-creating paths only)."""
 
-    def test_root_not_on_main_propagates(self):
-        _git(["checkout", "-b", "not-main"], self.root)
-        self.addCleanup(lambda: _git(["checkout", "main"], self.root))
-        envelope = self._envelope(fixture_case="prep_resolver_row_no_prior_pr")
+    def _mismatch(self, envelope, reason):
         self.assertEqual(envelope["status"], "needs_decision")
-        self.assertEqual(envelope["decision"]["code"], "ROOT_NOT_ON_MAIN")
+        self.assertEqual(envelope["decision"]["code"], "WORKSPACE_MISMATCH")
+        self.assertEqual(envelope["decision"]["context"]["reason"], reason)
 
-    def test_root_dirty_propagates(self):
-        _write(self.root / "dirty.txt", "uncommitted\n")
-        envelope = self._envelope(fixture_case="prep_resolver_row_no_prior_pr")
-        self.assertEqual(envelope["status"], "needs_decision")
-        self.assertEqual(envelope["decision"]["code"], "ROOT_DIRTY")
+    def test_wrong_branch_is_a_branch_mismatch(self):
+        envelope = self._envelope(
+            fixture_case="prep_resolver_row_no_prior_pr", ambient="999-unrelated-work"
+        )
+        self._mismatch(envelope, "branch_mismatch")
+        self.assertEqual(envelope["decision"]["context"]["actual_branch"], "999-unrelated-work")
+
+    def test_session_at_the_project_root_names_workspace_open(self):
+        # The "operator forgot workspace-open" surface: prep run with the session sitting at the
+        # main checkout itself.
+        result = self._run(
+            ["100", "octo/widgets", "--root", str(self.root), "--scratch-dir", self.scratch],
+            fixture_case="prep_resolver_row_no_prior_pr",
+            cwd=str(self.root),
+        )
+        self.assertEqual(result.returncode, 0, msg=result.stderr)
+        envelope = _parse_one_envelope(result.stdout)
+        self._mismatch(envelope, "at_project_root")
+        self.assertTrue(
+            any("workspace-open" in option for option in envelope["decision"]["options"])
+        )
+
+    def test_detached_head_is_a_mismatch(self):
+        detached = self.root / ".worktrees" / "detached-view"
+        detached.parent.mkdir(parents=True, exist_ok=True)
+        _git(["worktree", "add", "--detach", str(detached), "origin/main"], self.root)
+        result = self._run(
+            ["100", "octo/widgets", "--root", str(self.root), "--scratch-dir", self.scratch],
+            fixture_case="prep_resolver_row_no_prior_pr",
+            cwd=str(detached),
+        )
+        self.assertEqual(result.returncode, 0, msg=result.stderr)
+        envelope = _parse_one_envelope(result.stdout)
+        self._mismatch(envelope, "detached_head")
+
+    def test_linked_branch_is_adopted_verbatim(self):
+        # gh issue develop --list reports one linked branch whose name no slug computation would
+        # ever produce — the ladder adopts it, and an ambient checkout on it passes exactly.
+        envelope = self._envelope(
+            fixture_case="prep_resolver_linked_adoption", ambient="100-custom-linked"
+        )
+        self.assertEqual(envelope["status"], "ok")
+        self.assertEqual(envelope["workspace"]["branch"], "100-custom-linked")
+        self.assertEqual(envelope["workspace"]["expected_branch"], "100-custom-linked")
+
+    def test_vn_suffix_is_never_recomputed_against_the_pushed_branch(self):
+        # The self-mismatch drift: the ambient branch already exists on origin (workspace-open
+        # pushed it). Re-running collision naming would count it and expect `-v2`; the ladder's
+        # pattern acceptance (`^100-`) must pass the ambient branch as-is instead.
+        wt = self._mk_ambient("100-fix-the-widget")
+        _git(["push", "-u", "origin", "100-fix-the-widget"], wt)
+        envelope = self._envelope(
+            fixture_case="prep_resolver_row_no_prior_pr", ambient="100-fix-the-widget"
+        )
+        self.assertEqual(envelope["status"], "ok")
+        self.assertEqual(envelope["workspace"]["branch"], "100-fix-the-widget")
+
+    def test_checkout_behind_the_remote_branch_is_stale(self):
+        wt = self._mk_ambient("100-fix-the-widget")
+        _git(["push", "-u", "origin", "100-fix-the-widget"], wt)
+        other = gitsandbox.mk_clone(self.origin)
+        self.addCleanup(other.cleanup)
+        _git(["fetch", "origin", "100-fix-the-widget"], other.path)
+        _git(["checkout", "100-fix-the-widget"], other.path)
+        _write(Path(other.path) / "pushed.txt", "newer\n")
+        _git(["add", "pushed.txt"], other.path)
+        _git(["commit", "-m", "pushed elsewhere"], other.path)
+        _git(["push", "origin", "100-fix-the-widget"], other.path)
+        envelope = self._envelope(
+            fixture_case="prep_resolver_row_no_prior_pr", ambient="100-fix-the-widget"
+        )
+        self._mismatch(envelope, "stale_checkout")
+
+    def test_gh_linking_unsupported_degrades_with_a_notice(self):
+        # The default row fixture's shim has no `gh issue develop` entry in older harness runs —
+        # this fixture-level MISS (non-zero exit, no auth signature) must degrade to the computed
+        # rung with the ISSUE_LINK_UNSUPPORTED notice, never crash. Simulated by pointing at a
+        # fixture copy whose develop entry is a non-zero exit.
+        import shutil
+
+        src = shimenv.fixture_case_dir("prep_resolver_row_no_prior_pr")
+        dst = Path(tempfile.mkdtemp(prefix="gh-resolver-nolink-"))
+        self.addCleanup(lambda: shutil.rmtree(dst, ignore_errors=True))
+        for f in src.iterdir():
+            (dst / f.name).write_bytes(f.read_bytes())
+        manifest = json.loads((dst / "manifest.json").read_text(encoding="utf-8"))
+        for entry in manifest:
+            if entry["argv"][:3] == ["issue", "develop", "--list"]:
+                entry["exit_code"] = 1
+                entry.pop("stdout_file", None)
+        (dst / "manifest.json").write_text(json.dumps(manifest), encoding="utf-8")
+        envelope = self._envelope(fixtures_dir=dst, ambient="100-fix-the-widget")
+        self.assertEqual(envelope["status"], "ok")
+        self.assertIn("ISSUE_LINK_UNSUPPORTED", envelope["notices"])
+        self.assertEqual(envelope["workspace"]["branch"], "100-fix-the-widget")
 
 
 class RefreshModeTests(PrepResolverSandboxTestCase):
@@ -635,16 +833,14 @@ class RefreshModeTests(PrepResolverSandboxTestCase):
         self.assertEqual(envelope["vector"]["type"], "standard")
         self.assertEqual(len(envelope["dod"]), 1)
 
-    def test_refresh_still_re_derives_branch_collision_against_the_local_sandbox(self):
-        # Proves --refresh's git ls-remote calls are scoped to --root (the local sandbox), not
-        # ambient cwd: seed a real collision on origin, then confirm a --refresh run picks it up
-        # via THIS test's local origin — never reaching any real network endpoint.
-        _git(["checkout", "-b", "100-fix-the-widget"], self.root)
-        _git(["push", "origin", "100-fix-the-widget"], self.root)
-        _git(["checkout", "main"], self.root)
-
+    def test_refresh_skips_the_expected_branch_ladder_entirely(self):
+        # v3: --refresh omits the workspace assertion, so the ladder (and its gh issue develop
+        # lookup / ls-remote naming calls) never runs — the branch already exists and is the
+        # ambient checkout's own state, not a volatile fact to re-derive. The retired v2 test here
+        # asserted --refresh re-ran branch-collision naming; the minted-branch fact is gone.
         envelope = self._envelope(fixture_case="prep_resolver_row_no_prior_pr", extra_args=["--refresh"])
-        self.assertEqual(envelope["branch"]["name"], "100-fix-the-widget-v2")
+        self.assertNotIn("branch", envelope)
+        self.assertNotIn("workspace", envelope)
 
 
 class SingleInvocationBudgetTests(PrepResolverSandboxTestCase):
@@ -652,20 +848,22 @@ class SingleInvocationBudgetTests(PrepResolverSandboxTestCase):
     count is bounded and stable, both an upper AND a lower bound (S9 DoD's "conformance + call
     budget as S6")."""
 
-    def test_shim_call_count_for_one_happy_run_is_exactly_five(self):
+    def test_shim_call_count_for_one_happy_run_is_exactly_six(self):
         # gh calls on the canonical no-prior-PR path: issue view (+deps), paginated comments,
         # open-PR search, current-user, closed-PR search (only reached because open_prs was
-        # empty) — five, no more, no fewer. The shim exits 2 loudly on any un-fixtured argv
+        # empty), and the linked-branch lookup (`gh issue develop --list`, v3's ladder rung 2) —
+        # six, no more, no fewer. The shim exits 2 loudly on any un-fixtured argv
         # (tests/README.md), so if this test passes at all, every gh call prep made was one of
-        # these five.
+        # these six.
         result = self._run(
             ["100", "octo/widgets", "--root", str(self.root), "--scratch-dir", self.scratch],
             fixture_case="prep_resolver_row_no_prior_pr",
+            cwd=str(self._mk_ambient("100-fix-the-widget")),
         )
         self.assertEqual(result.returncode, 0, msg=result.stderr)
         manifest_path = shimenv.fixture_case_dir("prep_resolver_row_no_prior_pr") / "manifest.json"
         manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
-        self.assertEqual(len(manifest), 5)
+        self.assertEqual(len(manifest), 6)
 
     def test_no_gh_call_is_repeated_within_one_run(self):
         manifest_path = shimenv.fixture_case_dir("prep_resolver_row_no_prior_pr") / "manifest.json"
@@ -675,11 +873,13 @@ class SingleInvocationBudgetTests(PrepResolverSandboxTestCase):
 
     def test_open_pr_row_short_circuits_the_closed_pr_search(self):
         # When an open PR already exists, the closed-PR search must NOT run at all (mode
-        # derivation is mutually exclusive across rows) — a strictly SMALLER manifest than the
+        # derivation is mutually exclusive across rows), and continue mode's ladder rung 1 means
+        # the linked-branch lookup is skipped too — a strictly SMALLER manifest than the
         # no-prior-PR case proves the lower bound half of the two-sided budget.
         result = self._run(
             ["100", "octo/widgets", "--root", str(self.root), "--scratch-dir", self.scratch],
             fixture_case="prep_resolver_row_open_yours",
+            cwd=str(self._mk_ambient("100-fix-the-widget")),
         )
         self.assertEqual(result.returncode, 0, msg=result.stderr)
         manifest_path = shimenv.fixture_case_dir("prep_resolver_row_open_yours") / "manifest.json"

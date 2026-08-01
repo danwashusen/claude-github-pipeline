@@ -3,8 +3,8 @@
 Route for `vector.type == story` (a child story whose parent epic is open). The story's PR bases on the
 parent's `epic/<N>-<slug>` integration branch, not `main`, so `main` stays stable while the epic is in
 flight. `facts.story` carries the parent epic + its branch facts; `facts.audit_ref` is the parent
-epic's branch (bare); the work workspace's `base_ref` is that branch; prep ensured
-`facts.read_workspaces.audit` at that branch for the audit's code reads.
+epic's branch (bare); the asserted workspace's `base_ref` is that branch; prep ensured
+`facts.read_workspaces.audit` at that branch for the audit's code reads (script-internal plumbing).
 
 **Run the spine first.** Read [`resolve-spine.md`](resolve-spine.md) and execute it end to end. The
 type differences are **facts**, not branches: the audit runs dimension 5 (cross-issue contract drift)
