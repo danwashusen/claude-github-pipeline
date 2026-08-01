@@ -20,8 +20,11 @@ follow-up items as they surface. Each entry has five fields:
   section template for each; classification matters because it determines the body structure.
 - **Title hint** — one-line summary, drafter-style (e.g. *"Checkout-flow system specs deferred under
   intermittent session-timeout race"*).
-- **Description** — 2–5 sentences naming what's wrong / what's needed / why deferred. The drafter takes
-  this as the informal feedback and shapes the body around it.
+- **Description** — 2–5 sentences naming what's wrong / what's needed / why deferred, plus any judgment
+  worth freezing (rulings, exemption classes, constraints). Durable anchors only (paths, symbols, doc
+  section headings, register IDs, `#N`) — never pasted grep output or `path:line` inventories; downstream
+  skills re-derive sites fresh. The drafter takes this as the informal feedback and shapes the body
+  around it.
 - **Parent reference** — the current PR URL or issue #, plus the parent epic # if applicable. Without
   this, the filed issue is orphaned.
 - **Urgency** — `file-now` or `file-at-checkpoint` (see "Hybrid timing" below).

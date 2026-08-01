@@ -38,6 +38,8 @@ Read [`draft-spine.md`](draft-spine.md) and execute it end to end (gather → re
 - **Reviewer dimensions (spine review loop).** `1, 2, 3, 6` (`draft` mode). Dimension 1 carries the PRD
   contradicts/extends/gap + frozen-undecided check; dimension 3 the internal + `## Open questions`
   consistency check.
+- **Review tier.** Stakes, not just type: follow-up / doc-drift / small mechanical fix → **lean**;
+  feature, story, OQ-carrying, PRD-tension, or anything ambiguous → **full**.
 - **Filing.** One `create` with the type + priority labels and any `--blocked-by` from a filed-companion
   `in-scope (blocked)` OQ or a user-stated `Blocked by #N`.
 

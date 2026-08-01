@@ -47,7 +47,16 @@ you're here to surface.
     exception: their evidence is the Epic body and the story list, not a grep.)
 - **Repo root**: `<<repo_root>>` — absolute path (the drafter's current checkout, `facts.root.path`; the
   drafter grounds on the working tree, not a pinned ref). Read `docs/prd.md`, `docs/architecture.md`,
-  `docs/constitution.md`, `CLAUDE.md` if they exist; grep the source tree from this root.
+  `docs/constitution.md`, `CLAUDE.md` if they exist; grep the source tree from this root. Run **every**
+  grep/find/Read from this root **by absolute path — never a bare relative path in the ambient working
+  directory**, which may be a different checkout (e.g. a worktree on an unmerged PR branch) and would
+  silently ground your verdicts on the wrong tree.
+- **Review tier**: `<<review_tier>>` — `lean` or `full`. `lean`: this single pass is your only look —
+  findings must be final and self-contained. `full`: the orchestrator may re-invoke you (see the
+  changed-summary input below).
+- **Changed since last pass**: `<<changed_summary>>` — full tier, passes 2+ only (absent on pass 1).
+  When present, verify **only** the listed changed claims plus whether your prior findings were
+  resolved; never re-verify an unchanged claim you already confirmed.
 - **Open-question markers**: `<<open_question_markers>>` — how this repo marks unresolved open questions:
   the `<!-- drafter-open-question-markers -->` block's inline-marker pattern (and any register location it
   names), or the heuristic cues, per [`../../_shared/open-question-detection.md`](../../_shared/open-question-detection.md).
@@ -96,7 +105,15 @@ Run only the dimensions named in the inputs.
    entry MUST have a matching `## Out of scope` line naming the same OQ (and each OQ-driven `## Out of
    scope` line a matching entry); each `provisional-default` entry MUST carry `default:` + `retires-when:`;
    each `question: #N` should point at a real question issue. Flag a mismatch with the specific entry
-   quoted.
+   quoted. **Anchor rule (every issue body):** flag an authored `path:line` citation as a SUGGESTION —
+   quote it and propose the durable form (file by path, code by symbol, doc by §heading or register ID,
+   issue by `#N`); line numbers rot silently the moment content moves. Skip line numbers inside
+   verbatim-quoted tool output (a stack trace, a failing-test line) — those are evidence of an observed
+   event, not claims about current source. **Parent-PR attribution:** a claim the body attributes to a
+   parent PR ("PR <URL> ships…") describes state not yet on the default branch — verify it against the
+   PR (`gh pr view` / `gh pr diff`, both reads) or leave it attributed; never verify it against the
+   checkout, where it is wrong by construction until merge. A body asserting parent-PR state as
+   current-repo truth *without* attribution is itself a finding.
 
 4. **Latest-decisions** *(revise mode only)*. Fetch the comment thread. Identify the most recent
    substantive direction-setting comment — earlier proposals are superseded if a maintainer or the original
@@ -229,5 +246,5 @@ None.
   then cite section names/headings when filing findings.
 
 Be efficient: read each doc at most once, cache section structure mentally, and use grep before re-reading
-source files. The orchestrator may invoke you up to three times per issue, so keep each pass focused on
-what changed since the previous pass.
+source files. The orchestrator invokes you once (`lean` tier) or up to three times (`full` tier) per
+issue; on full-tier passes 2+, keep to the changed-since-last-pass scope named in the inputs.

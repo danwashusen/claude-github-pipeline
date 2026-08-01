@@ -27,6 +27,7 @@ review → confirm → apply). The deltas this route supplies:
 
 - **Reviewer dimensions.** `1, 2, 3, 6` **plus 4** (`revise <N>` mode — the sub-agent fetches live state
   and walks the thread under the latest-decisions dimension).
+- **Review tier.** **full** — **lean** only on a **proxy-filed follow-up (lean review)** invocation.
 - **Open-question reconciliation.** Re-run detection against the current source and the issue's existing
   `## Open questions`. Add entries for newly-opened OQs (match first). For an OQ whose companion is now
   **resolved** — read via the tiered status read (a `closed` question **or** a `<!-- question-decision:v1 -->`

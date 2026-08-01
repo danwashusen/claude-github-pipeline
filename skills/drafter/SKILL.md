@@ -104,8 +104,9 @@ Universal across every route:
   [`playbooks/draft-spine.md`](playbooks/draft-spine.md). Absorbing an untracked OQ silently is a defect.
 - **Never touch the plan comment.** Revise mode reads the `<!-- implementation-plan:v1 -->` pointer to
   preserve it verbatim; it never edits or deletes the comment — that's the planner's artifact.
-- **Anti-fabrication.** Never invent reproduction steps, error messages, behaviors, out-of-scope items, or
-  relationships the user didn't describe. A vague-but-honest issue beats a confidently-wrong one.
+- **Anti-fabrication, durable anchors.** Never invent reproduction steps, error messages, behaviors,
+  out-of-scope items, or relationships the user didn't describe — vague-but-honest beats confidently-wrong.
+  Issue bodies cite durable anchors, never an authored `path:line` (rule + carve-out: the templates reference).
 - **Gates only for genuine decisions** (per [`../_shared/asking-the-user.md`](../_shared/asking-the-user.md)):
   issue size, ambiguous classification/reference, PRD conflict, OQ disposition, companion reuse-vs-file,
   the filing gate, revise state-summary + diff confirmation, closed-issue handling, review-loop tie-break.
