@@ -373,6 +373,56 @@ def search_parent_epic(repo, story_number, cwd=None):
 
 
 # ---------------------------------------------------------------------------
+# GitHub-linked branches (`gh issue develop`) — the native "create a branch for this issue"
+# association. prep_workspace_open creates/adopts them; prep_resolver's expected-branch ladder
+# reads them (linked-first, so an already-opened workspace is recognized instead of re-derived).
+# ---------------------------------------------------------------------------
+
+# Non-blocking notice (open notice vocabulary, architecture.md §3): `gh issue develop` failed for
+# capability/permission/format reasons — the caller degrades (workspace-open falls back to a
+# local branch; the resolver ladder skips the linked rung), never crashes.
+ISSUE_LINK_UNSUPPORTED = "ISSUE_LINK_UNSUPPORTED"
+
+
+def list_linked_branches(repo, issue_number, cwd=None):
+    """List the GitHub-linked branches for an issue (`gh issue develop --list <N> --repo <r>`).
+    Returns ``(branches_or_none, notice_or_none, decision_or_none)``:
+
+    - success -> ``([<bare branch name>, ...], None, None)`` (possibly empty).
+    - auth failure -> ``(None, None, AUTH_REQUIRED decision)``.
+    - any other non-zero exit -> ``(None, ISSUE_LINK_UNSUPPORTED, None)`` — the capability/
+      permission/older-gh degradation; the exit code of `--list` on an issue with zero linked
+      branches is not contractually stable across gh versions, so a caller treats this notice as
+      "linking unavailable", never as an error.
+
+    Output is a text table (not JSON — `gh issue develop --list` has no `--json`): one line per
+    linked branch, first whitespace/tab-separated field = the branch name; parsed defensively so
+    a format drift degrades to the notice path, never a crash.
+    """
+    result = process.run(
+        ["gh", "issue", "develop", "--list", str(issue_number), "--repo", repo], cwd=cwd
+    )
+    if result.auth_required:
+        return None, None, needs_decision(
+            AUTH_REQUIRED,
+            summary="gh authentication required",
+            context={"stderr": result.stderr, "returncode": result.returncode},
+            options=["run: gh auth login"],
+        )
+    if result.returncode != 0:
+        return None, ISSUE_LINK_UNSUPPORTED, None
+    branches = []
+    for line in result.stdout.splitlines():
+        line = line.strip()
+        if not line:
+            continue
+        first_field = line.split("\t")[0].split()[0].strip()
+        if first_field:
+            branches.append(first_field)
+    return branches, None, None
+
+
+# ---------------------------------------------------------------------------
 # Branch naming + collision suffixing
 # ---------------------------------------------------------------------------
 

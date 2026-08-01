@@ -12,17 +12,21 @@ processes any script may spawn are git/gh")::
                                                        native deps envelope (one round-trip)
     gh_gather.run(..., stream=)                    -- per open-question tracker issue, for the
                                                        Tier 1 status read (state + decision marker)
-    workspace._build_root_status / _build_ensure_work / _build_ensure_read
-                                                    -- root freshness, the work worktree, and (for
-                                                       Epic/Story) the audit read workspace
+    workspace._build_attach / _build_ensure_read   -- assert the AMBIENT checkout is the expected
+                                                       work worktree (v3: the operator opened it
+                                                       via workspace-open and started this session
+                                                       inside it; prep observes + asserts, never
+                                                       creates) and, for Epic/Story, the audit
+                                                       read workspace
+    refblocks.fetch_pin / read_block_at_ref        -- the origin/main pin + the three resolver-side
+                                                       gate-config blocks (+ pr-evaluator fallback
+                                                       chain), read from the pinned BLOBS — never
+                                                       from any working tree, so a PR cannot weaken
+                                                       its own gates (architecture.md §6)
     parse.parse_phases / parse.parse_dod_bullets / parse.parse_oq_links
                                                     -- the plan's ## Phases, the issue's
                                                        ## Definition of done, and its
                                                        ## Open questions section
-    config_block._read_lines_or_empty / _scan_marker
-                                                    -- the three resolver-side gate-config blocks
-                                                       (+ pr-evaluator fallback chain), read at the
-                                                       root main SHA
 
 Every executor composed here exposes a **pure, non-emitting core** — ``build_*(...) -> (payload,
 notices, decision|None)`` (docs/specs/baseline.md §5, the S8 pattern lock). This prep calls those
@@ -45,13 +49,15 @@ Usage::
 
     prep_resolver.py <issue-number> <owner/repo> [--root PATH] [--scratch-dir PATH] [--refresh]
 
-``--root`` defaults to ``.`` (the project root — architecture.md §6's read-only trust vantage).
-``--scratch-dir`` defaults to ``/tmp/gh-resolver-<issue-number>`` (CLAUDE.md's ``/tmp/gh-<skill>-
-<N>/`` convention) when omitted. ``--refresh`` re-derives the volatile facts (issue/PR state,
-branch discovery) without re-running ``ensure --work``/``ensure --read``'s setup hooks or
-re-reading the three gate-config blocks — mirroring ``prep_evaluator.py``'s ``--refresh``
-contract (architecture.md §4: "prep supports --refresh and is re-run at the points where
-currency matters").
+``--root`` defaults to ``.`` and is normalized to the MAIN checkout via
+``workspace._resolve_main_root`` — under v3 the session (and therefore the ambient cwd) sits
+INSIDE the work worktree, and every derived path (the audit ``ro-*`` view, scratch staging) must
+land relative to the main checkout regardless. ``--scratch-dir`` defaults to
+``/tmp/gh-resolver-<issue-number>`` (CLAUDE.md's ``/tmp/gh-<skill>-<N>/`` convention) when
+omitted. ``--refresh`` re-derives the volatile facts (issue/PR state, branch discovery) without
+re-asserting the workspace, re-running the setup hooks, or re-reading the three gate-config
+blocks — mirroring ``prep_evaluator.py``'s ``--refresh`` contract (architecture.md §4: "prep
+supports --refresh and is re-run at the points where currency matters").
 
 Exit codes (architecture.md §3): 0 with the facts-block envelope present (``status`` is ``"ok"``
 or ``"needs_decision"``); 2 on a usage error (no envelope). Any other non-zero is an unclassified
@@ -63,15 +69,15 @@ distinct value (never an overload of ``"fresh"``): docs/specs/resolver.md's prio
 ("Fresh/continue mode from the prior-PR state table") makes an open PR by ANOTHER author (active
 or stale) — and a DRAFT PR by another author, which that table's Draft row scopes to "the same
 author," not any draft — operator-gated
-via `AskUserQuestion` with NO worktree until the operator decides. This prep therefore reports
-``mode: "gated"`` plus a ``vector.gate`` fact block (``reason``, the exact `AskUserQuestion`
-``header``/``options`` S10 renders verbatim, and the driving ``prior_pr`` fact) and does **not**
-ensure a work workspace or fabricate a branch name for that row — S10's router must render the
-gate on ``mode == "gated"`` and must never fall through to the fresh-branch or continue-on-existing
-flow. Prep still emits ``status: "ok"`` on a gated row (this is a flow gate, not an assembly
-failure — identical reasoning to the ``open_questions_gate`` hard gate below). A **read** workspace
-(the audit ref) may still be assembled on a gated row since it never touches the other author's
-branch; only the WORK workspace is withheld.
+via `AskUserQuestion` with NO work in the checkout until the operator decides. This prep therefore
+reports ``mode: "gated"`` plus a ``vector.gate`` fact block (``reason``, the exact
+`AskUserQuestion` ``header``/``options`` S10 renders verbatim, and the driving ``prior_pr`` fact)
+and does **not** assert the ambient workspace or derive an expected branch for that row — S10's
+router must render the gate on ``mode == "gated"`` and must never fall through to the
+fresh-branch or continue-on-existing flow. Prep still emits ``status: "ok"`` on a gated row (this
+is a flow gate, not an assembly failure — identical reasoning to the ``open_questions_gate`` hard
+gate below). A **read** workspace (the audit ref) may still be assembled on a gated row since it
+never touches the other author's branch; only the WORK-workspace assertion is withheld.
 
 ``audit_ref`` is always a BARE branch name (``"main"`` / ``"epic/42-journal"``), never
 `origin/`-prefixed — see :func:`_audit_ref`'s docstring. The origin-prefixed form (what a read
@@ -91,6 +97,7 @@ import config_block  # noqa: E402  (import after sys.path setup, by necessity; i
 import gh_gather  # noqa: E402
 import branching  # noqa: E402  (shared branch/type/prior-PR cores; aliased below)
 import parse  # noqa: E402
+import refblocks  # noqa: E402  (origin/main pin + at-ref gate-config reads)
 import workspace  # noqa: E402
 from pipelib import process  # noqa: E402
 from pipelib.decisions import AMBIGUOUS, PLAN_MISSING, needs_decision  # noqa: E402
@@ -166,54 +173,57 @@ compute_branch_name = branching.compute_branch_name
 
 
 # ---------------------------------------------------------------------------
-# Gate-config discovery at the root `main` SHA (mirrors prep_evaluator's _read_gate_config shape,
-# resolver-side marker names + fallback chain per docs/specs/resolver.md §P3.1).
+# Gate-config discovery at the origin/main pin (v3: refblocks blob reads — never any working
+# tree, so a PR-branch session cannot weaken the gates that judge it; mirrors prep_evaluator's
+# _read_gate_config shape, resolver-side marker names + fallback chain per docs/specs/resolver.md
+# §P3.1).
 # ---------------------------------------------------------------------------
 
 
-def _read_gate_config(root):
-    """Read the resolver's three gate-config blocks, applying the spec's fallback chain
-    (docs/specs/resolver.md §P3.1): `issue-resolver-fast-checks` -> (no fallback; static checks
-    only); `issue-resolver-test-target` -> `pr-evaluator-test-target`; `issue-resolver-canonical-
-    suite` -> `pr-evaluator-test-target`'s full-suite-command (approximated here as its raw text,
-    since prep surfaces facts, not judgment about which sub-line is the full-suite command —
-    the resolver playbook parses the fallback block's prose itself, matching v1's own "read
-    it as natural language; don't try to parse it" instruction for `issue-resolver-test-target`).
-    Absent both `issue-resolver-fast-checks` and `pr-evaluator-static-checks`, falls back once
-    more to the legacy `pr-evaluator-health-checks` block (docs/specs/resolver.md "Fallback config
-    blocks"'s documented worst-case
-    chain). Returns `(config_dict_without_sha, notices)`.
+def _read_gate_config(root, pin_sha):
+    """Read the resolver's three gate-config blocks at the ``origin/main`` pin, applying the
+    spec's fallback chain (docs/specs/resolver.md §P3.1): `issue-resolver-fast-checks` -> (no
+    fallback; static checks only); `issue-resolver-test-target` -> `pr-evaluator-test-target`;
+    `issue-resolver-canonical-suite` -> `pr-evaluator-test-target`'s full-suite-command
+    (approximated here as its raw text, since prep surfaces facts, not judgment about which
+    sub-line is the full-suite command — the resolver playbook parses the fallback block's prose
+    itself, matching v1's own "read it as natural language; don't try to parse it" instruction
+    for `issue-resolver-test-target`). Absent both `issue-resolver-fast-checks` and
+    `pr-evaluator-static-checks`, falls back once more to the legacy `pr-evaluator-health-checks`
+    block (docs/specs/resolver.md "Fallback config blocks"'s documented worst-case chain).
+    Returns `(config_dict_without_sha, notices)`; the `*_source` values carry refblocks'
+    `<sha7>:<rel_path>` provenance strings.
     """
     notices = []
 
-    fast_present, fast_lines, fast_source = config_block.read_block_anywhere(
-        root, _FAST_CHECKS_MARKER
+    fast_present, fast_lines, fast_source = refblocks.read_block_at_ref(
+        root, pin_sha, _FAST_CHECKS_MARKER
     )
     if not fast_present:
-        fast_present, fast_lines, fast_source = config_block.read_block_anywhere(
-            root, _FALLBACK_STATIC_CHECKS_MARKER
+        fast_present, fast_lines, fast_source = refblocks.read_block_at_ref(
+            root, pin_sha, _FALLBACK_STATIC_CHECKS_MARKER
         )
         if fast_present:
             notices.append("FAST_CHECKS_FALLBACK_STATIC_CHECKS")
     if not fast_present:
-        fast_present, fast_lines, fast_source = config_block.read_block_anywhere(
-            root, _FALLBACK_HEALTH_CHECKS_MARKER
+        fast_present, fast_lines, fast_source = refblocks.read_block_at_ref(
+            root, pin_sha, _FALLBACK_HEALTH_CHECKS_MARKER
         )
         if fast_present:
             notices.append("FAST_CHECKS_FALLBACK_LEGACY_HEALTH_CHECKS")
 
-    test_target_present, test_target_lines, test_target_source = config_block.read_block_anywhere(
-        root, _TEST_TARGET_MARKER
+    test_target_present, test_target_lines, test_target_source = refblocks.read_block_at_ref(
+        root, pin_sha, _TEST_TARGET_MARKER
     )
     if not test_target_present:
-        test_target_present, test_target_lines, test_target_source = config_block.read_block_anywhere(
-            root, _FALLBACK_TEST_TARGET_MARKER
+        test_target_present, test_target_lines, test_target_source = refblocks.read_block_at_ref(
+            root, pin_sha, _FALLBACK_TEST_TARGET_MARKER
         )
         if test_target_present:
             notices.append("TEST_TARGET_FALLBACK_PR_EVALUATOR")
 
-    canonical_present, canonical_lines, canonical_source = config_block.read_block_anywhere(
-        root, _CANONICAL_SUITE_MARKER
+    canonical_present, canonical_lines, canonical_source = refblocks.read_block_at_ref(
+        root, pin_sha, _CANONICAL_SUITE_MARKER
     )
     if not canonical_present:
         # Fallback chain per docs/specs/resolver.md "Fallback config blocks":
@@ -221,8 +231,8 @@ def _read_gate_config(root):
         # prep surfaces the raw fallback block for the playbook to extract the labelled line from
         # (this module does not parse `full-suite-command:` out of free-form prose; see the
         # function docstring).
-        canonical_present, canonical_lines, canonical_source = config_block.read_block_anywhere(
-            root, _FALLBACK_TEST_TARGET_MARKER
+        canonical_present, canonical_lines, canonical_source = refblocks.read_block_at_ref(
+            root, pin_sha, _FALLBACK_TEST_TARGET_MARKER
         )
         if canonical_present:
             notices.append("CANONICAL_SUITE_FALLBACK_PR_EVALUATOR_TEST_TARGET")
@@ -464,7 +474,10 @@ def build_facts(issue_number, repo, root=".", scratch_dir=None, refresh=False, c
     `needs_decision` envelope has already been emitted on `stream` (the caller's `main()` reads
     `EXIT_OK` regardless — `needs_decision` is exit 0 per architecture.md §3).
     """
-    root = str(Path(root).resolve())
+    # Normalize to the MAIN checkout: under v3 the session — and therefore any relative --root —
+    # sits inside the work worktree; the audit ro-* view, ls-remote queries, and the origin/main
+    # pin all key off the main checkout regardless.
+    root = str(workspace._resolve_main_root(root))
     if scratch_dir is None:
         scratch_dir = "/tmp/gh-resolver-%s" % issue_number
     Path(scratch_dir).mkdir(parents=True, exist_ok=True)
@@ -640,70 +653,120 @@ def build_facts(issue_number, repo, root=".", scratch_dir=None, refresh=False, c
 
     audit_ref = _audit_ref(issue_type, epic_branch_for_audit)
 
-    # 8) Branch naming — MODE_FRESH only. MODE_GATED must not fabricate a branch name (there is
-    #    nothing to name yet: the operator hasn't decided whether to take over the other author's
-    #    branch or start fresh), and MODE_CONTINUE reuses the existing PR's own branch instead.
-    branch_name = None
-    branch_collision_with = None
-    if mode == MODE_FRESH and not comment_only:
-        slug = compute_fresh_slug(issue_title) if issue_type != "epic" else None
-        if issue_type != "epic":
-            branch_name, branch_collision_with = compute_branch_name(root, issue_number, slug)
-
     # A gated row is a flow gate, not an assembly blocker (identical reasoning to comment_only /
     # the open-question hard gate) — prep still completes and reports `status: ok`, it just never
-    # ensures (or names a branch for) a WORK workspace impersonating someone else's in-flight PR.
-    # `read_workspaces.audit` may still be assembled below (it's a detached, reused-by-ref view of
-    # the audit target, never a branch checkout of the other author's own work).
+    # asserts (or derives an expected branch for) a WORK workspace impersonating someone else's
+    # in-flight PR. `read_workspaces.audit` may still be assembled below (it's a detached,
+    # reused-by-ref view of the audit target, never a branch checkout of the other author's own
+    # work).
     skip_work_workspace = comment_only or mode == MODE_GATED
 
-    # 9) Workspaces + config, per mode (skipped on --refresh, same contract as prep_evaluator's).
+    # 8) Expected-branch ladder (v3) — the session runs INSIDE the worktree the operator opened
+    #    (workspace-open); prep no longer mints a branch, it derives what the ambient checkout is
+    #    EXPECTED to be on, then asserts it (step 9's attach). Linked-branch first: once
+    #    workspace-open has pushed the branch, re-running collision naming would count that very
+    #    branch via ls-remote and yield `-v2` — a guaranteed self-mismatch — so the ladder adopts
+    #    existing state and only ever *words* a computed name into the mismatch card.
+    expected_branch = None
+    accept_branch_pattern = None
+    link_notices = []
+    if not refresh and not skip_work_workspace:
+        if mode == MODE_CONTINUE and prior_pr_fact and prior_pr_fact.get("headRefName"):
+            # (1) Continue: the prior PR's own head branch, exact.
+            expected_branch = prior_pr_fact["headRefName"]
+        else:
+            # (2) The issue's GitHub-linked branch (gh issue develop), exact — adopt, never
+            #     re-derive. Degrades with a notice where linking is unsupported.
+            linked, link_notice, link_decision = branching.list_linked_branches(
+                repo, issue_number, cwd=cwd
+            )
+            if _forward_decision(link_decision):
+                return None
+            if link_notice:
+                link_notices.append(link_notice)
+            if linked and len(linked) > 1:
+                emit_needs_decision(
+                    needs_decision(
+                        AMBIGUOUS,
+                        summary="%d GitHub-linked branches exist for issue #%s — expected at most one"
+                        % (len(linked), issue_number),
+                        context={"issue": issue_number, "candidates": linked},
+                        options=[
+                            "unlink or delete the stray branch(es), then re-run",
+                            "start the session in the worktree of the branch you mean, and re-run "
+                            "against the issue it belongs to",
+                        ],
+                    )
+                )
+                return None
+            if linked:
+                expected_branch = linked[0]
+            elif issue_type == "epic":
+                # (3) Epic: the discovered integration branch, exact; on bootstrap (zero matches,
+                #     e.g. linking unsupported when workspace-open created it locally), accept any
+                #     ambient `epic/<N>-…` — the number is the invariant.
+                if epic_branch_for_audit:
+                    expected_branch = epic_branch_for_audit
+                else:
+                    bootstrap_slug = (epic_facts or {}).get("bootstrap_slug") or ""
+                    expected_branch = "epic/%s-%s" % (issue_number, bootstrap_slug)
+                    accept_branch_pattern = r"^epic/%s-" % issue_number
+            else:
+                # (4) Standard/story: accept any ambient `<N>-…` branch — never recompute the
+                #     `-vN` suffix against a branch workspace-open already pushed; the computed
+                #     name is derived only to word the mismatch card.
+                worded_name, _collided = compute_branch_name(
+                    root, issue_number, compute_fresh_slug(issue_title)
+                )
+                expected_branch = worded_name
+                accept_branch_pattern = r"^%s-" % issue_number
+
+    # 9) Workspace assertion + audit view + config, per mode (skipped on --refresh, same contract
+    #    as prep_evaluator's). One origin/main pin serves the gate-config reads AND the attach's
+    #    hook discovery — pin once, read many (refblocks).
     if not refresh:
-        root_status, _rs_notices, root_status_decision = workspace._build_root_status(root)
-        if _forward_decision(root_status_decision):
-            return None
-        root_sha = root_status["sha"]
+        pin_sha = refblocks.fetch_pin(root)
 
         work_workspace_envelope = None
-        if not skip_work_workspace:
-            if mode == MODE_CONTINUE and prior_pr_fact and prior_pr_fact.get("headRefName"):
-                work_branch = prior_pr_fact["headRefName"]
-                work_base = ROOT_MAIN_BRANCH if audit_ref == ROOT_MAIN_BRANCH else audit_ref
-            elif issue_type == "epic":
-                work_branch = epic_branch_for_audit or (
-                    "epic/%s-%s" % (issue_number, epic_facts.get("bootstrap_slug"))
-                    if epic_facts
-                    else None
-                )
-                work_base = ROOT_MAIN_BRANCH
-            else:
-                work_branch = branch_name
-                work_base = ROOT_MAIN_BRANCH if audit_ref == ROOT_MAIN_BRANCH else audit_ref
-
-            if work_branch:
-                work_workspace_envelope, _ws_notices, ws_decision = workspace._build_ensure_work(
-                    root, work_branch, work_base
-                )
-                if _forward_decision(ws_decision):
-                    return None
+        work_base = None
+        if not skip_work_workspace and expected_branch:
+            work_base = (
+                ROOT_MAIN_BRANCH
+                if (issue_type == "epic" or audit_ref == ROOT_MAIN_BRANCH)
+                else audit_ref
+            )
+            work_workspace_envelope, _ws_notices, ws_decision = workspace._build_attach(
+                cwd if cwd is not None else ".",
+                expected_branch,
+                base_for_unpushed=work_base,
+                run_hooks=True,
+                pin_sha=pin_sha,
+                accept_branch_pattern=accept_branch_pattern,
+                check_remote_staleness=True,
+            )
+            if _forward_decision(ws_decision):
+                return None
 
         read_workspace_envelope = None
         if not comment_only and audit_ref != ROOT_MAIN_BRANCH:
             # Epic-as-target / story-under-open-epic: a genuinely second ref from the work
             # workspace's own branch, so a dedicated read workspace is ensured (architecture.md
             # §6: "a skill with no second view omits the key entirely" — the standard/no-epic path
-            # never reaches this branch, since audit_ref == 'main' there).
+            # never reaches this branch, since audit_ref == 'main' there). Script-internal ro-*
+            # plumbing: the operator never opens or sees this view.
             read_workspace_envelope, _rw_notices, rw_decision = workspace._build_ensure_read(
                 root, audit_ref
             )
             if _forward_decision(rw_decision):
                 return None
 
-        gate_config, config_notices = _read_gate_config(root)
-        gate_config["sha"] = root_sha
+        gate_config, config_notices = _read_gate_config(root, pin_sha)
+        gate_config["sha"] = pin_sha
+        root_sha = pin_sha
     else:
         work_workspace_envelope = None
         read_workspace_envelope = None
+        work_base = None
         gate_config, config_notices = {}, []
         root_sha = None
 
@@ -733,7 +796,7 @@ def build_facts(issue_number, repo, root=".", scratch_dir=None, refresh=False, c
     facts = {
         "repo": repo,
         "scratch": scratch_dir,
-        "root": {"path": root, "sha": root_sha, "fresh": not refresh},
+        "root": {"path": root, "sha": root_sha, "source": "origin/main", "fresh": not refresh},
         "target": {
             "kind": "issue",
             "number": issue_envelope["number"],
@@ -752,14 +815,13 @@ def build_facts(issue_number, repo, root=".", scratch_dir=None, refresh=False, c
         "open_questions": open_questions,
         "open_questions_gate": open_questions_gate,
         "audit_ref": audit_ref,
-        "branch": {"name": branch_name, "collided_with": branch_collision_with} if branch_name else None,
         "suggested_playbook": suggested_playbook,
         "config": gate_config,
         "distiller_bundle": distiller_bundle,
         "attention": _build_attention(
             work_workspace_envelope, prior_pr_row, epic_facts, story_epic_matches
         ),
-        "notices": list(config_notices),
+        "notices": list(config_notices) + link_notices,
     }
     if issue_type == "epic":
         facts["epic"] = epic_facts
@@ -767,14 +829,18 @@ def build_facts(issue_number, repo, root=".", scratch_dir=None, refresh=False, c
         facts["story"] = epic_facts
 
     if work_workspace_envelope is not None:
+        # v3: the OBSERVED ambient checkout (attach), not a constructed worktree. `base_ref` is a
+        # DERIVED fact (continue -> the audit-ref formula; story -> the epic branch; else main) —
+        # attach cannot observe a base, and the create-pr step's `--base` slot consumes this.
         facts["workspace"] = {
             "path": work_workspace_envelope["path"],
             "branch": work_workspace_envelope["branch"],
-            "base_ref": work_workspace_envelope["base_ref"],
+            "expected_branch": work_workspace_envelope.get("expected_branch"),
+            "base_ref": work_base,
             "sha": work_workspace_envelope.get("sha"),
-            "reused": work_workspace_envelope.get("reused"),
             "dirty": work_workspace_envelope.get("dirty"),
             "unpushed_commits": work_workspace_envelope.get("unpushed_commits"),
+            "source": "ambient",
             "setup": work_workspace_envelope.get("setup"),
         }
     if read_workspace_envelope is not None:

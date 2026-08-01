@@ -9,7 +9,8 @@
             "--json",
             "number,title,body,state,labels,author,createdAt,updatedAt,assignees,milestone,url,blockedBy,blocking"
         ],
-        "stdout_file": "issue_view.json"
+        "stdout_file": "issue_view.json",
+        "exit_code": 0
     },
     {
         "argv": [
@@ -17,7 +18,8 @@
             "--paginate",
             "repos/octo/widgets/issues/100/comments"
         ],
-        "stdout_file": "comments_empty.json"
+        "stdout_file": "comments_empty.json",
+        "exit_code": 0
     },
     {
         "argv": [
@@ -32,14 +34,16 @@
             "--json",
             "number,title,author,isDraft,headRefName,url,updatedAt,body,closingIssuesReferences"
         ],
-        "stdout_file": "open_prs_empty.json"
+        "stdout_file": "open_prs_empty.json",
+        "exit_code": 0
     },
     {
         "argv": [
             "api",
             "user"
         ],
-        "stdout_file": "current_user.json"
+        "stdout_file": "current_user.json",
+        "exit_code": 0
     },
     {
         "argv": [
@@ -54,42 +58,8 @@
             "--json",
             "number,title,author,state,mergedAt,headRefName,url,updatedAt,body,closingIssuesReferences"
         ],
-        "stdout_file": "closed_prs_empty.json"
-    },
-    {
-        "argv": [
-            "issue",
-            "view",
-            "201",
-            "--repo",
-            "octo/widgets",
-            "--json",
-            "number,title,body,state,labels,author,createdAt,updatedAt,assignees,milestone,url,blockedBy,blocking"
-        ],
-        "stdout_file": "question_201_view.json"
-    },
-    {
-        "argv": [
-            "api",
-            "--paginate",
-            "repos/octo/widgets/issues/201/comments"
-        ],
-        "stdout_file": "question_201_comments.json"
-    },
-    {
-        "argv": [
-            "pr",
-            "list",
-            "--repo",
-            "octo/widgets",
-            "--state",
-            "open",
-            "--search",
-            "201 in:body",
-            "--json",
-            "number,title,author,isDraft,headRefName,url,updatedAt,body,closingIssuesReferences"
-        ],
-        "stdout_file": "open_prs_empty.json"
+        "stdout_file": "closed_prs_empty.json",
+        "exit_code": 0
     },
     {
         "argv": [
@@ -100,6 +70,7 @@
             "--repo",
             "octo/widgets"
         ],
-        "exit_code": 0
+        "exit_code": 0,
+        "stdout_file": "linked_branches.txt"
     }
 ]

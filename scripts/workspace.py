@@ -806,6 +806,8 @@ def _build_attach(
     pin_sha=None,
     expected_remote_sha=None,
     require_exact_remote_sha=False,
+    accept_branch_pattern=None,
+    check_remote_staleness=False,
 ):
     """Pure ``attach`` core (v3): verify the checkout at ``path`` (default the ambient cwd — the
     ONE deliberate ambient read in this module; attach's subject IS the checkout the session was
@@ -819,12 +821,21 @@ def _build_attach(
        False (the "operator forgot workspace-open" surface; the planner passes True for a ``main``
        plan_ref, where planning from the project root is the canonical posture).
     2. ``detached_head`` — always a mismatch, ``allow_main_root`` or not.
-    3. ``branch_mismatch`` — ambient branch != ``expected_branch``.
-    4. ``stale_checkout`` — only when ``expected_remote_sha`` is supplied: ambient HEAD is not
-       equal to it and not ahead of it (i.e. behind or diverged — "ahead" means the remote SHA is
-       an ancestor of HEAD, which is the normal unpushed-local-work shape and passes). With
-       ``require_exact_remote_sha`` (the evaluator: never health-check or cache against code the
-       checkout doesn't contain), any inequality is the mismatch.
+    3. ``branch_mismatch`` — ambient branch != ``expected_branch``. With
+       ``accept_branch_pattern`` (a regex string), a pattern match on the ambient branch passes
+       instead of exact equality — the resolver's `-vN` no-recompute rule: it accepts any ambient
+       `^<N>-` branch rather than re-running collision naming against a branch workspace-open
+       already pushed (which would count the pushed branch itself and yield `-v2`, a guaranteed
+       self-mismatch); ``expected_branch`` then only words the mismatch card.
+    4. ``stale_checkout`` — two triggers. Explicit: ``expected_remote_sha`` is supplied and
+       ambient HEAD is not equal to it and not ahead of it (i.e. behind or diverged — "ahead"
+       means the remote SHA is an ancestor of HEAD, which is the normal unpushed-local-work shape
+       and passes); with ``require_exact_remote_sha`` (the evaluator: never health-check or cache
+       against code the checkout doesn't contain), any inequality is the mismatch. Self-derived:
+       ``check_remote_staleness`` looks up ``origin/<ambient-branch>``'s tip via ``git ls-remote``
+       (a remote query, not a fetch) and applies the same behind/diverged rule — no fetch is
+       needed for the ahead test, because an ahead checkout by definition already contains the
+       remote SHA in its local history, and a behind one by definition cannot.
 
     Hooks: with ``run_hooks``, the ``<!-- worktree-setup -->`` commands are discovered at the
     ``origin/main`` pin (:func:`_run_setup_hooks_at_ref`) and run fail-fast inside the checkout —
@@ -863,7 +874,10 @@ def _build_attach(
             options=["checkout the expected branch in this worktree, then re-run"],
         )
 
-    if branch != expected_branch:
+    branch_accepted = branch == expected_branch
+    if not branch_accepted and accept_branch_pattern is not None:
+        branch_accepted = re.match(accept_branch_pattern, branch) is not None
+    if not branch_accepted:
         return None, [], _workspace_mismatch(
             "branch_mismatch",
             summary="session checkout is on branch %r but the target expects branch %r"
@@ -881,6 +895,13 @@ def _build_attach(
         )
 
     sha = _current_sha(top)
+    if expected_remote_sha is None and check_remote_staleness:
+        # Self-derived staleness: the remote tip of the AMBIENT branch (which pattern-acceptance
+        # may have matched, so it can differ from `expected_branch`'s wording). ls-remote is a
+        # remote query, never a fetch — see the docstring for why the ahead test needs no fetch.
+        ls_result = _git(["ls-remote", "--heads", "origin", branch], top)
+        if ls_result.returncode == 0 and ls_result.stdout.strip():
+            expected_remote_sha = ls_result.stdout.strip().split("\t")[0].strip()
     if expected_remote_sha is not None and sha != expected_remote_sha:
         # "Ahead" = the remote SHA is an ancestor of HEAD (unpushed local work — normal for the
         # resolver). Anything else (behind, or diverged) means the checkout does not contain the
@@ -951,6 +972,8 @@ def _cmd_attach(args):
         allow_main_root=args.allow_root,
         pin_sha=args.pin_sha,
         expected_remote_sha=args.expected_remote_sha,
+        accept_branch_pattern=args.accept_branch_pattern,
+        check_remote_staleness=args.check_remote_staleness,
     )
     if decision is not None:
         emit_needs_decision(decision, notices=notices)
@@ -1207,6 +1230,8 @@ def _build_parser():
     p_attach.add_argument("--allow-root", dest="allow_root", action="store_true")
     p_attach.add_argument("--pin-sha", dest="pin_sha", default=None, metavar="SHA")
     p_attach.add_argument("--expect-remote-sha", dest="expected_remote_sha", default=None, metavar="SHA")
+    p_attach.add_argument("--accept-branch-pattern", dest="accept_branch_pattern", default=None, metavar="REGEX")
+    p_attach.add_argument("--check-remote-staleness", dest="check_remote_staleness", action="store_true")
 
     p_remove = sub.add_parser("remove")
     p_remove.add_argument("--root", default=".")
