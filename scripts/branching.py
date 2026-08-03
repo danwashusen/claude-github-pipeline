@@ -423,8 +423,74 @@ def list_linked_branches(repo, issue_number, cwd=None):
 
 
 # ---------------------------------------------------------------------------
+# Head-scoped merged-PR lookup (`gh pr list --head`) — the precise counterpart to
+# `search_closed_prs`. That search is a `#<N> in:body` full-text query answering "which PRs mention
+# this issue"; this one answers "did THIS branch's PR merge", which is an exact `--head` match with
+# no reference filtering involved. prep_workspace_close needs the second question: the merged head
+# OID is what lets a clean post-merge worktree be removed after squash-merge +
+# delete-branch-on-merge (see `workspace._build_remove_work`'s `merged_pr`).
+# ---------------------------------------------------------------------------
+
+# Non-blocking notice (open notice vocabulary, architecture.md §3): the head-scoped merged-PR
+# lookup could not run — no auth, no network, an older `gh`. The caller degrades to "no merged PR
+# known" and keeps its generic gate, so workspace-close still works offline as the reclamation path
+# for an abandoned workspace; an auth failure here is deliberately NOT the AUTH_REQUIRED decision.
+MERGED_PR_LOOKUP_UNAVAILABLE = "MERGED_PR_LOOKUP_UNAVAILABLE"
+
+_MERGED_PR_HEAD_FIELDS = "number,headRefName,headRefOid,mergedAt,state"
+
+
+def find_merged_pr_for_head(repo, branch, cwd=None):
+    """The most recently merged PR whose head is `branch`, as
+    ``({"number": N, "head_oid": <sha>}, notice_or_none)`` — ``(None, None)`` when the branch has
+    no merged PR, ``(None, MERGED_PR_LOOKUP_UNAVAILABLE)`` when the lookup itself could not run
+    (any non-zero exit, auth included — see the notice's comment for why this never escalates to a
+    decision).
+    """
+    result = process.run(
+        [
+            "gh", "pr", "list",
+            "--repo", repo,
+            "--head", branch,
+            "--state", "merged",
+            "--json", _MERGED_PR_HEAD_FIELDS,
+        ],
+        cwd=cwd,
+    )
+    if result.returncode != 0:
+        return None, MERGED_PR_LOOKUP_UNAVAILABLE
+    try:
+        prs = json.loads(result.stdout)
+    except ValueError:
+        return None, MERGED_PR_LOOKUP_UNAVAILABLE
+    # `--head` is an exact match, but a branch can carry more than one merged PR over its life
+    # (reopened work, a revert-and-remerge): the most recent merge is the one whose head OID a
+    # worktree sitting at the merged head would match.
+    merged = [pr for pr in prs if (pr.get("state") or "").upper() == "MERGED" or pr.get("mergedAt")]
+    if not merged:
+        return None, None
+    newest = sorted(merged, key=lambda pr: pr.get("mergedAt") or "")[-1]
+    return {"number": newest.get("number"), "head_oid": newest.get("headRefOid")}, None
+
+
+# ---------------------------------------------------------------------------
 # Branch naming + collision suffixing
 # ---------------------------------------------------------------------------
+
+
+def branch_belongs_to_issue(branch, issue_number):
+    """True iff `branch` is a branch this pipeline would have minted for `issue_number` —
+    `<N>-<slug>` (optionally `-vN`-suffixed) or `epic/<N>-<slug>`. Every branch the pipeline
+    creates goes through :func:`compute_branch_name` or the `epic/<N>-<slug>` convention, so this
+    is the check that distinguishes "this issue's branch" from a sibling story's branch that merely
+    mentions `#<N>` in its PR body (the loose `#<N> in:body` search's blind spot)."""
+    if not branch:
+        return False
+    epic_match = EPIC_BRANCH_NAME_RE.match(branch)
+    if epic_match:
+        return epic_match.group(1) == str(issue_number)
+    prefix = "%s-" % issue_number
+    return branch.startswith(prefix) and len(branch) > len(prefix)
 
 
 def compute_branch_name(root, issue_number, slug):

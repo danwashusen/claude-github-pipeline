@@ -1100,5 +1100,32 @@ class RemoveWorkGuardTests(WorkspaceGitSandboxTestCase):
         self.assertFalse(Path(target["path"]).is_dir())
 
 
+class ListWorkBranchesTests(WorkspaceGitSandboxTestCase):
+    """`list_work_branches` — the local, offline "which branches have a workspace open" answer
+    `prep_workspace_close.py` resolves an issue number against. Imported in-process (no CLI
+    subcommand: it is a core, not an operation)."""
+
+    def test_lists_work_branches_and_never_ro_or_the_main_checkout(self):
+        self._envelope(["ensure", "--work", "feature-x", "--base", "main"])
+        self._envelope(["ensure", "--work", "feature-y", "--base", "main"])
+        self._envelope(["ensure", "--read", "main"])
+        self.assertEqual(
+            workspace.list_work_branches(str(self.root)), ["feature-x", "feature-y"]
+        )
+
+    def test_an_epic_branchs_nested_path_is_still_a_work_branch(self):
+        # `epic/<N>-<slug>` lives at `.worktrees/epic/<N>-<slug>` — the `ro-` test is on the first
+        # segment below `.worktrees/`, so a nested path must not be misread.
+        self._envelope(["ensure", "--work", "epic/150-chat-ux", "--base", "main"])
+        self.assertEqual(workspace.list_work_branches(str(self.root)), ["epic/150-chat-ux"])
+
+    def test_empty_when_no_workspace_is_open(self):
+        self.assertEqual(workspace.list_work_branches(str(self.root)), [])
+
+    def test_normalizes_root_from_inside_a_linked_worktree(self):
+        opened = self._envelope(["ensure", "--work", "feature-x", "--base", "main"])
+        self.assertEqual(workspace.list_work_branches(opened["path"]), ["feature-x"])
+
+
 if __name__ == "__main__":
     unittest.main()

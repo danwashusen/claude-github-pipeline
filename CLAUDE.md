@@ -184,7 +184,9 @@ per [architecture.md §7](docs/architecture.md)'s mapping table).
   (the creating path — root freshness `ROOT_NOT_ON_MAIN` / `ROOT_DIRTY` / `ROOT_DIVERGED` and
   branch exclusivity `BRANCH_IN_USE` live here; used by workspace-open and the landing tools),
   `remove --work` (teardown best-effort before removal; dirty/unpushed gated, merged-PR-aware,
-  `cwd_inside_target`-refusing; driven by workspace-close), `gc`, `root-status`, `lint`. Every
+  `cwd_inside_target`-refusing; driven by workspace-close), `gc`, `root-status`, `lint`, plus the
+  import-only `list_work_branches` core (which branches currently have a work worktree — the local,
+  gh-free evidence `prep_workspace_close.py` resolves an issue number against). Every
   `--root` normalizes to the MAIN checkout via `--git-common-dir`, so invocation from inside a
   linked worktree — the normal v3 posture — behaves identically. It runs the consuming repo's
   `<!-- worktree-setup/teardown -->` commands and maintains the `.worktrees/` exclusion in the
@@ -196,8 +198,12 @@ per [architecture.md §7](docs/architecture.md)'s mapping table).
   session can never weaken the gates that judge it, and the v2 TOCTOU (plain `open()` after a
   freshness check) is closed.
 - `branching.py` (import-only) — branch naming (`-vN` collision suffixing), issue-type detection,
-  the 7-row prior-PR classification, epic-branch discovery, parent-epic search, and GitHub linked
-  branches (`gh issue develop`, with the `ISSUE_LINK_UNSUPPORTED` degradation). Shared by
+  the 7-row prior-PR classification, epic-branch discovery, parent-epic search, GitHub linked
+  branches (`gh issue develop`, with the `ISSUE_LINK_UNSUPPORTED` degradation), and two precision
+  helpers the loose `#<N> in:body` searches can't provide: `find_merged_pr_for_head` (an exact
+  `gh pr list --head` merged lookup, non-fatal via `MERGED_PR_LOOKUP_UNAVAILABLE` so an offline
+  close still works) and `branch_belongs_to_issue` (does `<N>-<slug>` / `epic/<N>-<slug>` name this
+  issue — the guard that stops a sibling story's PR resolving as this issue's branch). Shared by
   `prep_workspace_open.py` (which mints branches) and `prep_resolver.py` (which only asserts —
   its ladder adopts linked/ambient branches and never re-runs collision naming against a branch
   workspace-open already pushed; recomputing would yield `-v2`, a guaranteed self-mismatch).

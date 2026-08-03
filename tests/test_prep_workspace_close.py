@@ -1,10 +1,11 @@
 """Unit tests for scripts/prep_workspace_close.py — the v3 operator-side workspace closer.
 
 Topology mirrors the other prep tests. Contract under test: branch-arg and issue-number
-resolution (linked branch / PR head), the teardown-then-gated-removal receipt, the dirty/unpushed
-`AMBIGUOUS` gate, the `cwd_inside_target` refusal, and the review-M2 merged-PR semantics (a clean
-worktree at exactly the merged head is removable; extra post-merge commits get the
-merged-specific card, never the generic push-first wording).
+resolution (the linked / worktree / guarded-PR-head ladder), the teardown-then-gated-removal
+receipt, the dirty/unpushed `AMBIGUOUS` gate, the `cwd_inside_target` refusal, and the review-M2
+merged-PR semantics (a clean worktree at exactly the merged head is removable; extra post-merge
+commits get the merged-specific card, never the generic push-first wording) — which must hold for
+BOTH argument forms, since a branch name is the form every evaluator merge terminal hands over.
 """
 
 import json
@@ -22,9 +23,14 @@ SCRIPT = SCRIPTS_DIR / "prep_workspace_close.py"
 
 sys.path.insert(0, str(SCRIPTS_DIR))
 
+import branching  # noqa: E402  (import after sys.path setup, by necessity)
 from tests.support import envelope_asserts, gitsandbox, shimenv  # noqa: E402
 
 CANNED_HEAD_OID = "deadbeef00112233445566778899aabbccddeeff"
+
+# The live-reported branch/issue pair (issue #93, whose sibling story is #92) — the fixtures for the
+# branch-argument merged close and the sibling-PR mis-resolution are both keyed on it.
+MERGED_BRANCH = "93-a1-2-patient-onboard-pay"
 
 
 def _write(path, text):
@@ -160,8 +166,8 @@ class MergedPrTests(PrepWorkspaceCloseSandboxTestCase):
     against the origin/main fallback — the merged-PR context must make the clean-at-merged-head
     case removable, and give the extra-commits case a merged-specific card."""
 
-    def _stamped_fixture(self, head_sha):
-        src = shimenv.fixture_case_dir("prep_workspace_close_merged")
+    def _stamped_fixture(self, head_sha, case="prep_workspace_close_merged"):
+        src = shimenv.fixture_case_dir(case)
         dst = Path(tempfile.mkdtemp(prefix="gh-close-stamp-"))
         self.addCleanup(lambda: shutil.rmtree(str(dst), ignore_errors=True))
         for f in src.iterdir():
@@ -170,11 +176,11 @@ class MergedPrTests(PrepWorkspaceCloseSandboxTestCase):
             )
         return dst
 
-    def _mk_squash_merged_worktree(self):
+    def _mk_squash_merged_worktree(self, branch="100-custom-linked"):
         """A worktree whose commits were 'squash-merged': the branch has real local commits that
         are NOT ancestors of origin/main (so the unpushed fallback counts them), and its PR is
         recorded MERGED with head_oid == the worktree HEAD."""
-        wt = self._mk_worktree("100-custom-linked")
+        wt = self._mk_worktree(branch)
         _write(wt / "feature.txt", "the change\n")
         _git(["add", "feature.txt"], wt)
         _git(["commit", "-m", "the squashed work"], wt)
@@ -199,6 +205,132 @@ class MergedPrTests(PrepWorkspaceCloseSandboxTestCase):
         self.assertIn("merged", envelope["decision"]["summary"])
         self.assertNotIn("push the branch", " ".join(envelope["decision"]["options"]))
         self.assertTrue(wt.is_dir())
+
+    # --- the branch-ARGUMENT form: what the evaluator's merge terminal actually hands over ------
+    # The merged-PR lookup used to be derived only on the numeric path, so this whole leg was
+    # unreachable and every routine post-merge close by branch name hit the generic push-first card.
+
+    def test_branch_arg_at_the_merged_head_is_removable(self):
+        wt, head = self._mk_squash_merged_worktree(branch=MERGED_BRANCH)
+        envelope = self._envelope(
+            MERGED_BRANCH,
+            fixtures_dir=self._stamped_fixture(head, case="prep_workspace_close_merged_head"),
+        )
+        self.assertEqual(envelope["status"], "ok", envelope)
+        self.assertTrue(envelope["removed"])
+        self.assertEqual(envelope["branch_resolution"]["via"], "arg")
+        self.assertFalse(wt.is_dir())
+
+    def test_branch_arg_lookup_failure_degrades_to_the_generic_gate(self):
+        """No auth, no network, an older `gh` — the lookup is non-fatal: today's card plus a
+        notice, never an AUTH_REQUIRED that would block reclaiming an abandoned workspace."""
+        wt, _head = self._mk_squash_merged_worktree(branch=MERGED_BRANCH)
+        envelope = self._envelope(
+            MERGED_BRANCH, fixture_case="prep_workspace_close_head_lookup_unavailable"
+        )
+        self.assertEqual(envelope["status"], "needs_decision")
+        self.assertEqual(envelope["decision"]["code"], "AMBIGUOUS")
+        self.assertIn("MERGED_PR_LOOKUP_UNAVAILABLE", envelope["notices"])
+        self.assertTrue(wt.is_dir())
+
+
+class BranchBelongsToIssueTests(unittest.TestCase):
+    """The convention test the ladder's rungs 2/3 filter on — every branch this pipeline mints goes
+    through `compute_branch_name` or the `epic/<N>-<slug>` form, so this is what separates "this
+    issue's branch" from a sibling's."""
+
+    def test_accepts_the_minted_forms(self):
+        for branch in (MERGED_BRANCH, "93-a1-2-patient-onboard-pay-v2", "epic/93-a1-onboarding"):
+            self.assertTrue(branching.branch_belongs_to_issue(branch, 93), branch)
+
+    def test_rejects_another_issues_branch_and_digit_prefix_collisions(self):
+        for branch in (
+            "92-a1-1-patient-discover-land",  # the live mis-resolution
+            "930-other-story",  # a longer number sharing the leading digits
+            "epic/92-a1-onboarding",
+            "93",  # the bare number is not a `<N>-<slug>` branch
+            "",
+            None,
+        ):
+            self.assertFalse(branching.branch_belongs_to_issue(branch, 93), branch)
+
+
+class SiblingPrMentionTests(PrepWorkspaceCloseSandboxTestCase):
+    """The live #93 mis-resolution: `open_prs`/`closed_prs` come from a `#<N> in:body` full-text
+    search, so a sibling story's PR that merely mentions this issue is in the candidate set. Taking
+    `[0]` of it resolved issue #93 to `92-a1-1-patient-discover-land` — another story's branch."""
+
+    FIXTURE = "prep_workspace_close_sibling_pr_mention"
+
+    def test_local_worktree_wins_over_a_sibling_prs_head(self):
+        wt = self._mk_worktree(MERGED_BRANCH)
+        envelope = self._envelope("93", fixture_case=self.FIXTURE)
+        self.assertEqual(envelope["branch_resolution"]["branch"], MERGED_BRANCH)
+        self.assertEqual(envelope["branch_resolution"]["via"], "worktree")
+        self.assertTrue(envelope["removed"])
+        self.assertFalse(wt.is_dir())
+
+    def test_a_mention_only_head_never_resolves(self):
+        envelope = self._envelope("93", fixture_case=self.FIXTURE)
+        self.assertEqual(envelope["status"], "needs_decision")
+        self.assertEqual(envelope["decision"]["code"], "AMBIGUOUS")
+        self.assertEqual(
+            envelope["decision"]["context"]["rejected_pr_heads"],
+            ["92-a1-1-patient-discover-land"],
+        )
+        self.assertNotIn("92-a1-1-patient-discover-land", json.dumps(envelope["decision"]["summary"]))
+
+    def test_two_worktrees_for_one_issue_are_ambiguous(self):
+        first = self._mk_worktree(MERGED_BRANCH)
+        second = self._mk_worktree("93-a1-2-patient-onboard-pay-v2")
+        envelope = self._envelope("93", fixture_case=self.FIXTURE)
+        self.assertEqual(envelope["status"], "needs_decision")
+        self.assertEqual(envelope["decision"]["code"], "AMBIGUOUS")
+        self.assertEqual(
+            envelope["decision"]["context"]["candidates"],
+            [MERGED_BRANCH, "93-a1-2-patient-onboard-pay-v2"],
+        )
+        self.assertTrue(first.is_dir())
+        self.assertTrue(second.is_dir())
+
+
+class PrHeadRungTests(PrepWorkspaceCloseSandboxTestCase):
+    """Rung 3's ACCEPT branch — the guard's positive path. A resolved pr-head always lands on the
+    `not_found` no-op by construction (a work worktree for a belonging branch would have been
+    caught by rung 2), so what these assert is the resolution itself: which head the tier order
+    picks, and that a rejected sibling never becomes the answer."""
+
+    V2_BRANCH = "93-a1-2-patient-onboard-pay-v2"
+    SIBLING_HEAD = "92-a1-1-patient-discover-land"
+
+    def test_the_open_tier_wins_over_a_superseded_closed_head(self):
+        # `-vN` suffixing means one issue owns both a closed `<N>-<slug>` and an open
+        # `<N>-<slug>-v2`; the live PR is the one whose workspace is still in play.
+        envelope = self._envelope("93", fixture_case="prep_workspace_close_pr_head")
+        self.assertEqual(envelope["status"], "ok", envelope)
+        self.assertEqual(envelope["branch_resolution"], {
+            "input": "93", "branch": self.V2_BRANCH, "via": "pr-head",
+        })
+        self.assertFalse(envelope["removed"])
+        self.assertEqual(envelope["reason"], "not_found")
+
+    def test_two_belonging_open_heads_are_ambiguous_and_still_list_the_rejects(self):
+        envelope = self._envelope("93", fixture_case="prep_workspace_close_two_open_heads")
+        self.assertEqual(envelope["status"], "needs_decision")
+        self.assertEqual(envelope["decision"]["code"], "AMBIGUOUS")
+        context = envelope["decision"]["context"]
+        self.assertEqual(context["candidates"], [self.V2_BRANCH, MERGED_BRANCH])
+        self.assertEqual(context["rejected_pr_heads"], [self.SIBLING_HEAD])
+
+    def test_a_local_worktree_still_outranks_a_belonging_pr_head(self):
+        # Rung 2 over rung 3 where BOTH could answer — the sibling fixture can't show this, since
+        # its only PR head is rejected by the convention anyway.
+        wt = self._mk_worktree(MERGED_BRANCH)
+        envelope = self._envelope("93", fixture_case="prep_workspace_close_pr_head")
+        self.assertEqual(envelope["branch_resolution"]["branch"], MERGED_BRANCH)
+        self.assertEqual(envelope["branch_resolution"]["via"], "worktree")
+        self.assertTrue(envelope["removed"])
+        self.assertFalse(wt.is_dir())
 
 
 if __name__ == "__main__":

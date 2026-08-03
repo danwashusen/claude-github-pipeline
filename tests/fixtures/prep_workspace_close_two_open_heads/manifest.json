@@ -3,7 +3,7 @@
         "argv": [
             "issue",
             "view",
-            "100",
+            "93",
             "--repo",
             "octo/widgets",
             "--json",
@@ -16,7 +16,7 @@
         "argv": [
             "api",
             "--paginate",
-            "repos/octo/widgets/issues/100/comments"
+            "repos/octo/widgets/issues/93/comments"
         ],
         "stdout_file": "comments_empty.json",
         "exit_code": 0
@@ -30,11 +30,11 @@
             "--state",
             "open",
             "--search",
-            "100 in:body",
+            "93 in:body",
             "--json",
             "number,title,author,isDraft,headRefName,url,updatedAt,body,closingIssuesReferences"
         ],
-        "stdout_file": "open_prs_empty.json",
+        "stdout_file": "open_prs.json",
         "exit_code": 0
     },
     {
@@ -54,11 +54,11 @@
             "--state",
             "closed",
             "--search",
-            "100 in:body",
+            "93 in:body",
             "--json",
             "number,title,author,state,mergedAt,headRefName,headRefOid,url,updatedAt,body,closingIssuesReferences"
         ],
-        "stdout_file": "closed_prs_merged.json",
+        "stdout_file": "closed_prs_empty.json",
         "exit_code": 0
     },
     {
@@ -66,27 +66,11 @@
             "issue",
             "develop",
             "--list",
-            "100",
+            "93",
             "--repo",
             "octo/widgets"
         ],
         "exit_code": 0,
-        "stdout_file": "linked_branches.txt"
-    },
-    {
-        "argv": [
-            "pr",
-            "list",
-            "--repo",
-            "octo/widgets",
-            "--head",
-            "100-custom-linked",
-            "--state",
-            "merged",
-            "--json",
-            "number,headRefName,headRefOid,mergedAt,state"
-        ],
-        "stdout_file": "merged_pr_for_head.json",
-        "exit_code": 0
+        "stdout_file": "linked_branches_none.txt"
     }
 ]

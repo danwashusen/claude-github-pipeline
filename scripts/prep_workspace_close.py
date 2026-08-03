@@ -8,17 +8,32 @@ verbatim, or an issue number via the GitHub-linked branch / the issue's PR head)
 remove``. Dirty or unpushed state is a decision (``AMBIGUOUS``), never a silent discard; removal
 attempted from INSIDE the target worktree is ``WORKSPACE_MISMATCH`` (``cwd_inside_target``).
 
-The routine post-merge path (the review-M2 fix): when the resolved source is a MERGED PR, its
-``{number, head_oid}`` is threaded into the remove core — a clean worktree sitting exactly at the
-merged head is removable even though squash-merge + delete-branch-on-merge makes its commits
-count "unpushed" against the ``origin/main`` fallback; a merged branch with EXTRA local commits
-gets a merged-specific card, never the nonsensical "push first" wording.
+The routine post-merge path (the review-M2 fix, generalized): squash-merge +
+delete-branch-on-merge makes a merged branch's commits count "unpushed" against the ``origin/main``
+fallback, so the remove core needs the merged PR's ``{number, head_oid}`` to clear a clean worktree
+sitting exactly at the merged head (and to give a merged-specific card, never the nonsensical "push
+first" wording, when EXTRA local commits sit past it). That lookup is **lazy and argument-form
+agnostic**: the remove core runs first, and only a "clean but unpushed" ``AMBIGUOUS`` — the one
+outcome a merged PR can change — triggers ``branching.find_merged_pr_for_head`` and a re-run. The
+earlier version derived it only on the numeric path, which left the merged case unreachable from a
+branch name — the form every evaluator merge terminal hands the operator. Laziness also keeps the
+gh-free property that makes this tool the offline reclamation path for an abandoned workspace: a
+clean, dirty, ``not_found``, or ``cwd_inside_target`` close from a branch name still calls no `gh`
+at all, and a failed lookup degrades to the generic gate with a
+``MERGED_PR_LOOKUP_UNAVAILABLE`` notice.
 
 Branch resolution for a numeric argument, in order: (1) exactly one GitHub-linked branch
-(`gh issue develop --list`) — >1 is ``AMBIGUOUS``; (2) the issue's open PR's head; (3) the
-issue's most recent closed/merged PR's head; (4) none found -> ``AMBIGUOUS`` listing what was
-tried. A non-numeric argument is taken as the branch name verbatim (linked/PR facts are still
-looked up when they resolve cleanly, purely to enable the merged-PR path).
+(`gh issue develop --list`) — >1 is ``AMBIGUOUS``; (2) exactly one **local work worktree** whose
+branch belongs to the issue (`<N>-<slug>` / `epic/<N>-<slug>`) — >1 is ``AMBIGUOUS``; (3) the head
+of the issue's most recent **open** PR, else of its most recent **closed/merged** PR — accepted
+**only** when that head belongs to the issue by the same naming convention, with the open tier
+consulted first (`-vN` suffixing means one issue legitimately owns both a closed `<N>-<slug>` and
+an open `<N>-<slug>-v2`) and >1 belonging head WITHIN a tier ``AMBIGUOUS``; (4) none
+found -> ``AMBIGUOUS`` listing what was tried, including the heads rejected by the convention. The
+rung-3 guard is load-bearing: `open_prs`/`closed_prs` come from a `#<N> in:body` full-text search,
+so a sibling story's PR that merely *mentions* this issue is in the candidate set, and taking
+``[0]`` of it resolved (live) issue #93 to another story's branch. A non-numeric argument is taken
+as the branch name verbatim, with no lookups at all.
 
 Usage::
 
@@ -56,16 +71,15 @@ def _forward_decision(decision, notices=None):
     return False
 
 
-def _resolve_branch_for_issue(issue_number, repo, scratch_dir, cwd=None):
-    """Issue number -> ``(branch, via, merged_pr_or_none, decision_or_none, notices)``.
-    ``merged_pr`` is ``{"number": N, "head_oid": sha}`` when the resolution came from (or also
-    found) a MERGED PR for the branch — the remove core's post-merge context."""
+def _resolve_branch_for_issue(issue_number, repo, root, scratch_dir, cwd=None):
+    """Issue number -> ``(branch, via, decision_or_none, notices)`` — the four-rung ladder in the
+    module docstring (`linked` / `worktree` / `pr-head`, else ``AMBIGUOUS``)."""
     notices = []
     exit_code, issue_envelope = gh_gather.run(
         str(issue_number), repo, scratch_dir=scratch_dir, env=None, stream=_DiscardStream()
     )
     if issue_envelope is not None and issue_envelope.get("status") == "needs_decision":
-        return None, None, None, issue_envelope["decision"], notices
+        return None, None, issue_envelope["decision"], notices
     if exit_code != 0:
         sys.stderr.write(
             "prep_workspace_close: gh_gather on issue #%s failed (exit %d)\n"
@@ -77,56 +91,128 @@ def _resolve_branch_for_issue(issue_number, repo, scratch_dir, cwd=None):
         repo, issue_number, cwd=cwd
     )
     if link_decision is not None:
-        return None, None, None, link_decision, notices
+        return None, None, link_decision, notices
     if link_notice:
         notices.append(link_notice)
         linked = []
-    if linked and len(linked) > 1:
-        return None, None, None, needs_decision(
-            AMBIGUOUS,
-            summary="%d GitHub-linked branches exist for issue #%s — name the branch explicitly"
-            % (len(linked), issue_number),
-            context={"issue": issue_number, "candidates": linked},
-            options=["re-run with the branch name instead of the issue number"],
-        ), notices
 
+    # Rung 1: the GitHub-linked branch — the association workspace-open itself created.
+    if len(linked) > 1:
+        return None, None, _resolution_ambiguous(
+            issue_number,
+            "%d GitHub-linked branches exist for issue #%s — name the branch explicitly"
+            % (len(linked), issue_number),
+            candidates=linked,
+        ), notices
+    if linked:
+        return linked[0], "linked", None, notices
+
+    # Rung 2: local work-worktree evidence. Close is a local operation, so a worktree that exists
+    # for this issue is stronger evidence than any remote search — and it needs no `gh` call.
+    worktree_matches = [
+        b for b in workspace.list_work_branches(root)
+        if branching.branch_belongs_to_issue(b, issue_number)
+    ]
+    if len(worktree_matches) > 1:
+        return None, None, _resolution_ambiguous(
+            issue_number,
+            "%d open work worktrees belong to issue #%s — name the branch explicitly"
+            % (len(worktree_matches), issue_number),
+            candidates=worktree_matches,
+        ), notices
+    if worktree_matches:
+        return worktree_matches[0], "worktree", None, notices
+
+    # Rung 3: PR heads, guarded by the naming convention. The candidate sets come from a
+    # `#<N> in:body` full-text search, so a sibling story's PR mentioning this issue is in them;
+    # only a head that BELONGS to the issue is evidence about it.
     open_prs = issue_envelope.get("open_prs") or []
     closed_prs, closed_decision = branching.search_closed_prs(repo, issue_number, cwd=cwd)
     if closed_decision is not None:
-        return None, None, None, closed_decision, notices
+        return None, None, closed_decision, notices
 
-    branch = None
-    via = None
-    if linked:
-        branch, via = linked[0], "linked"
-    elif open_prs:
-        branch, via = open_prs[0].get("headRefName"), "pr-head"
-    elif closed_prs:
-        branch, via = closed_prs[0].get("headRefName"), "pr-head"
-
-    if branch is None:
-        return None, None, None, needs_decision(
-            AMBIGUOUS,
-            summary="no branch could be resolved for issue #%s (no linked branch, no PR)"
-            % issue_number,
-            context={"issue": issue_number},
-            options=["re-run with the branch name instead of the issue number"],
+    # Open PRs are a tier ABOVE closed/merged ones, not one pool: `-vN` collision suffixing means
+    # one issue legitimately owns both a closed `<N>-<slug>` and an open `<N>-<slug>-v2`, and the
+    # live PR is the one whose worktree is still in play. Ambiguity is judged WITHIN a tier — two
+    # belonging heads at the same tier is a genuine "which one" only the operator can settle.
+    open_heads, rejected = _split_pr_heads(open_prs, issue_number)
+    if len(open_heads) > 1:
+        return None, None, _resolution_ambiguous(
+            issue_number,
+            "%d open PR head branches belong to issue #%s — name the branch explicitly"
+            % (len(open_heads), issue_number),
+            candidates=open_heads,
+            rejected_pr_heads=rejected,
         ), notices
+    if open_heads:
+        return open_heads[0], "pr-head", None, notices
 
-    merged_pr = _merged_pr_for_branch(branch, open_prs, closed_prs)
-    return branch, via, merged_pr, None, notices
+    closed_heads, closed_rejected = _split_pr_heads(closed_prs, issue_number)
+    rejected += [head for head in closed_rejected if head not in rejected]
+    if len(closed_heads) > 1:
+        return None, None, _resolution_ambiguous(
+            issue_number,
+            "%d closed/merged PR head branches belong to issue #%s — name the branch explicitly"
+            % (len(closed_heads), issue_number),
+            candidates=closed_heads,
+            rejected_pr_heads=rejected,
+        ), notices
+    if closed_heads:
+        return closed_heads[0], "pr-head", None, notices
+
+    # Rung 4: nothing resolvable. `rejected` is surfaced so the operator sees the sibling-PR heads
+    # that were deliberately NOT used, rather than wondering why a PR that mentions the issue
+    # produced no branch.
+    return None, None, _resolution_ambiguous(
+        issue_number,
+        "no branch could be resolved for issue #%s (no linked branch, no work worktree, no PR head "
+        "matching `<issue>-<slug>` or `epic/<issue>-<slug>`)" % issue_number,
+        rejected_pr_heads=rejected,
+    ), notices
 
 
-def _merged_pr_for_branch(branch, open_prs, closed_prs):
-    """The MERGED PR whose head is ``branch``, as the remove core's ``{number, head_oid}``
-    context — ``None`` when the branch has no merged PR. ``headRefOid`` is not in the closed-PR
-    search's field set, so the head OID rides as ``None`` there and the remove core falls back to
-    the generic gate; the caller may enrich it when it fetched the PR another way."""
-    for pr in closed_prs or []:
-        merged = (pr.get("state") or "").upper() == "MERGED" or bool(pr.get("mergedAt"))
-        if merged and pr.get("headRefName") == branch:
-            return {"number": pr.get("number"), "head_oid": pr.get("headRefOid")}
-    return None
+def _split_pr_heads(prs, issue_number):
+    """Distinct ``headRefName``s in ``prs``, in list order, split into
+    ``(belonging, rejected)`` by :func:`branching.branch_belongs_to_issue`. `prs` order is `gh`'s
+    own (most recently updated first), so ``belonging[0]`` is the most recent one — the "most
+    recent PR's head" the ladder promises."""
+    belonging = []
+    rejected = []
+    for pr in prs or []:
+        head = pr.get("headRefName")
+        if not head:
+            continue
+        target = belonging if branching.branch_belongs_to_issue(head, issue_number) else rejected
+        if head not in target:
+            target.append(head)
+    return belonging, rejected
+
+
+def _resolution_ambiguous(issue_number, summary, candidates=None, rejected_pr_heads=None):
+    """The one branch-resolution ``AMBIGUOUS`` shape — every rung's failure renders the same card
+    (architecture.md §3's closed code set has no resolution-specific code, and this hazard is
+    exactly §3's "residual, listable-options blocker")."""
+    context = {"issue": issue_number}
+    if candidates:
+        context["candidates"] = candidates
+    if rejected_pr_heads:
+        context["rejected_pr_heads"] = rejected_pr_heads
+    return needs_decision(
+        AMBIGUOUS,
+        summary=summary,
+        context=context,
+        options=["re-run with the branch name instead of the issue number"],
+    )
+
+
+def _is_clean_but_unpushed(decision):
+    """True for the remove core's "clean worktree, N unpushed commits" ``AMBIGUOUS`` — the only
+    gate a merged PR can clear (a dirty worktree gates regardless, and no other decision is about
+    commit reachability at all)."""
+    if decision is None or decision.get("code") != AMBIGUOUS:
+        return False
+    context = decision.get("context") or {}
+    return not context.get("dirty") and (context.get("unpushed_commits") or 0) > 0
 
 
 def build_facts(branch_or_issue, repo, root=".", scratch_dir=None, cwd=None):
@@ -139,17 +225,29 @@ def build_facts(branch_or_issue, repo, root=".", scratch_dir=None, cwd=None):
 
     notices = []
     if branch_or_issue.isdigit():
-        branch, via, merged_pr, decision, notices = _resolve_branch_for_issue(
-            branch_or_issue, repo, scratch_dir, cwd=cwd
+        branch, via, decision, notices = _resolve_branch_for_issue(
+            branch_or_issue, repo, root, scratch_dir, cwd=cwd
         )
         if _forward_decision(decision, notices=notices):
             return None
     else:
-        branch, via, merged_pr = branch_or_issue, "arg", None
+        branch, via = branch_or_issue, "arg"
 
+    invoker_cwd = Path.cwd()
     payload, _rm_notices, rm_decision = workspace._build_remove_work(
-        root, branch, invoker_cwd=Path.cwd(), merged_pr=merged_pr
+        root, branch, invoker_cwd=invoker_cwd, merged_pr=None
     )
+    if _is_clean_but_unpushed(rm_decision):
+        # The one outcome merged-PR context can change. Retrying is safe: the remove core returns
+        # every decision BEFORE running teardown or removal, deliberately leaving the workspace
+        # intact for recovery, so nothing has happened yet.
+        merged_pr, merged_notice = branching.find_merged_pr_for_head(repo, branch, cwd=cwd)
+        if merged_notice:
+            notices.append(merged_notice)
+        if merged_pr is not None:
+            payload, _rm_notices, rm_decision = workspace._build_remove_work(
+                root, branch, invoker_cwd=invoker_cwd, merged_pr=merged_pr
+            )
     if _forward_decision(rm_decision, notices=notices):
         return None
 

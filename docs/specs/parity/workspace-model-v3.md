@@ -57,6 +57,27 @@ still stages in a tool-created workspace exactly as the frozen S17 record descri
 
 - [ ] Result:
 
+## Scenario 4 — the resolution ladder (the live #93 defects)
+
+Both legs come from a live run in a consuming repo, where a post-merge `workspace-close <branch>`
+hit the generic push-first card and `workspace-close <issue>` resolved a *sibling story's* branch.
+Offline regression tests cover both (`tests/test_prep_workspace_close.py`); these legs verify the
+live shapes the offline harness can only approximate.
+
+- (a) **Branch-argument merged close.** After a squash merge with `delete_branch_on_merge` on,
+  `workspace-close <branch>` on a clean worktree still sitting at the merged head → removed, with
+  no push-first card. (Scenario 1 leg 4 asserts the same thing inside the conveyor; this is the leg
+  run standalone, since the argument form — not the pipeline position — was the defect.) Also record
+  whether `gh pr list --head <branch> --state merged` returns the merged PR after the branch is
+  deleted on the remote, which is the case the lookup depends on.
+- (b) **Issue-number ladder against a sibling PR.** On an epic whose story PRs cross-reference each
+  other (`unblocks #<N>`), run `workspace-close <N>` for a story whose linked branch is already
+  deleted → resolves to that story's own worktree (`via: worktree`), never the sibling's head. With
+  the worktree already gone, expect `AMBIGUOUS` listing the sibling head under
+  `rejected_pr_heads` — never a silent no-op on the wrong branch.
+
+- [ ] Result:
+
 ## Go/no-go
 
-- [ ] All three scenarios recorded; divergences adjudicated or fixed.
+- [ ] All four scenarios recorded; divergences adjudicated or fixed.

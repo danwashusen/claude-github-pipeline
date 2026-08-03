@@ -17,8 +17,10 @@ gated removal, one envelope).
   merged PR.
 - **`cwd_inside_target`** (`WORKSPACE_MISMATCH`): relay the remedy verbatim — re-run from the
   project root; this session cannot remove the checkout it is standing in.
-- **Branch resolution** (`AMBIGUOUS` on multiple linked branches / nothing resolvable): re-run
-  with the explicit branch name the operator picks.
+- **Branch resolution** (`AMBIGUOUS` when an issue number resolves to several branches — linked,
+  open worktrees, or PR heads — or to none): re-run with the explicit branch name the operator
+  picks. `context.rejected_pr_heads` lists heads that mention the issue but belong to another one;
+  name them as *not* candidates, so the operator sees why a referencing PR yielded nothing.
 
 ## 3. Summary
 
