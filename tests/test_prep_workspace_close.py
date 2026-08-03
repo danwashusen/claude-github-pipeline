@@ -294,5 +294,44 @@ class SiblingPrMentionTests(PrepWorkspaceCloseSandboxTestCase):
         self.assertTrue(second.is_dir())
 
 
+class PrHeadRungTests(PrepWorkspaceCloseSandboxTestCase):
+    """Rung 3's ACCEPT branch — the guard's positive path. A resolved pr-head always lands on the
+    `not_found` no-op by construction (a work worktree for a belonging branch would have been
+    caught by rung 2), so what these assert is the resolution itself: which head the tier order
+    picks, and that a rejected sibling never becomes the answer."""
+
+    V2_BRANCH = "93-a1-2-patient-onboard-pay-v2"
+    SIBLING_HEAD = "92-a1-1-patient-discover-land"
+
+    def test_the_open_tier_wins_over_a_superseded_closed_head(self):
+        # `-vN` suffixing means one issue owns both a closed `<N>-<slug>` and an open
+        # `<N>-<slug>-v2`; the live PR is the one whose workspace is still in play.
+        envelope = self._envelope("93", fixture_case="prep_workspace_close_pr_head")
+        self.assertEqual(envelope["status"], "ok", envelope)
+        self.assertEqual(envelope["branch_resolution"], {
+            "input": "93", "branch": self.V2_BRANCH, "via": "pr-head",
+        })
+        self.assertFalse(envelope["removed"])
+        self.assertEqual(envelope["reason"], "not_found")
+
+    def test_two_belonging_open_heads_are_ambiguous_and_still_list_the_rejects(self):
+        envelope = self._envelope("93", fixture_case="prep_workspace_close_two_open_heads")
+        self.assertEqual(envelope["status"], "needs_decision")
+        self.assertEqual(envelope["decision"]["code"], "AMBIGUOUS")
+        context = envelope["decision"]["context"]
+        self.assertEqual(context["candidates"], [self.V2_BRANCH, MERGED_BRANCH])
+        self.assertEqual(context["rejected_pr_heads"], [self.SIBLING_HEAD])
+
+    def test_a_local_worktree_still_outranks_a_belonging_pr_head(self):
+        # Rung 2 over rung 3 where BOTH could answer — the sibling fixture can't show this, since
+        # its only PR head is rejected by the convention anyway.
+        wt = self._mk_worktree(MERGED_BRANCH)
+        envelope = self._envelope("93", fixture_case="prep_workspace_close_pr_head")
+        self.assertEqual(envelope["branch_resolution"]["branch"], MERGED_BRANCH)
+        self.assertEqual(envelope["branch_resolution"]["via"], "worktree")
+        self.assertTrue(envelope["removed"])
+        self.assertFalse(wt.is_dir())
+
+
 if __name__ == "__main__":
     unittest.main()

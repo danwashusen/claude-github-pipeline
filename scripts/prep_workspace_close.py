@@ -25,8 +25,10 @@ at all, and a failed lookup degrades to the generic gate with a
 Branch resolution for a numeric argument, in order: (1) exactly one GitHub-linked branch
 (`gh issue develop --list`) — >1 is ``AMBIGUOUS``; (2) exactly one **local work worktree** whose
 branch belongs to the issue (`<N>-<slug>` / `epic/<N>-<slug>`) — >1 is ``AMBIGUOUS``; (3) the head
-of the issue's open, then most recent closed/merged, PR — accepted **only** when that head belongs
-to the issue by the same naming convention; >1 distinct surviving head is ``AMBIGUOUS``; (4) none
+of the issue's most recent **open** PR, else of its most recent **closed/merged** PR — accepted
+**only** when that head belongs to the issue by the same naming convention, with the open tier
+consulted first (`-vN` suffixing means one issue legitimately owns both a closed `<N>-<slug>` and
+an open `<N>-<slug>-v2`) and >1 belonging head WITHIN a tier ``AMBIGUOUS``; (4) none
 found -> ``AMBIGUOUS`` listing what was tried, including the heads rejected by the convention. The
 rung-3 guard is load-bearing: `open_prs`/`closed_prs` come from a `#<N> in:body` full-text search,
 so a sibling story's PR that merely *mentions* this issue is in the candidate set, and taking
@@ -129,24 +131,34 @@ def _resolve_branch_for_issue(issue_number, repo, root, scratch_dir, cwd=None):
     if closed_decision is not None:
         return None, None, closed_decision, notices
 
-    accepted = []
-    rejected = []
-    for pr in list(open_prs) + list(closed_prs or []):
-        head = pr.get("headRefName")
-        if not head:
-            continue
-        target = accepted if branching.branch_belongs_to_issue(head, issue_number) else rejected
-        if head not in target:
-            target.append(head)
-    if len(accepted) > 1:
+    # Open PRs are a tier ABOVE closed/merged ones, not one pool: `-vN` collision suffixing means
+    # one issue legitimately owns both a closed `<N>-<slug>` and an open `<N>-<slug>-v2`, and the
+    # live PR is the one whose worktree is still in play. Ambiguity is judged WITHIN a tier — two
+    # belonging heads at the same tier is a genuine "which one" only the operator can settle.
+    open_heads, rejected = _split_pr_heads(open_prs, issue_number)
+    if len(open_heads) > 1:
         return None, None, _resolution_ambiguous(
             issue_number,
-            "%d PR head branches belong to issue #%s — name the branch explicitly"
-            % (len(accepted), issue_number),
-            candidates=accepted,
+            "%d open PR head branches belong to issue #%s — name the branch explicitly"
+            % (len(open_heads), issue_number),
+            candidates=open_heads,
+            rejected_pr_heads=rejected,
         ), notices
-    if accepted:
-        return accepted[0], "pr-head", None, notices
+    if open_heads:
+        return open_heads[0], "pr-head", None, notices
+
+    closed_heads, closed_rejected = _split_pr_heads(closed_prs, issue_number)
+    rejected += [head for head in closed_rejected if head not in rejected]
+    if len(closed_heads) > 1:
+        return None, None, _resolution_ambiguous(
+            issue_number,
+            "%d closed/merged PR head branches belong to issue #%s — name the branch explicitly"
+            % (len(closed_heads), issue_number),
+            candidates=closed_heads,
+            rejected_pr_heads=rejected,
+        ), notices
+    if closed_heads:
+        return closed_heads[0], "pr-head", None, notices
 
     # Rung 4: nothing resolvable. `rejected` is surfaced so the operator sees the sibling-PR heads
     # that were deliberately NOT used, rather than wondering why a PR that mentions the issue
@@ -157,6 +169,23 @@ def _resolve_branch_for_issue(issue_number, repo, root, scratch_dir, cwd=None):
         "matching `<issue>-<slug>` or `epic/<issue>-<slug>`)" % issue_number,
         rejected_pr_heads=rejected,
     ), notices
+
+
+def _split_pr_heads(prs, issue_number):
+    """Distinct ``headRefName``s in ``prs``, in list order, split into
+    ``(belonging, rejected)`` by :func:`branching.branch_belongs_to_issue`. `prs` order is `gh`'s
+    own (most recently updated first), so ``belonging[0]`` is the most recent one — the "most
+    recent PR's head" the ladder promises."""
+    belonging = []
+    rejected = []
+    for pr in prs or []:
+        head = pr.get("headRefName")
+        if not head:
+            continue
+        target = belonging if branching.branch_belongs_to_issue(head, issue_number) else rejected
+        if head not in target:
+            target.append(head)
+    return belonging, rejected
 
 
 def _resolution_ambiguous(issue_number, summary, candidates=None, rejected_pr_heads=None):

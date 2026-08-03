@@ -49,6 +49,14 @@ Seed a standard issue with a plan. Then:
 
 - [ ] Result:
 
+## Scenario 3 — the surviving v2 gates
+
+One `setup` landing run (approve leg) — assert the `ROOT_*` freshness gates still fire on the
+landing tools' staging path (dirty the root first, expect the `ROOT_DIRTY` card), and the landing
+still stages in a tool-created workspace exactly as the frozen S17 record describes.
+
+- [ ] Result:
+
 ## Scenario 4 — the resolution ladder (the live #93 defects)
 
 Both legs come from a live run in a consuming repo, where a post-merge `workspace-close <branch>`
@@ -67,14 +75,6 @@ live shapes the offline harness can only approximate.
   deleted → resolves to that story's own worktree (`via: worktree`), never the sibling's head. With
   the worktree already gone, expect `AMBIGUOUS` listing the sibling head under
   `rejected_pr_heads` — never a silent no-op on the wrong branch.
-
-- [ ] Result:
-
-## Scenario 3 — the surviving v2 gates
-
-One `setup` landing run (approve leg) — assert the `ROOT_*` freshness gates still fire on the
-landing tools' staging path (dirty the root first, expect the `ROOT_DIRTY` card), and the landing
-still stages in a tool-created workspace exactly as the frozen S17 record describes.
 
 - [ ] Result:
 

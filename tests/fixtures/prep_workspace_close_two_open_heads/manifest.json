@@ -1,0 +1,76 @@
+[
+    {
+        "argv": [
+            "issue",
+            "view",
+            "93",
+            "--repo",
+            "octo/widgets",
+            "--json",
+            "number,title,body,state,labels,author,createdAt,updatedAt,assignees,milestone,url,blockedBy,blocking"
+        ],
+        "stdout_file": "issue_view.json",
+        "exit_code": 0
+    },
+    {
+        "argv": [
+            "api",
+            "--paginate",
+            "repos/octo/widgets/issues/93/comments"
+        ],
+        "stdout_file": "comments_empty.json",
+        "exit_code": 0
+    },
+    {
+        "argv": [
+            "pr",
+            "list",
+            "--repo",
+            "octo/widgets",
+            "--state",
+            "open",
+            "--search",
+            "93 in:body",
+            "--json",
+            "number,title,author,isDraft,headRefName,url,updatedAt,body,closingIssuesReferences"
+        ],
+        "stdout_file": "open_prs.json",
+        "exit_code": 0
+    },
+    {
+        "argv": [
+            "api",
+            "user"
+        ],
+        "stdout_file": "current_user.json",
+        "exit_code": 0
+    },
+    {
+        "argv": [
+            "pr",
+            "list",
+            "--repo",
+            "octo/widgets",
+            "--state",
+            "closed",
+            "--search",
+            "93 in:body",
+            "--json",
+            "number,title,author,state,mergedAt,headRefName,headRefOid,url,updatedAt,body,closingIssuesReferences"
+        ],
+        "stdout_file": "closed_prs_empty.json",
+        "exit_code": 0
+    },
+    {
+        "argv": [
+            "issue",
+            "develop",
+            "--list",
+            "93",
+            "--repo",
+            "octo/widgets"
+        ],
+        "exit_code": 0,
+        "stdout_file": "linked_branches_none.txt"
+    }
+]
