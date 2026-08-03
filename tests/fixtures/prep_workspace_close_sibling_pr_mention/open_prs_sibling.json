@@ -1,0 +1,1 @@
+[{"number": 95, "title": "A1.1 — patient discovery landing", "author": {"login": "alice"}, "isDraft": false, "headRefName": "92-a1-1-patient-discover-land", "url": "https://example.invalid/pr/95", "updatedAt": "2026-08-03T08:00:00Z", "body": "Part of the A1 epic. Lands the discovery step; unblocks #93.", "closingIssuesReferences": [{"number": 92}]}]

@@ -1,7 +1,7 @@
 ---
 name: workspace-close
 disable-model-invocation: true
-description: Release an issue/PR work workspace — run the repo's worktree-teardown hooks, then remove the worktree under `.worktrees/`, gated on dirty or unpushed state (never a silent discard). Takes a branch name or an issue number (resolved via the linked branch / the issue's PR). The routine last step after the evaluator merges, and the one reclamation path for abandoned or mis-opened workspaces. Explicit-invocation only — run it as `/github-pipeline:workspace-close <branch-or-issue>`.
+description: Release an issue/PR work workspace — run the repo's worktree-teardown hooks, then remove the worktree under `.worktrees/`, gated on dirty or unpushed state (never a silent discard). Takes a branch name or an issue number (resolved via the linked branch, the open work worktree, or the issue's own PR head). The routine last step after the evaluator merges, and the one reclamation path for abandoned or mis-opened workspaces. Explicit-invocation only — run it as `/github-pipeline:workspace-close <branch-or-issue>`.
 ---
 
 # workspace-close — router
@@ -21,12 +21,14 @@ the call **is** the action:
 ${CLAUDE_PLUGIN_ROOT}/scripts/prep_workspace_close.py <branch-or-issue> <owner/repo> [--root <path>]
 ```
 
-Returns one **facts block**: `branch_resolution` (`input` / `branch` / `via: arg|linked|pr-head`)
-plus the removal receipt verbatim (`removed`, `path`, `teardown` — or `removed: false, reason:
-not_found`, the safe no-op). Consume as **data**. A `needs_decision` is `AUTH_REQUIRED`,
-`AMBIGUOUS` (dirty/unpushed state, multiple linked branches, or no branch resolvable from an
-issue number), or `WORKSPACE_MISMATCH` (`cwd_inside_target` — the session is standing in the
-worktree it would remove) — render it as one `AskUserQuestion` card and act on the answer.
+Returns one **facts block**: `branch_resolution` (`input` / `branch` /
+`via: arg|linked|worktree|pr-head`) plus the removal receipt verbatim (`removed`, `path`,
+`teardown` — or `removed: false, reason: not_found`, the safe no-op). Consume as **data**. A
+`needs_decision` is `AUTH_REQUIRED`, `AMBIGUOUS` (dirty/unpushed state, or an issue number that
+resolves to none or several branches), or `WORKSPACE_MISMATCH` (`cwd_inside_target` — the session
+is standing in the worktree it would remove) — render it as one `AskUserQuestion` card and act on
+the answer. A `MERGED_PR_LOOKUP_UNAVAILABLE` notice means the merged-PR check could not run (no
+auth or no network), so a post-merge worktree may gate as unpushed — report it with the card.
 
 ## 2. Route — one linear flow
 

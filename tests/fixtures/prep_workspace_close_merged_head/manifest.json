@@ -1,0 +1,18 @@
+[
+    {
+        "argv": [
+            "pr",
+            "list",
+            "--repo",
+            "octo/widgets",
+            "--head",
+            "93-a1-2-patient-onboard-pay",
+            "--state",
+            "merged",
+            "--json",
+            "number,headRefName,headRefOid,mergedAt,state"
+        ],
+        "stdout_file": "merged_pr_for_head.json",
+        "exit_code": 0
+    }
+]

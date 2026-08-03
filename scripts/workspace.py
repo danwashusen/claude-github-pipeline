@@ -240,6 +240,31 @@ def _read_path(root, ref):
     return (Path(root) / ".worktrees" / (READ_WORKTREE_PREFIX + _slugify_ref(ref))).resolve()
 
 
+def list_work_branches(root):
+    """Sorted bare branch names of the WORK worktrees under ``<root>/.worktrees/`` — never a
+    ``ro-*`` read workspace, never the main checkout, never a detached one. The local, offline
+    answer to "which branches does this repo currently have a workspace open for", which
+    ``prep_workspace_close.py`` uses as branch-resolution evidence for an issue number.
+
+    An ``epic/<N>-<slug>`` work worktree lives at ``.worktrees/epic/<N>-<slug>`` (``_work_path``
+    keeps the slash), so the ``ro-`` test is on the first segment BELOW ``.worktrees/``, not the
+    basename."""
+    root = str(_resolve_main_root(root))
+    worktrees_dir = (Path(root) / ".worktrees").resolve()
+    branches = []
+    for entry in _list_worktrees(root):
+        if entry["branch"] is None or entry["detached"]:
+            continue
+        try:
+            relative = entry["path"].relative_to(worktrees_dir)
+        except ValueError:
+            continue  # the main checkout, or a worktree the operator put elsewhere
+        if not relative.parts or relative.parts[0].startswith(READ_WORKTREE_PREFIX):
+            continue
+        branches.append(entry["branch"])
+    return sorted(branches)
+
+
 # ---------------------------------------------------------------------------
 # `.worktrees/` exclusion — idempotent single-line append to the repo's `info/exclude`
 # (architecture.md §6). D4/D6 fix (docs/specs/parity/planner.md): this used to write
