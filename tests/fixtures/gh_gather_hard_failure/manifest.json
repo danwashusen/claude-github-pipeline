@@ -7,7 +7,7 @@
       "--repo",
       "o/r",
       "--json",
-      "number,title,body,state,labels,author,createdAt,updatedAt,assignees,milestone,url,blockedBy,blocking"
+      "number,title,body,state,labels,author,createdAt,updatedAt,assignees,milestone,url,blockedBy,blocking,parent,subIssues,subIssuesSummary"
     ],
     "exit_code": 1
   }

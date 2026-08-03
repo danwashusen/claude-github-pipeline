@@ -51,7 +51,7 @@ If you cannot tell from these inputs alone whether the issue is ready to be impl
 
   If that returns nothing, **no plan exists — skip dimension 7 entirely** even if it's listed. The plan's `## Changes` / `## Architecture decisions` / `## Data model / schema impact` sections name the code surfaces dimension 7 checks against the read workspace; if `<<plan_sha>>` is `(none)`, extract the recorded SHA from the plan body.
 - **Dimensions to check**: `<<dimensions>>` — a subset of {1, 2, 3, 4, 5, 6, 7}. Run only the listed dimensions. Don't fabricate findings outside the list.
-- **Related issues**: `<<related_issues>>` — for an Epic, the list of child Story issue numbers extracted from `## Stories`. For a Story under an open Epic, the parent Epic number plus the list of sibling Story numbers. Empty for issues with no Epic/Story relationship. When this list is non-empty and dimension 5 is in scope, fetch each entry's body before reasoning across them:
+- **Related issues**: `<<related_issues>>` — for an Epic, its child Story issue numbers. For a Story under an open Epic, the parent Epic number plus its sibling Story numbers. The orchestrator resolves these from the native parent/sub-issue relation the facts block carries (falling back to a legacy Epic's `## Stories` checklist) and passes them here already enumerated — don't re-derive them. Empty for issues with no Epic/Story relationship. When this list is non-empty and dimension 5 is in scope, fetch each entry's body before reasoning across them:
 
   ```
   gh issue view <sibling-N> --repo <<repo_owner>>/<<repo_name>> \
@@ -90,7 +90,7 @@ Run only the dimensions named in the inputs. Every code/doc read below is a plai
 
    For each contract surface, compare every issue's claim. Flag each disagreement individually — don't bundle ("Epic and Story #128 disagree on three fields" is three findings, not one), because the orchestrator routes each to a separate drafter handoff. Required evidence: quote the conflicting passages from each issue body, with issue number + section heading.
 
-   When the issue under audit is an Epic, run dimension 5 against every child Story. When the issue is a Story under an open Epic, run it against the parent Epic + every sibling Story (use the Story's parent-Epic backlink to find the Epic, then read the Epic's `## Stories` checklist to enumerate siblings).
+   When the issue under audit is an Epic, run dimension 5 against every child Story. When the issue is a Story under an open Epic, run it against the parent Epic + every sibling Story — both already enumerated in `<<related_issues>>` above.
 
 6. **Implementation readiness.** This is what separates the drafter's bar (file-able) from the resolver's bar (implementable). Flag every place the body defers a decision a developer would have to make before writing code:
 

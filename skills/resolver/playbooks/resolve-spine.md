@@ -39,6 +39,11 @@ self-fetches; it returns `## Audit summary` + `## Findings` (each BLOCKER/SUGGES
 evidence). Which dimensions run: 1–4 + 6 always; 5 (cross-issue contract drift) for a story under an
 open epic or an epic-as-target; 7 (plan-vs-code currency) only when a plan exists. Print the summary.
 
+Fill `<<related_issues>>` from the native parent/sub-issue relation in the facts block —
+`facts.target.sub_issues` for an epic target, `facts.target.parent` plus that epic's `sub_issues` for a
+story — falling back to a legacy epic's `## Stories` checklist
+([`../../_shared/epic-story-hierarchy.md`](../../_shared/epic-story-hierarchy.md)). Empty when the issue has no epic/story relationship.
+
 On **any BLOCKER**, gate (`header: "Audit"`): **Revise via drafter** (default — re-route to
 `/github-pipeline:drafter revise #<N>`, quoting the finding's evidence in the `Why:`) / **Override with
 reason** (record `Audit override: <reason>` for the PR body's `## Audit override` section and continue)

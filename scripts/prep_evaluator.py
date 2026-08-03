@@ -110,6 +110,18 @@ _CI_FAILURE_EQUIVALENT = frozenset(
 # v2 architecture.md §4 vocabulary and this step's brief both name it `standard`).
 _EPIC_BRANCH_RE = re.compile(r"^epic/\d+-.+$")
 
+# Same pattern with the epic number captured — a story PR names its epic in its own base ref, so the
+# epic is derivable without a search.
+_EPIC_BRANCH_NUMBER_RE = re.compile(r"^epic/(\d+)-.+$")
+
+# `## Stories` heading + filed-story bullet grammar, for the `checklist` source of the story-set read
+# (skills/_shared/epic-story-hierarchy.md). Restated locally, like prep_drafter's copy — there is no
+# shared parse.py subcommand for this grammar, and it is only reached for an epic filed before the
+# native sub-issue relation was written.
+_STORIES_HEADING_RE = re.compile(r"^##\s+Stories\s*$", re.IGNORECASE)
+_ANY_HEADING_RE = re.compile(r"^##\s+\S")
+_STORY_FILED_BULLET_RE = re.compile(r"^-\s*\[([ xX])\]\s*#(\d+)\b\s*(?:—|--|-)?\s*(.*)$")
+
 ROOT_MAIN_BRANCH = "main"
 
 
@@ -325,6 +337,127 @@ def _detect_pr_type(base_ref_name, head_ref_name):
     if _EPIC_BRANCH_RE.match(base_ref_name or ""):
         return "story"
     return "standard"
+
+
+# ---------------------------------------------------------------------------
+# Parent-epic story set for a story PR (skills/_shared/epic-story-hierarchy.md).
+# ---------------------------------------------------------------------------
+
+
+def _parse_stories_checklist(epic_body):
+    """Filed-story entries in a legacy epic's ``## Stories`` section — the ``checklist`` source of the
+    story-set read.
+    Best-effort and non-raising, like every other block-scan with no dedicated decision code.
+    Placeholder bullets (no ``#NN`` yet) are skipped: this reader answers "which stories exist and
+    are they closed", and an unfiled bullet is neither.
+    """
+    lines = (epic_body or "").splitlines()
+    start = None
+    for index, line in enumerate(lines):
+        if _STORIES_HEADING_RE.match(line):
+            start = index + 1
+            break
+    if start is None:
+        return []
+    end = len(lines)
+    for index in range(start, len(lines)):
+        if _ANY_HEADING_RE.match(lines[index]):
+            end = index
+            break
+
+    entries = []
+    for raw_line in lines[start:end]:
+        match = _STORY_FILED_BULLET_RE.match(raw_line.strip())
+        if match:
+            entries.append(
+                {
+                    "number": int(match.group(2)),
+                    "title": match.group(3).strip(),
+                    "checked": match.group(1) in ("x", "X"),
+                }
+            )
+    return entries
+
+
+def _build_epic_facts(base_ref_name, repo, scratch_dir):
+    """``facts.epic`` for a story PR: the parent epic plus its story set and progress.
+
+    The epic number comes from the PR's own base ref (``epic/<N>-<slug>``) — no search needed. The
+    story set resolves per ``skills/_shared/epic-story-hierarchy.md`` and ``stories_source`` reports
+    which source answered (``sub-issues`` / ``checklist`` / ``mixed``), because that decides whether
+    the story route has a checkbox to project onto the epic body at all (native: none — GitHub
+    recomputes the rollup from issue state) and where its "do siblings remain" routing reads from.
+    A ``mixed`` epic is unioned, never halved — dropping either half would under-count siblings and
+    could route a merge to "last sibling closed" while stories remain open.
+
+    Returns ``(epic_facts_or_None, notices)``. A gather failure here is **non-fatal**: this is
+    display/routing context for a merge that has already been judged on its own gates, so it must
+    never take down the session (the hierarchy is deliberately never a gate).
+    """
+    match = _EPIC_BRANCH_NUMBER_RE.match(base_ref_name or "")
+    if match is None:
+        return None, []
+    epic_number = int(match.group(1))
+
+    exit_code, envelope = gh_gather.run(
+        str(epic_number), repo, scratch_dir=scratch_dir, stream=_DiscardStream()
+    )
+    if exit_code != 0 or envelope is None or envelope.get("status") != "ok":
+        return {
+            "number": epic_number,
+            "stories_source": "unavailable",
+            "stories": [],
+            "sub_issues": [],
+            "sub_issues_summary": {},
+            "subissues_available": None,
+        }, []
+
+    sub_issues = envelope.get("sub_issues") or []
+    stories = [
+        {
+            "number": node.get("number"),
+            "title": node.get("title"),
+            "state": node.get("state"),
+            "closed": (node.get("state") or "").upper() == "CLOSED",
+        }
+        for node in sub_issues
+    ]
+    native_numbers = {story["number"] for story in stories}
+
+    epic_body = envelope.get("issue_body")
+    if epic_body is None and envelope.get("issue_body_mode") == "path":
+        epic_body = Path(envelope["issue_body_path"]).read_text(encoding="utf-8")
+    checklist_entries = _parse_stories_checklist(epic_body or "")
+    stories.extend(
+        {
+            "number": entry["number"],
+            "title": entry["title"],
+            "state": None,
+            "closed": entry["checked"],
+        }
+        # Native state wins on overlap; a checklist bullet for an already-native story is a stale
+        # duplicate, not a second story.
+        for entry in checklist_entries
+        if entry["number"] not in native_numbers
+    )
+
+    if native_numbers and checklist_entries:
+        stories_source = "mixed"
+    elif native_numbers:
+        stories_source = "sub-issues"
+    else:
+        stories_source = "checklist"
+
+    return {
+        "number": epic_number,
+        "title": envelope.get("title"),
+        "state": envelope.get("state"),
+        "stories_source": stories_source,
+        "stories": stories,
+        "sub_issues": sub_issues,
+        "sub_issues_summary": envelope.get("sub_issues_summary") or {},
+        "subissues_available": envelope.get("subissues_available"),
+    }, list(envelope.get("notices") or [])
 
 
 # ---------------------------------------------------------------------------
@@ -601,6 +734,11 @@ def build_facts(pr_number, repo, root=".", scratch_dir=None, refresh=False, cwd=
         blocked_by_by_issue[str(issue_number)] = issue_envelope.get("blocked_by") or []
         deps_available_by_issue[str(issue_number)] = issue_envelope.get("deps_available")
 
+    # 4b) The parent epic's story set, for a story PR (`facts.epic`). The story route needs it to
+    #     decide whether progress projection has anything to write and to route on whether siblings
+    #     remain (skills/evaluator/playbooks/story.md Action 2 + handoff).
+    epic_facts = None
+
     # 5) Repo merge config + self-review (new prep-owned gh calls).
     merge_config, merge_decision = _fetch_repo_merge_config(repo, cwd)
     if merge_decision is not None:
@@ -617,6 +755,12 @@ def build_facts(pr_number, repo, root=".", scratch_dir=None, refresh=False, cwd=
     ci_class, ci_fail_checks = _classify_ci_rollup(pr_envelope.get("statusCheckRollup"))
     pr_type = _detect_pr_type(pr_envelope.get("baseRefName"), pr_envelope.get("headRefName"))
     health_cache = _health_cache_fact(pr_envelope, pr_envelope.get("headRefOid"))
+
+    if pr_type == "story":
+        epic_facts, epic_notices = _build_epic_facts(
+            pr_envelope.get("baseRefName"), repo, scratch_dir
+        )
+        issue_gather_notices.extend(epic_notices)
 
     # 7) Assemble the facts block (architecture.md §4 common core + evaluator extensions).
     vector = {"type": pr_type, "mode": "continue", "pr_state": "open-by-you" if self_review else "open"}
@@ -665,6 +809,8 @@ def build_facts(pr_number, repo, root=".", scratch_dir=None, refresh=False, cwd=
         "attention": _build_attention(workspace_envelope, pr_envelope, blocked_by_by_issue),
         "notices": list(config_notices) + list(issue_gather_notices),
     }
+    if epic_facts is not None:
+        facts["epic"] = epic_facts
     if workspace_envelope is not None:
         # v3: the OBSERVED ambient checkout (attach), asserted at exactly pr.headRefOid.
         # `base_ref` is the PR's own baseRefName — a derived fact (attach cannot observe a base).

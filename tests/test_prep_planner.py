@@ -31,6 +31,7 @@ import subprocess
 import sys
 import tempfile
 import unittest
+from unittest import mock
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
@@ -39,7 +40,9 @@ SCRIPT = SCRIPTS_DIR / "prep_planner.py"
 
 sys.path.insert(0, str(SCRIPTS_DIR))
 
-import prep_planner  # noqa: E402  (import after sys.path setup, by necessity)
+import branching  # noqa: E402  (import after sys.path setup, by necessity)
+import prep_planner  # noqa: E402
+from pipelib import process  # noqa: E402
 from tests.support import envelope_asserts, gitsandbox, shimenv  # noqa: E402
 
 
@@ -318,6 +321,34 @@ class PlanRefRowTests(PrepPlannerSandboxTestCase):
         numbers = {s["number"]: s["state"] for s in envelope["epic"]["stories"]}
         self.assertEqual(numbers, {301: "OPEN", 302: "CLOSED"})
         self.assertEqual(envelope["suggested_playbook"], "epic.md")
+
+    def test_row_epic_as_target_reports_checklist_source_for_a_legacy_epic(self):
+        self._push_branch("epic/300-sandbox-epic")
+        envelope = self._envelope(
+            issue="300", fixture_case="prep_planner_row_epic", ambient="epic/300-sandbox-epic"
+        )
+        self.assertEqual(envelope["epic"]["stories_source"], "checklist")
+
+    def test_row_epic_as_target_reads_the_native_relation_when_the_body_has_no_stories(self):
+        """The regression this guards: a fresh epic body has NO `## Stories` section, so a
+        body-only read reports `stories_filed: false` and the planner's handoff routes to the
+        drafter to file stories that are already filed (skills/_shared/epic-story-hierarchy.md).
+        The fixture also omits the per-story `gh issue view` entries, so live state must come from
+        the relation itself.
+        """
+        self._push_branch("epic/300-sandbox-epic")
+        envelope = self._envelope(
+            issue="300",
+            fixture_case="prep_planner_row_epic_native",
+            ambient="epic/300-sandbox-epic",
+        )
+        self.assertEqual(envelope["epic"]["stories_source"], "sub-issues")
+        self.assertTrue(envelope["epic"]["stories_filed"])
+        numbers = {s["number"]: s["state"] for s in envelope["epic"]["stories"]}
+        self.assertEqual(numbers, {301: "OPEN", 302: "CLOSED"})
+        # `checked` mirrors live state on the native tier.
+        checked = {s["number"]: s["checked"] for s in envelope["epic"]["stories"]}
+        self.assertEqual(checked, {301: False, 302: True})
 
     def test_row_epic_as_target_bootstrap(self):
         envelope = self._envelope(issue="310", fixture_case="prep_planner_row_epic_bootstrap")
@@ -900,6 +931,63 @@ class UsageErrorTests(unittest.TestCase):
         )
         self.assertNotEqual(result.returncode, 0)
         self.assertEqual(result.stdout, "")
+
+
+class ParentEpicNativeShortCircuitTests(unittest.TestCase):
+    """The story→epic lookup prefers the native `parent` relation
+    (skills/_shared/epic-story-hierarchy.md). Asserted on BOTH copies of the helper — prep_planner's
+    local one and the shared `branching` core — because the "restated locally, no prep-to-prep
+    imports" convention means a fix to one does not reach the other.
+
+    Two properties matter: no `gh` round-trip (the fact is already in hand), and no `AMBIGUOUS`
+    exposure (an issue has at most one parent, where the full-text search can match many epics).
+    """
+
+    NATIVE_PARENT = {
+        "id": "I_kw1",
+        "number": 95,
+        "state": "OPEN",
+        "title": "Epic: Public patient funnel",
+        "url": "https://github.com/o/r/issues/95",
+    }
+
+    def _assert_short_circuits(self, module):
+        def fail_on_call(*args, **kwargs):
+            raise AssertionError("native parent must not trigger a gh call")
+
+        with mock.patch.object(module.process, "run", side_effect=fail_on_call):
+            matches, decision = module._search_parent_epic(
+                "o/r", 96, native_parent=self.NATIVE_PARENT
+            ) if module is prep_planner else module.search_parent_epic(
+                "o/r", 96, native_parent=self.NATIVE_PARENT
+            )
+        self.assertIsNone(decision)
+        self.assertEqual(len(matches), 1)
+        self.assertEqual(matches[0]["number"], 95)
+        self.assertEqual(matches[0]["state"], "OPEN")
+        self.assertEqual(matches[0]["title"], "Epic: Public patient funnel")
+
+    def test_prep_planner_copy_short_circuits_without_a_gh_call(self):
+        self._assert_short_circuits(prep_planner)
+
+    def test_branching_core_short_circuits_without_a_gh_call(self):
+        self._assert_short_circuits(branching)
+
+    def test_absent_native_parent_falls_through_to_the_search(self):
+        """A story with no native parent (filed before the relation existed) must still reach the
+        legacy search rather than silently reporting "no epic"."""
+        calls = []
+
+        def fake_run(argv, cwd=None, env=None, input_text=None, check=False):
+            calls.append(list(argv))
+            return process.CommandResult(returncode=0, stdout="[]", stderr="")
+
+        with mock.patch.object(branching.process, "run", side_effect=fake_run):
+            matches, decision = branching.search_parent_epic("o/r", 96, native_parent=None)
+        self.assertIsNone(decision)
+        self.assertEqual(matches, [])
+        self.assertEqual(len(calls), 1)
+        self.assertIn("--search", calls[0])
 
 
 if __name__ == "__main__":

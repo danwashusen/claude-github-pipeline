@@ -144,8 +144,10 @@ ground these are produced by implementation step S1. Lettered items are individu
   - (e) Issues APPROVE or COMMENT review actions and never approves its own PR.
   - (f) Merges per the configured per-PR-type policy (default `ask`) and the strategy rules for
     the PR's shape.
-  - (g) On story merge: closes the story, ticks the epic checkbox, appends the epic delivery
-    log.
+  - (g) On story merge: closes the story and appends the epic delivery log. Closing the story is
+    what advances the epic's progress — GitHub recomputes the sub-issue rollup from issue state
+    ([`skills/_shared/epic-story-hierarchy.md`](../skills/_shared/epic-story-hierarchy.md)); only a legacy epic still carrying a
+    `## Stories` checklist also needs its checkbox ticked.
   - (h) Leaves the work workspace in place after merge and hands the operator the
     `workspace-close` command (the one reclamation path — merged, abandoned, or mis-opened).
 
@@ -190,6 +192,7 @@ an artifact written by a v1 skill is consumed correctly by its v2 counterpart, a
 | `<!-- implementation-plan:v1 -->` plan comment | issue comment |
 | `<!-- issue-research:v1 -->` dossier comment | issue comment |
 | `<!-- epic-delivery-log:v1 -->` delivery log | epic issue comment |
+| Native parent/sub-issue relation (epic↔story hierarchy) | GitHub issue relation |
 | `<!-- question-decision:v1 -->` recorded decision | question issue comment |
 | `<!-- open-question-links:v1 -->` section + closed disposition set | build-issue body |
 | Definition-of-done checkbox annotations (closed set) | issue body |

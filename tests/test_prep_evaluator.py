@@ -440,6 +440,66 @@ class PrTypeDetectionTests(PrepEvaluatorSandboxTestCase):
         self.assertEqual(envelope["workspace"]["branch"], "epic/42-journal")
 
 
+class ParentEpicStorySetTests(PrepEvaluatorSandboxTestCase):
+    """`facts.epic` for a story PR (skills/_shared/epic-story-hierarchy.md): the parent epic's story
+    set + progress, resolved through the two tiers. The story route needs `stories_source` to decide
+    whether progress projection has anything to write at all, and reads its "do siblings remain"
+    routing from the same fact.
+    """
+
+    def _story_pr_envelope(self, fixture_case):
+        _git(["fetch", "origin"], self.root)
+        _git(["branch", "epic/42-journal", "origin/main"], self.root)
+        _git(["push", "origin", "epic/42-journal"], self.root)
+        return self._envelope(fixture_case=fixture_case)
+
+    def test_native_epic_story_set_and_rollup(self):
+        envelope = self._story_pr_envelope("prep_evaluator_story_type")
+        epic = envelope["epic"]
+        # The epic number comes from the PR's own base ref — no search.
+        self.assertEqual(epic["number"], 42)
+        self.assertEqual(epic["stories_source"], "sub-issues")
+        self.assertEqual([s["number"] for s in epic["stories"]], [90, 91, 92])
+        self.assertEqual([s["closed"] for s in epic["stories"]], [True, True, False])
+        # Progress comes from GitHub's own rollup — the "K of M stories closed" handoff line.
+        self.assertEqual(epic["sub_issues_summary"]["completed"], 2)
+        self.assertEqual(epic["sub_issues_summary"]["total"], 3)
+
+    def test_legacy_epic_falls_back_to_the_stories_checklist(self):
+        envelope = self._story_pr_envelope("prep_evaluator_story_type_legacy_epic")
+        epic = envelope["epic"]
+        self.assertEqual(epic["number"], 42)
+        self.assertEqual(epic["stories_source"], "checklist")
+        self.assertEqual([s["number"] for s in epic["stories"]], [90, 91, 92])
+        # Checkbox state is all the legacy tier has — no live state per story.
+        self.assertEqual([s["closed"] for s in epic["stories"]], [True, True, False])
+        self.assertEqual([s["state"] for s in epic["stories"]], [None, None, None])
+
+    def test_mixed_epic_unions_both_halves_without_double_counting(self):
+        """A legacy epic that later gained a native child — epic-revise files new stories with
+        `--parent`, so this arises without anyone erring. Both halves must be reported: halving the
+        set under-counts siblings, which could route a story merge to "last sibling closed" while
+        stories are still open. #92 appears in both and must be counted once, with its native live
+        state (OPEN) rather than the stale unchecked bullet.
+        """
+        envelope = self._story_pr_envelope("prep_evaluator_story_type_mixed_epic")
+        epic = envelope["epic"]
+        self.assertEqual(epic["stories_source"], "mixed")
+        self.assertEqual(sorted(s["number"] for s in epic["stories"]), [90, 91, 92, 93])
+        by_number = {s["number"]: s for s in epic["stories"]}
+        # The overlapping story is carried once, from the native half (live state present).
+        self.assertEqual(by_number[92]["state"], "OPEN")
+        self.assertFalse(by_number[92]["closed"])
+        # Checklist-only stories keep their checkbox-derived state.
+        self.assertTrue(by_number[90]["closed"])
+        self.assertIsNone(by_number[90]["state"])
+
+    def test_standard_pr_has_no_epic_facts(self):
+        """A non-story PR has no parent epic, so the key is omitted rather than carried empty."""
+        envelope = self._envelope(fixture_case="prep_evaluator_happy_standard")
+        self.assertNotIn("epic", envelope)
+
+
 class NativeBlockerTests(PrepEvaluatorSandboxTestCase):
     """docs/specs/evaluator.md "Artifacts read": "Any open blocker holds the merge — soft-
     reject." Prep surfaces the fact (blocked_by + an attention line); the soft-reject decision

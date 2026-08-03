@@ -135,7 +135,12 @@ Every script emits exactly one JSON envelope on stdout.
 
   Adding a code is a contract change: update this section and the router rule together.
 - **Notices** (non-blocking degradations) ride in `notices: []` — e.g. `DEPS_UNSUPPORTED` when
-  native issue dependencies are unavailable and prose links are the fallback. Work proceeds.
+  native issue dependencies are unavailable and prose links are the fallback, or
+  `SUBISSUES_UNSUPPORTED` when the native parent/sub-issue relation is unavailable and the legacy
+  `## Stories` checklist is the fallback ([`skills/_shared/epic-story-hierarchy.md`](../skills/_shared/epic-story-hierarchy.md)). Work proceeds.
+  The two are separate notices because the relations gate independently and their fallbacks differ;
+  a script requesting both descends a ladder that drops one relation per rung, so it reports which
+  one actually degraded rather than guessing from `gh`'s "unknown flag" phrasing.
 - **Spill routing.** Any verbatim section (body, thread, diff, marker comment) is inline when
   ≤ threshold and written to the session scratch dir when larger; each section reports
   `*_bytes` + `*_mode: inline|path` (+ `*_path`). Threshold: `GH_PIPELINE_INLINE_THRESHOLD_BYTES`
@@ -184,6 +189,9 @@ below is `prep_evaluator.py` (S6, the pilot prep script):
                         "annotation": { "form": "closed-by-phase-commit", "phase": 1, "sha": "…" } } ] },
   "blocked_by": { "101": [] },
   "deps_available": { "101": true },
+  "epic": { "number": 42, "stories_source": "sub-issues",
+             "stories": [ { "number": 90, "title": "…", "state": "CLOSED", "closed": true } ],
+             "sub_issues_summary": { "total": 3, "completed": 2, "percentCompleted": 66 } },
   "attention": [ "work worktree has 2 unpushed commits" ],
   "notices": []
 }
@@ -197,6 +205,11 @@ the **observed ambient checkout**, asserted by prep (`workspace.py attach`) — 
 prep created; `base_ref` is a *derived* fact (the PR's own base / the story's epic branch / `main`)
 since an assertion cannot observe a base, and it feeds the resolver's `create-pr --base` slot.
 `root.sha` is the `origin/main` pin (`refblocks.fetch_pin`) — the same SHA `config.sha` records.
+`epic` is present only on a **story** PR: the parent epic (derived from the PR's own
+`epic/<N>-<slug>` base ref — no search) plus its story set and GitHub's progress rollup, resolved
+per [`skills/_shared/epic-story-hierarchy.md`](../skills/_shared/epic-story-hierarchy.md) (`sub-issues` / `checklist` / `mixed`). `stories_source` is what tells the
+story route whether progress projection has anything to write (`sub-issues` → nothing: GitHub
+recomputes the rollup from issue state) and where its next-story routing reads from.
 `read_workspaces` is present only for a skill that grounds on a second ref (the resolver's audit
 read — script-internal `ro-*` plumbing); a skill with no second view (the evaluator above) omits
 the key entirely; the planner reports its asserted checkout as the top-level `grounding` fact
@@ -315,7 +328,9 @@ project root — fresh planning happens *before* workspace-open (plan-before-ope
   fix); an empty staged file is an `EMPTY_BODY_FILE` decision.
 - **Atomicity & idempotency stay as built:** marker replacement posts the new comment before
   deleting the old; `close` on a closed issue is a no-op; native-dependency writes are
-  capability-gated (`DEPS_UNSUPPORTED` notice + prose-link fallback).
+  capability-gated (`DEPS_UNSUPPORTED` notice + prose-link fallback), as is the native
+  parent/sub-issue write `create --parent` (`SUBISSUES_UNSUPPORTED` notice + legacy-checklist
+  fallback). A capability retry is safe here precisely because a failed `create` files nothing.
 - **PR-only landing, operator-gated.** Skills that change tracked files (`setup` config blocks,
   `question-sweep` doc fixes, `doc-reviewer` applied findings, resolver code) do so only in a
   work workspace ([prd.md §8.2](prd.md)). The resolver opens its PR as part of its flow; the
@@ -446,7 +461,8 @@ not a deviation.
 | Successful write is self-confirming; never re-read to verify | re-reads reintroduce races | §3 rule + router invariant |
 | Post-new-before-delete-old on marker replacement | a crash must not lose the marker | `gh_persist.py` + tests |
 | Spill threshold on verbatim sections | context blowout | `pipelib` spill + tests |
-| Capability-gated degradation (native deps) with notice | consuming repos vary | `gh_persist.py`/`gh_gather.py` + tests |
+| Capability-gated degradation (native deps; native parent/sub-issues) with a per-relation notice | consuming repos and `gh` versions vary, and the two relations have different fallbacks | `gh_persist.py`/`gh_gather.py` ladders + tests |
+| Epic↔story hierarchy is the native parent/sub-issue relation, written at filing time by the drafter alone; readers fall back to a legacy `## Stories` checklist and never gate on the relation's absence | GitHub's sub-issue panel, progress rollup, and a Project's Sub-issues progress field are driven by the relation, not by markdown a checklist can't self-tick; and no backfill path exists, so pre-relation epics must keep working | [`skills/_shared/epic-story-hierarchy.md`](../skills/_shared/epic-story-hierarchy.md) + `create --parent` + prep two-tier reads + tests |
 | `main` changes only via PR; a session never commits outside its own asserted workspace; the landing tools treat their starting checkout as read-only | trust topology (§6) | `workspace.py` decisions + prompt invariant |
 | Gate config is read only at the `origin/main` pin via git plumbing (`refblocks`), never from a PR head or any working tree | a PR must not weaken its own gates (§6) | prep scripts + tests |
 | All tracked-file changes land via PR | write-protected `main` | prompt invariant + review |

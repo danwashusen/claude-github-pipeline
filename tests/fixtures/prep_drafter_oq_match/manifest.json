@@ -1,5 +1,5 @@
 [
-  {"argv": ["issue", "view", "500", "--repo", "octo/widgets", "--json", "number,title,body,state,labels,author,createdAt,updatedAt,assignees,milestone,url,blockedBy,blocking"],
+  {"argv": ["issue", "view", "500", "--repo", "octo/widgets", "--json", "number,title,body,state,labels,author,createdAt,updatedAt,assignees,milestone,url,blockedBy,blocking,parent,subIssues,subIssuesSummary"],
    "stdout_file": "issue_view.json", "exit_code": 0},
   {"argv": ["api", "--paginate", "repos/octo/widgets/issues/500/comments"],
    "stdout_file": "comments_empty.json", "exit_code": 0},

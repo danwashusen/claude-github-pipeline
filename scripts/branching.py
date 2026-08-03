@@ -319,16 +319,31 @@ def discover_epic_branch(root, epic_number, epic_title):
     )
 
 
-def search_parent_epic(repo, story_number, cwd=None):
-    """Story parent-epic search (docs/specs/resolver.md "Epic-branch discovery"; the
-    `gh issue list --label epic --state all --search '#<N> in:body'` query). Returns
-    `(matches, decision_or_none)` where `matches` is the `gh issue list` result list, filtered
-    (empty on zero genuine matches).
+def search_parent_epic(repo, story_number, native_parent=None, cwd=None):
+    """Story parent-epic lookup. Returns `(matches, decision_or_none)` where `matches` is a
+    `gh issue list`-shaped result list (empty on zero genuine matches).
 
-    Filtered through `gh_gather.references_issue` — GitHub's server-side full-text search does not
-    use `#` as an anchor, so the hash-prefixed form has the same false-positive exposure as the
-    bare-digit PR searches (see `gh_gather.py`'s module docstring).
+    Two tiers, per `skills/_shared/epic-story-hierarchy.md`:
+
+    1. **`native_parent`** — the `parent` node the caller's gather already carried. Exact and
+       single-valued by construction, so it returns immediately: no round-trip, and the `AMBIGUOUS`
+       decision below is unreachable (an issue has at most one parent, where a full-text search can
+       match many epics).
+    2. **The legacy full-text search** — `gh issue list --label epic --state all --search
+       '#<N> in:body'`, for a story filed before the native relation was written. Filtered through
+       `gh_gather.references_issue`: GitHub's server-side search does not use `#` as an anchor, so
+       the hash-prefixed form has the same false-positive exposure as the bare-digit PR searches
+       (see `gh_gather.py`'s module docstring).
     """
+    if native_parent:
+        return [
+            {
+                "number": native_parent.get("number"),
+                "title": native_parent.get("title"),
+                "state": native_parent.get("state"),
+            }
+        ], None
+
     result = process.run(
         [
             "gh",

@@ -442,20 +442,58 @@ def _fetch_story_state(repo, story_number, cwd=None):
     }, None
 
 
-def _build_epic_revise_facts(issue_body, repo, cwd=None):
-    """Epic-revise mode's facts (docs/specs/drafter.md "Special case — revising an Epic"): every `## Stories`
-    entry, reconciled against its live state. A FILED story (`- [ ] #NN — <title>`) gets its live
-    `state`/`live_title` via :func:`_fetch_story_state`; a PLACEHOLDER bullet (not yet filed) rides
-    with `state`/`live_title` both `None` — mirroring `prep_planner.py`'s identical shape. A
-    checkbox/live-state MISMATCH (checked but still OPEN, or unchecked but already CLOSED) is a
-    script-detectable ambiguity that surfaces in `attention` rather than being silently reconciled
-    here (architecture.md §4: "the router reconciles the checkboxes ... surface it with evidence" —
-    reconciling the BODY TEXT is the router's write, not a fact this script computes). Returns
-    `(epic_revise_facts, attention_lines, decision_or_none)`.
+def _build_epic_revise_facts(issue_body, repo, sub_issues=None, cwd=None):
+    """Epic-revise mode's facts: the epic's story set, reconciled against live state.
+
+    The story set resolves through the sources of `skills/_shared/epic-story-hierarchy.md`, and
+    `stories_source` reports which one answered so the router knows whether there are checkboxes
+    to reconcile at all:
+
+    - **`sub-issues`** — `sub_issues` (GitHub's native relation) is non-empty and the body has no
+      `## Stories` section. Every entry is filed by construction, `state`/`live_title` come from the
+      relation itself (**no per-story round-trip** — the gather already carried them), and `checked`
+      mirrors live state, so a checkbox/live-state mismatch is unrepresentable.
+    - **`checklist`** — the legacy `## Stories` fallback for an epic filed before the native
+      relation was written, or on a host that doesn't serve it. A FILED story
+      (`- [ ] #NN — <title>`) gets its live `state`/`live_title` via :func:`_fetch_story_state`; a
+      PLACEHOLDER bullet (not yet filed) rides with both `None` — mirroring `prep_planner.py`'s
+      identical shape. A MISMATCH (checked but still OPEN, or unchecked but already CLOSED) surfaces
+      in `attention` rather than being silently reconciled here (architecture.md §4: "the router
+      reconciles the checkboxes ... surface it with evidence" — reconciling the BODY TEXT is the
+      router's write, not a fact this script computes).
+    - **`mixed`** — both, unioned by issue number with native state winning on overlap. Reachable
+      without anyone erring: epic-revise files a NEW story under a legacy epic with `--parent`, so
+      that story is native while its siblings stay checklist bullets. Returning only one half here
+      would silently drop the other half's stories from the reconciliation.
+
+    Returns `(epic_revise_facts, attention_lines, decision_or_none)`.
     """
     stories = []
     attention = []
-    for entry in _parse_stories_section(issue_body):
+
+    native_stories = []
+    for node in sub_issues or []:
+        live_state = node.get("state")
+        native_stories.append(
+            {
+                "number": node.get("number"),
+                "title": node.get("title"),
+                "checked": (live_state or "").upper() == "CLOSED",
+                "state": live_state,
+                "live_title": node.get("title"),
+            }
+        )
+
+    checklist_entries = _parse_stories_section(issue_body)
+    if native_stories and not checklist_entries:
+        return {"stories": native_stories, "stories_source": "sub-issues"}, attention, None
+
+    native_numbers = {s["number"] for s in native_stories}
+
+    for entry in checklist_entries:
+        if entry["number"] is not None and entry["number"] in native_numbers:
+            # Already carried by the native half of a `mixed` epic, with authoritative live state.
+            continue
         if entry["number"] is None:
             stories.append(
                 {"number": None, "title": entry["title"], "checked": entry["checked"], "state": None, "live_title": None}
@@ -480,7 +518,12 @@ def _build_epic_revise_facts(issue_body, repo, cwd=None):
                 "live_title": state_fact["title"],
             }
         )
-    return {"stories": stories}, attention, None
+    # `mixed` when both halves contributed — the union, native state winning on overlap. Taking one
+    # half and dropping the other would silently lose stories (skills/_shared/epic-story-hierarchy.md).
+    return {
+        "stories": native_stories + stories,
+        "stories_source": "mixed" if native_stories else "checklist",
+    }, attention, None
 
 
 # ---------------------------------------------------------------------------
@@ -623,6 +666,10 @@ def build_facts(repo, issue=None, root=".", scratch_dir=None, cwd=None):
             "blocked_by": issue_envelope.get("blocked_by") or [],
             "blocking": issue_envelope.get("blocking") or [],
             "deps_available": issue_envelope.get("deps_available"),
+            "parent": issue_envelope.get("parent"),
+            "sub_issues": issue_envelope.get("sub_issues") or [],
+            "sub_issues_summary": issue_envelope.get("sub_issues_summary") or {},
+            "subissues_available": issue_envelope.get("subissues_available"),
         }
 
         # 3) Search-before-file open-question candidates — the target body IS the source to scan
@@ -636,7 +683,10 @@ def build_facts(repo, issue=None, root=".", scratch_dir=None, cwd=None):
         # 4) Mode-specific facts.
         if mode == "epic-revise":
             epic_revise_facts, epic_attention, epic_decision = _build_epic_revise_facts(
-                issue_body, repo, cwd=cwd
+                issue_body,
+                repo,
+                sub_issues=issue_envelope.get("sub_issues") or [],
+                cwd=cwd,
             )
             if _forward_decision(epic_decision):
                 return None

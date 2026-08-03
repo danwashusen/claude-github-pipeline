@@ -335,18 +335,33 @@ def _discover_epic_branch(root, epic_number):
     )
 
 
-def _search_parent_epic(repo, story_number, cwd=None):
-    """Story parent-epic search (docs/specs/planner.md "Route by shape": `gh issue list --label
-    epic --state all --search '#<N> in:body'`). Returns `(matches, decision_or_none)` where
-    `matches` is the `gh issue list` result list, filtered (empty on zero genuine matches).
+def _search_parent_epic(repo, story_number, native_parent=None, cwd=None):
+    """Story parent-epic lookup (docs/specs/planner.md "Route by shape"). Returns
+    `(matches, decision_or_none)` where `matches` is a `gh issue list`-shaped result list (empty on
+    zero genuine matches).
 
-    Filtered through `gh_gather.references_issue` — live evidence (see `gh_gather.py`'s module
+    Tier 1 is the native `parent` relation the caller's gather already carried — exact and
+    single-valued, so it short-circuits with no round-trip and no `AMBIGUOUS` exposure
+    (`skills/_shared/epic-story-hierarchy.md`).
+
+    Tier 2 is the legacy `gh issue list --label epic --state all --search '#<N> in:body'` search,
+    for a story filed before the relation was written. Filtered through
+    `gh_gather.references_issue` — live evidence (see `gh_gather.py`'s module
     docstring "Open-PR search false-positive fix") showed `--search "#<N> in:body"` (the
     hash-prefixed form this call already uses) returns the SAME false-positive set as the
     bare-digit form on a `gh pr list` search; GitHub's server-side full-text search does not use
     `#` as an anchor either way, so the same client-side reference filter applies here (this
     step's live-smoke finding, recorded in docs/specs/planner.md's "Known bugs/gaps").
     """
+    if native_parent:
+        return [
+            {
+                "number": native_parent.get("number"),
+                "title": native_parent.get("title"),
+                "state": native_parent.get("state"),
+            }
+        ], None
+
     result = process.run(
         [
             "gh",
@@ -842,8 +857,32 @@ def build_facts(issue_number, repo, root=".", scratch_dir=None, refresh=False, c
             return None
         epic_branch_name = epic_branch_facts.get("branch")
 
+        # The epic's story set, per skills/_shared/epic-story-hierarchy.md. The native source
+        # is the native sub-issue relation: every entry is filed by construction and its live state
+        # rides along, so no per-story round-trip is needed. Tier 2 parses a legacy epic's
+        # `## Stories` section and fetches each filed story's state. A fresh epic has NO `## Stories`
+        # section at all, so reading only the body would report `stories_filed: false` for an epic
+        # whose stories are filed — routing the planner's handoff to the drafter to file stories that
+        # already exist.
         story_entries = []
-        for entry in _parse_stories_section(issue_body):
+        for node in issue_envelope.get("sub_issues") or []:
+            live_state = node.get("state")
+            story_entries.append(
+                {
+                    "number": node.get("number"),
+                    "title": node.get("title"),
+                    "checked": (live_state or "").upper() == "CLOSED",
+                    "state": live_state,
+                    "live_title": node.get("title"),
+                }
+            )
+        native_numbers = {e["number"] for e in story_entries}
+
+        checklist_entries = _parse_stories_section(issue_body)
+        for entry in checklist_entries:
+            if entry["number"] is not None and entry["number"] in native_numbers:
+                # Already carried natively, with authoritative live state.
+                continue
             if entry["number"] is not None:
                 state_fact, decision = _fetch_story_state(repo, entry["number"], cwd=cwd)
                 if _forward_decision(decision):
@@ -862,6 +901,13 @@ def build_facts(issue_number, repo, root=".", scratch_dir=None, refresh=False, c
                     {"number": None, "title": entry["title"], "checked": entry["checked"], "state": None, "live_title": None}
                 )
 
+        if native_numbers and checklist_entries:
+            stories_source = "mixed"
+        elif native_numbers:
+            stories_source = "sub-issues"
+        else:
+            stories_source = "checklist"
+
         delivery_log_comment, dl_decision = _find_one_marker(thread_list, DELIVERY_LOG_MARKER, "epic-delivery-log")
         if _forward_decision(dl_decision):
             return None
@@ -878,12 +924,17 @@ def build_facts(issue_number, repo, root=".", scratch_dir=None, refresh=False, c
         epic_facts = {
             "branch": epic_branch_facts,
             "stories_filed": any(e["number"] is not None for e in story_entries),
+            "stories_source": stories_source,
             "stories": story_entries,
             "delivery_log": delivery_log_facts,
         }
 
     elif issue_type == "story":
-        matches, decision = _search_parent_epic(repo, issue_number, cwd=cwd)
+        # Native `parent` first (exact, no round-trip); the full-text search is the fallback for a
+        # story filed before the relation was written (skills/_shared/epic-story-hierarchy.md).
+        matches, decision = _search_parent_epic(
+            repo, issue_number, native_parent=issue_envelope.get("parent"), cwd=cwd
+        )
         if _forward_decision(decision):
             return None
         parent_epic = matches[0] if len(matches) == 1 else None
@@ -1022,6 +1073,14 @@ def build_facts(issue_number, repo, root=".", scratch_dir=None, refresh=False, c
             "blocked_by": issue_envelope.get("blocked_by") or [],
             "blocking": issue_envelope.get("blocking") or [],
             "deps_available": issue_envelope.get("deps_available"),
+            # Native epic↔story hierarchy (skills/_shared/epic-story-hierarchy.md): `parent` names
+            # the epic a story belongs to, `sub_issues` the epic's story set, `sub_issues_summary`
+            # its progress rollup. Tier 1 of the story-set read; the `## Stories` checklist in the
+            # body is the `checklist` source for epics filed before the relation was written.
+            "parent": issue_envelope.get("parent"),
+            "sub_issues": issue_envelope.get("sub_issues") or [],
+            "sub_issues_summary": issue_envelope.get("sub_issues_summary") or {},
+            "subissues_available": issue_envelope.get("subissues_available"),
         },
         "vector": vector,
         "plan_ref": plan_ref,

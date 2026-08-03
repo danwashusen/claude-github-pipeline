@@ -33,7 +33,8 @@ Everything below runs only after the spine returns.
 Read [`../references/handoff-renderings.md`](../references/handoff-renderings.md). After the epic plan
 posts, route on `facts.epic.stories_filed`:
 
-- **Stories filed** (`- [ ] #NN — title` lines): forward to the **planner** on the head of
+- **Stories filed** (`facts.epic.stories` carries numbers — the epic's sub-issues, or a legacy
+  epic's `- [ ] #NN — title` lines; `facts.epic.stories_source` says which): forward to the **planner** on the head of
   `## Story breakdown` — `Epic:` line (`plan: ✓`) + `Stories:` line (the filed, dependency-ordered
   set) + `Grounding:` + `**Open questions:**` when present + `Next: /github-pipeline:planner #<first-
   story>`; `Why:` notes each story is planned just-in-time against epic HEAD.

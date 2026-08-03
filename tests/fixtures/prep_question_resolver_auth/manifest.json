@@ -1,4 +1,4 @@
 [
-  {"argv": ["issue", "view", "306", "--repo", "octo/widgets", "--json", "number,title,body,state,labels,author,createdAt,updatedAt,assignees,milestone,url,blockedBy,blocking"],
+  {"argv": ["issue", "view", "306", "--repo", "octo/widgets", "--json", "number,title,body,state,labels,author,createdAt,updatedAt,assignees,milestone,url,blockedBy,blocking,parent,subIssues,subIssuesSummary"],
    "exit_code": 4}
 ]

@@ -124,13 +124,15 @@ Run only the dimensions named in the inputs.
 5. **Story ordering** *(only when type is `epic` and `<<related_drafts>>` contains sibling stories — split
    scopes in `split` mode, full bodies otherwise)*. Build a dependency graph: for each story, infer
    dependencies from the files/APIs/types it claims to consume vs. what other stories claim to deliver.
-   Compare a topological order of that graph to the Epic's `## Stories` listed order. If the listed order
+   Compare a topological order of that graph to the story order given in `<<related_drafts>>` — the order
+   the batch will be filed in, which becomes the epic's sub-issue order. If that order
    makes a story unimplementable until a later story ships, flag the violation with both orders and a
    proposed swap.
 
 6. **Completeness.** For drafts especially: are the required template sections present? User story for
    features. Definition of done for stories. Steps to reproduce + expected vs. actual for bugs. Goal +
-   Background + Stories for Epics. Question + Audience + Context for questions (a question with no Context,
+   Background + Definition of done for Epics (an Epic body does **not** list its stories — that's the
+   native sub-issue relation). Question + Audience + Context for questions (a question with no Context,
    or whose References cite nothing a reader could follow, is incomplete). If a section is missing, flag
    it; if a section exists but is empty or a placeholder, flag that too — with one exception: a bookend
    story's explicit deferral placeholder ("specified at planning time" / "grounded on the epic delivery
@@ -163,7 +165,7 @@ Run only the dimensions named in the inputs.
         BLOCKER (grep-grounded like every claim here); remediation: extract the shared groundwork into
         an opening foundation story.
      2. Either bookend absent with no omission justification — the Epic body carries it as a note
-        directly under `## Stories` — → SUGGESTION. A stated justification the evidence contradicts →
+        in `## Background` — → SUGGESTION. A stated justification the evidence contradicts →
         flag at the severity the evidence supports.
      3. Leakage: a feature story *defining* shared groundwork a foundation story exists to hold →
         SUGGESTION to move the claim there; a bookend body enumerating concrete seams or cleanup items

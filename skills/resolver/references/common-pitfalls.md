@@ -195,12 +195,14 @@ its §review-loop, its S6 DoD projection) that carry the same numbering v1 used,
 - **Don't merge the integration PR without running the review loop.** The integration PR lands the entire
   epic on `main` at once — it carries more risk than a single story PR. Apply the review loop to it just as
   you would any story PR.
-- **Don't ignore the body checkboxes when closing an epic.** Body checkboxes don't auto-sync. A `- [ ]`
-  next to a closed story is stale and misleads the next person who reads the epic. Always tick them before
-  (or as part of) closing.
-- **Don't restructure the epic body template.** The `## Goal` / `## Background` / `## Stories` /
+- **Don't ignore the body checkboxes when closing an epic.** Body checkboxes don't auto-sync. A stale
+  `- [ ]` in `## Definition of done` — or, on a legacy epic, next to a closed story — misleads the next
+  person who reads the epic. Always tick them before (or as part of) closing. A native story set has no
+  checkboxes to tick: GitHub's rollup follows issue state on its own.
+- **Don't restructure the epic body template.** The `## Goal` / `## Background` /
   `## Definition of done` section names are load-bearing for traceability from `docs/prd.md`. Preserve them
-  exactly.
+  exactly. Don't add a `## Stories` section to an epic that doesn't have one — the story set is the
+  native sub-issue relation ([`../../_shared/epic-story-hierarchy.md`](../../_shared/epic-story-hierarchy.md)).
 - **Don't edit a parent epic's body from inside a story-target run.** The epic's body is authoritative
   state; it should only be updated from an epic-target run where you can see the full story-reconciliation
   picture.

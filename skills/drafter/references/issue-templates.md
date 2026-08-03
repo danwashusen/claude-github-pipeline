@@ -93,12 +93,8 @@ As a **<persona>**, I want **<capability>** so that **<benefit>**.
 ## Background
 <why now — what prompted this work; reference PRD/architecture sections where relevant>
 
-## Stories
-- [ ] <Story 1 title>
-- [ ] <Story 2 title>
-
 ## Definition of done
-- [ ] All stories above are closed
+- [ ] All stories are closed
 - [ ] <any epic-level acceptance bar, e.g. "5 UI flows green in CI">
 
 ## Related issues
@@ -107,6 +103,13 @@ As a **<persona>**, I want **<capability>** so that **<benefit>**.
 ## PRD impact
 <only if applicable. Omit otherwise.>
 ```
+
+**No `## Stories` section.** The story set is GitHub's native parent/sub-issue relation, established
+by `create --parent` at filing time ([`../../_shared/epic-story-hierarchy.md`](../../_shared/epic-story-hierarchy.md)) — GitHub renders the panel and the
+progress rollup from issue state. A markdown checklist beside it would be a second copy that can't
+self-tick, so the `## Definition of done` names the bar ("All stories are closed") without listing
+them. An epic filed before the relation existed keeps its `## Stories` section and is read through
+the checklist fallback; don't add the section back to a fresh epic.
 
 **Story template:**
 

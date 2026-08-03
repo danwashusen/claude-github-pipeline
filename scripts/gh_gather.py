@@ -34,6 +34,13 @@ Behavior preserved from v1 (see module-level comments at each step below for the
   ``DEPS_UNSUPPORTED`` notice; any other failure is a hard failure (exit 1, no envelope) because
   silently defaulting ``deps_available: false`` on a real transient/auth/rate-limit error would
   hide a genuine native blocker from the resolver's/evaluator's hard gate on ``blocked_by``.
+- **Native parent/sub-issue hierarchy** — ``parent`` / ``sub_issues`` / ``sub_issues_summary`` +
+  ``subissues_available``, gated the same way and INDEPENDENTLY (see
+  :func:`_fetch_issue_with_relation_capability_gates`), with its own ``SUBISSUES_UNSUPPORTED``
+  notice because its fallback differs: epic↔story hierarchy readers drop back to parsing the
+  legacy ``## Stories`` checklist, not to prose dependency links. This is the relation that drives
+  GitHub's sub-issue panel, the epic's progress rollup, and a Project's Sub-issues progress field —
+  none of which a markdown checklist can drive.
 - **`AUTH_REQUIRED` classification** — every `gh` call this module makes is checked for the
   pipelib runner's auth-failure classification (``CommandResult.auth_required``) ahead of any
   other failure branch; an authenticated-required `gh` exit (gh's own exit code 4) emits a
@@ -85,6 +92,12 @@ BASE_FIELDS = (
     "number,title,body,state,labels,author,createdAt,updatedAt,assignees,milestone,url"
 )
 
+# The native parent/sub-issue relation fields, capability-gated exactly like `blockedBy,blocking`
+# and INDEPENDENTLY of them (different GitHub relations, different gh version floors).
+# `subIssuesSummary` carries GitHub's own {total, completed, percentCompleted} rollup, so a reader
+# never has to count states itself to render epic progress.
+SUBISSUE_FIELDS = ",parent,subIssues,subIssuesSummary"
+
 # gh's own phrasing for "you asked for a JSON field that doesn't exist on this object" — the
 # capability-gate signature v1 grepped for (case-insensitively) to distinguish "this gh/repo
 # genuinely lacks the issue-dependencies feature" from any other failure. Kept as the same
@@ -130,40 +143,45 @@ def _auth_required_decision(result):
     )
 
 
-def _fetch_issue_with_deps_capability_gate(issue, repo, env):
-    """Try the deps-inclusive fetch first; capability-gate on an "unknown field" rejection by
-    retrying without ``blockedBy,blocking``. Returns ``(issue_obj, deps_available, notices)`` on
-    success, or ``(None, None, result)`` on failure, where ``result`` is the failing
+def _fetch_issue_with_relation_capability_gates(issue, repo, env):
+    """Try the fetch with BOTH native-relation field sets first, capability-gating each one
+    independently: on an "unknown field" rejection, descend a ladder that drops one relation per
+    rung, so a host serving dependencies but not sub-issues (or the reverse) still gets the
+    relation it does serve.
+
+    Returns ``(issue_obj, deps_available, subissues_available, notices)`` on success, or
+    ``(None, None, None, result)`` on failure, where ``result`` is the failing
     :class:`pipelib.process.CommandResult` itself (not just its stderr text) so the caller can
     branch on ``result.auth_required`` before falling back to the generic hard-failure path —
     see :func:`run`'s auth-check-before-_fail_hard convention, applied uniformly at every `gh`
     call site in this module.
+
+    The ladder descends rather than reading which field gh named in its error: gh's "unknown JSON
+    field" phrasing is not a contract, and a read is idempotent, so retrying costs a round-trip on
+    an unsupported host and nothing at all on a supported one (the first rung succeeds). The two
+    relations report SEPARATE notices because they have separate fallbacks — prose ``Blocked by #N``
+    linking for dependencies, the legacy ``## Stories`` checklist for epic hierarchy.
     """
-    with_deps = process.run(
-        ["gh", "issue", "view", str(issue), "--repo", repo, "--json", BASE_FIELDS + ",blockedBy,blocking"],
-        env=env,
-    )
-    if with_deps.returncode == 0:
-        return json.loads(with_deps.stdout), True, []
-
-    if with_deps.auth_required:
-        return None, None, with_deps
-
-    if _is_unknown_field_error(with_deps.stderr):
-        # Feature genuinely absent — old gh, or a repo without issue-dependencies — degrade to the
-        # base field set and tell callers (via deps_available + DEPS_UNSUPPORTED) to fall back to
-        # prose linking.
-        base_only = process.run(
-            ["gh", "issue", "view", str(issue), "--repo", repo, "--json", BASE_FIELDS], env=env
+    ladder = [
+        (",blockedBy,blocking" + SUBISSUE_FIELDS, True, True, []),
+        (",blockedBy,blocking", True, False, ["SUBISSUES_UNSUPPORTED"]),
+        (SUBISSUE_FIELDS, False, True, ["DEPS_UNSUPPORTED"]),
+        ("", False, False, ["DEPS_UNSUPPORTED", "SUBISSUES_UNSUPPORTED"]),
+    ]
+    for index, (extra_fields, deps_available, subissues_available, notices) in enumerate(ladder):
+        attempt = process.run(
+            ["gh", "issue", "view", str(issue), "--repo", repo, "--json", BASE_FIELDS + extra_fields],
+            env=env,
         )
-        if base_only.auth_required:
-            return None, None, base_only
-        if base_only.returncode != 0:
-            return None, None, base_only
-        return json.loads(base_only.stdout), False, ["DEPS_UNSUPPORTED"]
-
-    # Any OTHER failure must surface — see _fail_hard's docstring.
-    return None, None, with_deps
+        if attempt.returncode == 0:
+            return json.loads(attempt.stdout), deps_available, subissues_available, notices
+        if attempt.auth_required:
+            return None, None, None, attempt
+        # Any OTHER failure must surface — see _fail_hard's docstring. Likewise a capability-shaped
+        # failure on the LAST rung, which asked for no optional fields at all: that is not a
+        # capability miss, it is a broken fetch.
+        if index == len(ladder) - 1 or not _is_unknown_field_error(attempt.stderr):
+            return None, None, None, attempt
 
 
 # GitHub's closing keywords (close/closes/closed, fix/fixes/fixed, resolve/resolves/resolved),
@@ -380,10 +398,15 @@ def run(issue, repo, marker_prefix=None, scratch_dir=None, extra_json=None, env=
     compose them in-process") can pass an ``io.StringIO`` to capture the built envelope without a
     subprocess boundary.
     """
-    issue_obj, deps_available, deps_result = _fetch_issue_with_deps_capability_gate(issue, repo, env)
+    (
+        issue_obj,
+        deps_available,
+        subissues_available,
+        relation_result,
+    ) = _fetch_issue_with_relation_capability_gates(issue, repo, env)
     if issue_obj is None:
-        return _fail_hard_or_auth(deps_result, stream)
-    notices = list(deps_result) if deps_available is False else []
+        return _fail_hard_or_auth(relation_result, stream)
+    notices = list(relation_result)
 
     # PR-number guard, checked before any further round-trip: `gh issue view` silently returns a
     # pull request when the number is a PR's (the live-incident failure mode: prep reported
@@ -426,6 +449,15 @@ def run(issue, repo, marker_prefix=None, scratch_dir=None, extra_json=None, env=
     blocked_by = (issue_obj.get("blockedBy") or {}).get("nodes") or []
     blocking = (issue_obj.get("blocking") or {}).get("nodes") or []
 
+    # Native parent/sub-issue relation. `parent` is null on an issue with no parent and `sub_issues`
+    # is empty on a leaf — both are ordinary states, NOT degradations (that's what
+    # `subissues_available: false` means). An epic filed before the relation existed also reads as
+    # empty here, which is why hierarchy readers keep the legacy `## Stories` fallback
+    # (skills/_shared/epic-story-hierarchy.md).
+    parent = issue_obj.get("parent")
+    sub_issues = (issue_obj.get("subIssues") or {}).get("nodes") or []
+    sub_issues_summary = issue_obj.get("subIssuesSummary") or {}
+
     payload = {
         "number": issue_obj["number"],
         "title": issue_obj["title"],
@@ -443,6 +475,10 @@ def run(issue, repo, marker_prefix=None, scratch_dir=None, extra_json=None, env=
         "deps_available": deps_available,
         "blocked_by": blocked_by,
         "blocking": blocking,
+        "subissues_available": subissues_available,
+        "parent": parent,
+        "sub_issues": sub_issues,
+        "sub_issues_summary": sub_issues_summary,
         "open_prs": open_prs,
     }
 

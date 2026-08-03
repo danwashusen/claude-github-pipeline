@@ -18,7 +18,8 @@ no branch in any body:
   already ticked there), so the spine's DoD dimension takes its **historical-walk** fallback naturally:
   walk every epic-level bullet and judge it against the **accumulated diff**. The evaluator's job here
   is to verify the accumulated diff satisfies those epic-level bullets — not to re-verify per-phase
-  projections. Read the epic's `## Stories`, `## Definition of done`, and `## Goal` for grounding;
+  projections. Read the epic's story set (its sub-issues, or a legacy epic's `## Stories` checklist —
+  [`../../_shared/epic-story-hierarchy.md`](../../_shared/epic-story-hierarchy.md)), `## Definition of done`, and `## Goal` for grounding;
   verify `Fixes #<epic>` is present and every story PR is listed in the body.
 - **Always-gated merge.** `facts.config.merge_policy` reports `epic-integration → ask` unconditionally
   (prep forces it; a stray `epic-integration:` line in the config block is ignored). So the spine's
