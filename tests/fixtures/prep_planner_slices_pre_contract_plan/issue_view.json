@@ -1,0 +1,50 @@
+{
+ "number": 250,
+ "title": "Export the journal to CSV",
+ "body": "Export the journal to CSV.\n\n## Definition of done\n- [ ] A well-formed CSV is produced\n- [ ] The command-line flag selects the destination\n",
+ "state": "OPEN",
+ "labels": [
+  {
+   "name": "enhancement"
+  }
+ ],
+ "author": {
+  "login": "alice"
+ },
+ "createdAt": "2026-01-01T00:00:00Z",
+ "updatedAt": "2026-03-02T00:00:00Z",
+ "assignees": [],
+ "milestone": null,
+ "url": "https://github.com/octo/widgets/issues/250",
+ "blockedBy": {
+  "nodes": []
+ },
+ "blocking": {
+  "nodes": []
+ },
+ "parent": null,
+ "subIssues": {
+  "nodes": [
+   {
+    "id": "I_251",
+    "number": 251,
+    "state": "OPEN",
+    "title": "Export CSV writer",
+    "url": "https://github.com/octo/widgets/issues/251"
+   },
+   {
+    "id": "I_252",
+    "number": 252,
+    "state": "OPEN",
+    "title": "CLI flag plumbing",
+    "url": "https://github.com/octo/widgets/issues/252"
+   }
+  ],
+  "totalCount": 2
+ },
+ "subIssuesSummary": {
+  "total": 2,
+  "completed": 0,
+  "percentCompleted": 0
+ }
+}

@@ -330,6 +330,16 @@ class ThresholdSpillTests(unittest.TestCase):
             envelope["marker_comment_url"], "https://github.com/o/r/issues/77#issuecomment-5001"
         )
 
+    def test_marker_comment_updated_at_is_reported(self):
+        # #18: the planner compares a sub-issue's last-modified time against the plan comment's, so
+        # the marker carries its own `updated_at`. It rides along free — the REST comment objects
+        # already have it, so there is no extra field selection and no extra round-trip.
+        result = _run_script(
+            ["77", "o/r", "<!-- implementation-plan:v1 -->", self.scratch_dir], env=self.env
+        )
+        envelope = _parse_envelope(result)
+        self.assertEqual(envelope["marker_comment_updated_at"], "2026-02-03T00:00:00Z")
+
     def test_inline_threshold_bytes_scalar_is_reported_with_scratch_dir(self):
         result = _run_script(
             ["77", "o/r", "<!-- implementation-plan:v1 -->", self.scratch_dir], env=self.env

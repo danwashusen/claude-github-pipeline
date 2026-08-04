@@ -109,6 +109,20 @@ the decisions above as binding; a plan-invalidating discovery routes back here i
 Re-run this skill to revise — do not hand-edit._
 ```
 
+## The `sub-issue:` phase key   (multi-phase, non-epic target that already has sub-issues)
+
+When the target already has **sub-issues**, they are its **deliverable slices** by construction: the hierarchy is epic → story → slice, so the sub-issues of a *non-epic* target are slices (an epic's sub-issues are stories, and an epic plan carries no `## Phases` at all). Each `## Phases` entry then carries a sixth key naming the sub-issue it serves, appended after `depends-on`:
+
+```
+   - sub-issue: <`#<N>` — the ONE sub-issue this phase serves — or `(none)` for substrate>
+```
+
+**Grammar.** `#<N>`, single-valued. The `#` is required: everywhere else here an *issue* is written `#<N>` while a bare int means a DoD index or a phase number, so one spelling per meaning keeps `sub-issue: 3` from reading as "phase 3". `#214, #216` is **malformed, not a shorthand** — a phase serves at most one sub-issue. **Substrate** — groundwork no single sub-issue can demonstrate — is written `sub-issue: (none)`, mirroring `closes-dod: (none)`; it is the only legal way for a phase to serve no sub-issue. An **absent** key is not `(none)`: it means the mapping was never made.
+
+`sub-issue:` is **orthogonal to `closes-dod`** — a phase may serve `#<N>` and still claim `closes-dod: (none)`, and a criterion satisfiable only story-wide is still verified in every phase and claimed by the terminal one, whichever sub-issue that phase serves.
+
+Omit the key entirely when the target has no sub-issues; plans authored before it existed parse without it. The pointer is **one-way, plan → sub-issue**: sub-issue bodies never cite phase numbers, and the planner never files, edits, or relabels a sub-issue. The cardinality rule the phase set must satisfy, the plan-versus-live diff, and the mismatch gate live in [`sub-issue-reconciliation.md`](sub-issue-reconciliation.md).
+
 ## Epic-plan and story-under-epic sections
 
 An **epic** plan replaces `## Phases` (single-issue / multi-phase only) with the sections below, in this order after `## Approach`. The epic plan pins the cross-story **contracts** and sequencing; like every implementation plan it is verified and immutable (do not hand-edit — re-run the planner to revise). Child stories are planned just-in-time against it (planner Step 11 + "Just-in-time story planning" mode), not fanned out up front. The *living* record of what each story actually delivered is kept in a **separate** `<!-- epic-delivery-log:v1 -->` comment — its own artifact, never in this verified plan (see *Epic delivery log* under the schema below).

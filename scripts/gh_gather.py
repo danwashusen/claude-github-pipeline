@@ -436,9 +436,17 @@ def run(issue, repo, marker_prefix=None, scratch_dir=None, extra_json=None, env=
     # it is load-bearing: `gh-persist.sh`'s `--delete-marker-id` calls `gh api -X DELETE
     # .../comments/<id>`, whose REST endpoint requires the numeric id, not the node id. Getting
     # this backwards would silently break marker-comment deletion on replacement.
+    # `updated_at` rides along free: the REST comment objects already carry it, so no extra field
+    # selection and no extra round-trip. It is the left-hand side of the planner's rescope
+    # comparison ("was this sub-issue edited since the plan was posted?" — #18).
     if marker_prefix:
         markers = [
-            {"id": c.get("id"), "url": c.get("html_url"), "body": c.get("body")}
+            {
+                "id": c.get("id"),
+                "url": c.get("html_url"),
+                "body": c.get("body"),
+                "updated_at": c.get("updated_at"),
+            }
             for c in raw_comments
             if (c.get("body") or "").startswith(marker_prefix)
         ]
@@ -526,6 +534,7 @@ def run(issue, repo, marker_prefix=None, scratch_dir=None, extra_json=None, env=
             )
             payload["marker_comment_id"] = first_marker.get("id")
             payload["marker_comment_url"] = first_marker.get("url")
+            payload["marker_comment_updated_at"] = first_marker.get("updated_at")
             payload.update(
                 {
                     "marker_comment_bytes": marker_fields["marker_comment_bytes"],

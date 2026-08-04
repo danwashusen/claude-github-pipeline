@@ -529,6 +529,78 @@ class ParsePhasesModuleTests(unittest.TestCase):
         self.assertEqual(parse.parse_phases("no headings here at all\n"), [])
 
 
+class ParsePhasesSubIssueModuleTests(unittest.TestCase):
+    """#18: the `sub-issue:` key records which deliverable slice a phase serves. Recognized but
+    **not required**, so a plan authored before the key existed still parses.
+    """
+
+    def test_sub_issue_tri_state_across_the_three_shapes(self):
+        text = _fixture_text(PHASES_FIXTURES_DIR, "well_formed_sub_issue_mapped.md")
+        phases = parse.parse_phases(text)
+        self.assertEqual(phases[0]["sub_issue"], "(none)")  # explicit substrate claim
+        self.assertEqual(phases[1]["sub_issue"], 214)
+        self.assertEqual(phases[3]["sub_issue"], 216)
+
+    def test_two_phases_may_serve_the_same_sub_issue(self):
+        # N:1 is the locked cardinality: several phases may serve one sub-issue. The parser must
+        # not import `closes-dod`'s exactly-once rule — it is the reviewer that judges coverage.
+        text = _fixture_text(PHASES_FIXTURES_DIR, "well_formed_sub_issue_mapped.md")
+        phases = parse.parse_phases(text)
+        self.assertEqual([phases[1]["sub_issue"], phases[2]["sub_issue"]], [214, 214])
+
+    def test_pre_contract_five_key_plan_parses_with_sub_issue_none(self):
+        # The whole backward-compatibility mechanism: a plan authored before the key existed has no
+        # `sub-issue:` line, and `None` (unmapped) is distinguishable from `"(none)"` (substrate).
+        text = _fixture_text(PHASES_FIXTURES_DIR, "well_formed_multi_phase.md")
+        phases = parse.parse_phases(text)
+        self.assertEqual([p["sub_issue"] for p in phases], [None, None, None, None])
+
+    def test_sub_issue_key_is_always_present_in_the_payload(self):
+        text = _fixture_text(PHASES_FIXTURES_DIR, "well_formed_multi_phase.md")
+        for phase in parse.parse_phases(text):
+            self.assertIn("sub_issue", phase)
+
+    def test_bare_int_raises(self):
+        text = _fixture_text(PHASES_FIXTURES_DIR, "malformed_sub_issue_bare_int.md")
+        with self.assertRaises(parse._PhasesMalformed) as ctx:
+            parse.parse_phases(text)
+        self.assertIn("sub-issue", ctx.exception.reason)
+
+    def test_comma_separated_list_raises_rather_than_narrowing(self):
+        text = _fixture_text(PHASES_FIXTURES_DIR, "malformed_sub_issue_multi_value.md")
+        with self.assertRaises(parse._PhasesMalformed) as ctx:
+            parse.parse_phases(text)
+        self.assertIn("N:1", ctx.exception.reason)
+
+    def test_issue_zero_raises(self):
+        text = _fixture_text(PHASES_FIXTURES_DIR, "malformed_sub_issue_zero.md")
+        with self.assertRaises(parse._PhasesMalformed) as ctx:
+            parse.parse_phases(text)
+        self.assertIn("start at 1", ctx.exception.reason)
+
+    def test_empty_value_raises(self):
+        text = _fixture_text(PHASES_FIXTURES_DIR, "malformed_sub_issue_empty.md")
+        with self.assertRaises(parse._PhasesMalformed) as ctx:
+            parse.parse_phases(text)
+        self.assertIn("sub-issue", ctx.exception.reason)
+
+    def test_duplicate_sub_issue_key_in_one_phase_raises(self):
+        text = (
+            "## Phases\n"
+            "1. **Phase 1 — a**\n"
+            "   - kind: code-shipping\n"
+            "   - ships: PR commits to the issue branch\n"
+            "   - closes-dod: (none)\n"
+            "   - deliverable: x\n"
+            "   - depends-on: (none)\n"
+            "   - sub-issue: #214\n"
+            "   - sub-issue: #216\n"
+        )
+        with self.assertRaises(parse._PhasesMalformed) as ctx:
+            parse.parse_phases(text)
+        self.assertIn("more than once", ctx.exception.reason)
+
+
 class ParsePhasesMalformedModuleTests(unittest.TestCase):
     def test_missing_required_key_raises(self):
         text = _fixture_text(PHASES_FIXTURES_DIR, "malformed_missing_key.md")
@@ -597,6 +669,10 @@ class ParsePhasesMalformedModuleTests(unittest.TestCase):
             "malformed_ordinal_label_mismatch.md",
             "malformed_bad_closes_dod_value.md",
             "malformed_free_form_sequencing.md",
+            "malformed_sub_issue_bare_int.md",
+            "malformed_sub_issue_multi_value.md",
+            "malformed_sub_issue_zero.md",
+            "malformed_sub_issue_empty.md",
         ):
             text = _fixture_text(PHASES_FIXTURES_DIR, fixture_name)
             try:
@@ -631,6 +707,29 @@ class ParsePhasesCliTests(unittest.TestCase):
         envelope_asserts.assert_full_envelope_conformance(envelope)
         self.assertEqual(envelope["status"], "ok")
         self.assertEqual(envelope["phases"], [])
+
+    def test_phases_sub_issue_round_trips_through_the_envelope(self):
+        rc, out, err = _run_cli(
+            ["phases", str(PHASES_FIXTURES_DIR / "well_formed_sub_issue_mapped.md")]
+        )
+        self.assertEqual(rc, EXIT_OK)
+        envelope = _parse_one_envelope(out)
+        envelope_asserts.assert_full_envelope_conformance(envelope)
+        self.assertEqual(envelope["status"], "ok")
+        self.assertEqual(
+            [p["sub_issue"] for p in envelope["phases"]], ["(none)", 214, 214, 216]
+        )
+
+    def test_phases_malformed_sub_issue_emits_phases_malformed_decision(self):
+        rc, out, err = _run_cli(
+            ["phases", str(PHASES_FIXTURES_DIR / "malformed_sub_issue_bare_int.md")]
+        )
+        self.assertEqual(rc, EXIT_OK)
+        envelope = _parse_one_envelope(out)
+        envelope_asserts.assert_full_envelope_conformance(envelope)
+        envelope_asserts.assert_decision_payload_shape(envelope)
+        self.assertEqual(envelope["status"], "needs_decision")
+        self.assertEqual(envelope["decision"]["code"], "PHASES_MALFORMED")
 
     def test_phases_malformed_emits_phases_malformed_decision(self):
         rc, out, err = _run_cli(

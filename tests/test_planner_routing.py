@@ -203,6 +203,129 @@ class RouterStructuralBarTests(unittest.TestCase):
         )
 
 
+class SubIssueReconciliationRuleTests(unittest.TestCase):
+    """#18: the phase→sub-issue contract, pinned where prose has no compiler.
+
+    The cardinality rule is stated ONCE (the issue's "stated once wherever it lands"), the grammar is
+    documented OUTSIDE plan-schema.md's frozen first fence, the gate offers exactly the three recorded
+    operator options and never silently re-cuts, and the two hard limits (no writes to a sub-issue, a
+    one-way plan→sub-issue pointer) are on the page.
+    """
+
+    RECONCILIATION = REFERENCES_DIR / "sub-issue-reconciliation.md"
+    SCHEMA = REFERENCES_DIR / "plan-schema.md"
+    REVIEWER = REFERENCES_DIR / "plan-reviewer-prompt.md"
+    REVISE = REFERENCES_DIR / "revise-reconciliation.md"
+    # Every route that can face a pre-sliced target: fresh standalone (`single.md`), a story under an
+    # open epic in either mode (`story-jit.md`), and a standalone revise (`revise.md` — the route where
+    # the diff is richest, since a prior plan exists). An epic's sub-issues are STORIES, so `epic.md`
+    # stays out; an epic revise reaches `revise.md` but never carries `facts.slices`, so its
+    # fact-keyed bullet correctly no-ops.
+    SLICE_ROUTES = ("single.md", "story-jit.md", "revise.md")
+
+    def test_reference_exists_and_is_read_by_both_non_epic_routes(self):
+        self.assertTrue(self.RECONCILIATION.is_file())
+        for name in self.SLICE_ROUTES:
+            text = (PLAYBOOKS_DIR / name).read_text(encoding="utf-8")
+            self.assertIn("sub-issue-reconciliation.md", text, name)
+
+    def test_epic_playbook_does_not_read_it(self):
+        # The mechanical encoding of "an epic's sub-issues are stories, not slices".
+        text = (PLAYBOOKS_DIR / "epic.md").read_text(encoding="utf-8")
+        self.assertNotIn("sub-issue-reconciliation.md", text)
+
+    def test_playbooks_key_on_the_fact_not_the_type(self):
+        # `facts.slices` presence is the trigger; a type branch here would trip the interleaving grep
+        # and would also be the wrong contract (prd/architecture: parameterize before you playbook).
+        for name in self.SLICE_ROUTES:
+            text = (PLAYBOOKS_DIR / name).read_text(encoding="utf-8")
+            self.assertIn("facts.slices", text, name)
+
+    def test_cardinality_rule_is_stated_exactly_once(self):
+        # Whitespace-normalized: these files hard-wrap, so a line-sensitive search would silently
+        # miss a real third copy that happens to wrap differently (and would fail on a harmless
+        # re-wrap of the reference itself).
+        needle = "N:1 and total over the OPEN"
+        hits = [
+            p.name
+            for p in _iter_md(SKILL_DIR)
+            if needle in re.sub(r"\s+", " ", p.read_text(encoding="utf-8"))
+        ]
+        # plan-schema.md states the GRAMMAR and defers the rule. The reviewer prompt restates it for
+        # its own isolated context — a context-blind sub-agent prompt cannot follow a link, so that
+        # copy is a rendering, not a second authority.
+        self.assertIn("plan-reviewer-prompt.md", hits, "expected the reviewer's own rendering: %r" % hits)
+        self.assertEqual(
+            [n for n in hits if n != "plan-reviewer-prompt.md"],
+            ["sub-issue-reconciliation.md"],
+            "the cardinality rule must be stated once, in the reconciliation reference: %r" % hits,
+        )
+
+    def test_substrate_case_is_named_explicitly(self):
+        for path in (self.RECONCILIATION, self.SCHEMA):
+            text = path.read_text(encoding="utf-8")
+            self.assertIn("sub-issue: (none)", text, path.name)
+            self.assertIn("substrate", text, path.name)
+
+    def test_grammar_is_documented_outside_the_frozen_first_fence(self):
+        # PlanSchemaByteCompatTests pins the first fence byte-identical to the S1 capture; documenting
+        # the key inside it would force an edit to the frozen v1 record and hollow out that assertion.
+        text = self.SCHEMA.read_text(encoding="utf-8")
+        self.assertIn("sub-issue:", text)
+        self.assertNotIn("sub-issue", _first_fenced_block(text))
+
+    def test_gate_offers_the_three_options_and_never_silently_re_cuts(self):
+        text = self.RECONCILIATION.read_text(encoding="utf-8")
+        self.assertIn("never silently re-cuts", text)
+        for option in (
+            "Re-cut the phases to cover the change",
+            "Record the sub-issue as out-of-scope, with a disposition",
+            "Stop and route the sub-issue set back to whoever authors sub-issues",
+        ):
+            self.assertIn(option, text)
+
+    def test_no_writes_and_one_way_pointer_are_stated(self):
+        text = self.RECONCILIATION.read_text(encoding="utf-8")
+        self.assertIn("writes nothing to a sub-issue", text)
+        self.assertIn("one-way", text)
+        self.assertIn("never cites a phase number", text)
+
+    def test_rescope_is_described_as_a_suspicion_not_proof(self):
+        text = self.RECONCILIATION.read_text(encoding="utf-8")
+        self.assertIn("not proof", text)
+        self.assertIn("over-reports", text)
+
+    def test_reviewer_carries_live_slices_and_the_n_to_one_carve_out(self):
+        text = self.REVIEWER.read_text(encoding="utf-8")
+        self.assertIn("<<live_slices>>", text)
+        self.assertIn("open sub-issue no phase names", text)
+        # The single most important sentence in the amendment: without it a reviewer imports
+        # `closes-dod`'s exactly-once rule by analogy and BLOCKERs every legal N:1 plan.
+        self.assertIn("never a finding", text)
+        self.assertIn('do not import the `closes-dod` "exactly once" rule here', text)
+
+    def test_both_slice_routes_pass_live_slices_to_the_reviewer(self):
+        for name in self.SLICE_ROUTES:
+            text = (PLAYBOOKS_DIR / name).read_text(encoding="utf-8")
+            self.assertIn("<<live_slices>>", text, name)
+
+    def test_closed_sub_issue_defers_to_the_shipped_phase_rules(self):
+        text = self.REVISE.read_text(encoding="utf-8")
+        self.assertIn("behaves like a **shipped phase**", text)
+        self.assertIn("no second, parallel rule set", text)
+
+    def test_router_lists_the_slices_fact_and_the_new_gate(self):
+        text = ROUTER.read_text(encoding="utf-8")
+        self.assertIn("`slices`", text)
+        self.assertIn("sub-issue reconciliation", text)
+
+    def test_spine_is_unchanged_at_its_recorded_length(self):
+        # The 251 bar is a knife edge (router 123 + spine 128). Fail at the CAUSE — a spine edit —
+        # rather than only at the sum, whose message implicates whichever file was touched last.
+        n = len((PLAYBOOKS_DIR / SPINE).read_text(encoding="utf-8").splitlines())
+        self.assertEqual(n, 128, "plan-spine.md is %d lines; the 251 bar assumes 128" % n)
+
+
 class PlaybookInterleavingGrepTests(unittest.TestCase):
     """A playbook is a linear narrative for exactly one route — zero cross-route conditionals. Fails on
     either an `if … <route> … else …` construct or a `when the issue/type is a <route>` prose branch, over

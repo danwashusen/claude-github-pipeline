@@ -28,6 +28,10 @@ LLM judgment, bounded by structural rules:
 - Only un-shipped phases changed (forward-looking only).
 - Only doc-grounding text was tweaked.
 - New phases added beyond what's shipped.
+- A **sub-issue closed** since the plan was posted (`facts.slices.diff.closed`). A closed sub-issue
+  behaves like a **shipped phase**: the phase serving it is judged by the shipped-phase rules above —
+  its `ships`/`deliverable`/`kind` changing while its tracker row is ticked is still HARD — and there
+  is no second, parallel rule set for sub-issue closure. Closure alone is never HARD.
 
 **Judgment call (reason + surface uncertainty):** `## Changes` block text edits (does the shipped diff
 still match the new wording?); DoD bullet wording adjustments without structural change. **Lean HARD

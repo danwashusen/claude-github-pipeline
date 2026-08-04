@@ -67,6 +67,11 @@ failure mode; do not flag a plan for leaving line-level mechanics to the impleme
 - **Epic delivery log**: `<<epic_delivery_log>>` — for a story under an epic, the parent epic's
   `<!-- epic-delivery-log:v1 -->` comment listing what each predecessor story actually delivered (or
   `(none yet)`). Dimension 8's "consumes only what's shipped" check reads this. Empty otherwise.
+- **Live sub-issues**: `<<live_slices>>` — the target's live sub-issue set in the sub-issue panel's
+  own order, one row per entry (`#<N> — <state> — "<title>"`, plus `may-have-changed` when the
+  orchestrator flagged it as edited since the plan comment was posted). A non-epic target's
+  sub-issues are its **deliverable slices** by construction. Empty when the target has none.
+  Dimension 7's slice-coverage check reads this and never fetches the panel itself.
 
 ## Dimensions
 
@@ -155,6 +160,27 @@ Run only the dimensions named in the inputs.
    **`closes-dod` names the phase whose deliverable *satisfies* the bullet, not the one whose code
    *enables* it** (a substrate phase claiming a measurement bullet is a BLOCKER — the evaluator would
    score it satisfied before the measurement ran).
+
+   **Slice coverage** *(runs only when `<<live_slices>>` is non-empty)*. Each phase's `sub-issue:` key
+   records the one sub-issue it serves (`#<N>`), or `(none)` for substrate. The map is **N:1 and total
+   over the OPEN set**: several phases may serve one sub-issue — **two phases naming the same `#<N>` is
+   correct and never a finding; do not import the `closes-dod` "exactly once" rule here** — but every
+   open sub-issue must be named by at least one phase. Findings: an **open sub-issue no phase names** is
+   a BLOCKER (the same footing as an unclaimed DoD bullet); a **phase carrying no `sub-issue:` line at
+   all** while `<<live_slices>>` is non-empty is a BLOCKER (the mapping is unmade — an absent key is not
+   `(none)`, which is an explicit substrate claim); a **`sub-issue:` value absent from
+   `<<live_slices>>`** is a BLOCKER (a dangling reference — the same rule as Dimension 5's dangling
+   `consumes`); **`sub-issue: (none)` on a phase that is not substrate** — its `ships`/`deliverable`
+   names behaviour an open sub-issue already covers, rather than groundwork no single sub-issue can
+   demonstrate — is a SUGGESTION, unless the phase is `code-shipping` and its `deliverable` duplicates
+   an open sub-issue's own stated deliverable, then a BLOCKER; a **phase serving a `CLOSED` sub-issue**
+   is a SUGGESTION (the closure may legitimately postdate the plan, and the shipped-phase rules govern
+   it rather than a second parallel set); **`depends-on` that contradicts the panel order** in
+   `<<live_slices>>` is a SUGGESTION — surfaced, not corrected, since an ordering-only dependency can be
+   a deliberate call. `sub-issue:` never alters the DoD-coverage check above: the two keys are
+   orthogonal, so a phase may serve `#<N>` with `closes-dod: (none)`, and a criterion satisfiable only
+   story-wide is still verified in every phase and claimed by the terminal one, whichever sub-issue that
+   phase serves.
 
 8. **Epic-story coherence** *(story under an epic only; requires `<<epic_plan>>`)*. Read the story plan's
    `## Epic contract` against the parent epic plan: **delivers what the epic assigns it** (every contract

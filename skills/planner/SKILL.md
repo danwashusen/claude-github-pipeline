@@ -24,12 +24,13 @@ It returns one JSON **facts block** (`architecture.md §4`): `target` (number/ti
 `blocked_by`/`blocking`), `vector` (`type` × `mode` × `plan_ref_row`), `suggested_playbook`, `plan_ref`
 (a **bare** branch name), `plan` (present/SHA/comment-id/url — a present plan is the **revise**
 trigger), `research` (dossier present + staged path), `grounding_docs` (present at `plan_ref`),
-`open_questions` + `open_question_candidates` (the Bug (a) tracker search), `grounding` (the
-observed ambient checkout, asserted against `plan_ref`; its `sha` the footer records),
-`epic`/`story` (stories + state; parent epic + plan + delivery log), `revise` (prior-plan SHA vs
-grounding SHA + any open PR's `## Phase tracker`), `sections` (spilled issue-body/thread/plan-marker
-paths), and `attention`. Consume every fact as **data** — never re-derive the type, the mode, the
-`plan_ref`, the row, or the tracker candidates in prose; prep already did.
+`open_questions` + `open_question_candidates` (the Bug (a) tracker search), `grounding` (the observed
+ambient checkout, asserted against `plan_ref`; its `sha` the footer records), `epic`/`story` (stories
++ state; parent epic + plan + delivery log), `revise` (prior-plan SHA vs grounding SHA + any open PR's
+`## Phase tracker`), `slices` (the deliverable sub-issue set, staged bodies, and the plan-versus-live
+`diff`), `sections` (spilled issue-body/thread/plan-marker paths), and `attention`. Consume every fact
+as **data** — never re-derive the type, mode, `plan_ref`, row, tracker candidates, or sub-issue diff;
+prep already did.
 
 **Decision card rule.** If prep exits with `status: needs_decision`, render its `decision` as one
 `AskUserQuestion` card (per [`../_shared/asking-the-user.md`](../_shared/asking-the-user.md)), act on
@@ -66,9 +67,8 @@ differences the spine consumes (`plan_ref`, the dimension set, which schema sect
 whether the seam gate offers the epic off-ramp) are **facts / values**, never branches.
 
 **Override rule** (`architecture.md §5`): honor `suggested_playbook` unless the thread carries evidence
-the script could not see (e.g. the thread supersedes the labels' type). State the reason when you
-override. Do **not** interleave type branches inside a playbook body — the route *is* the branch; one
-route per session.
+the script could not see (e.g. it supersedes the labels' type) — state the reason. Never interleave type
+branches inside a playbook body: the route *is* the branch; one route per session.
 
 ## 3. Invariants
 
@@ -95,8 +95,8 @@ Universal across every route:
   call. The planner has **no** scriptless raw-`gh` executor.
 - **Successful write is self-confirming.** A zero exit with a URL *is* the confirmation; never re-read it.
 - **Gates only for genuine decisions** (per [`../_shared/asking-the-user.md`](../_shared/asking-the-user.md)):
-  latest-decision-direction, external sources, the seam-disposition gate, the deviation gate, the
-  decision gate, review-notes disposition, show-before-post (opt-in), revise reconciliation. Never to
+  latest-decision-direction, external sources, seam-disposition, deviation, decision, review-notes
+  disposition, show-before-post (opt-in), revise reconciliation, sub-issue reconciliation. Never to
   confirm a fact prep derived.
   A judgment sub-agent (the plan reviewer, an `Explore` precedent search) never calls
   `AskUserQuestion`; it returns its result to this loop, which asks.
