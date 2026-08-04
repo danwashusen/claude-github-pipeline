@@ -100,6 +100,18 @@ class HappyPathInlineTests(unittest.TestCase):
         self.assertEqual(envelope["blocking"], [])
         self.assertEqual(envelope["notices"], [])
 
+    def test_subissues_available_true_with_no_hierarchy(self):
+        """An ordinary issue: the relation is served, this issue just has no parent and no children.
+        `subissues_available: true` with an empty set is the "supported, nothing there" state — the
+        thing a reader must not confuse with a capability miss."""
+        result = _run_script(["42", "o/r"], env=self.env)
+        envelope = _parse_envelope(result)
+        self.assertTrue(envelope["subissues_available"])
+        self.assertIsNone(envelope["parent"])
+        self.assertEqual(envelope["sub_issues"], [])
+        self.assertEqual(envelope["sub_issues_summary"], {"completed": 0, "percentCompleted": 0, "total": 0})
+        self.assertEqual(envelope["notices"], [])
+
     def test_legacy_inline_shape_carries_full_issue_object_with_complete_thread(self):
         result = _run_script(["42", "o/r"], env=self.env)
         envelope = _parse_envelope(result)
@@ -568,33 +580,69 @@ class UnknownFieldClassifierPureFunctionTests(unittest.TestCase):
         self.assertFalse(gh_gather._is_unknown_field_error(None))
 
 
+class NativeHierarchyPayloadTests(unittest.TestCase):
+    """The parent/sub-issue relation surfaces verbatim in the envelope, including GitHub's own
+    progress rollup — the fact `skills/_shared/epic-story-hierarchy.md` makes tier 1 of the
+    epic story-set read. Node shape matches a live `gh issue view --json subIssues` response.
+    """
+
+    def setUp(self):
+        self.env = shimenv.intercepted_env(
+            base_env=os.environ, fixture_case="gh_gather_native_hierarchy"
+        )
+
+    def test_sub_issues_and_summary_surface_in_order(self):
+        result = _run_script(["95", "o/r"], env=self.env)
+        self.assertEqual(result.returncode, 0, msg=result.stderr)
+        envelope = _parse_envelope(result)
+        envelope_asserts.assert_full_envelope_conformance(envelope)
+        self.assertTrue(envelope["subissues_available"])
+        self.assertEqual([node["number"] for node in envelope["sub_issues"]], [93, 94])
+        self.assertEqual([node["state"] for node in envelope["sub_issues"]], ["CLOSED", "OPEN"])
+        # Read progress from GitHub's rollup rather than counting states.
+        self.assertEqual(
+            envelope["sub_issues_summary"], {"completed": 1, "percentCompleted": 50, "total": 2}
+        )
+        self.assertEqual(envelope["notices"], [])
+
+    def test_epic_body_carries_no_stories_section(self):
+        """The fresh-epic body shape: the DoD names the bar, nothing lists the stories."""
+        result = _run_script(["95", "o/r"], env=self.env)
+        envelope = _parse_envelope(result)
+        self.assertNotIn("## Stories", envelope["issue"]["body"])
+        self.assertIn("All stories are closed", envelope["issue"]["body"])
+
+
 class DepsCapabilityGateRetryWithoutFlowTests(unittest.TestCase):
     """DoD invariant: deps-unsupported -> DEPS_UNSUPPORTED notice + retry-without, and the read
     still succeeds with empty dep lists. Proven end to end through
-    gh_gather._fetch_issue_with_deps_capability_gate using unittest.mock.patch on
+    gh_gather._fetch_issue_with_relation_capability_gates using unittest.mock.patch on
     pipelib.process.run, because tests/shim/gh (frozen for this step) has no stderr-injection
     mechanism and the classification this flow depends on is stderr-based (see this module's
     docstring). The mocked CommandResult objects mirror exactly what a real `gh` unknown-field
-    failure followed by a successful base-only retry look like (both confirmed empirically).
+    failure followed by a successful reduced-field retry look like (both confirmed empirically).
     """
 
-    def test_unknown_field_failure_triggers_retry_without_deps_and_succeeds(self):
-        base_only_response = json.dumps(
-            {
-                "number": 55,
-                "title": "Old gh repo",
-                "body": "body text",
-                "state": "OPEN",
-                "labels": [],
-                "author": {"login": "frank"},
-                "createdAt": "2026-04-01T00:00:00Z",
-                "updatedAt": "2026-04-02T00:00:00Z",
-                "assignees": [],
-                "milestone": None,
-                "url": "https://github.com/o/r/issues/55",
-            }
-        )
+    ISSUE_RESPONSE = json.dumps(
+        {
+            "number": 55,
+            "title": "Old gh repo",
+            "body": "body text",
+            "state": "OPEN",
+            "labels": [],
+            "author": {"login": "frank"},
+            "createdAt": "2026-04-01T00:00:00Z",
+            "updatedAt": "2026-04-02T00:00:00Z",
+            "assignees": [],
+            "milestone": None,
+            "url": "https://github.com/o/r/issues/55",
+        }
+    )
 
+    def test_unknown_field_failure_triggers_retry_without_deps_and_succeeds(self):
+        """Deps unsupported, sub-issues supported: the ladder skips the deps-bearing rungs and
+        lands on the sub-issue-only rung, reporting ONLY DEPS_UNSUPPORTED — the point of gating the
+        two relations independently is that losing one doesn't cost you the other."""
         calls = []
 
         def fake_run(argv, cwd=None, env=None, input_text=None, check=False):
@@ -603,21 +651,103 @@ class DepsCapabilityGateRetryWithoutFlowTests(unittest.TestCase):
                 return process.CommandResult(
                     returncode=1, stdout="", stderr='Unknown JSON field: "blockedBy"\n'
                 )
-            return process.CommandResult(returncode=0, stdout=base_only_response, stderr="")
+            return process.CommandResult(returncode=0, stdout=self.ISSUE_RESPONSE, stderr="")
 
         with mock.patch.object(process, "run", side_effect=fake_run):
-            issue_obj, deps_available, result = gh_gather._fetch_issue_with_deps_capability_gate(
-                "55", "o/r", None
-            )
+            (
+                issue_obj,
+                deps_available,
+                subissues_available,
+                result,
+            ) = gh_gather._fetch_issue_with_relation_capability_gates("55", "o/r", None)
 
         self.assertIsNotNone(issue_obj)
         self.assertFalse(deps_available)
+        self.assertTrue(subissues_available)
         self.assertEqual(result, ["DEPS_UNSUPPORTED"])
         self.assertEqual(issue_obj["number"], 55)
-        # Exactly two gh calls: the deps-inclusive attempt, then the base-only retry.
-        self.assertEqual(len(calls), 2)
+        # Rung 1 (both) and rung 2 (deps only) carry blockedBy and fail; rung 3 (sub-issues only)
+        # succeeds.
+        self.assertEqual(len(calls), 3)
         self.assertIn("blockedBy,blocking", calls[0][-1])
-        self.assertNotIn("blockedBy", calls[1][-1])
+        self.assertIn("subIssues", calls[0][-1])
+        self.assertNotIn("blockedBy", calls[2][-1])
+        self.assertIn("subIssues", calls[2][-1])
+
+    def test_subissues_unsupported_keeps_deps_and_reports_only_subissues_notice(self):
+        """The mirror case: sub-issues unsupported, deps supported. Lands on rung 2 after one
+        failure, reports ONLY SUBISSUES_UNSUPPORTED."""
+        calls = []
+
+        def fake_run(argv, cwd=None, env=None, input_text=None, check=False):
+            calls.append(list(argv))
+            if "subIssues" in argv[-1]:
+                return process.CommandResult(
+                    returncode=1, stdout="", stderr='Unknown JSON field: "subIssues"\n'
+                )
+            return process.CommandResult(returncode=0, stdout=self.ISSUE_RESPONSE, stderr="")
+
+        with mock.patch.object(process, "run", side_effect=fake_run):
+            (
+                issue_obj,
+                deps_available,
+                subissues_available,
+                result,
+            ) = gh_gather._fetch_issue_with_relation_capability_gates("55", "o/r", None)
+
+        self.assertIsNotNone(issue_obj)
+        self.assertTrue(deps_available)
+        self.assertFalse(subissues_available)
+        self.assertEqual(result, ["SUBISSUES_UNSUPPORTED"])
+        self.assertEqual(len(calls), 2)
+        self.assertIn("blockedBy,blocking", calls[1][-1])
+        self.assertNotIn("subIssues", calls[1][-1])
+
+    def test_both_relations_unsupported_reports_both_notices_on_the_base_rung(self):
+        calls = []
+
+        def fake_run(argv, cwd=None, env=None, input_text=None, check=False):
+            calls.append(list(argv))
+            if "blockedBy" in argv[-1] or "subIssues" in argv[-1]:
+                return process.CommandResult(
+                    returncode=1, stdout="", stderr="unknown JSON field\n"
+                )
+            return process.CommandResult(returncode=0, stdout=self.ISSUE_RESPONSE, stderr="")
+
+        with mock.patch.object(process, "run", side_effect=fake_run):
+            (
+                issue_obj,
+                deps_available,
+                subissues_available,
+                result,
+            ) = gh_gather._fetch_issue_with_relation_capability_gates("55", "o/r", None)
+
+        self.assertIsNotNone(issue_obj)
+        self.assertFalse(deps_available)
+        self.assertFalse(subissues_available)
+        self.assertEqual(result, ["DEPS_UNSUPPORTED", "SUBISSUES_UNSUPPORTED"])
+        self.assertEqual(len(calls), 4)
+
+    def test_capability_shaped_failure_on_the_base_rung_is_a_hard_failure(self):
+        """An "unknown field" error on the rung that asked for NO optional fields is not a
+        capability miss — there is nothing left to drop, so it must surface rather than loop or
+        return a clean-but-wrong envelope."""
+
+        def fake_run(argv, cwd=None, env=None, input_text=None, check=False):
+            return process.CommandResult(returncode=1, stdout="", stderr="unknown JSON field\n")
+
+        with mock.patch.object(process, "run", side_effect=fake_run):
+            (
+                issue_obj,
+                deps_available,
+                subissues_available,
+                result,
+            ) = gh_gather._fetch_issue_with_relation_capability_gates("55", "o/r", None)
+
+        self.assertIsNone(issue_obj)
+        self.assertIsNone(deps_available)
+        self.assertIsNone(subissues_available)
+        self.assertEqual(result.returncode, 1)
 
     def test_full_run_surfaces_deps_unsupported_notice_with_empty_dep_lists(self):
         """The same flow, exercised through the full `run()` function (not just the capability-gate

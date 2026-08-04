@@ -56,7 +56,7 @@ one** playbook.
 | `mode: new` (no target issue) | `playbooks/new.md` | classify → gather → draft → review → gate → file a single build issue |
 | `mode: revise`, `type` ≠ `question` | `playbooks/revise.md` | fetch + latest-direction → review → diff-show → confirm → edit-body |
 | `mode: revise`, `type: question` | `playbooks/question.md` | revise the question issue; terminal handoff |
-| `mode: epic-revise` | `playbooks/epic-split.md` | reconcile `## Stories` + re-run ordering/sizing; batch-file only what's new |
+| `mode: epic-revise` | `playbooks/epic-split.md` | reconcile the story set (`epic_revise.stories_source`) + re-run ordering/sizing; batch-file only what's new |
 
 Every playbook opens by reading the shared spine [`playbooks/draft-spine.md`](playbooks/draft-spine.md)
 (gather missing context → resolve open questions → draft against the template → review loop → show +

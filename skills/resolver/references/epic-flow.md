@@ -138,7 +138,8 @@ Whichever path is running, on conflict the procedure is the same:
      commit message + the non-conflicted hunks (so the sub-agent sees the pattern, not just the collision
      points).
    - **Main-side commit context.** Same as the Epic-side bullet, for `"$FORK_POINT"..origin/main`.
-   - **Epic-side PR/issue context.** The parent epic's `## Goal` and `## Stories` checklist, plus the
+   - **Epic-side PR/issue context.** The parent epic's `## Goal` and its story set (the sub-issue
+     titles/states from `facts`, or the legacy `## Stories` checklist), plus the
      merged story PR refs (which tell the sub-agent what landed during this epic's life).
    - **Main-side PR/issue context.** `gh pr list --repo <owner/repo> --base main --state merged --search "merged:>=<fork-date>" --json number,title,url`
      — what landed in `main` since fork.

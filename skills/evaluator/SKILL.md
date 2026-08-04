@@ -59,7 +59,7 @@ actions that differ by PR shape**.
 | `vector.type` | Playbook | What differs from the spine |
 |---|---|---|
 | `standard` | `playbooks/standard.md` | terminal after merge; residual follow-up filing; cleanup |
-| `story` | `playbooks/story.md` | on merge: close story, tick epic checkbox, append delivery log; forward handoff |
+| `story` | `playbooks/story.md` | on merge: close story (the epic's rollup follows), project progress only on a legacy epic, append delivery log; forward handoff |
 | `epic-integration` | `playbooks/epic-integration.md` | full-suite gate (fact), always-gated merge, epic-DoD historical walk; terminal |
 
 **Override rule** (`architecture.md §5`): honor `suggested_playbook` unless the thread carries

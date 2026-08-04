@@ -6,7 +6,8 @@ Subcommands (unchanged surface from v1 — same names, same flags, same position
 ``create-pr``/``edit-labels``/``close-pr``, additive-only v2 extensions, see below):
 
     gh_persist.py create      <repo> <body_path> --title <title> [--label L]...
-                               [--blocked-by <nums/urls>] [--blocking <nums/urls>] [--dry-run]
+                               [--blocked-by <nums/urls>] [--blocking <nums/urls>]
+                               [--parent <num/url>]                                 [--dry-run]
     gh_persist.py create-pr   <repo> <body_path> --title <title> --base <ref> --head <ref>
                                [--draft]                                        [--dry-run]
     gh_persist.py edit-body   <repo> <issue>     <body_path>                      [--dry-run]
@@ -100,6 +101,17 @@ retries without it — a failed create is atomic, so no double-file) and the cal
 the pipelib runner's ``AUTH_REQUIRED`` classification or a hard failure (non-zero exit, no
 envelope). ``link`` changes relationships only; it writes no body, so it has no empty-body gate.
 
+``create --parent`` sets GitHub's NATIVE parent/sub-issue relation, so an epic's stories become
+real sub-issues — the epic's sub-issue panel and its ``subIssuesSummary`` progress rollup (and the
+Sub-issues progress field on a GitHub Project) are then driven by issue state itself, rather than by
+a hand-maintained markdown checklist that can't self-tick. It is capability-gated the same
+attempt-and-classify way (see ``_is_subissues_error``), reporting ``SUBISSUES_UNSUPPORTED`` when
+dropped. Dependencies and hierarchy are INDEPENDENT relations with independent gates, so a create
+carrying both descends the ``_create_flag_ladder`` rungs and names exactly which one degraded — a
+reader that sees ``SUBISSUES_UNSUPPORTED`` falls back to the legacy ``## Stories`` checklist
+(``skills/_shared/epic-story-hierarchy.md``), which is a different fallback from prose dependency
+linking.
+
 Exit codes (architecture.md §3 — the only two forms this script uses):
     0   envelope present on stdout; consult ``status`` (``ok`` or ``needs_decision`` — both are
         exit 0; ``needs_decision`` is not an error).
@@ -120,7 +132,13 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 from pipelib import process  # noqa: E402  (import after sys.path setup, by necessity)
-from pipelib.decisions import AUTH_REQUIRED, DEPS_UNSUPPORTED, EMPTY_BODY_FILE, needs_decision  # noqa: E402
+from pipelib.decisions import (  # noqa: E402
+    AUTH_REQUIRED,
+    DEPS_UNSUPPORTED,
+    EMPTY_BODY_FILE,
+    SUBISSUES_UNSUPPORTED,
+    needs_decision,
+)
 from pipelib.envelope import EXIT_OK, emit_needs_decision, emit_ok  # noqa: E402
 from pipelib.hashing import sha256_hex_file  # noqa: E402
 
@@ -141,6 +159,50 @@ _DEPS_ERROR_PATTERN = re.compile(r"unknown (flag|json field)|issue[ -]?dependenc
 
 def _is_deps_error(stderr_text):
     return bool(_DEPS_ERROR_PATTERN.search(stderr_text or ""))
+
+
+# Capability signature for a sub-issue-unsupported `gh` failure — the installed gh predates
+# `--parent` (added well after the >= 2.40 floor this plugin declares), or the host doesn't serve
+# the parent/sub-issue relation. Same "match only these forms, err toward SURFACING" discipline as
+# _DEPS_ERROR_PATTERN: a real error we don't match fails loudly; a non-capability error we wrongly
+# matched would be silently swallowed as a benign "filed without the parent".
+# Deliberately does NOT match a bare "parent": that word appears in ordinary relationship-integrity
+# and validation errors ("the parent issue is closed", "cannot add a parent to itself") which MUST
+# surface — matching it would file the story unparented while reporting a benign capability notice,
+# so the caller never learns its real parenting attempt failed. An old gh rejects the flag itself
+# with "unknown flag", which the first alternative already covers.
+_SUBISSUES_ERROR_PATTERN = re.compile(r"unknown (flag|json field)|sub[ -]?issue", re.IGNORECASE)
+
+
+def _is_subissues_error(stderr_text):
+    return bool(_SUBISSUES_ERROR_PATTERN.search(stderr_text or ""))
+
+
+def _create_flag_ladder(dep_flags, parent_flags):
+    """The ordered ``(extra_flags, notices_for_what_was_dropped)`` attempts a `create` walks, most
+    complete first.
+
+    Native dependencies (``--blocked-by``/``--blocking``) and the native parent/sub-issue relation
+    (``--parent``) gate INDEPENDENTLY — different GitHub relations, different gh versions — and
+    gh's "unknown flag" phrasing doesn't reliably say which one it rejected when a create carries
+    both. Rather than guess from the stderr text, descend a ladder: each rung drops one relation
+    and reports exactly what it dropped. Every failed `create` is atomic (nothing is filed), so
+    descending can't double-file — the same property v1's single-rung deps retry relied on.
+
+    With no extras the ladder is a single bare attempt with no notices, so the common case stays
+    one `gh` call.
+    """
+    ladder = [(dep_flags + parent_flags, [])]
+    if dep_flags and parent_flags:
+        # Can't tell which relation gh rejected — try each alone before giving up on both.
+        ladder.append((dep_flags, [SUBISSUES_UNSUPPORTED]))
+        ladder.append((parent_flags, [DEPS_UNSUPPORTED]))
+    if dep_flags or parent_flags:
+        dropped = ([DEPS_UNSUPPORTED] if dep_flags else []) + (
+            [SUBISSUES_UNSUPPORTED] if parent_flags else []
+        )
+        ladder.append(([], dropped))
+    return ladder
 
 
 def _quote_cmd(argv):
@@ -242,8 +304,13 @@ def _cmd_create(args):
     if args.blocking:
         dep_flags += ["--blocking", args.blocking]
 
+    # Native parent/sub-issue relation: files the new issue as a sub-issue of `--parent` in the SAME
+    # round-trip, so an epic batch establishes the hierarchy without a follow-up write. addSubIssue
+    # appends, so filing in dependency order gives the epic's sub-issue panel that order for free.
+    parent_flags = ["--parent", str(args.parent)] if args.parent else []
+
     if args.dry_run:
-        preview = cmd + dep_flags
+        preview = cmd + dep_flags + parent_flags
         # v1's emit_envelope computes body_bytes/body_sha256 unconditionally, dry-run or not (it
         # hashes the caller-staged file directly — no `gh` round-trip needed for that, since
         # there's nothing to verify a write against yet). Preserved here: a dry-run preview still
@@ -253,40 +320,30 @@ def _cmd_create(args):
         emit_ok(payload=payload)
         return EXIT_OK
 
+    # Attempt WITH every native relation first; on a capability failure (old gh, or the host
+    # doesn't serve that relation) descend the ladder, dropping one relation per rung and
+    # signalling what was dropped so the caller falls back — prose linking for dependencies, the
+    # legacy `## Stories` checklist for hierarchy. A failed create is atomic (nothing is filed), so
+    # descending can't double-file — v1's cmd_create relied on the same property for its single
+    # deps retry. If a rung fails for a NEW, non-capability reason, surface that instead: never
+    # claim "created without them" ahead of a create that didn't actually happen.
     notices = []
-    if not dep_flags:
-        result = process.run(cmd, cwd=args.cwd)
-        if result.auth_required:
-            emit_needs_decision(_auth_decision(result))
-            return EXIT_OK
-        if result.returncode != 0:
-            sys.stderr.write(result.stderr)
-            return 1
-        url = result.stdout.strip()
-    else:
-        # Attempt WITH native dependencies first; on a deps-capability failure (old gh, or the
-        # repo hasn't enabled the feature) retry WITHOUT them and signal DEPS_UNSUPPORTED so the
-        # caller links via prose. A failed create is atomic (nothing is filed), so the retry
-        # can't double-file — ported verbatim from v1's cmd_create.
-        attempt = process.run(cmd + dep_flags, cwd=args.cwd)
+    url = None
+    ladder = _create_flag_ladder(dep_flags, parent_flags)
+    for index, (extra_flags, dropped_notices) in enumerate(ladder):
+        attempt = process.run(cmd + extra_flags, cwd=args.cwd)
         if attempt.auth_required:
             emit_needs_decision(_auth_decision(attempt))
             return EXIT_OK
         if attempt.returncode == 0:
             url = attempt.stdout.strip()
-        elif _is_deps_error(attempt.stderr):
-            # Retry without deps. If THIS fails (a new, non-deps reason), surface it — never claim
-            # "created without them" ahead of a create that didn't actually happen.
-            retry = process.run(cmd, cwd=args.cwd)
-            if retry.auth_required:
-                emit_needs_decision(_auth_decision(retry))
-                return EXIT_OK
-            if retry.returncode != 0:
-                sys.stderr.write(retry.stderr)
-                return 1
-            url = retry.stdout.strip()
-            notices.append(DEPS_UNSUPPORTED)
-        else:
+            notices = dropped_notices
+            break
+        is_last_rung = index == len(ladder) - 1
+        capability_miss = (dep_flags and _is_deps_error(attempt.stderr)) or (
+            parent_flags and _is_subissues_error(attempt.stderr)
+        )
+        if is_last_rung or not capability_miss:
             sys.stderr.write(attempt.stderr)
             return 1
 
@@ -660,6 +717,7 @@ def _build_parser():
     p_create.add_argument("--label", action="append", default=[])
     p_create.add_argument("--blocked-by", default="")
     p_create.add_argument("--blocking", default="")
+    p_create.add_argument("--parent", default="")
     p_create.add_argument("--dry-run", action="store_true")
 
     p_create_pr = sub.add_parser("create-pr")

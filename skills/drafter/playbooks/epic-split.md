@@ -42,9 +42,9 @@ bookends by default:
   after the other stories land.
 
 The slots exist at draft time because the planner never files issues and needs filed issues to plan
-into; their first/last positions bracket the listed story order. Omission is
+into; their first/last positions bracket the filed story order. Omission is
 allowed but **never silent**: record the omitted bookend and a one-line reason as a note in the Epic
-body directly under `## Stories` (e.g. `_No foundation story: the shared groundwork is story #1's
+body's `## Background` (e.g. `_No foundation story: the shared groundwork is story #1's
 entire scope._`) so it survives the E2 re-confirm and every epic-revise; the split reviewer may
 challenge the justification.
 
@@ -71,24 +71,25 @@ in a bookend body is the defect (anti-fabrication), not the placeholder.
 
 This is the **one** place the drafter skips the human filing gate: a clean E1+E2 pass *is* the go-ahead —
 the split loop + body review stand in for the confirmation. Stage every body to `facts.scratch` first
-(Epic → `epic.md`, each Story → `story-<i>.md` with its backlink already written in), then file in
-dependency order through the single write path:
+(Epic → `epic.md`, each Story → `story-<i>.md` with its backlink already written in), then file the
+Epic, then each Story **in dependency order** with `--parent <epic-#>`:
 
 ```bash
 ${CLAUDE_PLUGIN_ROOT}/scripts/gh_persist.py create <owner/repo> "<facts.scratch>/epic.md" --title "Epic: <theme>" --label epic
-${CLAUDE_PLUGIN_ROOT}/scripts/gh_persist.py create <owner/repo> "<facts.scratch>/story-<i>.md" --title "<story title>" --label story
+${CLAUDE_PLUGIN_ROOT}/scripts/gh_persist.py create <owner/repo> "<facts.scratch>/story-<i>.md" --title "<story title>" --label story --parent <epic-#>
 ```
 
-Collect each `#NN`, then **patch the Epic's `## Stories`** — swap the placeholder bullets for
-`- [ ] #NN — <Story title>` links, stage to `<facts.scratch>/epic-patched.md`, and apply:
+`--parent` establishes GitHub's native parent/sub-issue relation in the same round-trip that files the
+story ([`../../_shared/epic-story-hierarchy.md`](../../_shared/epic-story-hierarchy.md)) — that relation, not any body text, is what drives the epic's
+sub-issue panel and its progress rollup. Sub-issues append, so filing in dependency order gives the
+panel that order for free. There is **no epic-body patch step**: the epic body never lists its stories
+(`../references/issue-templates.md`), so nothing needs swapping after the numbers come back.
 
-```bash
-${CLAUDE_PLUGIN_ROOT}/scripts/gh_persist.py edit-body <owner/repo> <epic-#> "<facts.scratch>/epic-patched.md"
-```
-
-All-or-nothing per batch, sequenced Epic → stories → patch. On a mid-batch `create` failure, **stop and
+All-or-nothing per batch, sequenced Epic → stories. On a mid-batch `create` failure, **stop and
 report exactly what filed and what didn't** — don't blind-retry. On `EMPTY_BODY_FILE`, re-stage that one
-body and re-run with the same path.
+body and re-run with the same path. A `SUBISSUES_UNSUPPORTED` notice means the story filed but the
+relation didn't (the host doesn't serve it) — report it in the summary and carry on; it degrades what
+GitHub renders, never the batch.
 
 ## Promotion — an existing standard issue becomes the Epic
 
@@ -104,20 +105,30 @@ original).
   confirmation** before applying, and preserve any `> 📋 **Implementation plan:**` pointer line
   verbatim (the superseded plan comment is the planner's artifact; the Epic's own re-plan replaces it).
 - **Label swap in the same step:** `gh_persist.py edit-labels <owner/repo> <N> --add epic --remove feature`.
-- **Stories still file via `create`** (E3 unchanged, its gate-skip intact — the clean E1+E2 pass plus
-  the confirmed #N rewrite cover the batch), then patch #N's `## Stories` exactly as E3 does.
+- **Stories still file via `create --parent <N>`** (E3 unchanged, its gate-skip intact — the clean
+  E1+E2 pass plus the confirmed #N rewrite cover the batch). The promoted #N is the parent like any
+  freshly-filed epic; if its original body carried a `## Stories` section, the rewrite drops it.
 
 ## Epic-revise reconciliation
 
-For `vector.mode: epic-revise`, `facts.epic_revise.stories` carries every `## Stories` entry reconciled
-against live per-story state (`facts.attention` flags a checkbox/live-state mismatch — the router owns the
-body write). Reconcile the checkboxes (closed → checked; open → unchecked) and re-run the **dependency-graph
-ordering (5)** and **sizing / over-split (7)** dimensions against the current story set. Surface findings
-with evidence + a proposed re-order/merge for the user to confirm — don't silently swap or merge bullets
-(a sizing finding can't un-file a story; it's a recommendation). Dimension 7's bookend check rides this
-same re-run: a missing-bookend finding is a recommendation like any sizing finding, and a confirmed new
-bookend files through the new-stories path below. Then batch-file only genuinely **new**
-stories (the same E2/E3 discipline) and `edit-body` the reconciled Epic body.
+For `vector.mode: epic-revise`, `facts.epic_revise.stories` carries the epic's story set with live
+per-story state, and `facts.epic_revise.stories_source` names which tier produced it
+([`../../_shared/epic-story-hierarchy.md`](../../_shared/epic-story-hierarchy.md)):
+
+- **`sub-issues`** — the native relation. Story state *is* the record, so there is nothing to
+  reconcile and no mismatch to flag.
+- **`checklist`** — a legacy epic whose stories live in a `## Stories` section. Reconcile the
+  checkboxes (closed → checked; open → unchecked) and `edit-body` the reconciled body;
+  `facts.attention` flags each checkbox/live-state mismatch. Leave the section in place — this epic
+  has no native relation, so the checklist is still its only story record.
+
+Either way, re-run the **dependency-graph ordering (5)** and **sizing / over-split (7)** dimensions
+against the current story set. Surface findings with evidence + a proposed re-order/merge for the user
+to confirm — don't silently merge or re-order (a sizing finding can't un-file a story; it's a
+recommendation). Dimension 7's bookend check rides this same re-run: a missing-bookend finding is a
+recommendation like any sizing finding, and a confirmed new bookend files through the new-stories path.
+Then batch-file only genuinely **new** stories (the same E2/E3 discipline, `--parent <epic-#>` included
+so a story added to a legacy epic still gets the native relation).
 
 ## Handoff
 

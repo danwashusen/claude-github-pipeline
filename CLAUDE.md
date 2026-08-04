@@ -163,8 +163,12 @@ per [architecture.md §7](docs/architecture.md)'s mapping table).
 
 - `gh_gather.py` — the fixed issue-fetch envelope: body + full thread + labels + marker-comment
   lookup in one round-trip, with spill routing. Surfaces GitHub's **native issue dependencies**
-  (`blocked_by` / `blocking` + a `deps_available` flag), capability-gated: on a `gh`/repo without
-  the feature it returns empty lists + `deps_available: false` so callers degrade to prose linking.
+  (`blocked_by` / `blocking` + a `deps_available` flag) and the **native parent/sub-issue relation**
+  (`parent` / `sub_issues` / `sub_issues_summary` + a `subissues_available` flag). Both are
+  capability-gated and gate **independently** — one ladder descends per-relation, so a host serving
+  one but not the other still yields the one it serves, and the emitted notice
+  (`DEPS_UNSUPPORTED` / `SUBISSUES_UNSUPPORTED`) names which fallback applies: prose linking for
+  dependencies, the legacy `## Stories` checklist for epic hierarchy.
 - `gh_pr_gather.py` — the PR-fetch envelope, with optional `--with-diff` / `--with-line-comments`
   (always spilled to disk) and the PR's own `labels`.
 - `gh_persist.py` — the single write path (`create` / `edit-body` / `edit-labels` / `link` /
@@ -175,7 +179,10 @@ per [architecture.md §7](docs/architecture.md)'s mapping table).
   `body_bytes` + `body_sha256` and verifies the round-trip itself. `close` on a closed issue is a
   no-op (safe for a reentrant caller like `question-resolver`); marker replacement posts the new
   comment **before** deleting the old (a crash must not lose the marker); native-dependency writes
-  are capability-gated with a `DEPS_UNSUPPORTED` notice and a prose-link fallback.
+  are capability-gated with a `DEPS_UNSUPPORTED` notice and a prose-link fallback, and
+  `create --parent` — the native parent/sub-issue write that makes an epic's stories real
+  sub-issues — with a `SUBISSUES_UNSUPPORTED` notice. A create carrying both relations descends a
+  rung-per-relation ladder, safe because a failed `create` files nothing.
 - `config_block.py` — deterministic marker-block `read`/`list`/`upsert`/`remove`; the single
   execution path for `setup`, and the block reader `workspace.py` composes in-process.
 - `workspace.py` — the worktree mechanics owner: `attach` (the v3 stage-session assertion —
@@ -256,6 +263,16 @@ where the gate-weakening threat model cannot apply.
   because it runs at workspace-open *and* on every resolver/evaluator session entry, discovered at
   the origin/main pin; teardown best-effort and before removal, run by workspace-close). The
   *mechanics* belong to `workspace.py` and architecture §6 — this file does not restate them.
+- `epic-story-hierarchy.md` — the epic↔story relation: GitHub's **native parent/sub-issue**
+  relation, written only by the **drafter** at filing time (`gh_persist.py create --parent`) on every
+  path that files a story under an epic (fresh batch, promotion, epic-revise's new stories), and read
+  by the **planner**, **resolver**, and **evaluator** through a two-tier read — native first, the
+  legacy `## Stories` checklist second, `stories_source` reporting which answered. A fresh epic body
+  has **no** `## Stories` section (a checklist can't self-tick and can't drive GitHub's panel, rollup,
+  or a Project's Sub-issues progress field). The fallback is load-bearing: there is **no backfill
+  path**, so epics filed before 3.1.0 — and any host where `subissues_available: false` — live on
+  the `checklist` source permanently; an epic with both reads as `mixed` and is unioned, never
+  halved. No reader ever gates on the relation's absence.
 - `epic-delivery-log.md` — the `<!-- epic-delivery-log:v1 -->` comment contract and its
   writer/reader split. The **evaluator** is the sole writer (one entry per story at merge); the
   **planner** reads it (just-in-time story planning + the "consumes only what's shipped" check). It

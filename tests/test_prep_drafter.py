@@ -190,6 +190,29 @@ class EpicReviseModeVectorTests(PrepDrafterSandboxTestCase):
         self.assertEqual(len(placeholders), 1)
         self.assertEqual(placeholders[0]["title"], "Story D placeholder (not filed)")
 
+    def test_epic_revise_legacy_epic_reports_checklist_source(self):
+        """This fixture's epic predates the native relation (empty `sub_issues`, a `## Stories`
+        section), so the read falls to tier 2 and says so — that's what tells the router there are
+        checkboxes to reconcile (skills/_shared/epic-story-hierarchy.md)."""
+        envelope = self._envelope(issue=100, fixture_case="prep_drafter_epic_revise")
+        self.assertEqual(envelope["epic_revise"]["stories_source"], "checklist")
+
+    def test_epic_revise_native_relation_reports_sub_issues_source(self):
+        """An epic carrying the native relation: the story set comes from `sub_issues`, live state
+        rides along with it, and `checked` mirrors that state so a checkbox/live-state mismatch is
+        unrepresentable. The fixture omits the per-story `gh issue view` entries entirely, so a
+        regression into per-story fetching fails as a shim MISS rather than passing quietly."""
+        envelope = self._envelope(issue=100, fixture_case="prep_drafter_epic_revise_native")
+        self.assertEqual(envelope["epic_revise"]["stories_source"], "sub-issues")
+        stories = {s["number"]: s for s in envelope["epic_revise"]["stories"]}
+        self.assertEqual(sorted(stories), [101, 102])
+        self.assertEqual(stories[101]["state"], "CLOSED")
+        self.assertTrue(stories[101]["checked"])
+        self.assertEqual(stories[102]["state"], "OPEN")
+        self.assertFalse(stories[102]["checked"])
+        # Nothing to reconcile, so no mismatch lines.
+        self.assertFalse([line for line in envelope["attention"] if "checkbox" in line])
+
     def test_epic_revise_checkbox_live_state_mismatch_surfaces_attention(self):
         envelope = self._envelope(issue=100, fixture_case="prep_drafter_epic_revise")
         self.assertTrue(

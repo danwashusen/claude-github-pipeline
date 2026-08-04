@@ -814,16 +814,20 @@ class BookendStoriesTests(unittest.TestCase):
         self.assertIn("deferral placeholder", self.split)
 
     def test_omission_is_justified_and_durable_in_the_epic_body(self):
+        """The omission note lives in `## Background`. It moved there when the epic body stopped
+        carrying a `## Stories` section (the story set is the native sub-issue relation —
+        skills/_shared/epic-story-hierarchy.md); both sides must name the same surviving section, or
+        the reviewer looks for the justification where the drafter never wrote it."""
         self.assertIn("never silent", self.split)
         self.assertRegex(
             self.prompt,
-            re.compile(r"Epic body carries it as a note\s+directly under `## Stories`"),
+            re.compile(r"Epic body carries it as a note\s+in `## Background`"),
             "the reviewer must be told where the omission justification lives",
         )
         self.assertRegex(
             self.split,
-            re.compile(r"Epic\s+body directly under `## Stories`"),
-            "the playbook must record the omission reason in the Epic body under ## Stories",
+            re.compile(r"Epic\s+body's `## Background`"),
+            "the playbook must record the omission reason in the Epic body under ## Background",
         )
 
     def test_reviewer_dimension_seven_carries_the_matching_check(self):

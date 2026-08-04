@@ -55,9 +55,10 @@ approved at the gate, so the same terminal shape carries `review: APPROVE (opera
 may note the operator's sign-off. The merge / Cleanup / terminal lines are identical either way.
 
 **Story PR merged — more stories pending.** The Epic stays open; the next story is planned just-in-time
-before it's implemented. Read the Epic body's `## Stories` list (re-fetched during the story route's
-epic-checkbox action) to pick the next-in-sequence; the epic plan's `## Story breakdown` order is the
-source of truth.
+before it's implemented. Read the Epic's story set (`facts.epic.stories` — its sub-issues, or a legacy
+epic's re-fetched `## Stories` list) to pick the next-in-sequence; the epic plan's `## Story breakdown`
+order is the source of truth. The `K of M stories closed` count comes from
+`facts.epic.sub_issues_summary` (`completed` of `total`) where the native relation is present.
 
 ```
 ## Handoff

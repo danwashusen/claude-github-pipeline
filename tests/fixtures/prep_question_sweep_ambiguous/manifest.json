@@ -1,7 +1,7 @@
 [
   {"argv": ["issue", "list", "--repo", "octo/widgets", "--state", "all", "--label", "question", "--limit", "500", "--json", "number,title,state,labels,url"],
    "stdout_file": "registry.json", "exit_code": 0},
-  {"argv": ["issue", "view", "204", "--repo", "octo/widgets", "--json", "number,title,body,state,labels,author,createdAt,updatedAt,assignees,milestone,url,blockedBy,blocking"],
+  {"argv": ["issue", "view", "204", "--repo", "octo/widgets", "--json", "number,title,body,state,labels,author,createdAt,updatedAt,assignees,milestone,url,blockedBy,blocking,parent,subIssues,subIssuesSummary"],
    "stdout_file": "issue_view_204.json", "exit_code": 0},
   {"argv": ["api", "--paginate", "repos/octo/widgets/issues/204/comments"],
    "stdout_file": "comments_204.json", "exit_code": 0},

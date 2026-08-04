@@ -78,9 +78,19 @@ DECISION_CODES = frozenset(
 # Non-blocking notice codes ride in ``notices: []`` (architecture.md §3) rather than as a
 # ``needs_decision`` — they are not part of the closed decision-code set and are not exhaustively
 # enumerated here (a script may introduce a new notice without a contract change, since notices
-# are informational, not gating). ``DEPS_UNSUPPORTED`` is named because pipelib/tests reference it
-# directly (the capability-gated native-dependency degradation).
+# are informational, not gating). ``DEPS_UNSUPPORTED`` and ``SUBISSUES_UNSUPPORTED`` are named
+# because pipelib/tests reference them directly (the two capability-gated native-relation
+# degradations).
 DEPS_UNSUPPORTED = "DEPS_UNSUPPORTED"
+
+# The native parent/sub-issue relation (``gh issue create --parent``, ``gh issue view --json
+# parent,subIssues,subIssuesSummary``) is unavailable — the installed `gh` predates the flags, or
+# the repo/host doesn't serve the feature. Kept SEPARATE from ``DEPS_UNSUPPORTED`` because the two
+# features gate independently: blocked-by/blocking dependencies and parent/sub-issue hierarchy are
+# different GitHub relations, and reporting one when the other degraded would send a reader to the
+# wrong fallback. On this notice, epic↔story hierarchy readers fall back to parsing the legacy
+# ``## Stories`` checklist (skills/_shared/epic-story-hierarchy.md).
+SUBISSUES_UNSUPPORTED = "SUBISSUES_UNSUPPORTED"
 
 
 def needs_decision(code, summary, context=None, options=None):

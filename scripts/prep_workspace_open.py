@@ -219,7 +219,12 @@ def build_facts(issue_number, repo, root=".", scratch_dir=None, cwd=None):
             branch_source = "epic-bootstrap"
     else:
         if issue_type == "story":
-            matches, parent_decision = branching.search_parent_epic(repo, issue_number, cwd=cwd)
+            # Native `parent` first (exact, no round-trip); the full-text search is the fallback for
+            # a story filed before the relation was written
+            # (skills/_shared/epic-story-hierarchy.md).
+            matches, parent_decision = branching.search_parent_epic(
+                repo, issue_number, native_parent=issue_envelope.get("parent"), cwd=cwd
+            )
             if _forward_decision(parent_decision):
                 return None
             if len(matches) == 1 and (matches[0].get("state") or "").upper() == "OPEN":

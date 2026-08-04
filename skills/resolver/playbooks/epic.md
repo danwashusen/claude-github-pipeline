@@ -71,7 +71,9 @@ proceeding.
 
 ## S4 — Integration PR (all stories closed + DoD verifiable)
 
-When the epic's `## Stories` are all closed and its `## Definition of done` is verifiable against the
+When every story in the epic's story set is closed (`facts.target.sub_issues_summary` —
+`completed == total` — or the legacy `## Stories` checklist, per
+[`../../_shared/epic-story-hierarchy.md`](../../_shared/epic-story-hierarchy.md)) and its `## Definition of done` is verifiable against the
 accumulated diff, open the integration PR — `epic/<N>-<slug>` → `main`, title `Epic #<N>: <title>`, body
 citing the epic's `## Goal` + DoD checklist + `Fixes #<epic-number>`. Then run the review loop against it
 (the integration PR lands the whole epic on `main` at once — higher risk, so apply the same review-loop
@@ -91,10 +93,12 @@ naming what's left.
 ## S5 — Epic body-tick close-out (after the integration PR merges)
 
 This runs only when the integration PR has merged (the evaluator merges it; on a resolver-driven close
-after merge, do the housekeeping GitHub doesn't auto-fire). Re-fetch the epic body, flip every `- [ ]`
-→ `- [x]` in `## Stories` and `## Definition of done` (preserve the `## Goal` / `## Background` /
-`## Stories` / `## Definition of done` section names exactly — they're load-bearing for PRD
-traceability), stage to `<facts.scratch>/epic-body-closed.md`, and apply:
+after merge, do the housekeeping GitHub doesn't auto-fire). Re-fetch the epic body and flip every
+`- [ ]` → `- [x]` in `## Definition of done` — plus, on a legacy epic that still carries a
+`## Stories` checklist, in that section too (a native story set needs no tick: GitHub recomputes the
+rollup from issue state). Preserve the `## Goal` / `## Background` / `## Definition of done` section
+names exactly — they're load-bearing for PRD traceability. Stage to
+`<facts.scratch>/epic-body-closed.md`, and apply:
 
 ```bash
 ${CLAUDE_PLUGIN_ROOT}/scripts/gh_persist.py edit-body <owner/repo> <epic> \

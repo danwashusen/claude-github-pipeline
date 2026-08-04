@@ -660,6 +660,195 @@ class CreateDepsCapabilityGatingTests(unittest.TestCase):
             self.assertEqual(len(fake.calls), 1)
 
 
+class CreateParentSubIssueTests(CreateDepsCapabilityGatingTests):
+    """`create --parent` establishes GitHub's native parent/sub-issue relation in the filing
+    round-trip (skills/_shared/epic-story-hierarchy.md), capability-gated independently of native
+    dependencies. Reuses the in-process scripted-run harness for the same reason: the
+    classification reads stderr text the offline shim can't deliver.
+    """
+
+    def test_create_with_parent_passes_the_flag_through_on_the_first_attempt(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            body_path = Path(tmp) / "body.md"
+            body_path.write_bytes(b"story body")
+
+            success = process.CommandResult(
+                returncode=0, stdout="https://github.com/o/r/issues/96\n", stderr=""
+            )
+            exit_code, env, calls = self._run_create_in_process(
+                ["create", "o/r", str(body_path), "--title", "S", "--parent", "95"],
+                [success],
+            )
+            self.assertEqual(exit_code, 0)
+            envelope_asserts.assert_full_envelope_conformance(env)
+            self.assertEqual(env["status"], "ok")
+            self.assertEqual(env["url"], "https://github.com/o/r/issues/96")
+            # One call, relation included, no degradation notice.
+            self.assertEqual(len(calls), 1)
+            self.assertIn("--parent", calls[0])
+            self.assertEqual(calls[0][calls[0].index("--parent") + 1], "95")
+            self.assertEqual(env["notices"], [])
+
+    def test_create_retries_without_parent_on_subissues_unsupported(self):
+        """The story still files; only the relation is dropped, reported as SUBISSUES_UNSUPPORTED —
+        never DEPS_UNSUPPORTED, which would send a reader to the wrong fallback."""
+        with tempfile.TemporaryDirectory() as tmp:
+            body_path = Path(tmp) / "body.md"
+            body_path.write_bytes(b"story body")
+
+            with_parent_failure = process.CommandResult(
+                returncode=1, stdout="", stderr="unknown flag: --parent\n"
+            )
+            without_parent_success = process.CommandResult(
+                returncode=0, stdout="https://github.com/o/r/issues/96\n", stderr=""
+            )
+            exit_code, env, calls = self._run_create_in_process(
+                ["create", "o/r", str(body_path), "--title", "S", "--parent", "95"],
+                [with_parent_failure, without_parent_success],
+            )
+            self.assertEqual(exit_code, 0)
+            self.assertEqual(env["status"], "ok")
+            self.assertEqual(env["url"], "https://github.com/o/r/issues/96")
+            self.assertIn("SUBISSUES_UNSUPPORTED", env["notices"])
+            self.assertNotIn("DEPS_UNSUPPORTED", env["notices"])
+            self.assertEqual(len(calls), 2)
+            self.assertIn("--parent", calls[0])
+            self.assertNotIn("--parent", calls[1])
+
+    def test_ladder_keeps_deps_when_only_the_parent_relation_is_unsupported(self):
+        """Both relations requested, only sub-issues missing: rung 2 (deps kept, parent dropped)
+        succeeds, so the dependency survives and exactly one notice is reported."""
+        with tempfile.TemporaryDirectory() as tmp:
+            body_path = Path(tmp) / "body.md"
+            body_path.write_bytes(b"story body")
+
+            both_failure = process.CommandResult(
+                returncode=1, stdout="", stderr="unknown flag: --parent\n"
+            )
+            deps_only_success = process.CommandResult(
+                returncode=0, stdout="https://github.com/o/r/issues/96\n", stderr=""
+            )
+            exit_code, env, calls = self._run_create_in_process(
+                [
+                    "create", "o/r", str(body_path), "--title", "S",
+                    "--blocked-by", "9", "--parent", "95",
+                ],
+                [both_failure, deps_only_success],
+            )
+            self.assertEqual(exit_code, 0)
+            self.assertEqual(env["notices"], ["SUBISSUES_UNSUPPORTED"])
+            self.assertEqual(len(calls), 2)
+            self.assertIn("--blocked-by", calls[1])
+            self.assertNotIn("--parent", calls[1])
+
+    def test_ladder_drops_both_relations_and_reports_both_notices(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            body_path = Path(tmp) / "body.md"
+            body_path.write_bytes(b"story body")
+
+            failure = process.CommandResult(
+                returncode=1, stdout="", stderr="unknown flag\n"
+            )
+            bare_success = process.CommandResult(
+                returncode=0, stdout="https://github.com/o/r/issues/96\n", stderr=""
+            )
+            exit_code, env, calls = self._run_create_in_process(
+                [
+                    "create", "o/r", str(body_path), "--title", "S",
+                    "--blocked-by", "9", "--parent", "95",
+                ],
+                [failure, failure, failure, bare_success],
+            )
+            self.assertEqual(exit_code, 0)
+            self.assertEqual(env["notices"], ["DEPS_UNSUPPORTED", "SUBISSUES_UNSUPPORTED"])
+            self.assertEqual(len(calls), 4)
+            self.assertNotIn("--blocked-by", calls[3])
+            self.assertNotIn("--parent", calls[3])
+
+    def test_non_capability_failure_with_parent_surfaces_without_retry(self):
+        """A real error (bad parent number, permissions) must surface, not be masked as a
+        capability miss and silently filed without the relation."""
+        with tempfile.TemporaryDirectory() as tmp:
+            body_path = Path(tmp) / "body.md"
+            body_path.write_bytes(b"story body")
+
+            fake = _ScriptedProcessRun(
+                [
+                    process.CommandResult(
+                        returncode=1,
+                        stdout="",
+                        stderr="could not resolve to an Issue with the number 99999\n",
+                    )
+                ]
+            )
+            gh_persist.process.run = fake
+            parser, _ = gh_persist._build_parser()
+            args = parser.parse_args(
+                ["create", "o/r", str(body_path), "--title", "S", "--parent", "99999"]
+            )
+            buf = io.StringIO()
+            with contextlib.redirect_stdout(buf):
+                exit_code = gh_persist._cmd_create(args)
+            self.assertEqual(exit_code, 1)
+            self.assertEqual(buf.getvalue(), "")
+            self.assertEqual(len(fake.calls), 1)
+
+    def test_error_merely_mentioning_a_parent_is_not_a_capability_miss(self):
+        """A relationship-integrity failure ("the parent issue is closed") must SURFACE. Matching a
+        bare "parent" as a capability signature would file the story unparented and report a benign
+        SUBISSUES_UNSUPPORTED, so the caller never learns its real parenting attempt failed — the
+        same silent-swallow class `_DEPS_ERROR_PATTERN` refuses to match bare "blocking" for.
+        """
+        self.assertFalse(gh_persist._is_subissues_error("the parent issue is closed"))
+        self.assertFalse(gh_persist._is_subissues_error("cannot add a parent to itself"))
+        # The genuine capability signatures still classify.
+        self.assertTrue(gh_persist._is_subissues_error("unknown flag: --parent"))
+        self.assertTrue(gh_persist._is_subissues_error('unknown JSON field: "subIssues"'))
+        self.assertTrue(gh_persist._is_subissues_error("sub-issues are not available"))
+
+    def test_parenting_integrity_failure_surfaces_instead_of_degrading(self):
+        """The same rule proven through the real create path: one call, hard exit, no envelope."""
+        with tempfile.TemporaryDirectory() as tmp:
+            body_path = Path(tmp) / "body.md"
+            body_path.write_bytes(b"story body")
+            fake = _ScriptedProcessRun(
+                [
+                    process.CommandResult(
+                        returncode=1, stdout="", stderr="the parent issue is closed\n"
+                    )
+                ]
+            )
+            gh_persist.process.run = fake
+            parser, _ = gh_persist._build_parser()
+            args = parser.parse_args(
+                ["create", "o/r", str(body_path), "--title", "S", "--parent", "95"]
+            )
+            buf = io.StringIO()
+            with contextlib.redirect_stdout(buf):
+                exit_code = gh_persist._cmd_create(args)
+            self.assertEqual(exit_code, 1)
+            self.assertEqual(buf.getvalue(), "")
+            self.assertEqual(len(fake.calls), 1)
+
+    def test_dry_run_preview_includes_the_parent_flag_and_never_calls_gh(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            body_path = Path(tmp) / "body.md"
+            body_path.write_bytes(b"story body")
+            fake = _ScriptedProcessRun([])
+            gh_persist.process.run = fake
+            parser, _ = gh_persist._build_parser()
+            args = parser.parse_args(
+                ["create", "o/r", str(body_path), "--title", "S", "--parent", "95", "--dry-run"]
+            )
+            buf = io.StringIO()
+            with contextlib.redirect_stdout(buf):
+                exit_code = gh_persist._cmd_create(args)
+            self.assertEqual(exit_code, 0)
+            env = json.loads(buf.getvalue().splitlines()[0])
+            self.assertIn("--parent 95", env["would_run"])
+            self.assertEqual(fake.calls, [])
+
+
 class LinkTests(unittest.TestCase):
     def test_link_with_no_flags_is_a_usage_error(self):
         result = _run_script(["link", "o/r", "42"])

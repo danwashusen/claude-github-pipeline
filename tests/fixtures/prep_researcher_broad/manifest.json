@@ -7,7 +7,7 @@
    "--repo",
    "octo/widgets",
    "--json",
-   "number,title,body,state,labels,author,createdAt,updatedAt,assignees,milestone,url,blockedBy,blocking"
+   "number,title,body,state,labels,author,createdAt,updatedAt,assignees,milestone,url,blockedBy,blocking,parent,subIssues,subIssuesSummary"
   ],
   "stdout_file": "issue_view.json",
   "exit_code": 0

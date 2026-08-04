@@ -22,12 +22,19 @@ is a safe no-op — `gh_persist.py close` is idempotent):
 ${CLAUDE_PLUGIN_ROOT}/scripts/gh_persist.py close <owner/repo> <story> --reason completed
 ```
 
-## Action 2 — Tick the epic `## Stories` checkbox
+## Action 2 — Project story progress onto the epic
 
-GitHub task lists don't auto-tick on merge. Re-fetch the current epic body (another story may have
-merged since prep) into `<facts.scratch>/epic-body-current.md`, find the `- [ ] #<story>` line in
-`## Stories`, replace it with `- [x] #<story>`, and stage the updated body to
-`<facts.scratch>/epic-body-updated.md`. Show the diff, then:
+**Skip entirely when the epic carries the native sub-issue relation** (`facts.epic.stories_source:
+sub-issues`, per [`../../_shared/epic-story-hierarchy.md`](../../_shared/epic-story-hierarchy.md)): Action 1 already closed the story, and GitHub
+recomputes the epic's rollup from that state. There is nothing to write, and writing anything would
+create a second copy of a fact GitHub already maintains.
+
+**Only for a legacy epic** (`stories_source: checklist` — filed before the relation existed, or a host
+that doesn't serve it), whose `## Stories` checkboxes are hand-maintained and don't auto-tick on merge:
+re-fetch the current epic body (another story may have merged since prep) into
+`<facts.scratch>/epic-body-current.md`, find the `- [ ] #<story>` line in `## Stories`, replace it with
+`- [x] #<story>`, and stage the updated body to `<facts.scratch>/epic-body-updated.md`. Show the diff,
+then:
 
 ```bash
 ${CLAUDE_PLUGIN_ROOT}/scripts/gh_persist.py edit-body <owner/repo> <epic> \
@@ -76,8 +83,9 @@ inside it); the handoff's Cleanup line hands the operator
 ## Handoff
 
 Read [`../references/handoff-renderings.md`](../references/handoff-renderings.md). A story clean merge
-is **not terminal** — route by whether sibling stories remain (re-read the epic `## Stories` list,
-re-fetched in Action 2):
+is **not terminal** — route by whether sibling stories remain, read from the epic's story set
+(`facts.epic.sub_issues` + its `sub_issues_summary` rollup, or the re-fetched `## Stories` list on a
+legacy epic):
 - **More stories pending** → forward to `/github-pipeline:planner #<next-story>` to plan the next story
   just-in-time against the now-current epic HEAD. Story / Epic (`open (K of M stories closed)`) / PR /
   Cleanup lines.

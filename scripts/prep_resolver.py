@@ -633,7 +633,11 @@ def build_facts(issue_number, repo, root=".", scratch_dir=None, refresh=False, c
             return None
         epic_branch_for_audit = epic_facts.get("branch")
     elif issue_type == "story":
-        story_epic_matches, epic_decision = _search_parent_epic(repo, issue_number, cwd=cwd)
+        # Native `parent` first (exact, no round-trip); the full-text search is the fallback for a
+        # story filed before the relation was written (skills/_shared/epic-story-hierarchy.md).
+        story_epic_matches, epic_decision = _search_parent_epic(
+            repo, issue_number, native_parent=issue_envelope.get("parent"), cwd=cwd
+        )
         if _forward_decision(epic_decision):
             return None
         if len(story_epic_matches) == 1:
@@ -806,6 +810,12 @@ def build_facts(issue_number, repo, root=".", scratch_dir=None, refresh=False, c
             "blocked_by": blocked_by,
             "blocking": issue_envelope.get("blocking") or [],
             "deps_available": issue_envelope.get("deps_available"),
+            # Native epic↔story hierarchy (skills/_shared/epic-story-hierarchy.md): the native source of the
+            # story-set / parent-epic read the epic flow and the audit's dimension 5 consume.
+            "parent": issue_envelope.get("parent"),
+            "sub_issues": issue_envelope.get("sub_issues") or [],
+            "sub_issues_summary": issue_envelope.get("sub_issues_summary") or {},
+            "subissues_available": issue_envelope.get("subissues_available"),
         },
         "vector": vector,
         "prior_pr": prior_pr_fact,
