@@ -12,11 +12,19 @@ ground → gates → draft → hedge sweep → verify → show → persist). The
   [`../references/plan-schema.md`](../references/plan-schema.md). Add `## Coverage gap` for a bug fix
   (never optional for a bug — name which test should have caught it and the regression test that fails
   pre-fix). Add the structured `## Phases` section (fixed keys `kind` / `ships` / `closes-dod` /
-  `deliverable` / `depends-on`) **only** when S1 classified the work as multi-phase — the resolver
-  parses it deterministically to route each phase; free-form sequencing prose is the #640 regression.
+  `deliverable` / `depends-on`, plus `sub-issue` whenever `facts.slices` is present) **only** when S1
+  classified the work as multi-phase — the resolver parses it deterministically to route each phase;
+  free-form sequencing prose is the #640 regression.
+- **Reconcile the phases against the live sub-issue set.** When `facts.slices` is present the target's
+  sub-issues are its deliverable slices, and they are an **input constraint** on the plan's shape, not
+  an output of it. Read
+  [`../references/sub-issue-reconciliation.md`](../references/sub-issue-reconciliation.md) before
+  drafting `## Phases`: it owns the `sub-issue:` cardinality rule, the diff cases prep already computed
+  in `facts.slices.diff`, and the mismatch gate (which gates or re-routes — it never silently re-cuts).
 - **Reviewer dimensions (spine S7).** `1, 2, 3, 4, 6`; add `9` for a bug fix (coverage-gap closure); add
-  `7` for a multi-phase issue (phase coherence). Dimension 10 is added by the spine whenever the plan
-  carries `## Open questions`.
+  `7` for a multi-phase issue (phase coherence) — passing `<<live_slices>>` from `facts.slices` so its
+  slice-coverage check runs. Dimension 10 is added by the spine whenever the plan carries
+  `## Open questions`.
 - **Off-ramp (spine S4).** `off-ramp: offered` — a standalone issue whose seam inventory is mostly
   out-of-slice is structurally an Epic filed as one issue; the seam gate may offer the split.
 

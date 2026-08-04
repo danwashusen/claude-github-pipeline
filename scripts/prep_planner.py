@@ -22,6 +22,10 @@ processes any script may spawn are git/gh")::
                                                workspace)
     parse.parse_oq_links                    -- the issue's `## Open questions` section (the Bug (a)
                                                tracker de-dup search's input)
+    parse.parse_phases                      -- the PRIOR plan's `## Phases`, for the sub-issue
+                                               plan-versus-live diff. BEST-EFFORT: a malformed
+                                               section is reported as a fact, never as
+                                               `PHASES_MALFORMED` (step 4.5)
     config_block.read_block_anywhere        -- NOT used by this module directly today (no gate-
                                                config block the planner reads is named yet), but the
                                                S12-promoted shared reader (see the "Promotion"
@@ -36,8 +40,11 @@ emitting exactly one envelope of its own. No ``redirect_stdout``/``io.StringIO``
 script's stdout is used anywhere in this module (S9-on rule; docs/specs/baseline.md §5).
 
 ``git ls-remote --heads origin <pattern>`` (epic-branch discovery), ``gh issue list --label epic
-...`` (story parent-epic search), and ``gh issue view <NN> --json state,title,labels`` (per-story
-live-state fetch, mirroring v1's ``GATHER_EPIC`` reconciliation) have no existing executor core —
+...`` (story parent-epic search), ``gh issue view <NN> --json state,title,labels`` (per-story
+live-state fetch, mirroring v1's ``GATHER_EPIC`` reconciliation), and ``gh api --paginate
+repos/<owner>/<repo>/issues/<N>/sub_issues`` (the deliverable-sub-issue detail fetch, step 4.5 —
+kept HERE rather than in ``gh_gather`` because six preps compose that module and only the planner
+reads this fact) have no existing executor core —
 architecture.md §1 permits any script to spawn `git`/`gh` directly via `pipelib.process.run`, the
 same precedent `prep_resolver.py` and `prep_evaluator.py` already established for their own
 prep-owned direct calls.
@@ -129,6 +136,22 @@ from the body-driven search above), the ``--oq-query`` one-shot mode (now
 demand — the S13-authorized additive extension that keeps the raw `gh issue list` out of the
 playbook prompt.
 
+**Deliverable sub-issues (#18) — `slices`.** A NON-EPIC target's sub-issues are its deliverable
+slices by construction (the hierarchy is epic → story → slice), so no label and no per-child
+classification fetch is involved. When the target is non-epic AND has sub-issues, `facts.slices`
+carries the live set (`number`, `title`, `state`, `position` — the sub-issue panel's own order, the
+sequencing source of truth — `updated_at`, `maybe_rescoped`, and the body staged to a path) plus
+`slices.diff`, the plan-versus-live diff computed HERE and never re-derived in a prompt:
+`uncovered_open` / `closed` / `removed` / `rescoped` / `order_changed`, alongside the map facts
+`mapped` / `substrate_phases` / `unmapped_phases`. Each non-empty case also surfaces an `attention`
+line (:func:`_slice_attention`). `rescoped` is a SUSPICION — an issue's `updated_at` bumps on comments
+and labels too, so it over-reports — with two carve-outs that stop it lying in the other direction: a
+CLOSED sub-issue is excluded (closing bumps the timestamp, and closure has its own disposition), and a
+served sub-issue with no usable timestamp is named in `attention` as uncovered by the comparison.
+`rescope_basis` distinguishes `updated_at` (it ran) from `no_prior_plan` (nothing to compare against)
+and `unavailable` (this host cannot answer). A childless target and an epic target both cost ZERO
+extra `gh` calls, which is what keeps the canonical call budget unchanged.
+
 **S14 promotion.** `_search_question_tracker` / `_build_open_question_candidates` / `build_oq_query`
 were this module's own S12/S13 helpers until S14's `prep_drafter.py` needed the byte-identical
 mechanism for its own search-before-file companion-question de-dup (docs/specs/drafter.md Step
@@ -161,6 +184,7 @@ import argparse
 import json
 import re
 import sys
+from datetime import datetime
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
@@ -170,10 +194,10 @@ import gh_gather  # noqa: E402
 import gh_pr_gather  # noqa: E402
 import oq_tracker  # noqa: E402
 import refblocks  # noqa: E402  (the origin/main pin — root.sha provenance, uniform across preps)
-import parse  # noqa: E402  (no longer called directly by this module's own code — kept as an
-# import so `prep_planner.parse` still resolves for tests/test_prep_planner.py's one direct
-# `prep_planner.parse.parse_oq_links(...)` call, matching the S14-promotion's "tests unmodified"
-# bar; `oq_tracker.py` is this module's own OQ-search composition path now)
+import parse  # noqa: E402  (the prior plan's `## Phases` parse for the sub-issue diff — best-effort,
+# see step 4.5; also keeps `prep_planner.parse` resolving for tests/test_prep_planner.py's direct
+# `prep_planner.parse.parse_oq_links(...)` call, per the S14-promotion's "tests unmodified" bar.
+# `oq_tracker.py` is this module's OQ-search composition path)
 import workspace  # noqa: E402
 from pipelib import process  # noqa: E402
 from pipelib.decisions import AMBIGUOUS, AUTH_REQUIRED, MARKER_AMBIGUOUS, needs_decision  # noqa: E402
@@ -263,6 +287,22 @@ def _forward_decision(decision, notices=None):
         emit_needs_decision(decision, notices=notices)
         return True
     return False
+
+
+def _merge_notices(accumulated, more):
+    """Append a composed core's notices to prep's own list, in first-seen order and without
+    duplicates (both gh_gather calls degrade identically on a host that doesn't serve a relation, so
+    the same code arrives twice).
+
+    A prep that drops its cores' notices reports the degraded read as if it were the full one: on a
+    host without the native parent/sub-issue relation, `SUBISSUES_UNSUPPORTED` is the ONLY signal
+    that an empty sub-issue set means "unavailable" rather than "no children", and the planner's
+    sub-issue reconciliation would otherwise skip silently.
+    """
+    for notice in more or []:
+        if notice not in accumulated:
+            accumulated.append(notice)
+    return accumulated
 
 
 # ---------------------------------------------------------------------------
@@ -429,6 +469,346 @@ def _fetch_story_state(repo, story_number, cwd=None):
         "title": data.get("title"),
         "labels": [label.get("name") for label in data.get("labels") or []],
     }, None
+
+
+# ---------------------------------------------------------------------------
+# Deliverable sub-issues (#18) — the live slice set and the plan-versus-live diff.
+#
+# A NON-EPIC target's sub-issues are its deliverable slices by construction: the hierarchy is
+# epic -> story -> slice, so no label and no per-child classification fetch is needed (an epic's
+# sub-issues are stories, and an epic plan carries no `## Phases` at all).
+#
+# `gh issue view --json subIssues` serializes a FIXED node shape (`{id, number, state, title,
+# url}`) with no sub-selection syntax, so it can supply neither a per-child timestamp nor a body.
+# The REST list-sub-issues endpoint returns full Issue objects instead — one paginated call for the
+# whole set rather than one call per child, and it carries the bodies the rescope prompt needs to
+# be actionable (the planner has no scriptless raw-`gh` executor, so a "re-read it" note the prompt
+# cannot act on would be useless).
+# ---------------------------------------------------------------------------
+
+
+# Non-blocking: the REST list-sub-issues endpoint is unavailable on this host, so the fixed
+# `subIssues` node data already in hand is the fallback — numbers/titles/states survive, per-child
+# timestamps and bodies do not (notices are open by contract, pipelib/decisions.py).
+SUBISSUE_DETAIL_UNSUPPORTED = "SUBISSUE_DETAIL_UNSUPPORTED"
+
+
+def _fetch_sub_issue_details(repo, issue_number, env=None, cwd=None):
+    """`gh api --paginate repos/<owner>/<repo>/issues/<N>/sub_issues` — the full Issue object for
+    every sub-issue in ONE call. Returns `(objects, notices, decision_or_none)`; `objects` is
+    `None` when the endpoint is unavailable, which is a degradation (notice), not a failure.
+    """
+    result = process.run(
+        ["gh", "api", "--paginate", "repos/%s/issues/%s/sub_issues" % (repo, issue_number)],
+        env=env,
+        cwd=cwd,
+    )
+    if result.auth_required:
+        return None, [], needs_decision(
+            AUTH_REQUIRED,
+            summary="gh authentication required",
+            context={"stderr": result.stderr, "returncode": result.returncode},
+            options=["run: gh auth login"],
+        )
+    if result.returncode != 0:
+        # A host that doesn't serve the endpoint (older GHES, a token without the scope) answers
+        # 404/410 — degrade to the node data rather than failing a planning session over a fact
+        # that only enriches the reconciliation. Anything else is still a hard failure. Matched on
+        # the HTTP status only: bare "not found"/"gone" prose would also swallow a wrong-repo or
+        # revoked-scope failure, and the caller has already read this very issue through gh_gather,
+        # so a status here really does mean the endpoint.
+        stderr = (result.stderr or "")
+        if "404" in stderr or "410" in stderr:
+            return None, [SUBISSUE_DETAIL_UNSUPPORTED], None
+        sys.stderr.write(result.stderr)
+        sys.exit(1)
+
+    # Same one-or-more-concatenated-top-level-arrays tolerance as
+    # gh_gather._fetch_paginated_comments: `gh api --paginate` merges pages in the common case, but
+    # its documented contract is one array per page.
+    decoder = json.JSONDecoder()
+    text = result.stdout
+    pos, length, objects = 0, len(result.stdout), []
+    while pos < length:
+        while pos < length and text[pos] in " \t\r\n":
+            pos += 1
+        if pos >= length:
+            break
+        page, pos = decoder.raw_decode(text, pos)
+        objects.extend(page)
+    return objects, [], None
+
+
+def _parse_iso8601(text):
+    """Parse a GitHub timestamp into a comparable `datetime`, or `None`. Compared as *datetimes*, not
+    strings: github.com always emits `…Z`, but a GHES or proxy emitting `+00:00` would invert a raw
+    string comparison silently (`"+"` sorts below `"Z"`), turning rescope detection off with no
+    signal at all."""
+    if not text:
+        return None
+    try:
+        return datetime.fromisoformat(str(text).replace("Z", "+00:00"))
+    except ValueError:
+        return None
+
+
+def _build_slice_set(sub_issue_nodes, detail_objects, plan_updated_at, scratch_dir):
+    """Assemble `slices.set` — one entry per live sub-issue, in the sub-issue panel's own order
+    (`position`, the sequencing source of truth). `detail_objects` is the REST enrichment or `None`
+    when unavailable, in which case the node data alone is carried.
+
+    `maybe_rescoped` is a SUSPICION, never proof: an issue's `updated_at` bumps on comments, labels
+    and assignment as well as a body rewrite, so it over-reports — and never under-reports while the
+    timestamp is present and parseable. Tightening the comparison is not a fix; the prompt wording
+    ("may have changed — re-read it") is what carries the uncertainty.
+    """
+    by_number = {}
+    for obj in detail_objects or []:
+        if obj.get("number") is not None:
+            by_number[int(obj["number"])] = obj
+
+    plan_stamp = _parse_iso8601(plan_updated_at)
+    entries = []
+    position = -1
+    for node in sub_issue_nodes or []:
+        number = node.get("number")
+        if number is None:
+            continue
+        # Position is assigned over the KEPT entries: a node with no number cannot appear in a
+        # phase map at all, and consuming its index would leave a hole in the very ordering
+        # `order_changed` compares against.
+        position += 1
+        number = int(number)
+        detail = by_number.get(number) or {}
+        # REST states are lowercase (`open`), the GraphQL node's are upper (`OPEN`). Normalize to
+        # the node spelling, which is what every other fact in this block already carries.
+        state = detail.get("state") or node.get("state") or ""
+        updated_at = detail.get("updated_at")
+        stamp = _parse_iso8601(updated_at)
+        entry = {
+            "number": number,
+            "title": detail.get("title") or node.get("title"),
+            "state": (state or "").upper(),
+            "position": position,
+            "url": node.get("url") or detail.get("html_url"),
+            "updated_at": updated_at,
+            "maybe_rescoped": bool(stamp and plan_stamp and stamp > plan_stamp),
+        }
+        if detail_objects is not None:
+            # force_path: a target with ten small sub-issues would otherwise put ten inline bodies
+            # in the envelope. Uniform paths keep the envelope's size independent of child count.
+            entry.update(
+                spill_bytes(
+                    (detail.get("body") or "").encode("utf-8"),
+                    "body",
+                    scratch_dir,
+                    filename="slice-%d-body.md" % number,
+                    force_path=True,
+                )
+            )
+        entries.append(entry)
+    return entries
+
+
+def _build_slice_diff(slice_set, prior_phases, prior_phases_parsed, rescope_basis):
+    """Compute the plan-versus-live diff from the live slice set and the PRIOR plan's parsed
+    `## Phases`. Pure — no I/O, no gh, no git.
+
+    Three states leave `computed: False` with every case list empty, because a finding *about a phase
+    map* cannot exist before one does — each is reported as its own fact so a consumer never has to
+    guess which it is: no prior plan at all (`prior_phases is None`, the fresh path), a prior plan
+    whose `## Phases` did not parse (`prior_phases_parsed: False`), and a prior plan that carries no
+    `## Phases` section (`prior_phases_present: False` — a legitimate single-phase plan; reporting
+    every open sub-issue as "unserved" against a plan that has no phases would gate on a shape the
+    reviewer is never asked to check). The coverage obligation itself still binds in all three — it is
+    carried by the playbook and reviewer Dimension 7, not by this diff.
+    """
+    diff = {
+        "computed": False,
+        "prior_phases_parsed": prior_phases_parsed,
+        "prior_phases_present": bool(prior_phases),
+        "rescope_basis": rescope_basis,
+        "mapped": [],
+        "substrate_phases": [],
+        "unmapped_phases": [],
+        "closed": [],
+        "removed": [],
+        "rescoped": [],
+        "order_changed": [],
+        "uncovered_open": [],
+    }
+    if not prior_phases:
+        return diff
+    diff["computed"] = True
+
+    live_by_number = {entry["number"]: entry for entry in slice_set}
+    # Not-CLOSED rather than == OPEN: an unknown state (a node the detail fetch didn't cover, a host
+    # spelling it differently) must fail SAFE — surfaced as uncovered, never silently dropped from
+    # the set the map has to cover.
+    open_numbers = [e["number"] for e in slice_set if e["state"] != "CLOSED"]
+    position = {e["number"]: e["position"] for e in slice_set}
+
+    served = []
+    for phase in prior_phases:
+        sub_issue = phase.get("sub_issue")
+        if sub_issue == "(none)":
+            diff["substrate_phases"].append(phase["number"])
+        elif sub_issue is None:
+            diff["unmapped_phases"].append(phase["number"])
+        else:
+            diff["mapped"].append({"phase": phase["number"], "sub_issue": sub_issue})
+            served.append(sub_issue)
+
+    served_set = set(served)
+    # ONE key for one fact. A genuinely *newly added* sub-issue is indistinguishable from one the
+    # plan simply never mapped: no prior snapshot of the set exists anywhere, so "open and unserved"
+    # is the whole observable truth. Two keys carrying it would invite a consumer to double-report.
+    diff["uncovered_open"] = [n for n in open_numbers if n not in served_set]
+    diff["closed"] = sorted(
+        {n for n in served_set if (live_by_number.get(n) or {}).get("state") == "CLOSED"}
+    )
+    diff["removed"] = sorted(n for n in served_set if n not in live_by_number)
+    # A CLOSED sub-issue is excluded from `rescoped` deliberately: closing an issue bumps its
+    # `updated_at`, so without this every closure would ALSO read as a rescope — and since `rescoped`
+    # gates while `closed` does not, the non-gating case would be unreachable in production. A closed
+    # sub-issue is governed by the shipped-phase rules, one disposition per event.
+    diff["rescoped"] = sorted(
+        n
+        for n in served_set
+        if (live_by_number.get(n) or {}).get("maybe_rescoped")
+        and (live_by_number.get(n) or {}).get("state") != "CLOSED"
+    )
+
+    # `depends-on` versus the panel order. Surfaced, never corrected: disagreeing with the panel can
+    # be a deliberate call (an ordering-only dependency), so it is the operator's finding to judge.
+    by_phase_number = {p["number"]: p for p in prior_phases}
+    seen_pairs = set()
+    for phase in prior_phases:
+        later = phase.get("sub_issue")
+        if not isinstance(later, int) or later not in position:
+            continue
+        depends_on = phase.get("depends_on")
+        if not isinstance(depends_on, list):
+            continue
+        for earlier_phase_number in depends_on:
+            earlier_phase = by_phase_number.get(earlier_phase_number)
+            if earlier_phase is None:
+                continue
+            earlier = earlier_phase.get("sub_issue")
+            if not isinstance(earlier, int) or earlier not in position or earlier == later:
+                continue
+            if position[later] < position[earlier]:
+                # One row per disagreeing sub-issue PAIR, not per dependency edge: two phases both
+                # serving the earlier sub-issue would otherwise emit two rows — and two near-identical
+                # attention lines — for one panel-order disagreement.
+                if (later, earlier) in seen_pairs:
+                    continue
+                seen_pairs.add((later, earlier))
+                diff["order_changed"].append(
+                    {
+                        "phase": phase["number"],
+                        "depends_on_phase": earlier_phase_number,
+                        "sub_issue": later,
+                        "after_sub_issue": earlier,
+                        # The panel's actual order for the disagreeing pair. Reaching here MEANS
+                        # `later` sits first, so that is the order — stated as data so the prompt
+                        # quotes it rather than re-deriving it from `position`.
+                        "live_order": [later, earlier],
+                    }
+                )
+    return diff
+
+
+def _slice_attention(slices_facts, target_number):
+    """The `attention` lines for the slice facts — one per non-empty diff case, plus the availability
+    degradations. Findings ride in facts + `attention`; nothing is re-derived in a prompt."""
+    lines = []
+    diff = slices_facts["diff"]
+    by_number = {e["number"]: e for e in slices_facts["set"]}
+
+    if not slices_facts["detail_available"]:
+        lines.append(
+            "sub-issue detail is unavailable on this host (%s) — numbers, titles and states are "
+            "from the sub-issue nodes; no bodies and no rescope detection"
+            % SUBISSUE_DETAIL_UNSUPPORTED
+        )
+    if not diff["prior_phases_parsed"]:
+        lines.append(
+            "the prior plan's '## Phases' section does not parse — no plan-versus-live sub-issue "
+            "diff was computed; this revise re-authors that section, which repairs it"
+        )
+    elif slices_facts["rescope_basis"] == "no_prior_plan":
+        lines.append(
+            "no prior plan, so there is no plan-versus-live sub-issue diff — cut '## Phases' against "
+            "the live set from the start; the coverage rule still binds"
+        )
+    elif not diff["prior_phases_present"]:
+        lines.append(
+            "the prior plan carries no '## Phases' section while %d sub-issue(s) are open — a sliced "
+            "target needs a phase map; no diff was computed against a plan that has no phases"
+            % slices_facts["open_count"]
+        )
+    if slices_facts["rescope_basis"] == "unavailable" and diff["prior_phases_present"]:
+        lines.append(
+            "rescope detection is unavailable — a sub-issue body rewritten since the plan was posted "
+            "will NOT be flagged; re-read any sub-issue whose scope you rely on"
+        )
+    # A served sub-issue with no usable timestamp is a hole in an otherwise-working comparison: the
+    # basis says `updated_at`, so silence would read as "nothing changed" (the one thing the
+    # suspicion signal must never do).
+    if slices_facts["rescope_basis"] == "updated_at":
+        served = {row["sub_issue"] for row in diff["mapped"]}
+        blind = sorted(
+            n
+            for n in served
+            if n in by_number and not _parse_iso8601(by_number[n].get("updated_at"))
+        )
+        if blind:
+            lines.append(
+                "no usable timestamp for sub-issue(s) %s — they are NOT covered by rescope "
+                "detection even though the rest of the set is; re-read them"
+                % ", ".join("#%d" % n for n in blind)
+            )
+
+    for number in diff["uncovered_open"]:
+        lines.append(
+            "sub-issue #%d is open and no phase in the prior plan serves it — re-cut phases to "
+            "cover it, record it out-of-scope with a disposition, or route the sub-issue set back "
+            "to whoever authors it" % number
+        )
+    for number in diff["removed"]:
+        lines.append(
+            "sub-issue #%d is no longer a sub-issue of #%s (removed or re-parented) but a prior "
+            "phase serves it" % (number, target_number)
+        )
+    for number in diff["rescoped"]:
+        entry = by_number.get(number) or {}
+        lines.append(
+            "sub-issue #%d may have changed since the plan was posted (updated %s) — re-read it at "
+            "%s; an issue's timestamp also bumps on comments and labels, so this is a prompt to "
+            "look, not proof"
+            % (number, entry.get("updated_at"), entry.get("body_path") or "its body")
+        )
+    for number in diff["closed"]:
+        lines.append(
+            "sub-issue #%d is CLOSED — the phase serving it behaves like a shipped phase (the "
+            "shipped-phase rules in references/revise-reconciliation.md govern; there is no second "
+            "rule set)" % number
+        )
+    for row in diff["order_changed"]:
+        lines.append(
+            "phase %d (sub-issue #%d) depends on phase %d (sub-issue #%d), but the sub-issue panel "
+            "lists them in the order %s — surfaced, not corrected: an ordering-only dependency can "
+            "be a deliberate call"
+            % (
+                row["phase"],
+                row["sub_issue"],
+                row["depends_on_phase"],
+                row["after_sub_issue"],
+                ", ".join("#%d" % n for n in row["live_order"]),
+            )
+        )
+    return lines
 
 
 # ---------------------------------------------------------------------------
@@ -667,17 +1047,19 @@ def _build_revise_facts(issue_envelope, open_prs, plan_sha, grounding_sha, repo,
     second read), the prior plan's SHA and the current grounding sha side by side (BOTH raw facts,
     no drift judgment computed here — the spec's own words: "no judgment, just both SHAs"), and,
     when an open PR exists, that PR's body + its parsed `## Phase tracker`. Returns `(revise_facts,
-    decision_or_none)`.
+    notices, decision_or_none)`.
     """
     revise = {"prior_plan_sha": plan_sha, "grounding_sha": grounding_sha}
+    notices = []
 
     if open_prs:
         pr = open_prs[0]
-        pr_facts, _notices, decision = gh_pr_gather.build_pr_facts(
+        pr_facts, pr_notices, decision = gh_pr_gather.build_pr_facts(
             pr["number"], repo, scratch_dir=scratch_dir, cwd=cwd
         )
         if decision is not None:
-            return None, decision
+            return None, notices, decision
+        _merge_notices(notices, pr_notices)
         pr_body = pr_facts.get("body")
         if pr_body is None and pr_facts.get("body_mode") == "path":
             pr_body = Path(pr_facts["body_path"]).read_text(encoding="utf-8")
@@ -696,7 +1078,7 @@ def _build_revise_facts(issue_envelope, open_prs, plan_sha, grounding_sha, repo,
         revise["open_pr"] = None
         revise["phase_tracker"] = []
 
-    return revise, None
+    return revise, notices, None
 
 
 # ---------------------------------------------------------------------------
@@ -784,6 +1166,10 @@ def build_facts(issue_number, repo, root=".", scratch_dir=None, refresh=False, c
         scratch_dir = "/tmp/gh-planner-%s" % issue_number
     Path(scratch_dir).mkdir(parents=True, exist_ok=True)
 
+    # Every composed core's non-blocking degradations accumulate here and ride out in the envelope's
+    # own `notices` (architecture.md §3) — see `_merge_notices`.
+    notices = []
+
     # 1) The target issue — one round-trip gh_gather.run() call: body/thread/plan-marker/native
     #    deps + the open-PR search already folded in.
     exit_code, issue_envelope = gh_gather.run(
@@ -795,13 +1181,15 @@ def build_facts(issue_number, repo, root=".", scratch_dir=None, refresh=False, c
         stream=_DiscardStream(),
     )
     if issue_envelope is not None and issue_envelope.get("status") == "needs_decision":
-        if _forward_decision(issue_envelope["decision"], notices=issue_envelope.get("notices")):
+        _merge_notices(notices, issue_envelope.get("notices"))
+        if _forward_decision(issue_envelope["decision"], notices=notices):
             return None
     if exit_code != 0:
         sys.stderr.write(
             "prep_planner: gh_gather on issue #%s failed (exit %d)\n" % (issue_number, exit_code)
         )
         sys.exit(1)
+    _merge_notices(notices, issue_envelope.get("notices"))
 
     issue_body = _extract_body(issue_envelope, "issue_body")
     labels = [label.get("name") for label in issue_envelope.get("labels") or []]
@@ -823,6 +1211,9 @@ def build_facts(issue_number, repo, root=".", scratch_dir=None, refresh=False, c
         "sha": plan_sha,
         "comment_id": issue_envelope.get("marker_comment_id"),
         "comment_url": issue_envelope.get("marker_comment_url"),
+        # The left-hand side of the sub-issue rescope comparison: "was this sub-issue edited since
+        # the plan was posted?" (#18). Free from the marker fetch — no extra round-trip.
+        "updated_at": issue_envelope.get("marker_comment_updated_at"),
     }
     if plan_present:
         plan_facts["body_mode"] = issue_envelope.get("marker_comment_mode")
@@ -832,7 +1223,7 @@ def build_facts(issue_number, repo, root=".", scratch_dir=None, refresh=False, c
     # 3) Research dossier — scan the ALREADY-fetched thread (no second gh call).
     thread_list = _load_thread(issue_envelope)
     research_comment, research_decision = _find_one_marker(thread_list, RESEARCH_MARKER, "research-dossier")
-    if _forward_decision(research_decision):
+    if _forward_decision(research_decision, notices=notices):
         return None
     research_facts = {"present": research_comment is not None}
     if research_comment is not None:
@@ -853,7 +1244,7 @@ def build_facts(issue_number, repo, root=".", scratch_dir=None, refresh=False, c
 
     if issue_type == "epic":
         epic_branch_facts, decision = _discover_epic_branch(root, issue_number)
-        if _forward_decision(decision):
+        if _forward_decision(decision, notices=notices):
             return None
         epic_branch_name = epic_branch_facts.get("branch")
 
@@ -885,7 +1276,7 @@ def build_facts(issue_number, repo, root=".", scratch_dir=None, refresh=False, c
                 continue
             if entry["number"] is not None:
                 state_fact, decision = _fetch_story_state(repo, entry["number"], cwd=cwd)
-                if _forward_decision(decision):
+                if _forward_decision(decision, notices=notices):
                     return None
                 story_entries.append(
                     {
@@ -909,7 +1300,7 @@ def build_facts(issue_number, repo, root=".", scratch_dir=None, refresh=False, c
             stories_source = "checklist"
 
         delivery_log_comment, dl_decision = _find_one_marker(thread_list, DELIVERY_LOG_MARKER, "epic-delivery-log")
-        if _forward_decision(dl_decision):
+        if _forward_decision(dl_decision, notices=notices):
             return None
         delivery_log_facts = {"present": delivery_log_comment is not None}
         if delivery_log_comment is not None:
@@ -935,7 +1326,7 @@ def build_facts(issue_number, repo, root=".", scratch_dir=None, refresh=False, c
         matches, decision = _search_parent_epic(
             repo, issue_number, native_parent=issue_envelope.get("parent"), cwd=cwd
         )
-        if _forward_decision(decision):
+        if _forward_decision(decision, notices=notices):
             return None
         parent_epic = matches[0] if len(matches) == 1 else None
         parent_open = parent_epic is not None and (parent_epic.get("state") or "").upper() == "OPEN"
@@ -946,7 +1337,7 @@ def build_facts(issue_number, repo, root=".", scratch_dir=None, refresh=False, c
         jit_delivery_log = None
         if parent_open:
             epic_branch_facts, decision = _discover_epic_branch(root, parent_epic["number"])
-            if _forward_decision(decision):
+            if _forward_decision(decision, notices=notices):
                 return None
             epic_branch_name = epic_branch_facts.get("branch")
 
@@ -959,7 +1350,8 @@ def build_facts(issue_number, repo, root=".", scratch_dir=None, refresh=False, c
                 stream=_DiscardStream(),
             )
             if epic_envelope is not None and epic_envelope.get("status") == "needs_decision":
-                if _forward_decision(epic_envelope["decision"], notices=epic_envelope.get("notices")):
+                _merge_notices(notices, epic_envelope.get("notices"))
+                if _forward_decision(epic_envelope["decision"], notices=notices):
                     return None
             if epic_exit != 0:
                 sys.stderr.write(
@@ -967,6 +1359,7 @@ def build_facts(issue_number, repo, root=".", scratch_dir=None, refresh=False, c
                     % (parent_epic["number"], epic_exit)
                 )
                 sys.exit(1)
+            _merge_notices(notices, epic_envelope.get("notices"))
 
             jit_epic_plan = {"present": bool(epic_envelope.get("marker_comment_present"))}
             if jit_epic_plan["present"]:
@@ -978,7 +1371,7 @@ def build_facts(issue_number, repo, root=".", scratch_dir=None, refresh=False, c
 
             epic_thread = _load_thread(epic_envelope)
             dl_comment, dl_decision = _find_one_marker(epic_thread, DELIVERY_LOG_MARKER, "epic-delivery-log")
-            if _forward_decision(dl_decision):
+            if _forward_decision(dl_decision, notices=notices):
                 return None
             jit_delivery_log = {"present": dl_comment is not None}
             if dl_comment is not None:
@@ -997,6 +1390,68 @@ def build_facts(issue_number, repo, root=".", scratch_dir=None, refresh=False, c
             "epic_plan": jit_epic_plan,
             "epic_delivery_log": jit_delivery_log,
         }
+
+    # 4.5) Deliverable sub-issues (#18) — a NON-EPIC target's sub-issues are its slices by
+    #      construction, so the gate is the target's type plus a non-empty node list already in
+    #      hand: an epic's children are stories, and a childless target costs zero extra gh calls
+    #      (which is what keeps the canonical call budget unchanged).
+    slices_facts = None
+    sub_issue_nodes = issue_envelope.get("sub_issues") or []
+    if issue_type != "epic" and sub_issue_nodes:
+        detail_objects, detail_notices, detail_decision = _fetch_sub_issue_details(
+            repo, issue_number, cwd=cwd
+        )
+        if _forward_decision(detail_decision, notices=notices):
+            return None
+        _merge_notices(notices, detail_notices)
+
+        plan_updated_at = plan_facts.get("updated_at")
+        slice_set = _build_slice_set(
+            sub_issue_nodes, detail_objects, plan_updated_at, scratch_dir
+        )
+        # Three distinguishable states, so the fact never contradicts itself: `unavailable` means
+        # THIS HOST cannot answer (the endpoint degraded), `no_prior_plan` means there is nothing to
+        # compare against yet, and `updated_at` means the comparison actually ran.
+        detail_available = detail_objects is not None
+        if not detail_available:
+            rescope_basis = "unavailable"
+        elif not plan_updated_at:
+            rescope_basis = "no_prior_plan"
+        else:
+            rescope_basis = "updated_at"
+
+        # The prior plan's `## Phases` is parsed BEST-EFFORT — never `PHASES_MALFORMED`. A revise
+        # run exists to *repair* a bad plan, so hard-failing here would mean the one tool that can
+        # rewrite the section refuses to start because the section is broken, and the plan footer
+        # forbids hand-editing. prep_resolver DOES hard-fail on the identical body (it executes the
+        # plan and cannot ship a phase it cannot read), so a malformed plan stays re-plannable but
+        # never executable. Same best-effort posture as `_parse_phase_tracker`.
+        prior_phases = None
+        prior_phases_parsed = True
+        prior_phases_error = None
+        if plan_present and plan_body:
+            try:
+                prior_phases = parse.parse_phases(plan_body)
+            except parse._PhasesMalformed as exc:  # noqa: SLF001 (mirrors prep_resolver's use)
+                prior_phases = None
+                prior_phases_parsed = False
+                prior_phases_error = {
+                    "reason": exc.reason,
+                    "line_number": exc.line_number,
+                    "raw_line": exc.raw_line,
+                }
+
+        slices_facts = {
+            "detail_available": detail_available,
+            "source": "sub_issues_rest" if detail_available else "sub_issues_node",
+            "open_count": sum(1 for e in slice_set if e["state"] == "OPEN"),
+            "rescope_basis": rescope_basis,
+            "set": slice_set,
+            "diff": _build_slice_diff(
+                slice_set, prior_phases, prior_phases_parsed, rescope_basis
+            ),
+        }
+        slices_facts["diff"]["prior_phases_error"] = prior_phases_error
 
     # 5) plan_ref selection (docs/specs/planner.md Step 4.5's FULL table — see module docstring).
     plan_ref, plan_ref_row = _select_plan_ref(
@@ -1019,15 +1474,16 @@ def build_facts(issue_number, repo, root=".", scratch_dir=None, refresh=False, c
     if not refresh:
         root_sha = refblocks.fetch_pin(root)
 
-        grounding_envelope, _gw_notices, gw_decision = workspace._build_attach(
+        grounding_envelope, gw_notices, gw_decision = workspace._build_attach(
             cwd if cwd is not None else ".",
             plan_ref,
             run_hooks=False,
             allow_main_root=(plan_ref == ROOT_MAIN_BRANCH),
             check_remote_staleness=True,
         )
-        if _forward_decision(gw_decision):
+        if _forward_decision(gw_decision, notices=notices):
             return None
+        _merge_notices(notices, gw_notices)
         grounding_docs = _grounding_doc_inventory(grounding_envelope["path"])
     else:
         root_sha = None
@@ -1039,13 +1495,13 @@ def build_facts(issue_number, repo, root=".", scratch_dir=None, refresh=False, c
     open_question_entries, open_question_candidates, oq_decision = (
         oq_tracker.build_open_question_candidates(issue_body, repo, cwd=cwd)
     )
-    if _forward_decision(oq_decision):
+    if _forward_decision(oq_decision, notices=notices):
         return None
 
     # 8) Revise facts (mode == "revise" only).
     revise_facts = None
     if mode == "revise":
-        revise_facts, revise_decision = _build_revise_facts(
+        revise_facts, revise_notices, revise_decision = _build_revise_facts(
             issue_envelope,
             open_prs,
             plan_sha,
@@ -1054,8 +1510,9 @@ def build_facts(issue_number, repo, root=".", scratch_dir=None, refresh=False, c
             scratch_dir,
             cwd=cwd,
         )
-        if _forward_decision(revise_decision):
+        if _forward_decision(revise_decision, notices=notices):
             return None
+        _merge_notices(notices, revise_notices)
 
     suggested_playbook = _suggested_playbook(issue_type, mode, parent_epic_open)
     vector = {"type": issue_type, "mode": mode, "plan_ref_row": plan_ref_row}
@@ -1091,7 +1548,7 @@ def build_facts(issue_number, repo, root=".", scratch_dir=None, refresh=False, c
         "open_questions": open_question_entries,
         "open_question_candidates": open_question_candidates,
         "attention": _build_attention(open_question_candidates, epic_facts, story_facts),
-        "notices": [],
+        "notices": notices,
     }
     if epic_facts is not None:
         facts["epic"] = epic_facts
@@ -1099,6 +1556,12 @@ def build_facts(issue_number, repo, root=".", scratch_dir=None, refresh=False, c
         facts["story"] = story_facts
     if revise_facts is not None:
         facts["revise"] = revise_facts
+    if slices_facts is not None:
+        # Named `slices`, not `sub_issues`: `target.sub_issues` already carries the raw relation
+        # nodes, and a second top-level key by that name would be a genuine confusion hazard. A
+        # playbook keys on this key's PRESENCE — never on the target's type.
+        facts["slices"] = slices_facts
+        facts["attention"].extend(_slice_attention(slices_facts, issue_envelope["number"]))
     if grounding_envelope is not None:
         # v3: the OBSERVED ambient checkout, asserted against plan_ref — replaces the
         # read_workspaces.grounding ro-* view. `grounding.sha` feeds the plan footer's

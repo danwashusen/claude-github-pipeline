@@ -54,10 +54,13 @@ Subcommands, each `<subcommand> <body-file>`:
         Parses a plan's `## Phases` section per
         `skills/planner/references/plan-schema.md`'s numbered-list-with-structured-
         keys grammar. `ok` payload: `{"phases": [{"number", "title", "kind", "ships",
-        "closes_dod", "deliverable", "depends_on"}, ...]}`. `kind` is one of the closed set of
-        exactly three values (`code-shipping` | `operator` | `decision-only`); `closes_dod` is
-        either the literal string `"(none)"` or a list of 1-based ints; `depends_on` is either the
-        literal string `"(none)"` or a list of ints (phase numbers). No `## Phases` section is
+        "closes_dod", "deliverable", "depends_on", "sub_issue"}, ...]}`. `kind` is one of the
+        closed set of exactly three values (`code-shipping` | `operator` | `decision-only`);
+        `closes_dod` is either the literal string `"(none)"` or a list of 1-based ints;
+        `depends_on` is either the literal string `"(none)"` or a list of ints (phase numbers);
+        `sub_issue` is tri-state — `None` when the optional `sub-issue:` line is absent
+        (**unmapped**), the literal string `"(none)"` for an explicit **substrate** claim, or an
+        int (the one sub-issue this phase serves). No `## Phases` section is
         `ok` with `phases: []` — a plan legitimately omits `## Phases` for single-phase issues and
         epics (plan-schema.md: "multi-phase issues only — omit for single-phase; epics use the
         dedicated `## Story breakdown` / `## Integration strategy` sections"), so an absent
@@ -65,8 +68,9 @@ Subcommands, each `<subcommand> <body-file>`:
 
         A malformed `## Phases` section (a numbered entry missing a required structured key, an
         entry whose `kind:` value is outside the closed set, non-sequential/duplicate phase
-        numbers, or a `closes-dod`/`depends-on` value that isn't `(none)` and doesn't parse as the
-        documented reference-list shape) returns `PHASES_MALFORMED`.
+        numbers, a `closes-dod`/`depends-on` value that isn't `(none)` and doesn't parse as the
+        documented reference-list shape, or a `sub-issue:` value that is neither `(none)` nor
+        exactly one `#<N>`) returns `PHASES_MALFORMED`.
 
 Envelope conformance (architecture.md §3) on every output: exactly one JSON object on stdout,
 `status` is `ok` or `needs_decision`, `notices: []` always present. Exit 0 on both `ok` and
@@ -699,8 +703,15 @@ _PHASE_HEAD_RE = re.compile(r"^(\d+)\.\s+\*\*Phase (\d+)\s*—\s*(.+?)\*\*\s*$")
 # Structured key lines beneath a phase head, each `   - key: value` (plan-schema.md's template
 # indents these one level under the numbered head). `re.DOTALL` is not used — value is always the
 # rest of the line.
-_PHASE_KEY_RE = re.compile(r"^\s*-\s+(kind|ships|closes-dod|deliverable|depends-on):\s*(.*)$")
+_PHASE_KEY_RE = re.compile(
+    r"^\s*-\s+(kind|ships|closes-dod|deliverable|depends-on|sub-issue):\s*(.*)$"
+)
 
+# `sub-issue` is deliberately absent: it is recognized-but-**not-required**, which is the whole
+# backward-compatibility mechanism. This grammar is bidirectionally closed (an unrecognized line
+# raises, and so does a missing required key), so making the key required would turn every plan
+# authored before it existed into `PHASES_MALFORMED` — and the planner's revise mode, the one path
+# that could repair such a plan, parses exactly those bodies.
 _REQUIRED_PHASE_KEYS = frozenset({"kind", "ships", "closes-dod", "deliverable", "depends-on"})
 
 # `closes-dod`/`depends-on` values: either the literal `(none)` or a comma-separated reference
@@ -709,13 +720,21 @@ _REQUIRED_PHASE_KEYS = frozenset({"kind", "ships", "closes-dod", "deliverable", 
 # plan-schema.md: "depends-on: <earlier phase numbers, or `(none)` for the head phase>").
 _REF_LIST_ITEM_RE = re.compile(r"^\d+$")
 
+# `sub-issue:` values: either the literal `(none)` or exactly ONE `#<N>` issue reference. The `#`
+# is required because everywhere else in plan-schema.md an *issue* is written `#<N>` while a bare
+# int means a DoD index or a phase number — one spelling per meaning keeps `sub-issue: 3` from
+# reading as "phase 3". Single-valued by contract: the phase→sub-issue map is N:1 (several phases
+# may serve one sub-issue; a phase serves at most one), so a comma-separated list is malformed
+# rather than a shorthand to be silently narrowed.
+_PHASE_SUB_ISSUE_RE = re.compile(r"^#(\d+)$")
+
 
 class _PhasesMalformed(Exception):
     """Internal signal: the `## Phases` section is present but does not parse — a phase entry
     missing a required key, a `kind:` value outside the closed set, non-sequential/duplicate phase
     numbers, a `closes-dod`/`depends-on` value that is neither `(none)` nor a well-formed
-    reference list, or a numbered head whose ordinal and "Phase N" label disagree. Never escapes
-    this module.
+    reference list, a `sub-issue:` value that is neither `(none)` nor a single `#<N>`, or a
+    numbered head whose ordinal and "Phase N" label disagree. Never escapes this module.
     """
 
     def __init__(self, reason, line_number, raw_line):
@@ -755,11 +774,49 @@ def _parse_ref_list_field(value, field_name, phase_number, line_number, raw_line
     return parsed
 
 
+def _parse_sub_issue_field(value, phase_number, line_number, raw_line):
+    """Parse a `sub-issue:` field value: either the literal `(none)` (returned verbatim as the
+    string, matching `_parse_ref_list_field`'s payload convention — an explicit *substrate* claim,
+    groundwork no single sub-issue can demonstrate) or a single `#<N>` reference returned as an
+    int. Raises `_PhasesMalformed` on an empty value, a bare int, a comma-separated list, `#0`, or
+    any other shape.
+    """
+    value = value.strip()
+    if value == "(none)":
+        return "(none)"
+    match = _PHASE_SUB_ISSUE_RE.match(value)
+    if match is None:
+        raise _PhasesMalformed(
+            "phase %d's 'sub-issue:' field is %r (must be '(none)' or exactly one '#<N>' "
+            "sub-issue reference — the phase-to-sub-issue map is N:1, so a list is not legal)"
+            % (phase_number, value),
+            line_number,
+            raw_line,
+        )
+    number = int(match.group(1))
+    if number < 1:
+        raise _PhasesMalformed(
+            "phase %d's 'sub-issue:' field references '#%d' (issue numbers start at 1)"
+            % (phase_number, number),
+            line_number,
+            raw_line,
+        )
+    return number
+
+
 def parse_phases(body_text):
     """Parse the `## Phases` section into a list of `{"number", "title", "kind", "ships",
-    "closes_dod", "deliverable", "depends_on"}` dicts, in the order they appear in the section
-    (plan-schema.md's numbered list is itself the intended sequencing, mirrored here as list
-    order — no independent sort is applied). Raises `_PhasesMalformed` on any parse failure.
+    "closes_dod", "deliverable", "depends_on", "sub_issue"}` dicts, in the order they appear in
+    the section (plan-schema.md's numbered list is itself the intended sequencing, mirrored here as
+    list order — no independent sort is applied). Raises `_PhasesMalformed` on any parse failure.
+
+    `sub_issue` is tri-state, and the three values are distinguishable on purpose — the planner's
+    plan-versus-live diff and reviewer Dimension 7 both read them:
+
+      * `None`     — the `sub-issue:` line is absent: **unmapped** (a plan authored before the key
+                     existed, or a mapping never made). An absent key is NOT `(none)`.
+      * `"(none)"` — `sub-issue: (none)`: **substrate**, explicitly claimed.
+      * `int`      — `sub-issue: #214`: this phase serves that sub-issue.
 
     No `## Phases` section: returns `[]` — this is a legitimate shape (single-phase issues and
     epics omit it entirely, plan-schema.md), never `PHASES_MALFORMED` on its own; only a
@@ -865,6 +922,13 @@ def parse_phases(body_text):
             depends_on_raw, "depends-on", phase_number, depends_on_line, depends_on_line_text
         )
 
+        sub_issue = None
+        if "sub-issue" in found_keys:
+            sub_issue_raw, sub_issue_line, sub_issue_line_text = found_keys["sub-issue"]
+            sub_issue = _parse_sub_issue_field(
+                sub_issue_raw, phase_number, sub_issue_line, sub_issue_line_text
+            )
+
         if phase_number in seen_numbers:
             raise _PhasesMalformed(
                 "phase number %d is used more than once" % phase_number,
@@ -889,6 +953,9 @@ def parse_phases(body_text):
                 "closes_dod": closes_dod,
                 "deliverable": deliverable_value,
                 "depends_on": depends_on,
+                # Always present, `None` when the line is absent, so the dict's key set stays
+                # stable across the pre- and post-contract grammars.
+                "sub_issue": sub_issue,
             }
         )
 

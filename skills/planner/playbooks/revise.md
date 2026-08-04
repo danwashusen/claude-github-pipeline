@@ -23,9 +23,17 @@ this route supplies:
   Diff old plan vs new plan, classify **SOFT** vs **HARD**, and compute the body-edit diff against
   `facts.revise.phase_tracker`. When no draft PR exists this is a no-op (no projected ticks). An
   evaluator-rejection annotation is preserved verbatim — never auto-cleared.
+- **Reconcile the phases against the live sub-issue set.** When `facts.slices` is present the target's
+  sub-issues are its deliverable slices, and they are an **input constraint** on the plan's shape, not an
+  output of it. Read
+  [`../references/sub-issue-reconciliation.md`](../references/sub-issue-reconciliation.md) before
+  redrafting `## Phases`: it owns the `sub-issue:` cardinality rule, the diff cases prep already computed
+  in `facts.slices.diff`, and the mismatch gate (which gates or re-routes — it never silently re-cuts).
+  This is the route where that diff is richest: a prior plan exists, so every case is computable, and a
+  closed sub-issue is governed by the shipped-phase rules above rather than a second rule set.
 - **Reviewer dimensions (spine S7).** The same set the issue's fresh route would pass, keyed on
-  `facts.vector.type` (a bug adds 9; multi-phase adds 7; an epic uses 1, 2, 3, 5, 6), plus 10 when the
-  plan carries `## Open questions`.
+  `facts.vector.type` (a bug adds 9; multi-phase adds 7 — passing `<<live_slices>>` from `facts.slices`;
+  an epic uses 1, 2, 3, 5, 6), plus 10 when the plan carries `## Open questions`.
 - **Off-ramp (spine S4).** Keyed on `facts.vector.type` like the dimension set: `offered` for a
   standalone issue, `not offered` for an epic revise. On "Split as epic" the superseded plan comment
   stays put — the promoted Epic's own re-plan supersedes it via `--delete-marker-id`.

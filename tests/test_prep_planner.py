@@ -25,6 +25,8 @@ Coverage matrix (S12 DoD):
   parent-epic matches, malformed `## Open questions`).
 """
 
+import contextlib
+import io
 import json
 import os
 import subprocess
@@ -754,10 +756,428 @@ class SingleInvocationBudgetTests(PrepPlannerSandboxTestCase):
         self.assertGreater(len(manifest), 3)
 
 
+class DeliverableSubIssueFactsTests(PrepPlannerSandboxTestCase):
+    """#18: `facts.slices` — the live deliverable-sub-issue set and the plan-versus-live diff,
+    computed IN-SCRIPT so no prompt re-derives it. A non-epic target's sub-issues are its slices by
+    construction, so the only gate is the target's type plus a non-empty node list.
+    """
+
+    def _slices(self, fixture_case):
+        envelope = self._envelope(issue="250", fixture_case=fixture_case)
+        self.assertIn("slices", envelope, "expected facts.slices on a non-epic target with children")
+        return envelope, envelope["slices"]
+
+    def test_set_carries_panel_order_state_and_staged_bodies(self):
+        envelope, slices = self._slices("prep_planner_slices_fresh")
+        self.assertTrue(slices["detail_available"])
+        self.assertEqual(slices["source"], "sub_issues_rest")
+        self.assertEqual([e["number"] for e in slices["set"]], [251, 252])
+        # `position` is the sub-issue panel's own order — the sequencing source of truth.
+        self.assertEqual([e["position"] for e in slices["set"]], [0, 1])
+        self.assertEqual([e["state"] for e in slices["set"]], ["OPEN", "OPEN"])
+        self.assertEqual(slices["open_count"], 2)
+        for entry in slices["set"]:
+            # force_path: uniform paths keep envelope size independent of child count.
+            self.assertEqual(entry["body_mode"], "path")
+            self.assertTrue(Path(entry["body_path"]).is_file())
+
+    def test_fresh_path_has_no_diff_but_still_reports_the_set(self):
+        # A finding *about a phase map* cannot exist before a plan does; the coverage obligation on
+        # the fresh path is carried by the playbook and reviewer Dimension 7, not by this diff.
+        _envelope, slices = self._slices("prep_planner_slices_fresh")
+        self.assertFalse(slices["diff"]["computed"])
+        self.assertEqual(slices["diff"]["uncovered_open"], [])
+        # `unavailable` would claim THIS HOST cannot answer, which is false here — there is simply
+        # no plan to compare against yet.
+        self.assertEqual(slices["rescope_basis"], "no_prior_plan")
+
+    def test_uncovered_open_sub_issue_is_surfaced_in_attention(self):
+        envelope, slices = self._slices("prep_planner_slices_added")
+        diff = slices["diff"]
+        self.assertTrue(diff["computed"])
+        self.assertEqual(diff["uncovered_open"], [252])
+        self.assertEqual(diff["mapped"], [{"phase": 2, "sub_issue": 251}])
+        self.assertEqual(diff["substrate_phases"], [1])
+        self.assertTrue(
+            any("#252" in line and "no phase" in line for line in envelope["attention"]),
+            envelope["attention"],
+        )
+
+    def test_uncovered_open_is_the_only_key_for_that_fact(self):
+        # A genuinely newly-ADDED sub-issue is indistinguishable from one the plan never mapped (no
+        # prior snapshot of the set exists), so one fact gets exactly one key — two would invite a
+        # consumer to double-report.
+        _envelope, slices = self._slices("prep_planner_slices_added")
+        self.assertNotIn("added", slices["diff"])
+
+    def test_closed_sub_issue_points_at_the_shipped_phase_rules(self):
+        envelope, slices = self._slices("prep_planner_slices_closed")
+        self.assertEqual(slices["diff"]["closed"], [251])
+        self.assertEqual(slices["diff"]["uncovered_open"], [])
+        self.assertTrue(
+            any("revise-reconciliation.md" in line for line in envelope["attention"]),
+            envelope["attention"],
+        )
+
+    def test_a_closed_sub_issue_does_not_also_read_as_rescoped(self):
+        # Closing an issue bumps its `updated_at`, so without the CLOSED exclusion every closure
+        # would ALSO land in `rescoped` — and since `rescoped` gates while `closed` does not, the
+        # non-gating case would be unreachable in production. The fixture's #251 is closed with a
+        # POST-plan timestamp precisely to exercise that.
+        envelope, slices = self._slices("prep_planner_slices_closed")
+        by_number = {e["number"]: e for e in slices["set"]}
+        self.assertTrue(by_number[251]["maybe_rescoped"], "fixture must have a post-plan timestamp")
+        self.assertEqual(slices["diff"]["rescoped"], [])
+        self.assertFalse(
+            any("may have changed" in line for line in envelope["attention"]),
+            envelope["attention"],
+        )
+
+    def test_removed_sub_issue_is_reported(self):
+        envelope, slices = self._slices("prep_planner_slices_removed")
+        self.assertEqual(slices["diff"]["removed"], [299])
+        self.assertTrue(
+            any("#299" in line for line in envelope["attention"]), envelope["attention"]
+        )
+
+    def test_rescoped_is_reported_as_a_suspicion_not_proof(self):
+        envelope, slices = self._slices("prep_planner_slices_rescoped")
+        self.assertEqual(slices["rescope_basis"], "updated_at")
+        self.assertEqual(slices["diff"]["rescoped"], [252])
+        by_number = {e["number"]: e for e in slices["set"]}
+        self.assertTrue(by_number[252]["maybe_rescoped"])
+        self.assertFalse(by_number[251]["maybe_rescoped"])
+        line = next(line for line in envelope["attention"] if "#252 may have changed" in line)
+        self.assertIn("not proof", line)
+        self.assertIn("slice-252-body.md", line)
+
+    def test_order_changed_is_surfaced_not_corrected(self):
+        envelope, slices = self._slices("prep_planner_slices_order_changed")
+        self.assertEqual(
+            slices["diff"]["order_changed"],
+            [
+                {
+                    "phase": 3,
+                    "depends_on_phase": 2,
+                    "sub_issue": 251,
+                    "after_sub_issue": 252,
+                    "live_order": [251, 252],
+                }
+            ],
+        )
+        self.assertTrue(
+            any("not corrected" in line for line in envelope["attention"]), envelope["attention"]
+        )
+
+    def test_pre_contract_plan_reports_unmapped_phases(self):
+        # A plan authored before the key existed: phases parse, every `sub_issue` is None (unmapped
+        # — NOT `(none)`, which is an explicit substrate claim), and every open sub-issue is
+        # therefore uncovered.
+        _envelope, slices = self._slices("prep_planner_slices_pre_contract_plan")
+        self.assertEqual(slices["diff"]["unmapped_phases"], [1, 2])
+        self.assertEqual(slices["diff"]["substrate_phases"], [])
+        self.assertEqual(slices["diff"]["uncovered_open"], [251, 252])
+
+    def test_slice_fetch_actually_ran(self):
+        # Non-tautological companion to the manifest budget check below: these two facts can only be
+        # true if the REST call was made and its payload consumed.
+        _envelope, slices = self._slices("prep_planner_slices_fresh")
+        self.assertEqual(slices["source"], "sub_issues_rest")
+        self.assertTrue(all(Path(e["body_path"]).is_file() for e in slices["set"]))
+
+    def test_malformed_prior_phases_is_best_effort_not_a_decision(self):
+        # A revise run exists to REPAIR a bad plan: hard-failing here would mean the only tool that
+        # can rewrite the section refuses to start because the section is broken.
+        envelope, slices = self._slices("prep_planner_slices_prior_plan_malformed")
+        self.assertEqual(envelope["status"], "ok")
+        self.assertFalse(slices["diff"]["prior_phases_parsed"])
+        self.assertFalse(slices["diff"]["computed"])
+        self.assertIsNotNone(slices["diff"]["prior_phases_error"])
+        self.assertTrue(
+            any("does not parse" in line for line in envelope["attention"]), envelope["attention"]
+        )
+
+    def test_plan_updated_at_rides_in_the_plan_facts(self):
+        envelope = self._envelope(issue="250", fixture_case="prep_planner_slices_rescoped")
+        self.assertEqual(envelope["plan"]["updated_at"], "2026-03-01T00:00:00Z")
+
+    def test_childless_target_has_no_slices_key_and_no_extra_gh_call(self):
+        envelope = self._envelope(issue="200", fixture_case="prep_planner_row_default")
+        self.assertNotIn("slices", envelope)
+        manifest = json.loads(
+            (shimenv.fixture_case_dir("prep_planner_row_default") / "manifest.json").read_text(
+                encoding="utf-8"
+            )
+        )
+        self.assertEqual(len(manifest), 3)
+
+    def test_epic_target_has_no_slices_key(self):
+        # An epic's sub-issues are STORIES, not slices — they reach the planner as
+        # `facts.epic.stories`, and an epic plan carries no `## Phases` at all.
+        envelope = self._envelope(issue="300", fixture_case="prep_planner_row_epic_native")
+        self.assertNotIn("slices", envelope)
+
+    def test_slice_fetch_costs_exactly_one_extra_gh_call(self):
+        manifest = json.loads(
+            (shimenv.fixture_case_dir("prep_planner_slices_fresh") / "manifest.json").read_text(
+                encoding="utf-8"
+            )
+        )
+        # One paginated REST call for the WHOLE set — not one per child, which would make the
+        # budget a function of the child count.
+        self.assertEqual(len(manifest), 4)
+        self.assertEqual(
+            manifest[-1]["argv"],
+            ["api", "--paginate", "repos/octo/widgets/issues/250/sub_issues"],
+        )
+
+
+class SubIssueDetailUnsupportedTests(unittest.TestCase):
+    """The capability degradation. Driven with `process.run` stubbed rather than a fixture, because
+    the endpoint's unavailability is a *stderr* signal the fixture shim cannot produce (the same
+    reason gh_gather's own relation-ladder tests mock instead of fixturing)."""
+
+    def _stub(self, stderr, returncode=1):
+        def fake_run(argv, cwd=None, env=None, input_text=None, check=False):
+            return process.CommandResult(returncode=returncode, stdout="", stderr=stderr)
+
+        return fake_run
+
+    def test_404_degrades_to_the_node_data_with_a_notice(self):
+        with mock.patch.object(
+            prep_planner.process, "run", side_effect=self._stub("gh: Not Found (HTTP 404)\n")
+        ):
+            objects, notices, decision = prep_planner._fetch_sub_issue_details("o/r", "250")
+        self.assertIsNone(objects)
+        self.assertIsNone(decision)
+        self.assertEqual(notices, ["SUBISSUE_DETAIL_UNSUPPORTED"])
+
+    def test_auth_failure_is_a_decision_not_a_degradation(self):
+        result = process.CommandResult(
+            returncode=4, stdout="", stderr="gh auth login required", auth_required=True
+        )
+        with mock.patch.object(prep_planner.process, "run", return_value=result):
+            objects, notices, decision = prep_planner._fetch_sub_issue_details("o/r", "250")
+        self.assertIsNone(objects)
+        self.assertIsNotNone(decision)
+        self.assertEqual(decision["code"], "AUTH_REQUIRED")
+
+    def test_a_non_capability_failure_is_still_a_hard_failure(self):
+        # A 500 or a network error must NOT silently degrade to the node data — only the
+        # endpoint-unavailable shapes do.
+        with mock.patch.object(
+            prep_planner.process, "run", side_effect=self._stub("gh: Server Error (HTTP 500)\n")
+        ):
+            with self.assertRaises(SystemExit) as ctx:
+                prep_planner._fetch_sub_issue_details("o/r", "250")
+        self.assertEqual(ctx.exception.code, 1)
+
+    def _entry(self, number, state="OPEN", updated=None, position=0):
+        return {
+            "number": number,
+            "title": "s%d" % number,
+            "state": state,
+            "position": position,
+            "url": "u",
+            "updated_at": updated,
+            "maybe_rescoped": False,
+        }
+
+    def test_a_plan_with_no_phases_section_is_not_reported_as_uncovering_everything(self):
+        # `parse_phases` returns `[]` for a plan that legitimately omits `## Phases` (a single-phase
+        # plan). Reporting every open sub-issue as "unserved" against a plan that has no phases would
+        # gate on a shape reviewer Dimension 7 is never even asked to check.
+        diff = prep_planner._build_slice_diff([self._entry(252)], [], True, "updated_at")
+        self.assertFalse(diff["computed"])
+        self.assertFalse(diff["prior_phases_present"])
+        self.assertEqual(diff["uncovered_open"], [])
+
+    def test_a_plan_with_phases_reports_prior_phases_present(self):
+        phases = [
+            {"number": 1, "sub_issue": 252, "depends_on": "(none)"},
+        ]
+        diff = prep_planner._build_slice_diff([self._entry(252)], phases, True, "updated_at")
+        self.assertTrue(diff["computed"])
+        self.assertTrue(diff["prior_phases_present"])
+
+    def test_an_unknown_state_fails_safe_into_the_coverage_set(self):
+        # Better to over-report an uncovered sub-issue than to silently drop one from the set the
+        # phase map has to cover.
+        diff = prep_planner._build_slice_diff(
+            [self._entry(252, state="")],
+            [{"number": 1, "sub_issue": "(none)", "depends_on": "(none)"}],
+            True,
+            "updated_at",
+        )
+        self.assertEqual(diff["uncovered_open"], [252])
+
+    def test_order_changed_reports_one_row_per_pair_not_per_edge(self):
+        # Two phases both serving #252, and a third serving #251 depending on both: one panel-order
+        # disagreement, so one row.
+        phases = [
+            {"number": 1, "sub_issue": 252, "depends_on": "(none)"},
+            {"number": 2, "sub_issue": 252, "depends_on": [1]},
+            {"number": 3, "sub_issue": 251, "depends_on": [1, 2]},
+        ]
+        slice_set = [self._entry(251, position=0), self._entry(252, position=1)]
+        diff = prep_planner._build_slice_diff(slice_set, phases, True, "updated_at")
+        self.assertEqual(len(diff["order_changed"]), 1)
+        self.assertEqual(diff["order_changed"][0]["live_order"], [251, 252])
+
+    def test_position_is_compacted_over_kept_entries(self):
+        # A node with no number cannot appear in a phase map; consuming its index would leave a hole
+        # in the very ordering `order_changed` compares against.
+        nodes = [
+            {"id": "I_x", "number": None, "state": "OPEN", "title": "junk", "url": "u"},
+            {"id": "I_1", "number": 251, "state": "OPEN", "title": "Writer", "url": "u251"},
+        ]
+        entries = prep_planner._build_slice_set(nodes, None, None, "/tmp")
+        self.assertEqual([e["number"] for e in entries], [251])
+        self.assertEqual(entries[0]["position"], 0)
+
+    def _one(self, updated_at, plan_updated_at):
+        nodes = [{"id": "I_1", "number": 251, "state": "OPEN", "title": "W", "url": "u"}]
+        details = [
+            {
+                "number": 251,
+                "state": "open",
+                "title": "W",
+                "updated_at": updated_at,
+                "body": "b",
+            }
+        ]
+        return prep_planner._build_slice_set(nodes, details, plan_updated_at, "/tmp")[0]
+
+    def test_a_non_utc_offset_does_not_produce_a_spurious_rescope(self):
+        # `2026-03-01T01:00:00+02:00` is 2026-02-28T23:00:00Z — an hour BEFORE the plan comment. A raw
+        # string comparison reads it as later (the digits diverge before the offset is ever reached)
+        # and would gate the operator on an edit that predates the plan.
+        plan = "2026-03-01T00:00:00Z"
+        before_in_offset_form = "2026-03-01T01:00:00+02:00"
+        self.assertGreater(before_in_offset_form, plan)  # the raw-string trap
+        self.assertLess(
+            prep_planner._parse_iso8601(before_in_offset_form),
+            prep_planner._parse_iso8601(plan),
+        )
+        self.assertFalse(self._one(before_in_offset_form, plan)["maybe_rescoped"])
+
+    def test_a_genuine_post_plan_edit_in_offset_form_is_still_detected(self):
+        entry = self._one("2026-03-05T00:00:00+00:00", "2026-03-01T00:00:00Z")
+        self.assertTrue(entry["maybe_rescoped"])
+
+    def test_unparseable_timestamp_is_not_a_crash_and_not_a_rescope(self):
+        self.assertIsNone(prep_planner._parse_iso8601("not a date"))
+        self.assertIsNone(prep_planner._parse_iso8601(None))
+        self.assertFalse(self._one("not a date", "2026-03-01T00:00:00Z")["maybe_rescoped"])
+
+    def test_node_fallback_set_has_no_timestamps_and_no_bodies(self):
+        nodes = [
+            {"id": "I_1", "number": 251, "state": "OPEN", "title": "Writer", "url": "u251"},
+        ]
+        entries = prep_planner._build_slice_set(nodes, None, "2026-03-01T00:00:00Z", "/tmp")
+        self.assertEqual(entries[0]["number"], 251)
+        self.assertIsNone(entries[0]["updated_at"])
+        self.assertFalse(entries[0]["maybe_rescoped"])
+        self.assertNotIn("body_mode", entries[0])
+
+
+class ComposedCoreNoticesTests(PrepPlannerSandboxTestCase):
+    """#18: a composed core's non-blocking degradations must reach prep's OWN envelope. Before the
+    fix, `facts["notices"]` was hardwired `[]` and every core's notices were dropped on the ok path
+    — so on a host that doesn't serve the native parent/sub-issue relation, `SUBISSUES_UNSUPPORTED`
+    never surfaced and an empty sub-issue set read as "no children" rather than "unavailable",
+    silently skipping the sub-issue reconciliation.
+
+    Driven in-process with `gh_gather.run` stubbed, because the notice originates inside
+    gh_gather's capability ladder off a *stderr* signal the fixture shim cannot produce.
+    """
+
+    def _stub_envelope(self, notices):
+        return {
+            "status": "ok",
+            "notices": list(notices),
+            "number": 200,
+            "title": "Fix the gadget",
+            "state": "OPEN",
+            "labels": [],
+            "issue_body": "Small body.\n\n## Definition of done\n- [ ] Gadget fixed\n",
+            "issue_body_mode": "inline",
+            "thread": "[]",
+            "thread_mode": "inline",
+            "marker_comment_present": False,
+            "marker_comment_count": 0,
+            "deps_available": True,
+            "blocked_by": [],
+            "blocking": [],
+            "subissues_available": False,
+            "parent": None,
+            "sub_issues": [],
+            "sub_issues_summary": {},
+            "open_prs": [],
+        }
+
+    def _facts_with_notices(self, notices):
+        with mock.patch.object(
+            prep_planner.gh_gather, "run", return_value=(0, self._stub_envelope(notices))
+        ):
+            # --refresh skips the ambient-grounding assert and the origin/main pin, so this exercises
+            # the notice plumbing without needing a worktree posture.
+            return prep_planner.build_facts(
+                "200", "octo/widgets", root=str(self.root), scratch_dir=self.scratch, refresh=True
+            )
+
+    def test_gather_notice_reaches_the_facts_block(self):
+        facts = self._facts_with_notices(["SUBISSUES_UNSUPPORTED"])
+        self.assertEqual(facts["notices"], ["SUBISSUES_UNSUPPORTED"])
+
+    def test_multiple_gather_notices_are_preserved_in_order(self):
+        facts = self._facts_with_notices(["DEPS_UNSUPPORTED", "SUBISSUES_UNSUPPORTED"])
+        self.assertEqual(facts["notices"], ["DEPS_UNSUPPORTED", "SUBISSUES_UNSUPPORTED"])
+
+    def test_clean_run_still_reports_an_empty_notices_list(self):
+        facts = self._facts_with_notices([])
+        self.assertEqual(facts["notices"], [])
+
+    def test_notices_survive_a_needs_decision_exit(self):
+        # The `ok` path is only half the contract: a degradation reported by an EARLY core must still
+        # reach the operator when a LATER step returns a decision. Otherwise the same silent-skip the
+        # fix exists to prevent returns through the decision door.
+        envelope = self._stub_envelope(["SUBISSUES_UNSUPPORTED"])
+        envelope["status"] = "needs_decision"
+        envelope["decision"] = {
+            "code": "MARKER_AMBIGUOUS",
+            "summary": "two plan markers",
+            "context": {},
+            "options": ["delete one"],
+        }
+        buffer = io.StringIO()
+        with mock.patch.object(prep_planner.gh_gather, "run", return_value=(0, envelope)):
+            with contextlib.redirect_stdout(buffer):
+                facts = prep_planner.build_facts(
+                    "200", "octo/widgets", root=str(self.root), scratch_dir=self.scratch, refresh=True
+                )
+        self.assertIsNone(facts, "a forwarded decision returns None")
+        emitted = json.loads(buffer.getvalue().strip())
+        self.assertEqual(emitted["status"], "needs_decision")
+        self.assertEqual(emitted["notices"], ["SUBISSUES_UNSUPPORTED"])
+
+
 class PureHelperUnitTests(unittest.TestCase):
     """Direct, in-process tests of prep_planner's pure classification/derivation helpers — no
     subprocess, no shim, no git sandbox needed (mirrors test_prep_resolver.py's
     PureHelperUnitTests style)."""
+
+    def test_merge_notices_dedupes_preserving_first_seen_order(self):
+        acc = []
+        prep_planner._merge_notices(acc, ["DEPS_UNSUPPORTED", "SUBISSUES_UNSUPPORTED"])
+        # The same code arrives twice when both gh_gather calls degrade identically (target + parent
+        # epic) — it must appear once.
+        prep_planner._merge_notices(acc, ["SUBISSUES_UNSUPPORTED"])
+        self.assertEqual(acc, ["DEPS_UNSUPPORTED", "SUBISSUES_UNSUPPORTED"])
+
+    def test_merge_notices_tolerates_none(self):
+        acc = ["A"]
+        self.assertEqual(prep_planner._merge_notices(acc, None), ["A"])
 
     def test_detect_type_epic_by_label(self):
         self.assertEqual(prep_planner._detect_type(["epic"], "Sandbox fixture"), "epic")

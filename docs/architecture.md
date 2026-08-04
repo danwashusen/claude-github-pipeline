@@ -141,6 +141,12 @@ Every script emits exactly one JSON envelope on stdout.
   The two are separate notices because the relations gate independently and their fallbacks differ;
   a script requesting both descends a ladder that drops one relation per rung, so it reports which
   one actually degraded rather than guessing from `gh`'s "unknown flag" phrasing.
+  `SUBISSUE_DETAIL_UNSUPPORTED` is a third, narrower one: `prep_planner.py` enriches a non-epic
+  target's sub-issues (its deliverable slices) from the REST list-sub-issues endpoint for the
+  per-child timestamps and bodies the fixed `subIssues` node shape cannot carry; where that endpoint
+  is unavailable the node data is the fallback, so the set still reports but rescope detection does
+  not. The notice set is deliberately **open** — unlike decision codes, a script may add one without
+  a contract change ([`scripts/pipelib/decisions.py`](../scripts/pipelib/decisions.py)).
 - **Spill routing.** Any verbatim section (body, thread, diff, marker comment) is inline when
   ≤ threshold and written to the session scratch dir when larger; each section reports
   `*_bytes` + `*_mode: inline|path` (+ `*_path`). Threshold: `GH_PIPELINE_INLINE_THRESHOLD_BYTES`

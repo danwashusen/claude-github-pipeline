@@ -22,13 +22,22 @@ this route supplies:
   `## Story contracts` pinned shapes. On a mismatch the epic plan is stale — **stop and re-route to the
   planner on the epic in revise mode** (don't reshape the story to fit a wrong contract, don't run the
   epic revise inline).
+- **Reconcile the phases against the live sub-issue set.** When `facts.slices` is present this story's
+  own sub-issues are its deliverable slices, and they are an **input constraint** on the plan's shape,
+  not an output of it. Read
+  [`../references/sub-issue-reconciliation.md`](../references/sub-issue-reconciliation.md) before
+  drafting `## Phases`: it owns the `sub-issue:` cardinality rule, the diff cases prep already computed
+  in `facts.slices.diff`, and the mismatch gate (which gates or re-routes — it never silently re-cuts).
+  Distinct from the contract edge above: that one looks *up* at the epic, this one looks *down* at the
+  slices.
 - **Schema sections.** The standard single-issue schema plus the `**Epic:** #<epic-#> — <epic title>`
   backlink as the **first line after** the marker (never above it) and a `## Epic contract` section —
   `Delivers` (matching the epic's `## Story contracts`) and `Consumes` (each already in the delivery
   log), every line `[epic-plan: #<N>]`-cited (see [`../references/plan-schema.md`](../references/plan-schema.md)).
 - **Off-ramp (spine S4).** `off-ramp: not offered` — a story that outgrows its slice is an epic-contract
   problem: re-route to the planner on the parent epic in revise mode (the feedback edge above).
-- **Reviewer dimensions (spine S7).** `1, 2, 3, 4, 6, 8` — pass the epic plan + delivery-log staged
+- **Reviewer dimensions (spine S7).** `1, 2, 3, 4, 6, 8`; add `7` for a multi-phase story, passing
+  `<<live_slices>>` from `facts.slices` so its slice-coverage check runs — pass the epic plan + delivery-log staged
   paths so Dimension 8 checks the `## Epic contract` against the epic's `## Story contracts` and the
   log. A Dimension-8 BLOCKER tracing to a wrong *epic* contract is the same feedback edge: re-route to
   the epic in revise mode. If this story is itself fully gated by an unresolved OQ, re-route to

@@ -1,0 +1,14 @@
+[
+ {
+  "id": 9101,
+  "node_id": "IC_plan250",
+  "user": {
+   "login": "alice"
+  },
+  "author_association": "MEMBER",
+  "body": "<!-- implementation-plan:v1 -->\n**Implementation plan** \u2014 #250 Export the journal to CSV \u2014 planned 2026-03-01T00:00:00Z at `main@abc1234`\n\n## Approach\nWrite the CSV writer, then plumb the flag.\n\n## Phases\n1. **Phase 1 \u2014 quoting helper**\n   - kind: code-shipping\n   - ships: PR commits to the issue branch\n   - closes-dod: (none)\n   - deliverable: the shared CSV-quoting helper both later phases build on\n   - depends-on: (none)\n   - sub-issue: (none)\n2. **Phase 2 \u2014 flag plumbing**\n   - kind: code-shipping\n   - ships: PR commits to the issue branch\n   - closes-dod: 2\n   - deliverable: the command-line flag wired through to the writer\n   - depends-on: 1\n   - sub-issue: #252\n3. **Phase 3 \u2014 writer core**\n   - kind: code-shipping\n   - ships: PR commits to the issue branch\n   - closes-dod: 1\n   - deliverable: the export writer producing a well-formed CSV\n   - depends-on: 2\n   - sub-issue: #251\n",
+  "created_at": "2026-03-01T00:00:00Z",
+  "updated_at": "2026-03-01T00:00:00Z",
+  "html_url": "https://github.com/octo/widgets/issues/250#issuecomment-9101"
+ }
+]
