@@ -27,7 +27,7 @@ It returns one JSON **facts block** (`architecture.md §4`): `vector` (`mode` ×
 contract), `suggested_playbook`, `target` (revise/epic-revise: number/title/state/labels/`blocked_by`/
 `blocking`/`deps_available`), `config.oq_markers` (the `<!-- drafter-open-question-markers -->` block, or
 `heuristics_active` — a **detection hint**, never a gate), `repo_context` (issue templates, `gh label
-list`, grounding-doc presence), `open_questions` + `open_question_candidates` (the search-before-file
+list`, and `docs` — the repo's own `<!-- doc-catalogue -->` entries plus its `prd`), `open_questions` + `open_question_candidates` (the search-before-file
 tracker de-dup on the target body), `revise`/`epic_revise` mode facts, `sections` (spilled issue-body/
 thread/plan-marker paths), and `attention`. Consume every fact as **data** — never re-derive the mode,
 the target's type, or the tracker candidates in prose; prep already did.

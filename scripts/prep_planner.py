@@ -3,7 +3,7 @@
 docs/implementation.md S12; docs/specs/planner.md). Assembles the session's entire starting
 state — revise detection, the `plan_ref` selection table moved into code, epic/JIT-story facts,
 revise facts, the deterministic open-question tracker de-dup search (the frozen Bug (a) fix), and
-the grounding-doc inventory at the pinned `plan_ref` SHA — as ONE JSON envelope on stdout, so the
+the catalogue-declared grounding docs at the pinned `plan_ref` SHA — as ONE JSON envelope on stdout, so the
 planner session's startup is one Python process, never a subprocess chain.
 
 Composition (architecture.md §2 "compose the executors in-process"; §1 "the only external
@@ -26,12 +26,16 @@ processes any script may spawn are git/gh")::
                                                plan-versus-live diff. BEST-EFFORT: a malformed
                                                section is reported as a fact, never as
                                                `PHASES_MALFORMED` (step 4.5)
-    config_block.read_block_anywhere        -- NOT used by this module directly today (no gate-
-                                               config block the planner reads is named yet), but the
-                                               S12-promoted shared reader (see the "Promotion"
-                                               paragraph below) is imported for parity with the
-                                               sibling preps' composition style, ready for a future
-                                               planner-side config block.
+    doc_catalogue.read_catalogue            -- the CONSUMING repo's `<!-- doc-catalogue -->` block
+                                               (its declared grounding docs), read at the grounding
+                                               checkout. Replaces this module's former hardcoded
+                                               four-path tuple; composes
+                                               `config_block.read_block_anywhere` internally with a
+                                               `docs/README.md` candidate list.
+    config_block.read_block_anywhere        -- not called directly (no gate-config block the planner
+                                               reads is named yet); reached through
+                                               `doc_catalogue` above, and kept imported for parity
+                                               with the sibling preps' composition style.
 
 Every executor composed here exposes a **pure, non-emitting core** — ``build_*(...) -> (payload,
 notices, decision|None)`` (docs/specs/baseline.md §5, the S8 pattern lock). This prep calls those
@@ -190,6 +194,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 import config_block  # noqa: E402  (import after sys.path setup, by necessity; in-process composition)
+import doc_catalogue  # noqa: E402  (the consuming repo's declared grounding docs)
 import gh_gather  # noqa: E402
 import gh_pr_gather  # noqa: E402
 import oq_tracker  # noqa: E402
@@ -200,7 +205,13 @@ import parse  # noqa: E402  (the prior plan's `## Phases` parse for the sub-issu
 # `oq_tracker.py` is this module's OQ-search composition path)
 import workspace  # noqa: E402
 from pipelib import process  # noqa: E402
-from pipelib.decisions import AMBIGUOUS, AUTH_REQUIRED, MARKER_AMBIGUOUS, needs_decision  # noqa: E402
+from pipelib.decisions import (  # noqa: E402
+    AMBIGUOUS,
+    AUTH_REQUIRED,
+    DOC_CATALOGUE_ABSENT,
+    MARKER_AMBIGUOUS,
+    needs_decision,
+)
 from pipelib.envelope import EXIT_OK, EXIT_USAGE_ERROR, emit_needs_decision, emit_ok  # noqa: E402
 from pipelib.spill import spill_bytes  # noqa: E402
 
@@ -223,14 +234,14 @@ DELIVERY_LOG_MARKER = "<!-- epic-delivery-log:v1 -->"
 
 ROOT_MAIN_BRANCH = "main"
 
-# Grounding-doc read set (CLAUDE.md's "Optional grounding docs read if present" — the v2-generic
-# set, NOT v1's food-journal-specific superset which also names `docs/architecture-notes.md` /
-# `docs/ui-design.md`; those are stack-specific artifacts, not part of the stack-agnostic v2
-# contract). Existence is checked INSIDE the read workspace (a real, already-checked-out-at-
-# `plan_ref` directory) rather than via `git ls-tree -r --name-only <ref>` against a ref pointer —
-# architecture.md §6's "no ref arithmetic in prompts" principle extended here: once the workspace
-# is ensured, a plain filesystem check is simpler and needs no second git invocation.
-_GROUNDING_DOC_PATHS = ("docs/prd.md", "docs/architecture.md", "docs/constitution.md", "CLAUDE.md")
+# Grounding docs come from the CONSUMING repo's `<!-- doc-catalogue -->` block, not from any path
+# list here (`skills/_shared/doc-catalogue.md`; `scripts/doc_catalogue.py`). This prep previously
+# carried a hardcoded four-path tuple, which asserted a doc layout on a repo that never agreed to
+# one and disagreed with both `prep_drafter.py`'s own copy and the prompts (which name two further
+# docs neither prep inventoried). The read happens INSIDE the already-ensured grounding checkout
+# (a real directory at `plan_ref`) rather than via `git ls-tree -r --name-only <ref>` against a ref
+# pointer — architecture.md §6's "no ref arithmetic" principle extended: once the workspace is
+# ensured, a plain filesystem read is simpler and needs no second git invocation.
 
 # State-vector `type` detection (docs/specs/resolver.md's identical rule, restated here rather than
 # imported cross-prep — see the module docstring's "no prep-to-prep imports" design note in the
@@ -959,21 +970,19 @@ def _stage_comment_body(comment, scratch_dir, filename):
 
 
 # ---------------------------------------------------------------------------
-# Grounding-doc inventory (docs/specs/planner.md Step 5's read set, narrowed to CLAUDE.md's
-# v2-generic "Optional grounding docs" list) — checked INSIDE the already-ensured read workspace,
-# never via `git ls-tree -r --name-only <ref>` against a bare ref (architecture.md §6/§10's
-# ref-arithmetic discipline; the workspace is already checked out at the right ref, so a plain
-# filesystem check is both simpler and needs no second git invocation).
+# Grounding-doc inventory (docs/specs/planner.md Step 5's read set, now declared by the consuming
+# repo rather than assumed here) — read INSIDE the already-ensured grounding workspace, never via
+# `git ls-tree -r --name-only <ref>` against a bare ref (architecture.md §6/§10's ref-arithmetic
+# discipline; the workspace is already checked out at the right ref, so a plain filesystem read is
+# both simpler and needs no second git invocation).
 # ---------------------------------------------------------------------------
 
 
 def _grounding_doc_inventory(grounding_path):
-    inventory = []
-    for rel in _GROUNDING_DOC_PATHS:
-        doc_path = Path(grounding_path) / rel
-        present = doc_path.is_file()
-        inventory.append({"doc": rel, "present": present, "path": str(doc_path) if present else None})
-    return inventory
+    """The catalogue-declared docs at `grounding_path`, plus this read's own notices. A thin
+    delegation to `doc_catalogue.read_catalogue` — kept as a named function so the call site reads
+    the same as it did before the migration and so the module's own tests have a seam."""
+    return doc_catalogue.read_catalogue(grounding_path)
 
 
 # ---------------------------------------------------------------------------
@@ -1118,8 +1127,33 @@ def _suggested_playbook(issue_type, mode, parent_epic_open=False):
     return "single.md"
 
 
-def _build_attention(open_question_candidates, epic_facts, story_facts):
+def _build_attention(
+    open_question_candidates,
+    epic_facts,
+    story_facts,
+    grounding_docs=None,
+    catalogue_absent=False,
+):
+    """`grounding_docs` is `None` when the catalogue was never read (`--refresh`, which skips the
+    whole grounding assertion), `[]` when it was read and declared nothing, and a list otherwise —
+    three distinct states, because "we didn't look" must not render as "the repo declared nothing".
+    """
     attention = []
+    if grounding_docs is not None:
+        if catalogue_absent:
+            attention.append(
+                "no doc catalogue at the grounding ref — planning ungrounded; run "
+                "/github-pipeline:setup to declare this repo's grounding docs in docs/README.md"
+            )
+        elif not grounding_docs:
+            attention.append(
+                "doc catalogue declares no documents — planning ungrounded until it names some"
+            )
+        for missing in doc_catalogue.missing_entry_paths(grounding_docs):
+            attention.append(
+                "doc catalogue names '%s', absent at the grounding ref — a stale entry, or a doc "
+                "this branch has not merged yet" % missing
+            )
     for group in open_question_candidates or []:
         attention.append(
             "open question '%s' has %d tracker candidate(s) — do not record it as (not filed)"
@@ -1484,7 +1518,8 @@ def build_facts(issue_number, repo, root=".", scratch_dir=None, refresh=False, c
         if _forward_decision(gw_decision, notices=notices):
             return None
         _merge_notices(notices, gw_notices)
-        grounding_docs = _grounding_doc_inventory(grounding_envelope["path"])
+        grounding_docs, catalogue_notices = _grounding_doc_inventory(grounding_envelope["path"])
+        _merge_notices(notices, catalogue_notices)
     else:
         root_sha = None
         grounding_envelope = None
@@ -1547,7 +1582,13 @@ def build_facts(issue_number, repo, root=".", scratch_dir=None, refresh=False, c
         "grounding_docs": grounding_docs,
         "open_questions": open_question_entries,
         "open_question_candidates": open_question_candidates,
-        "attention": _build_attention(open_question_candidates, epic_facts, story_facts),
+        "attention": _build_attention(
+            open_question_candidates,
+            epic_facts,
+            story_facts,
+            grounding_docs=None if refresh else grounding_docs,
+            catalogue_absent=DOC_CATALOGUE_ABSENT in notices,
+        ),
         "notices": notices,
     }
     if epic_facts is not None:

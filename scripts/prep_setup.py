@@ -4,12 +4,14 @@
 
 Setup is the SINGLE write path for the consuming repo's marker-delimited configuration blocks
 (``<!-- issue-resolver-* -->`` / ``<!-- pr-evaluator-* -->`` / ``<!-- worktree-setup/teardown -->`` /
-``<!-- claude-code-stack-profile -->`` / ``<!-- github-pipeline-config -->``). Unlike the five pipeline
+``<!-- claude-code-stack-profile -->`` / ``<!-- github-pipeline-config -->``), plus the
+``<!-- doc-catalogue -->`` grounding declaration in ``docs/README.md``. Unlike the five pipeline
 preps, setup does **no** GitHub gather — its whole subject is *local Markdown files*. So this prep
 assembles a purely local starting state: the tool-availability preflight, the git-repo/``root.sha``
 facts, and the multi-file block **inventory** (both candidate files' block lists, per-marker
 classification, the legacy ``pr-evaluator-health-checks`` signal, the user-owned
-``claude-code-stack-profile`` interior staged for re-ingest, and the same-marker-in-both-files
+``claude-code-stack-profile`` interior staged for re-ingest, the ``doc-catalogue`` state with its
+README and existing interior staged for the derivation sub-agent, and the same-marker-in-both-files
 ambiguity) — as ONE JSON envelope on stdout, so the setup session's startup is one Python process,
 never a chain of ``config_block.py list``/``read`` subprocess calls run from the router body.
 
@@ -90,6 +92,15 @@ MACHINE_PARSED_MARKERS = (
 CONFIG_HEADER_MARKER = "github-pipeline-config"
 STACK_PROFILE_MARKER = "claude-code-stack-profile"
 LEGACY_HEALTH_CHECKS_MARKER = "pr-evaluator-health-checks"
+
+# The doc catalogue (skills/_shared/doc-catalogue.md) — the repo's declared grounding docs, read by
+# the planner and drafter preps. Deliberately kept OUT of `MACHINE_PARSED_MARKERS` and
+# `CANDIDATE_FILES`: it lives only in `docs/README.md`, so classifying it through the
+# COMMANDS.md/CLAUDE.md machinery would report it permanently `missing` and would let it skew
+# `_target_file_suggestion`'s per-file config counts. It gets a parallel read instead, the way the
+# CLAUDE.md-only stack profile gets its own facts object.
+DOC_CATALOGUE_MARKER = "doc-catalogue"
+DOC_CATALOGUE_FILE = "docs/README.md"
 
 # Tools the scripts and skills need at use-time (docs/specs/setup.md "Preflight checks").
 PREFLIGHT_TOOLS = ("jq", "git", "gh")
@@ -212,6 +223,51 @@ def _stack_profile_facts(root, locations, scratch_dir):
     return facts
 
 
+def _doc_catalogue_facts(root, scratch_dir):
+    """User-owned ``doc-catalogue`` facts (skills/_shared/doc-catalogue.md) — a parallel read of
+    ``docs/README.md``, not part of the CANDIDATE_FILES inventory (see DOC_CATALOGUE_MARKER).
+
+    Stages two files for the derivation sub-agent, because a context-blind sub-agent receives
+    prep-staged files rather than reading a repo itself:
+
+      - ``<scratch>/doc-catalogue.readme.md`` — the whole docs index, the sub-agent's ONLY derivation
+        source when no block exists yet (it must not go hunting for docs the index doesn't name);
+      - ``<scratch>/doc-catalogue.base.md`` — the existing block interior, the authoritative
+        re-ingest base, staged only when a well-formed block is present.
+
+    ``readme_present`` and ``present`` are reported separately because they lead to different flow
+    behavior: no README at all means "skipped, tell the operator to create one", while a README
+    without the block means "derive and propose".
+    """
+    readme_path = Path(root) / DOC_CATALOGUE_FILE
+    readme_present = readme_path.is_file()
+    facts = {"readme_present": readme_present, "present": False, "status": None}
+    if not readme_present:
+        return facts
+
+    staged_readme = Path(scratch_dir) / "doc-catalogue.readme.md"
+    staged_readme.write_text(readme_path.read_text(encoding="utf-8"), encoding="utf-8")
+    facts["readme_path"] = str(staged_readme)
+
+    # `build_list` reports this file's own blocks with their status; a `dup`/`open` catalogue is
+    # surfaced and NOT staged as a base — a malformed block is fixed by hand, never guessed at.
+    for status, marker in config_block.build_list(str(readme_path)):
+        if marker == DOC_CATALOGUE_MARKER:
+            facts["status"] = status
+            break
+    if facts["status"] != "ok":
+        return facts
+
+    facts["present"] = True
+    interior, exit_code = config_block.build_read(str(readme_path), DOC_CATALOGUE_MARKER)
+    if exit_code == config_block.EXIT_OK:
+        base_path = Path(scratch_dir) / "doc-catalogue.base.md"
+        base_path.write_text("".join(line + "\n" for line in interior), encoding="utf-8")
+        facts["interior_present"] = len(interior) > 0
+        facts["base_path"] = str(base_path)
+    return facts
+
+
 def _target_file_suggestion(files, locations):
     """Decide the pipeline-config target file (docs/specs/setup.md "Operator gates": keep config in
     one file; default to COMMANDS.md when neither exists). Counts machine-parsed + header markers per
@@ -278,6 +334,22 @@ def _build_attention(inventory):
             "config marker(s) declared in BOTH candidate files (ambiguous — one file must win): %s"
             % ", ".join(inventory["same_marker_both_files"])
         )
+    catalogue = inventory["doc_catalogue"]
+    if not catalogue["readme_present"]:
+        attention.append(
+            "no `docs/README.md` — doc catalogue skipped; until one exists the planner and drafter "
+            "ground on no documents at all (create it, then re-run setup)"
+        )
+    elif catalogue["status"] in ("dup", "open"):
+        attention.append(
+            "malformed `doc-catalogue` block in `docs/README.md` — the operator must fix it by hand; "
+            "readers treat a malformed block as absent, so grounding is currently off"
+        )
+    elif not catalogue["present"]:
+        attention.append(
+            "`docs/README.md` carries no `doc-catalogue` block — setup derives one from the index and "
+            "proposes it"
+        )
     return attention
 
 
@@ -313,6 +385,7 @@ def build_facts(root=".", scratch_dir=None):
         "known_markers": known_markers,
         "legacy_health_checks": legacy_health_checks,
         "stack_profile": _stack_profile_facts(root, locations, scratch_dir),
+        "doc_catalogue": _doc_catalogue_facts(root, scratch_dir),
         "config_header": _classify(CONFIG_HEADER_MARKER, locations),
         "same_marker_both_files": _same_marker_both_files(locations),
     }

@@ -23,6 +23,7 @@ model-consumed via the CLAUDE.md auto-load, so it has no consuming-skill source 
   - [pr-evaluator-merge-policy](#pr-evaluator-merge-policy)
   - [worktree-setup / worktree-teardown](#worktree-setup--worktree-teardown)
   - [claude-code-stack-profile](#claude-code-stack-profile)
+  - [doc-catalogue](#doc-catalogue)
   - [github-pipeline-config (file header)](#github-pipeline-config-file-header)
 - [Detection heuristics](#detection-heuristics)
 - [Legacy migration: health-checks → static-checks + test-target](#legacy-migration)
@@ -299,6 +300,62 @@ to run them cheaply; leave the fast ones alone* — then fill it in. Same shape,
 - One-time slow steps (`npm ci`, a cold production build) — background and wait.
 <!-- /claude-code-stack-profile -->
 ```
+
+### doc-catalogue
+
+The repo's **grounding documents**, declared by the repo itself. The planner and drafter read it to
+learn which docs to ground on and how much authority each carries; without it they ground on no
+documents at all. The full contract — home, per-field semantics, the absent-catalogue rule — is
+[`../../_shared/doc-catalogue.md`](../../_shared/doc-catalogue.md); read it before drafting. This
+section covers only the authoring side.
+
+**Lives only in `docs/README.md`** — the second fixed-home block, for the same kind of reason as
+`claude-code-stack-profile`'s CLAUDE.md: a catalogue of documents belongs beside the documents, in the
+index a repo already maintains for its own sake. It never goes in `COMMANDS.md`/`CLAUDE.md`, and
+readers look nowhere else.
+
+```markdown
+<!-- doc-catalogue -->
+- `<path>` — <role> — <binding | informative> — <one-line summary>
+<!-- /doc-catalogue -->
+```
+
+**Ownership — user-owned**, exactly like `claude-code-stack-profile`: seed it when absent, and on a
+re-run **re-ingest the existing interior as the authoritative base**, proposing only refinements (a
+dead path, a document the index names that the catalogue lacks, a line that does not parse). Never
+reword a summary a human wrote. It differs from the stack profile in one way that matters: this block
+**is** machine-parsed, so every line must hold the entry grammar.
+
+**Authored by a context-blind sub-agent, not inline** — the only block whose drafting leaves the main
+loop, because deriving it means reading a whole docs index and judging each document's force, and that
+reasoning should not land in the setup session's context. Dispatch
+[`doc-catalogue-derivation-prompt.md`](doc-catalogue-derivation-prompt.md), resolving the prompt path
+and the `_shared/doc-catalogue.md` contract path yourself (raw-read reference paths are not
+substituted) and passing them as placeholders alongside
+`facts.inventory.doc_catalogue.readme_path`, its `base_path` (or the literal `(absent)`), and
+`facts.root.path`. Treat what it returns as a draft like any other block: show it at §4 and gate.
+
+**No `docs/README.md` → skip, never invent.** Report *no docs index — skipped*, with the one-line
+remedy (create `docs/README.md` describing the repo's grounding docs, then re-run setup). Do **not**
+walk the tree looking for doc-shaped files, and do **not** interview the operator for a doc list: a
+catalogue with no index behind it has nothing to re-ingest on the next run, which breaks the
+user-owned posture, and inventing a grounding set is precisely what the block exists to prevent. The
+planner and drafter degrade loudly on their side (a `DOC_CATALOGUE_ABSENT` notice), so the gap is
+visible without setup guessing at it.
+
+**Target the committed file.** The staged upsert writes `<workspace>/docs/README.md` inside a
+worktree of `main`, so a `docs/README.md` that exists only as an uncommitted edit in the operator's
+root is not there — and `config_block.py` creates a file but not a missing parent directory, so the
+write fails outright rather than silently. Surface it ("commit `docs/README.md` first"); never work
+around it by creating a `docs/` directory holding nothing but this block.
+
+**Validate what you wrote.** After the upsert, re-read the block and check every non-blank interior
+line against the contract's grammar: four ` — `-separated fields, a backtick-quoted path that exists,
+an `authority` of exactly `binding` or `informative`. A line that fails is **silently skipped by
+readers** — the same failure class as a dropped `worktree-*` command — so report it and fix it rather
+than shipping a catalogue with a hole in it.
+
+Summary vocabulary is the user-owned one: **seeded** / **refreshed** / **already-current** / **skipped**.
 
 ### github-pipeline-config (file header)
 

@@ -49,8 +49,19 @@ from tests.support import envelope_asserts, gitsandbox, shimenv  # noqa: E402
 
 
 def _write(path, text):
+    Path(path).parent.mkdir(parents=True, exist_ok=True)
     with open(path, "w", encoding="utf-8", newline="") as fh:
         fh.write(text)
+
+
+# The doc catalogue every sandbox starts configured with (skills/_shared/doc-catalogue.md) — one
+# entry, naming a document the base setUp also creates, so a baseline run reports one present
+# grounding doc, no notice, and no attention line.
+SEEDED_CATALOGUE_INTERIOR = "- `docs/prd.md` — prd — binding — What the product is.\n"
+
+
+def _catalogue_block(interior):
+    return "<!-- doc-catalogue -->\n%s<!-- /doc-catalogue -->\n" % interior
 
 
 def _git(args, cwd):
@@ -84,12 +95,33 @@ class PrepPlannerSandboxTestCase(unittest.TestCase):
         self.addCleanup(self.clone.cleanup)
         self.root = self.clone.path
         _write(self.root / ".gitignore", ".worktrees/\n")
-        _git(["add", ".gitignore"], self.root)
-        _git(["commit", "-m", "seed gitignore"], self.root)
+        # A configured consuming repo: a doc catalogue naming one document that exists. Seeded in the
+        # BASE so the grounding dimension is neutral for every test not about grounding — without it
+        # each such test's `attention` would carry the catalogue-absent line, and asserting that line
+        # in tests about open questions would be noise that hides the real assertion.
+        _write(self.root / "docs" / "README.md", _catalogue_block(SEEDED_CATALOGUE_INTERIOR))
+        _write(self.root / "docs" / "prd.md", "# PRD\n")
+        _git(["add", ".gitignore", "docs"], self.root)
+        _git(["commit", "-m", "seed gitignore + doc catalogue"], self.root)
         _git(["push", "origin", "HEAD:main"], self.root)
         self._tmp_ctx = tempfile.TemporaryDirectory()
         self.scratch = self._tmp_ctx.name
         self.addCleanup(self._tmp_ctx.cleanup)
+
+    def _commit_push(self, message):
+        _git(["add", "-A"], self.root)
+        _git(["commit", "-m", message], self.root)
+        _git(["push", "origin", "HEAD:main"], self.root)
+
+    def _replace_catalogue(self, interior):
+        """Rewrite the seeded catalogue and land it on origin/main — the planner reads the catalogue
+        at the ENSURED checkout, so an uncommitted edit here would not be seen."""
+        _write(self.root / "docs" / "README.md", _catalogue_block(interior))
+        self._commit_push("replace doc catalogue")
+
+    def _remove_catalogue(self):
+        (self.root / "docs" / "README.md").unlink()
+        self._commit_push("remove doc catalogue")
 
     def _mk_ambient(self, branch):
         """Create (or reuse) `.worktrees/<branch>` in the sandbox clone — the worktree a
@@ -369,26 +401,103 @@ class PlanRefRowTests(PrepPlannerSandboxTestCase):
 
 
 class GroundingDocInventoryTests(PrepPlannerSandboxTestCase):
-    def test_no_docs_present_at_main(self):
+    """`grounding_docs` is now the consuming repo's OWN declaration (the `<!-- doc-catalogue -->`
+    block in `docs/README.md`, per skills/_shared/doc-catalogue.md), read at the ensured grounding
+    checkout — not a path list this prep asserts. What these tests protect is the three-state
+    distinction the migration introduced: declared-and-present, declared-but-missing, and no
+    declaration at all."""
+
+    def test_declared_docs_are_reported_with_paths_inside_the_workspace(self):
         envelope = self._envelope(issue="200", fixture_case="prep_planner_row_default")
-        docs = {d["doc"]: d["present"] for d in envelope["grounding_docs"]}
-        self.assertEqual(
-            docs,
-            {"docs/prd.md": False, "docs/architecture.md": False, "docs/constitution.md": False, "CLAUDE.md": False},
+        entries = envelope["grounding_docs"]
+        self.assertEqual(len(entries), 1)
+        entry = entries[0]
+        self.assertEqual(entry["path"], "docs/prd.md")
+        self.assertEqual(entry["role"], "prd")
+        self.assertEqual(entry["authority"], "binding")
+        self.assertTrue(entry["present"])
+        self.assertIn(envelope["grounding"]["path"], entry["abs_path"])
+        self.assertEqual(envelope["notices"], [])
+        self.assertEqual(envelope["attention"], [])
+
+    def test_multiple_entries_keep_declaration_order_and_both_authorities(self):
+        _write(self.root / "docs" / "architecture.md", "# Architecture\n")
+        self._replace_catalogue(
+            "- `docs/prd.md` — prd — binding — What the product is.\n"
+            "- `docs/architecture.md` — architecture — informative — Layer rules.\n"
+        )
+        envelope = self._envelope(issue="200", fixture_case="prep_planner_row_default")
+        entries = envelope["grounding_docs"]
+        self.assertEqual([e["path"] for e in entries], ["docs/prd.md", "docs/architecture.md"])
+        self.assertEqual([e["authority"] for e in entries], ["binding", "informative"])
+        self.assertEqual(envelope["attention"], [])
+
+    def test_absent_catalogue_yields_no_entries_the_notice_and_an_attention_line(self):
+        self._remove_catalogue()
+        envelope = self._envelope(issue="200", fixture_case="prep_planner_row_default")
+        self.assertEqual(envelope["grounding_docs"], [])
+        self.assertIn("DOC_CATALOGUE_ABSENT", envelope["notices"])
+        self.assertTrue(
+            any("no doc catalogue" in item for item in envelope["attention"]),
+            envelope["attention"],
         )
 
-    def test_docs_present_are_reported_with_paths_inside_the_workspace(self):
-        _write(self.root / "CLAUDE.md", "# hi\n")
-        _git(["add", "CLAUDE.md"], self.root)
-        _git(["commit", "-m", "seed CLAUDE.md"], self.root)
-        _git(["push", "origin", "HEAD:main"], self.root)
-
+    def test_empty_catalogue_is_not_the_absent_notice_but_still_attention(self):
+        """Absent ≠ empty: a repo declaring no documents made a declaration, so no notice fires —
+        but the operator still needs to know planning is ungrounded."""
+        self._replace_catalogue("")
         envelope = self._envelope(issue="200", fixture_case="prep_planner_row_default")
-        by_doc = {d["doc"]: d for d in envelope["grounding_docs"]}
-        self.assertTrue(by_doc["CLAUDE.md"]["present"])
-        self.assertIn(envelope["grounding"]["path"], by_doc["CLAUDE.md"]["path"])
-        self.assertFalse(by_doc["docs/prd.md"]["present"])
-        self.assertIsNone(by_doc["docs/prd.md"]["path"])
+        self.assertEqual(envelope["grounding_docs"], [])
+        self.assertEqual(envelope["notices"], [])
+        self.assertTrue(
+            any("declares no documents" in item for item in envelope["attention"]),
+            envelope["attention"],
+        )
+
+    def test_declared_but_missing_doc_is_reported_not_dropped(self):
+        self._replace_catalogue(
+            "- `docs/prd.md` — prd — binding — What the product is.\n"
+            "- `docs/ui-design.md` — ui-design — binding — Not committed on this ref.\n"
+        )
+        envelope = self._envelope(issue="200", fixture_case="prep_planner_row_default")
+        by_path = {e["path"]: e for e in envelope["grounding_docs"]}
+        self.assertEqual(len(by_path), 2)
+        self.assertFalse(by_path["docs/ui-design.md"]["present"])
+        self.assertIsNone(by_path["docs/ui-design.md"]["abs_path"])
+        self.assertTrue(
+            any("docs/ui-design.md" in item for item in envelope["attention"]),
+            envelope["attention"],
+        )
+
+    def test_malformed_entries_are_skipped_without_losing_their_neighbours(self):
+        self._replace_catalogue(
+            "Prose that is not an entry.\n"
+            "- `docs/prd.md` — prd — binding — What the product is.\n"
+            "- `docs/x.md` — prd — authoritative — authority outside the closed pair\n"
+        )
+        envelope = self._envelope(issue="200", fixture_case="prep_planner_row_default")
+        self.assertEqual([e["path"] for e in envelope["grounding_docs"]], ["docs/prd.md"])
+
+    def test_the_catalogue_is_not_read_from_commands_or_claude_md(self):
+        """The fixed-home rule — `docs/README.md` only, never `read_block_anywhere`'s defaults."""
+        self._remove_catalogue()
+        _write(self.root / "CLAUDE.md", _catalogue_block(SEEDED_CATALOGUE_INTERIOR))
+        self._commit_push("catalogue in the wrong file")
+        envelope = self._envelope(issue="200", fixture_case="prep_planner_row_default")
+        self.assertEqual(envelope["grounding_docs"], [])
+        self.assertIn("DOC_CATALOGUE_ABSENT", envelope["notices"])
+
+    def test_refresh_reads_no_catalogue_and_raises_no_grounding_attention(self):
+        """`--refresh` skips the whole grounding assertion, so "we didn't look" must not render as
+        "the repo declared nothing" — neither the notice nor an attention line may appear."""
+        envelope = self._envelope(
+            issue="200", fixture_case="prep_planner_row_default", extra_args=["--refresh"]
+        )
+        self.assertEqual(envelope["grounding_docs"], [])
+        self.assertNotIn("DOC_CATALOGUE_ABSENT", envelope["notices"])
+        self.assertEqual(
+            [item for item in envelope["attention"] if "catalogue" in item], []
+        )
 
 
 class OpenQuestionTrackerSearchTests(PrepPlannerSandboxTestCase):

@@ -106,9 +106,13 @@ when a convention is absent, but work best when the repo provides:
   efficiently in a Claude Code session (backgrounding slow commands, logging verbose output instead
   of flooding context), auto-loaded into every session. It's yours to edit — re-running setup
   re-ingests your edits rather than overwriting them.
-- **Optional grounding docs** read if present: `docs/prd.md`, `docs/architecture.md`,
-  `docs/constitution.md`, and `CLAUDE.md`. The planner and resolver use them to align designs and
-  audit implementations; missing docs are simply skipped.
+- **A doc catalogue** (optional, setup-authored) — a `<!-- doc-catalogue -->` block in
+  `docs/README.md` naming the documents that ground the pipeline's work, one per line with a role, an
+  authority (`binding` — contradicting it is a blocker — or `informative`), and a one-line summary.
+  The planner and drafter read it to align designs; the paths are **yours**, so a PRD at
+  `docs/product/requirements.md` works as well as one at `docs/prd.md`. Setup derives a first draft
+  from your `docs/README.md` and re-ingests your edits on re-run. Without it, those skills ground on
+  no documents and say so — nothing is guessed.
 
 The skills post and read durable marker comments: `<!-- implementation-plan:v1 -->` (planner),
 `<!-- issue-research:v1 -->` (researcher), `<!-- epic-delivery-log:v1 -->` (evaluator-written,

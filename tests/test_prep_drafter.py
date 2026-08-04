@@ -49,6 +49,16 @@ def _write(path, text):
         fh.write(text)
 
 
+# The doc catalogue every sandbox starts configured with (skills/_shared/doc-catalogue.md) — one
+# entry naming a document the base setUp also creates, so the grounding dimension is neutral for
+# every test not about grounding (no notice, no attention line).
+SEEDED_CATALOGUE_INTERIOR = "- `docs/prd.md` — prd — binding — What the product is.\n"
+
+
+def _catalogue_block(interior):
+    return "<!-- doc-catalogue -->\n%s<!-- /doc-catalogue -->\n" % interior
+
+
 def _git(args, cwd):
     result = subprocess.run(
         ["git"] + args, cwd=str(cwd), capture_output=True, encoding="utf-8", check=False
@@ -79,9 +89,20 @@ class PrepDrafterSandboxTestCase(unittest.TestCase):
         self.clone = gitsandbox.mk_clone(self.origin)
         self.addCleanup(self.clone.cleanup)
         self.root = self.clone.path
+        # A configured consuming repo (see SEEDED_CATALOGUE_INTERIOR). The drafter's grounding
+        # vantage is the ambient checkout, so a plain working-tree write is what it reads — no
+        # commit needed, unlike the planner's ensured checkout at `plan_ref`.
+        self._seed_catalogue(SEEDED_CATALOGUE_INTERIOR)
+        _write(self.root / "docs" / "prd.md", "# PRD\n")
         self._tmp_ctx = tempfile.TemporaryDirectory()
         self.scratch = self._tmp_ctx.name
         self.addCleanup(self._tmp_ctx.cleanup)
+
+    def _seed_catalogue(self, interior):
+        _write(self.root / "docs" / "README.md", _catalogue_block(interior))
+
+    def _remove_catalogue(self):
+        (self.root / "docs" / "README.md").unlink()
 
     def _run(self, args, fixture_case=None):
         env = shimenv.intercepted_env(base_env=os.environ, fixture_case=fixture_case)
@@ -353,40 +374,75 @@ class LabelInventoryTests(PrepDrafterSandboxTestCase):
 
 
 class GroundingDocInventoryTests(PrepDrafterSandboxTestCase):
-    def test_no_docs_present(self):
+    """`repo_context.docs` is now the consuming repo's own `<!-- doc-catalogue -->` declaration
+    (skills/_shared/doc-catalogue.md) rather than four hardcoded paths. `docs.prd` survives as a
+    named fact — the drafter's PRD-tension step reads exactly it — but is derived from the
+    catalogue's `prd`-role entry."""
+
+    def test_declared_docs_are_reported_with_the_prd_fact_derived(self):
+        _write(self.root / "docs" / "architecture.md", "# Architecture\n")
+        self._seed_catalogue(
+            "- `docs/architecture.md` — architecture — binding — Layer rules.\n"
+            "- `docs/prd.md` — prd — binding — What the product is.\n"
+        )
         envelope = self._envelope(fixture_case="prep_drafter_new_happy")
         docs = envelope["repo_context"]["docs"]
-        self.assertFalse(docs["prd"]["present"])
         self.assertEqual(
-            docs["prd"]["candidates_checked"], ["docs/prd.md", "docs/PRD.md", "PRD.md", "prd.md"]
+            [e["path"] for e in docs["entries"]], ["docs/architecture.md", "docs/prd.md"]
         )
-        self.assertFalse(docs["architecture"]["present"])
-        self.assertFalse(docs["constitution"]["present"])
-        self.assertFalse(docs["claude_md"]["present"])
+        self.assertTrue(docs["prd"]["present"])
+        self.assertTrue(docs["prd"]["path"].endswith("docs/prd.md"))
+        self.assertEqual(envelope["notices"], [])
 
-    def test_prd_variant_path_first_match_wins(self):
-        _write(self.root / "PRD.md", "# PRD\n")
+    def test_prd_role_anywhere_in_the_catalogue_drives_the_prd_fact(self):
+        """The path no longer matters — only the declared role does. This is the whole point of the
+        migration: a repo keeping its PRD at `docs/product/requirements.md` is now first-class."""
+        _write(self.root / "docs" / "product" / "requirements.md", "# Requirements\n")
+        self._seed_catalogue(
+            "- `docs/product/requirements.md` — prd — binding — What the product is.\n"
+        )
         envelope = self._envelope(fixture_case="prep_drafter_new_happy")
         prd = envelope["repo_context"]["docs"]["prd"]
         self.assertTrue(prd["present"])
-        self.assertTrue(prd["path"].endswith("PRD.md"))
+        self.assertTrue(prd["path"].endswith("docs/product/requirements.md"))
 
-    def test_canonical_prd_path_wins_over_a_later_candidate(self):
-        _write(self.root / "docs" / "prd.md", "# canonical PRD\n")
-        _write(self.root / "PRD.md", "# should not win\n")
+    def test_no_prd_role_reports_absent_without_guessing_a_path(self):
+        self._seed_catalogue("- `docs/guides/style.md` — guide — informative — House style.\n")
+        _write(self.root / "docs" / "guides" / "style.md", "# Style\n")
+        # A file at the path the retired hardcoded search would have found — proof nothing guesses.
+        _write(self.root / "docs" / "prd.md", "# Not declared\n")
         envelope = self._envelope(fixture_case="prep_drafter_new_happy")
         prd = envelope["repo_context"]["docs"]["prd"]
-        self.assertTrue(prd["path"].endswith("docs/prd.md"))
+        self.assertFalse(prd["present"])
+        self.assertIsNone(prd["path"])
 
-    def test_architecture_constitution_claude_md_present(self):
-        _write(self.root / "docs" / "architecture.md", "# Architecture\n")
-        _write(self.root / "docs" / "constitution.md", "# Constitution\n")
-        _write(self.root / "CLAUDE.md", "# hi\n")
+    def test_declared_prd_that_does_not_exist_reports_absent_and_attention(self):
+        self._seed_catalogue("- `docs/prd.md` — prd — binding — What the product is.\n")
+        (self.root / "docs" / "prd.md").unlink()
+        envelope = self._envelope(fixture_case="prep_drafter_new_happy")
+        self.assertFalse(envelope["repo_context"]["docs"]["prd"]["present"])
+        self.assertTrue(
+            any("docs/prd.md" in item for item in envelope["attention"]), envelope["attention"]
+        )
+
+    def test_absent_catalogue_yields_the_notice_and_an_attention_line(self):
+        self._remove_catalogue()
         envelope = self._envelope(fixture_case="prep_drafter_new_happy")
         docs = envelope["repo_context"]["docs"]
-        self.assertTrue(docs["architecture"]["present"])
-        self.assertTrue(docs["constitution"]["present"])
-        self.assertTrue(docs["claude_md"]["present"])
+        self.assertEqual(docs["entries"], [])
+        self.assertFalse(docs["prd"]["present"])
+        self.assertIn("DOC_CATALOGUE_ABSENT", envelope["notices"])
+        self.assertTrue(
+            any("no doc catalogue" in item for item in envelope["attention"]),
+            envelope["attention"],
+        )
+
+    def test_the_catalogue_is_not_read_from_commands_or_claude_md(self):
+        self._remove_catalogue()
+        _write(self.root / "CLAUDE.md", _catalogue_block(SEEDED_CATALOGUE_INTERIOR))
+        envelope = self._envelope(fixture_case="prep_drafter_new_happy")
+        self.assertEqual(envelope["repo_context"]["docs"]["entries"], [])
+        self.assertIn("DOC_CATALOGUE_ABSENT", envelope["notices"])
 
 
 # ---------------------------------------------------------------------------
@@ -596,18 +652,28 @@ class PureHelperUnitTests(unittest.TestCase):
         entries = prep_drafter._parse_stories_section(body)
         self.assertEqual(len(entries), 1)
 
-    def test_prd_presence_absent(self):
-        with tempfile.TemporaryDirectory() as tmp:
-            result = prep_drafter._prd_presence(tmp)
-            self.assertFalse(result["present"])
-            self.assertIsNone(result["path"])
+    def test_prd_presence_absent_when_no_prd_role_is_declared(self):
+        result = prep_drafter._prd_presence(
+            [{"path": "docs/guides/style.md", "role": "guide", "present": True, "abs_path": "/x"}]
+        )
+        self.assertFalse(result["present"])
+        self.assertIsNone(result["path"])
 
-    def test_prd_presence_canonical_path(self):
-        with tempfile.TemporaryDirectory() as tmp:
-            _write(Path(tmp) / "docs" / "prd.md", "# PRD\n")
-            result = prep_drafter._prd_presence(tmp)
-            self.assertTrue(result["present"])
-            self.assertTrue(result["path"].endswith("docs/prd.md"))
+    def test_prd_presence_absent_when_the_declared_prd_is_missing(self):
+        """A declared-but-missing PRD must report absent, not hand the playbook a `None` path it
+        would then try to `Read`."""
+        result = prep_drafter._prd_presence(
+            [{"path": "docs/prd.md", "role": "prd", "present": False, "abs_path": None}]
+        )
+        self.assertFalse(result["present"])
+        self.assertIsNone(result["path"])
+
+    def test_prd_presence_uses_the_declared_path(self):
+        result = prep_drafter._prd_presence(
+            [{"path": "docs/prd.md", "role": "prd", "present": True, "abs_path": "/repo/docs/prd.md"}]
+        )
+        self.assertTrue(result["present"])
+        self.assertEqual(result["path"], "/repo/docs/prd.md")
 
     def test_template_inventory_absent_dir(self):
         with tempfile.TemporaryDirectory() as tmp:

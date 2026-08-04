@@ -16,7 +16,8 @@ artifact and no package manager. The "source" is:
   `branching.py` (branch naming / type detection / prior-PR rows / linked branches — both
   import-only), `parse.py` (DoD / open-question-links / phases), the ten `prep_*.py`
   state-assembly scripts (including `prep_workspace_open.py` / `prep_workspace_close.py`, whose
-  prep IS the tool's action), the `oq_tracker.py` helper the open-question preps compose, and
+  prep IS the tool's action), the `oq_tracker.py` and `doc_catalogue.py` helpers the preps compose
+  (the open-question tracker search; the consuming repo's declared grounding docs), and
   `scripts/pipelib/` (envelope, spill, decision codes, hashing, the locked-down subprocess
   runner, the hook runner).
 - **An offline test harness** — `tests/` (stdlib `unittest`, a fixture-replaying `gh` shim, a git
@@ -263,6 +264,12 @@ where the gate-weakening threat model cannot apply.
   because it runs at workspace-open *and* on every resolver/evaluator session entry, discovered at
   the origin/main pin; teardown best-effort and before removal, run by workspace-close). The
   *mechanics* belong to `workspace.py` and architecture §6 — this file does not restate them.
+- `doc-catalogue.md` — the **external** `<!-- doc-catalogue -->` block a consuming repo declares in
+  its `docs/README.md`: the fixed home, the one-line entry grammar, the closed `binding` /
+  `informative` authority pair, the open `role` set, the user-owned ownership posture, and the
+  absent-catalogue rule (including that a proceeding reader and a refusing reader are **both** correct
+  responses to the same absent fact — don't "fix" one to match the other). The *read mechanics* belong
+  to `scripts/doc_catalogue.py` and the *authoring flow* to `skills/setup/references/block-authoring.md`.
 - `epic-story-hierarchy.md` — the epic↔story relation: GitHub's **native parent/sub-issue**
   relation, written only by the **drafter** at filing time (`gh_persist.py create --parent`) on every
   path that files a story under an epic (fresh batch, promotion, epic-revise's new stories), and read
@@ -340,8 +347,17 @@ the *consuming* repo provides — not by plugin config:
   cross-story contracts (`## Story contracts`) and sequencing up front and stays verified and
   immutable; per-story plans are authored **just-in-time** against current epic HEAD, not fanned
   out, so a later story never grounds on code a predecessor has since moved.
-- **Optional grounding docs** read if present: `docs/prd.md`, `docs/architecture.md`,
-  `docs/constitution.md`, `CLAUDE.md`.
+- **Grounding docs the repo declares itself** — the `<!-- doc-catalogue -->` block in the consuming
+  repo's `docs/README.md` ([`skills/_shared/doc-catalogue.md`](skills/_shared/doc-catalogue.md)), one
+  line per document carrying its path, `role`, `authority` (`binding` = a conflict is a blocker |
+  `informative` = context), and a summary. `setup` writes it (seeding via a context-blind derivation
+  sub-agent, re-ingesting an existing block as the base); `prep_planner.py`/`prep_drafter.py` read it
+  through `scripts/doc_catalogue.py`, at the same vantage as the docs themselves — **not** through
+  `refblocks`, since a catalogue names no gate. When it is absent the readers emit the
+  `DOC_CATALOGUE_ABSENT` notice and ground on **nothing**: there is no built-in path list and no
+  filesystem walk, because a guessed doc layout is exactly what the block removes. The plugin
+  formerly hardcoded `docs/prd.md` / `docs/architecture.md` / `docs/constitution.md` / `CLAUDE.md` in
+  two preps that disagreed with each other and with the prompts; don't reintroduce a default list.
 - **Setup-authored operating guidance** (distinct from the machine-parsed blocks above): `setup`
   proposes a `<!-- claude-code-stack-profile -->` block in the consuming repo's `CLAUDE.md` —
   concise, currency-checked guidance on running that stack efficiently in a Claude Code session

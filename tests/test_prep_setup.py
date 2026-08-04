@@ -156,6 +156,87 @@ class PrepSetupSandboxTestCase(unittest.TestCase):
         self.assertFalse(facts["inventory"]["stack_profile"]["present"])
         self.assertNotIn("base_path", facts["inventory"]["stack_profile"])
 
+    # ---- doc catalogue (user-owned, docs/README.md-only, parallel read) ----
+
+    CATALOGUE_INTERIOR = "- `docs/prd.md` — prd — binding — What the product is.\n"
+
+    def _write_catalogue(self, interior=None):
+        body = self.CATALOGUE_INTERIOR if interior is None else interior
+        _write(
+            self.root / "docs" / "README.md",
+            "# Docs\n\n<!-- doc-catalogue -->\n%s<!-- /doc-catalogue -->\n" % body,
+        )
+
+    def test_doc_catalogue_absent_readme_reports_skip(self):
+        facts = self._facts()
+        dc = facts["inventory"]["doc_catalogue"]
+        self.assertFalse(dc["readme_present"])
+        self.assertFalse(dc["present"])
+        self.assertIsNone(dc["status"])
+        self.assertNotIn("readme_path", dc)
+        self.assertNotIn("base_path", dc)
+        self.assertTrue(
+            any("no `docs/README.md`" in item for item in facts["attention"]), facts["attention"]
+        )
+
+    def test_doc_catalogue_readme_without_the_block_stages_the_readme_only(self):
+        """The derive-and-propose path: the sub-agent's only derivation source is the index, so the
+        index is staged even though there is no base to re-ingest."""
+        _write(self.root / "docs" / "README.md", "# Docs\n\nThe PRD lives at `docs/prd.md`.\n")
+        facts = self._facts()
+        dc = facts["inventory"]["doc_catalogue"]
+        self.assertTrue(dc["readme_present"])
+        self.assertFalse(dc["present"])
+        self.assertNotIn("base_path", dc)
+        staged = Path(dc["readme_path"])
+        self.assertTrue(staged.is_file())
+        self.assertIn("The PRD lives at", staged.read_text(encoding="utf-8"))
+        self.assertTrue(
+            any("carries no `doc-catalogue` block" in item for item in facts["attention"]),
+            facts["attention"],
+        )
+
+    def test_doc_catalogue_interior_staged_for_reingest(self):
+        self._write_catalogue()
+        facts = self._facts()
+        dc = facts["inventory"]["doc_catalogue"]
+        self.assertTrue(dc["present"])
+        self.assertEqual(dc["status"], "ok")
+        self.assertTrue(dc["interior_present"])
+        base = Path(dc["base_path"])
+        self.assertTrue(base.is_file())
+        self.assertEqual(base.read_text(encoding="utf-8"), self.CATALOGUE_INTERIOR)
+        self.assertEqual([i for i in facts["attention"] if "catalogue" in i], [])
+
+    def test_doc_catalogue_malformed_is_surfaced_and_never_staged_as_a_base(self):
+        """A malformed block is fixed by hand, never guessed at — and readers treat it as absent, so
+        the attention line has to say grounding is currently off."""
+        _write(
+            self.root / "docs" / "README.md",
+            "<!-- doc-catalogue -->\n%s" % self.CATALOGUE_INTERIOR,  # unterminated
+        )
+        facts = self._facts()
+        dc = facts["inventory"]["doc_catalogue"]
+        self.assertFalse(dc["present"])
+        self.assertEqual(dc["status"], "open")
+        self.assertNotIn("base_path", dc)
+        self.assertTrue(
+            any("malformed `doc-catalogue`" in item for item in facts["attention"]),
+            facts["attention"],
+        )
+
+    def test_docs_readme_never_affects_the_target_file_decision(self):
+        """The parallel-read decision: the catalogue must not count as pipeline config, or it would
+        skew which file setup writes the real config blocks into."""
+        _write(self.root / "COMMANDS.md", "<!-- pr-evaluator-static-checks -->\n- `make lint` — lint\n<!-- /pr-evaluator-static-checks -->\n")
+        self._write_catalogue()
+        facts = self._facts()
+        self.assertEqual(facts["target_file"]["suggested"], "COMMANDS.md")
+        self.assertEqual(facts["target_file"]["config_marker_counts"], {"COMMANDS.md": 1, "CLAUDE.md": 0})
+        self.assertNotIn(
+            "doc-catalogue", [m["name"] for m in facts["inventory"]["known_markers"]]
+        )
+
     # ---- same-marker-both-files / split ----
 
     def test_same_marker_in_both_files_flagged(self):

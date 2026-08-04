@@ -262,6 +262,86 @@ class BlockByteIdentityTests(unittest.TestCase):
             )
 
 
+class DocCatalogueContractTests(unittest.TestCase):
+    """The `doc-catalogue` block's own byte pin — anchored on `skills/_shared/doc-catalogue.md`, the
+    live single source of truth, NOT on `docs/specs/examples/config-blocks.md`.
+
+    Why not the S1 capture: that file is the frozen record of *v1's* blocks, quoted verbatim from v1's
+    own source. `doc-catalogue` never existed in v1, so there is nothing there to capture truthfully,
+    and `docs/specs/**` is frozen and validator-exempt by CLAUDE.md. Adding a fabricated fence to it
+    would hollow out exactly the assertion `BlockByteIdentityTests` exists to make. So this class
+    re-implements the same two pins (upsert round-trip; reference-does-not-restate-divergently)
+    against the `_shared` contract instead.
+    """
+
+    NAME = "doc-catalogue"
+    SHARED_CONTRACT = REPO_ROOT / "skills" / "_shared" / "doc-catalogue.md"
+    DERIVATION_PROMPT = REFERENCES_DIR / "doc-catalogue-derivation-prompt.md"
+
+    def setUp(self):
+        self.shared_blocks = _extract_blocks(self.SHARED_CONTRACT)
+
+    def test_shared_contract_carries_the_canonical_fence(self):
+        self.assertTrue(self.SHARED_CONTRACT.is_file())
+        self.assertIn(
+            self.NAME,
+            self.shared_blocks,
+            "skills/_shared/doc-catalogue.md must carry the canonical fence — it is the byte anchor",
+        )
+
+    def test_block_authoring_fence_matches_the_shared_contract(self):
+        ref_blocks = _extract_blocks(BLOCK_AUTHORING)
+        self.assertIn(self.NAME, ref_blocks, "block-authoring.md missing the doc-catalogue fence")
+        self.assertEqual(
+            ref_blocks[self.NAME][0],
+            self.shared_blocks[self.NAME][0],
+            "block-authoring.md restates the doc-catalogue form divergently from the _shared contract "
+            "(render, don't restate)",
+        )
+
+    def test_config_block_upsert_reproduces_the_canonical_form(self):
+        tmpdir = Path(tempfile.mkdtemp(prefix="gh-setup-catalogue-byteid-"))
+        self.addCleanup(lambda: __import__("shutil").rmtree(tmpdir, ignore_errors=True))
+        full_block, interior = self.shared_blocks[self.NAME]
+        body_path = tmpdir / "body.md"
+        body_path.write_text(interior + "\n", encoding="utf-8")
+        target = tmpdir / "target.md"
+        target.write_text("", encoding="utf-8")
+        proc = _run_config_block(["upsert", str(target), self.NAME, str(body_path)])
+        self.assertEqual(proc.returncode, 0, msg=proc.stderr)
+        self.assertEqual(target.read_text(encoding="utf-8").rstrip("\n"), full_block)
+
+    def test_the_block_stays_out_of_the_s1_capture_machinery(self):
+        """Pins the decision itself against a well-meaning later "fix" that adds it to the frozen
+        v1 capture and to `expected_markers`."""
+        self.assertNotIn(self.NAME, _extract_blocks(CONFIG_BLOCKS_EXAMPLE))
+        peer = BlockByteIdentityTests("test_all_setup_markers_present_in_the_s1_capture")
+        peer.setUp()
+        self.assertNotIn(self.NAME, peer.expected_markers)
+
+    def test_flow_targets_docs_readme_and_dispatches_the_subagent(self):
+        flow = (PLAYBOOKS_DIR / FLOW).read_text(encoding="utf-8")
+        self.assertIn("docs/README.md", flow)
+        self.assertIn(self.NAME, flow)
+        self.assertIn("doc-catalogue-derivation-prompt.md", flow)
+
+    def test_the_derivation_prompt_exists_and_is_context_blind(self):
+        self.assertTrue(self.DERIVATION_PROMPT.is_file())
+        text = self.DERIVATION_PROMPT.read_text(encoding="utf-8")
+        # A sub-agent returns a decision code; it never asks (skills/_shared/asking-the-user.md).
+        self.assertIn("cannot call `AskUserQuestion`", text)
+        for placeholder in ("<<contract_path>>", "<<readme_path>>", "<<base_path>>", "<<repo_root>>"):
+            self.assertIn(placeholder, text, "derivation prompt missing %s" % placeholder)
+
+    def test_absent_docs_index_is_skip_never_walk_or_interview(self):
+        """The posture that keeps setup from inventing a grounding set: no index ⇒ skip."""
+        authoring = BLOCK_AUTHORING.read_text(encoding="utf-8")
+        flow = (PLAYBOOKS_DIR / FLOW).read_text(encoding="utf-8")
+        self.assertIn("no docs index — skipped", flow)
+        self.assertIn("never walk the tree or interview", flow)
+        self.assertIn("walk the tree looking for doc-shaped files", authoring)
+
+
 class LegacyHealthChecksMigrationTests(unittest.TestCase):
     """DoD box 4: the legacy `pr-evaluator-health-checks` split reproduced through config_block.py —
     read the legacy block, upsert the two replacements, remove the legacy block."""

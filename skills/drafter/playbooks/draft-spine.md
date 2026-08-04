@@ -75,7 +75,8 @@ playbook's schema sections (`## Open questions`, `## Related issues`, `## PRD im
 that reference, binding every body): durable anchors only, never an authored `path:line`; DoD sweeps
 state criterion + exemption classes, never a frozen hit list; freeze judgment, not re-derivable facts.
 
-**PRD tension → `## PRD impact`.** When a PRD exists (`facts.repo_context.docs.prd`), ground language in
+**PRD tension → `## PRD impact`.** When the repo declares a PRD (`facts.repo_context.docs.prd` — its
+catalogue's `prd` entry, at whatever path it names), ground language in
 its personas/terminology and watch for tension — the feedback **contradicts** the PRD, **extends** it into
 uncovered territory, or an incomplete-feature report describes a **gap** against a PRD section. On genuine
 tension, add a `## PRD impact` note and gate (`header: "PRD conflict"`): **File to update PRD** / **File

@@ -125,11 +125,12 @@ directly, mirroring `prep_planner.py`'s identical additive extension for a plan-
 **Repo-context inventory (docs/specs/drafter.md "Repo context probe").** Issue templates
 (`.github/ISSUE_TEMPLATE/*` — a plain filesystem listing at `root`, no `git`/`gh` call needed, since
 `root` IS the drafter's grounding vantage per the "No workspace" note above), `gh label list` (repo
-labels, live GitHub state, independent of `root`'s own git state), and grounding-doc presence: PRD
-specifically checks the FOUR v1-documented candidate paths (`docs/prd.md` / `docs/PRD.md` / `PRD.md`
-/ `prd.md` — docs/specs/drafter.md "Repo context probe"), first match wins; `docs/architecture.md` / `docs/constitution.md` /
-`CLAUDE.md` each check their own single canonical path (CLAUDE.md's "Optional grounding docs read if
-present" convention, matching `prep_planner.py`'s `_GROUNDING_DOC_PATHS`).
+labels, live GitHub state, independent of `root`'s own git state), and the grounding docs the
+CONSUMING repo declares in its `<!-- doc-catalogue -->` block (`skills/_shared/doc-catalogue.md`,
+read via `doc_catalogue.read_catalogue` at `root` — the drafter's vantage is the ambient checkout,
+so an uncommitted catalogue edit counts, unlike the planner's ensured checkout at `plan_ref`). The
+long-standing `docs.prd` fact survives as the catalogue's `prd`-role entry; the four hardcoded
+PRD candidate paths that preceded it are gone, along with the doc-layout assumption they encoded.
 
 **Referenced-issue lookup, epic-backlink-open check: deliberately out of scope for this step.**
 docs/specs/drafter.md's "Deterministic steps" table also names a referenced-issue lookup (`gh issue
@@ -152,10 +153,11 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 import config_block  # noqa: E402  (import after sys.path setup, by necessity; in-process composition)
+import doc_catalogue  # noqa: E402  (the consuming repo's declared grounding docs)
 import gh_gather  # noqa: E402
 import oq_tracker  # noqa: E402
 from pipelib import process  # noqa: E402
-from pipelib.decisions import AUTH_REQUIRED, needs_decision  # noqa: E402
+from pipelib.decisions import AUTH_REQUIRED, DOC_CATALOGUE_ABSENT, needs_decision  # noqa: E402
 from pipelib.envelope import EXIT_OK, emit_needs_decision, emit_ok  # noqa: E402
 
 # The implementation-plan marker (skills/planner/references/plan-schema.md;
@@ -184,11 +186,14 @@ REVISE_EXTRA_JSON = "closedByPullRequestsReferences,projectItems"
 # label/title-derivable without any judgment call.
 _EPIC_TITLE_PREFIX_RE = re.compile(r"^\s*epic\s*:", re.IGNORECASE)
 
-# PRD candidate paths (docs/specs/drafter.md "Repo context probe"'s exact list) — first match wins.
-_PRD_CANDIDATE_PATHS = ("docs/prd.md", "docs/PRD.md", "PRD.md", "prd.md")
-_ARCHITECTURE_PATH = "docs/architecture.md"
-_CONSTITUTION_PATH = "docs/constitution.md"
-_CLAUDE_MD_PATH = "CLAUDE.md"
+# Grounding docs are the CONSUMING repo's declaration (`skills/_shared/doc-catalogue.md`;
+# `scripts/doc_catalogue.py`), not a path list here. This module previously carried four constants —
+# a four-candidate PRD search plus one canonical path each for architecture / constitution /
+# CLAUDE.md — which asserted a doc layout the repo never agreed to and disagreed with
+# `prep_planner.py`'s own copy on the PRD's spelling. The `prd` fact below survives the migration
+# because the drafter's PRD-tension step reads it; it is now derived from the catalogue's `prd`-role
+# entry instead of a filesystem guess.
+_PRD_ROLE = "prd"
 
 # `## Stories` bullet grammar (skills/drafter/references/issue-templates.md;
 # docs/specs/drafter.md "Artifacts written", Epic `## Stories` row) — byte-identical regexes to
@@ -287,35 +292,27 @@ def _template_inventory(root):
     return {"present": len(files) > 0, "dir": str(dir_path), "files": files}
 
 
-def _doc_presence(root, rel_path):
-    doc_path = Path(root) / rel_path
-    present = doc_path.is_file()
-    return {"present": present, "path": str(doc_path) if present else None}
+def _prd_presence(entries):
+    """The PRD fact, derived from the catalogue's first `prd`-role entry.
 
-
-def _prd_presence(root):
-    """PRD presence across the four v1-documented candidate paths (docs/specs/drafter.md
-    "Repo context probe") — first match
-    wins; `candidates_checked` rides along so a caller can see the exact search order without
-    re-deriving it."""
-    for rel in _PRD_CANDIDATE_PATHS:
-        doc_path = Path(root) / rel
-        if doc_path.is_file():
-            return {
-                "present": True,
-                "path": str(doc_path),
-                "candidates_checked": list(_PRD_CANDIDATE_PATHS),
-            }
-    return {"present": False, "path": None, "candidates_checked": list(_PRD_CANDIDATE_PATHS)}
+    Kept as its own key (rather than making the playbook hunt through `entries`) because the
+    drafter's PRD-tension step reads exactly this one fact, and it read it before the catalogue
+    existed — so the fact path `facts.repo_context.docs.prd` survives the migration unchanged.
+    A repo that declares no `prd`-role document reports `present: False`, the same shape the
+    four-candidate filesystem search reported when it found nothing.
+    """
+    entry = doc_catalogue.entry_for_role(entries, _PRD_ROLE)
+    if entry is None or not entry.get("present"):
+        return {"present": False, "path": None}
+    return {"present": True, "path": entry["abs_path"]}
 
 
 def _grounding_docs(root):
-    return {
-        "prd": _prd_presence(root),
-        "architecture": _doc_presence(root, _ARCHITECTURE_PATH),
-        "constitution": _doc_presence(root, _CONSTITUTION_PATH),
-        "claude_md": _doc_presence(root, _CLAUDE_MD_PATH),
-    }
+    """`(docs_fact, notices)` — the catalogue as read at `root` (the drafter's grounding vantage is
+    the ambient checkout, so an uncommitted catalogue edit counts here, unlike the planner's
+    already-ensured checkout at `plan_ref`)."""
+    entries, notices = doc_catalogue.read_catalogue(root)
+    return {"entries": entries, "prd": _prd_presence(entries)}, notices
 
 
 def _fetch_labels(repo, cwd=None):
@@ -572,8 +569,26 @@ def _build_revise_facts(issue_envelope):
 # ---------------------------------------------------------------------------
 
 
-def _build_attention(open_question_candidates, target, mode, extra=None):
+def _build_attention(
+    open_question_candidates, target, mode, extra=None, docs=None, catalogue_absent=False
+):
     attention = []
+    if docs is not None:
+        entries = docs.get("entries") or []
+        if catalogue_absent:
+            attention.append(
+                "no doc catalogue in docs/README.md — drafting ungrounded; run "
+                "/github-pipeline:setup to declare this repo's grounding docs"
+            )
+        elif not entries:
+            attention.append(
+                "doc catalogue declares no documents — drafting ungrounded until it names some"
+            )
+        for missing in doc_catalogue.missing_entry_paths(entries):
+            attention.append(
+                "doc catalogue names '%s', absent in this checkout — a stale entry, or a doc this "
+                "branch has not merged yet" % missing
+            )
     for group in open_question_candidates or []:
         attention.append(
             "open question '%s' has %d tracker candidate(s) — do not record it as (not filed)"
@@ -607,16 +622,24 @@ def build_facts(repo, issue=None, root=".", scratch_dir=None, cwd=None):
 
     root_sha = _root_sha(root)
 
+    # Every composed core's non-blocking degradations accumulate here and ride out in the envelope's
+    # own `notices` (architecture.md §3) — including on the `needs_decision` paths below, since a
+    # decision emitted without them would silently drop the fact that this repo declares no grounding
+    # docs at all.
+    notices = []
+
     # 1) Repo-context inventory (common core — every mode gets it; docs/specs/drafter.md "Repo
     #    context probe"). Templates/docs are local filesystem reads; labels is the one gh call every
     #    invocation makes.
     config = _read_oq_marker_config(root)
+    docs_fact, docs_notices = _grounding_docs(root)
+    notices.extend(docs_notices)
     repo_context = {
         "templates": _template_inventory(root),
-        "docs": _grounding_docs(root),
+        "docs": docs_fact,
     }
     labels, labels_decision = _fetch_labels(repo, cwd=cwd)
-    if _forward_decision(labels_decision):
+    if _forward_decision(labels_decision, notices=notices):
         return None
     repo_context["labels"] = labels
 
@@ -643,7 +666,10 @@ def build_facts(repo, issue=None, root=".", scratch_dir=None, cwd=None):
             stream=_DiscardStream(),
         )
         if issue_envelope is not None and issue_envelope.get("status") == "needs_decision":
-            if _forward_decision(issue_envelope["decision"], notices=issue_envelope.get("notices")):
+            if _forward_decision(
+                issue_envelope["decision"],
+                notices=notices + list(issue_envelope.get("notices") or []),
+            ):
                 return None
         if exit_code != 0:
             sys.stderr.write(
@@ -677,7 +703,7 @@ def build_facts(repo, issue=None, root=".", scratch_dir=None, cwd=None):
         open_questions, open_question_candidates, oq_decision = oq_tracker.build_open_question_candidates(
             issue_body, repo, cwd=cwd
         )
-        if _forward_decision(oq_decision):
+        if _forward_decision(oq_decision, notices=notices):
             return None
 
         # 4) Mode-specific facts.
@@ -688,7 +714,7 @@ def build_facts(repo, issue=None, root=".", scratch_dir=None, cwd=None):
                 sub_issues=issue_envelope.get("sub_issues") or [],
                 cwd=cwd,
             )
-            if _forward_decision(epic_decision):
+            if _forward_decision(epic_decision, notices=notices):
                 return None
             extra_attention.extend(epic_attention)
         else:
@@ -714,8 +740,15 @@ def build_facts(repo, issue=None, root=".", scratch_dir=None, cwd=None):
         "repo_context": repo_context,
         "open_questions": open_questions,
         "open_question_candidates": open_question_candidates,
-        "attention": _build_attention(open_question_candidates, target, mode, extra=extra_attention),
-        "notices": [],
+        "attention": _build_attention(
+            open_question_candidates,
+            target,
+            mode,
+            extra=extra_attention,
+            docs=docs_fact,
+            catalogue_absent=DOC_CATALOGUE_ABSENT in notices,
+        ),
+        "notices": notices,
     }
     if revise_facts is not None:
         facts["revise"] = revise_facts
