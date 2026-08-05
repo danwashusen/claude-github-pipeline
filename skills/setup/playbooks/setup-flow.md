@@ -7,8 +7,8 @@ through `AskUserQuestion` per [`../../_shared/asking-the-user.md`](../../_shared
 
 From `facts.preflight`: print a `✓`/`✗ — <fix>` line for `git_repo` and each of `tools.jq/git/gh`, then
 run the report-only `gh auth status` probe and print its line. A missing tool or auth **does not** block
-authoring/staging blocks — note it and continue (the pipeline won't *run*, and the landing PR can't push,
-until the `✗`s clear). If `git_repo` is false, stop.
+authoring/staging — note it and continue (nothing *runs*, and the landing PR can't push, until the `✗`s
+clear). If `git_repo` is false, stop.
 
 ## 2. Inventory — reconcile, don't re-create
 
@@ -16,7 +16,8 @@ Tell the operator the compact inventory from `facts.inventory` (set / legacy / m
 surface every `attention` line. **Malformed** (`dup`/`open`) blocks are refused — ask for a hand fix
 first. Pick the **target file**: keep writing where config already lives (`facts.target_file.suggested`);
 if `split` is true or neither file exists, confirm the canonical file (default: create `COMMANDS.md`).
-`claude-code-stack-profile` always targets `CLAUDE.md` (its value is the every-session auto-load).
+`claude-code-stack-profile` always targets `CLAUDE.md` (its value is the every-session auto-load);
+`doc-catalogue` always targets `docs/README.md`.
 
 ## 3. Detect and draft
 
@@ -27,7 +28,11 @@ worked examples). Draft per it: infer from repo evidence (`Explore`/`Grep`/`Glob
 every candidate against the tree before drafting** — drop what you can't ground (only on positive
 evidence of absence) and say so; never fabricate. When `stack_profile.present`, re-ingest
 `facts.inventory.stack_profile.base_path` as the base, layering only currency refinements — never a
-wholesale replace. Propose the `github-pipeline-config` header **only** when the target file is `COMMANDS.md`.
+wholesale replace. **Doc catalogue** (`facts.inventory.doc_catalogue`): when `readme_present`, derive it
+via the context-blind sub-agent [`../references/doc-catalogue-derivation-prompt.md`](../references/doc-catalogue-derivation-prompt.md)
+per block-authoring.md's doc-catalogue section, re-ingesting `base_path` when present; otherwise report
+*no docs index — skipped* and never walk the tree or interview for a doc list. Propose the
+`github-pipeline-config` header **only** when the target file is `COMMANDS.md`.
 
 ## 4. Propose and confirm
 
@@ -77,8 +82,7 @@ ${CLAUDE_PLUGIN_ROOT}/scripts/gh_persist.py create-pr <owner/repo> "<facts.scrat
 
 On **decline**: perform **no git actions at all** (no commit, no push, no PR) — the summary reports the
 workspace path and the ready-to-run landing commands (`git -C <workspace> add`/`commit`, `git -C
-<workspace> push -u origin <branch>`, then the `create-pr` command above) so the operator can land it
-by hand.
+<workspace> push -u origin <branch>`, then the `create-pr` command above) so the operator lands it by hand.
 
 ## 8. Summary
 

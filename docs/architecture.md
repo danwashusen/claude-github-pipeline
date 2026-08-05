@@ -48,7 +48,7 @@ scripts/
   branching.py        # import-only: branch naming, type detection, prior-PR rows, linked branches
   parse.py            # dod | oq-links | phases subcommands
   gh_gather.py  gh_pr_gather.py  gh_persist.py  config_block.py   # executor ports (S21)
-  prep_drafter.py  prep_researcher.py  prep_planner.py  prep_resolver.py  prep_evaluator.py
+  prep_drafter.py  prep_researcher.py  prep_slicer.py  prep_planner.py  prep_resolver.py  prep_evaluator.py
   prep_question_sweep.py  prep_question_resolver.py
   prep_workspace_open.py  prep_workspace_close.py   # the v3 operator-side lifecycle tools
 skills/
@@ -145,8 +145,13 @@ Every script emits exactly one JSON envelope on stdout.
   target's sub-issues (its deliverable slices) from the REST list-sub-issues endpoint for the
   per-child timestamps and bodies the fixed `subIssues` node shape cannot carry; where that endpoint
   is unavailable the node data is the fallback, so the set still reports but rescope detection does
-  not. The notice set is deliberately **open** — unlike decision codes, a script may add one without
-  a contract change ([`scripts/pipelib/decisions.py`](../scripts/pipelib/decisions.py)).
+  not. `DOC_CATALOGUE_ABSENT` is a fourth: the consuming repo declares no grounding documents (no
+  `docs/README.md`, or no `<!-- doc-catalogue -->` block in it — see
+  [`skills/_shared/doc-catalogue.md`](../skills/_shared/doc-catalogue.md)), so the planner and drafter
+  ground on none. It has **no fallback rung** by design — no built-in path list, no filesystem walk —
+  which is why the degradation is a loud notice rather than a silent default. The notice set is
+  deliberately **open** — unlike decision codes, a script may add one without a contract change
+  ([`scripts/pipelib/decisions.py`](../scripts/pipelib/decisions.py)).
 - **Spill routing.** Any verbatim section (body, thread, diff, marker comment) is inline when
   ≤ threshold and written to the session scratch dir when larger; each section reports
   `*_bytes` + `*_mode: inline|path` (+ `*_path`). Threshold: `GH_PIPELINE_INLINE_THRESHOLD_BYTES`

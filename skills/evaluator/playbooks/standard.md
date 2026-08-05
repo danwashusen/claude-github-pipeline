@@ -8,6 +8,23 @@ lands directly on `main`.
 merge). Everything below runs **only after S7-merge actually merged**; on any no-merge exit, skip to
 the handoff.
 
+## After the merge — close any remaining deliverable slices
+
+The issue itself closes via GitHub's auto-close on merge into `main`, but **its sub-issues do not**. By
+construction a non-epic issue's sub-issues are its deliverable slices
+([`../../_shared/epic-story-hierarchy.md`](../../_shared/epic-story-hierarchy.md)), and the resolver
+normally closes each as its last serving phase ships. This is the **backstop only**, for a run
+interrupted before that: a slice left open behind a merged parent leaves the rollup permanently short,
+the one thing the slices exist to get right. For each still-open sub-issue of the closing issue (already
+closed is a safe no-op):
+
+```bash
+${CLAUDE_PLUGIN_ROOT}/scripts/gh_persist.py close <owner/repo> <slice> --reason completed
+```
+
+Don't tick the slices' `## Acceptance criteria` here — the resolver owns that projection, and inventing
+it at merge time would create a second writer for one fact.
+
 ## After the merge — residual follow-ups
 
 File the **residual non-blocking** work this run surfaced but hasn't filed: a finding from your own

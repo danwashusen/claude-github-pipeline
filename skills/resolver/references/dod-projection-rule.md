@@ -102,3 +102,17 @@ becomes `- [x] Phase 2-measurement (operator phase 2, applied 2026-06-04)`. No i
   projection: issue has no \`## Definition of done\` section — projection skipped.` (Multi-phase issues
   without a DoD section are impossible past planner dimension-7 review; if detected, treat as bullet-count
   drift and re-route to planner.)
+
+Slice-closing edge cases (the S6 rung that closes a deliverable slice as its last serving phase ships):
+
+- *`sub_issue: (none)`* (substrate) *or the key absent* (unmapped): close nothing. `(none)` is an
+  explicit claim that no single slice can demonstrate this phase; an absent key means the mapping was
+  never made, which is a plan gap, not a licence to guess which slice the phase serves.
+- *Not the last serving phase*: the map is N:1, so several phases may name one `#<M>`. Close only when
+  every phase naming it is ticked in the just-updated `## Phase tracker` — closing on the first would
+  report an increment complete while part of it is still unbuilt.
+- *Already-closed slice*: a no-op (`gh_persist.py close` is idempotent), so re-entry reconciliation and
+  the evaluator's merge-time backstop can both run without contending.
+- *Slice body with no `## Acceptance criteria` section*: close it, skip the body edit. There is nothing
+  to tick, and a slice's criteria are descriptive — the DoD contract above applies to the **parent**,
+  never to a slice.

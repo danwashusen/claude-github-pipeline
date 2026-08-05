@@ -1,20 +1,22 @@
 # github-pipeline
 
-A Claude Code plugin that runs a complete GitHub issue/PR workflow through the `gh` CLI — five
+A Claude Code plugin that runs a complete GitHub issue/PR workflow through the `gh` CLI — six
 session-per-stage skills that hand off to one another, plus six standalone tools,
 backed by stdlib-only Python scripts that do every deterministic step (fetching, parsing, state
 derivation, worktree lifecycle, and every write).
 
 ```
-draft ──▶ research ──▶ plan ──▶ resolve ──▶ evaluate
- (file)    (cite)      (design)  (code+PR)   (review+merge)
+draft ──▶ research ──▶ slice ──▶ plan ──▶ resolve ──▶ evaluate
+ (file)    (cite)      (cut)    (design)  (code+PR)   (review+merge)
 ```
 
 Each stage runs in its own Claude Code session and ends with a copy-pasteable `## Handoff` block
 that starts the next one, so context stays clean across the pipeline. That's the conceptual order —
 in practice the drafter hands to the **planner**, and research is a detour the planner takes only
 when the work turns on external truth it shouldn't guess at: it routes you to the researcher, which
-posts a cited dossier and hands back to the planner.
+posts a cited dossier and hands back to the planner. Slicing is the same kind of detour — take it when
+one issue holds several increments you'd want to demonstrate separately; the slicer files them as
+sub-issues so GitHub's rollup tracks delivery, and hands back to the planner.
 
 ## The pipeline
 
@@ -22,6 +24,7 @@ posts a cited dossier and hands back to the planner.
 |---|---|
 | `/github-pipeline:drafter` | Turns informal feedback into a well-structured issue (or Epic + stories) and files it. Never silently absorbs an unresolved open question — each is matched against the `question`-issue registry, filed if untracked, and recorded on the build issue. |
 | `/github-pipeline:researcher` | Web-researches version/API/migration questions and posts a dated, cited dossier on the issue — or declines outright when the issue carries no currency risk. |
+| `/github-pipeline:slicer` | Cuts one issue into ordered, operator-approved **deliverable slices** — the smallest increments you could demonstrate on their own — and files them as native sub-issues, so the issue's own progress rollup tracks delivery. Report-then-apply: nothing is written until you confirm the whole cut, and it refuses rather than guessing when your repo declares no grounding docs. |
 | `/github-pipeline:planner` | Designs the implementation approach, grounded in repo precedent + project docs at a recorded commit SHA, and posts a reviewed `<!-- implementation-plan:v1 -->` comment. Epic plans pin cross-story contracts; story plans are authored just-in-time. |
 | `/github-pipeline:resolver` | Implements one issue against its verified plan **in the worktree you opened with `workspace-open`** (the session starts inside it and is verified there), opens/continues a PR, projects Definition-of-done ticks as phases ship, and loops with code review until approved. |
 | `/github-pipeline:evaluator` | Evaluates a PR against its origin issue (in the PR's own worktree, verified at exactly the PR head), gates on branch health (CI plus your declared checks, cached per head SHA), posts a formal approve/soft-reject review, merges per your configured policy, and hands you the `workspace-close` command. |
@@ -51,7 +54,8 @@ the landing (commit + push + PR) as one final gate — decline it and nothing is
 workspace path and ready-to-run commands printed instead.
 
 `skills/_shared/` holds the cross-skill contracts (handoff schema, Definition-of-done annotations,
-the open-question contracts, the worktree hook-block format); `scripts/` holds the Python scripts
+the epic → story → slice hierarchy, the open-question contracts, the worktree hook-block format and
+the doc-catalogue format); `scripts/` holds the Python scripts
 the skills invoke — the `gh`/git executors, `workspace.py`, `refblocks.py`, `branching.py`,
 `parse.py`, and one `prep_*.py` state-assembly script per skill.
 
@@ -106,9 +110,13 @@ when a convention is absent, but work best when the repo provides:
   efficiently in a Claude Code session (backgrounding slow commands, logging verbose output instead
   of flooding context), auto-loaded into every session. It's yours to edit — re-running setup
   re-ingests your edits rather than overwriting them.
-- **Optional grounding docs** read if present: `docs/prd.md`, `docs/architecture.md`,
-  `docs/constitution.md`, and `CLAUDE.md`. The planner and resolver use them to align designs and
-  audit implementations; missing docs are simply skipped.
+- **A doc catalogue** (optional, setup-authored) — a `<!-- doc-catalogue -->` block in
+  `docs/README.md` naming the documents that ground the pipeline's work, one per line with a role, an
+  authority (`binding` — contradicting it is a blocker — or `informative`), and a one-line summary.
+  The planner and drafter read it to align designs; the paths are **yours**, so a PRD at
+  `docs/product/requirements.md` works as well as one at `docs/prd.md`. Setup derives a first draft
+  from your `docs/README.md` and re-ingests your edits on re-run. Without it, those skills ground on
+  no documents and say so — nothing is guessed.
 
 The skills post and read durable marker comments: `<!-- implementation-plan:v1 -->` (planner),
 `<!-- issue-research:v1 -->` (researcher), `<!-- epic-delivery-log:v1 -->` (evaluator-written,

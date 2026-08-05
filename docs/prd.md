@@ -9,7 +9,7 @@ live here; *how* lives in [architecture.md](architecture.md); the migration itse
 ## §1 Product overview & goals
 
 github-pipeline turns GitHub issue delivery into a conveyor of operator-driven Claude Code
-sessions — **draft → research → plan → resolve → evaluate** — plus standalone maintenance tools.
+sessions — **draft → research → slice → plan → resolve → evaluate** — plus standalone maintenance tools.
 Its outcomes:
 
 - Every unit of work is captured as a well-formed, reviewed GitHub issue before code is written.
@@ -30,8 +30,8 @@ session's loaded instructions contain no other type's flow — a router plus one
 - **Consuming repo** — the GitHub repository the pipeline works on. Any tech stack. Provides
   configuration via marker blocks in its `CLAUDE.md`/`COMMANDS.md`. Its `main` is write-protected:
   every change lands via PR.
-- **Skills** — fixed names. Pipeline stages: `drafter`, `researcher`, `planner`, `resolver`,
-  `evaluator`. Standalone tools: `setup`, `question-sweep`, `question-resolver`, `doc-reviewer`,
+- **Skills** — fixed names. Pipeline stages: `drafter`, `researcher`, `slicer`, `planner`,
+  `resolver`, `evaluator`. Standalone tools: `setup`, `question-sweep`, `question-resolver`, `doc-reviewer`,
   `workspace-open`, `workspace-close`. Invoked as `/github-pipeline:<name>`.
 - **Session** — one Claude Code run of one skill. **Handoff** — the summary + copy-pasteable
   next-command block a pipeline session emits on clean exit; the only bridge between sessions.
@@ -49,7 +49,7 @@ session's loaded instructions contain no other type's flow — a router plus one
 
 ## §3 Scope
 
-**In scope for v2:** all nine skills (v3 adds the two workspace tools, making eleven), the bundled scripts, the shared cross-skill contracts, the
+**In scope for v2:** all nine skills (v3 adds the two workspace tools, making eleven, and the slicer, making twelve), the bundled scripts, the shared cross-skill contracts, the
 plugin manifests, and offline tests for the deterministic layer.
 
 **Out of scope / non-goals:**
@@ -150,6 +150,32 @@ ground these are produced by implementation step S1. Lettered items are individu
     `## Stories` checklist also needs its checkbox ticked.
   - (h) Leaves the work workspace in place after merge and hands the operator the
     `workspace-close` command (the one reclamation path — merged, abandoned, or mis-opened).
+- **§5.6 slicer.** Appended after §5.5 rather than inserted at its conceptual position: §5.x numbers
+  are cited individually elsewhere (e.g. §5.4(b), §5.5(f)), so renumbering would dangle those
+  references. The conceptual order is drafter → researcher → **slicer** → planner.
+  - (a) Cuts ONE filed issue into ordered, operator-approved **deliverable slices** and files them as
+    native sub-issues via the single write path, in approved order (creation order is display order —
+    sub-issues append).
+  - (b) Reachable two ways: operator invocation, and a planner re-route when the seam gate's shape
+    triage finds the issue too large to plan as one unit with only *demonstrable*-independent seams.
+    It hands back to the planner, whose phases then map onto the slices (`sub-issue:`).
+  - (c) **Grounding gate.** Refuses to decompose without adequate grounding, and every slice cites
+    what it derives from. Grounding sources are the consuming repo's own declaration (the
+    `<!-- doc-catalogue -->` block, §7) or sources the operator names at invocation — never
+    plugin-side paths. A slice that can cite nothing is surfaced, never filed.
+  - (d) **Write gate.** Zero GitHub mutations before one explicit confirmation of the full cut (§8.2).
+    A partial failure after the gate reports exactly what landed and never claims completion.
+  - (e) **Resume, don't duplicate.** Re-running against a partially-sliced issue detects the existing
+    slices and cuts only the remainder.
+  - (f) Never edits the parent issue's body. Slice detail lives only in slice bodies; no `## Slices`
+    section is written.
+  - (g) Refuses, with a reason, on a target that is an epic (the drafter owns epic decomposition), is
+    itself a slice (**never slice a slice**), is a `question`, is closed, or is blocked by an open
+    native blocker or an `in-scope (blocked)` open question read from live state.
+  - (h) Slices are **phase markers**, not sub-stories: the resolver ships each as a phase on the
+    parent's branch and closes it as its last serving phase lands, so the parent's rollup is a live
+    progress record ([`skills/_shared/epic-story-hierarchy.md`](../skills/_shared/epic-story-hierarchy.md)).
+    The evaluator is a merge-time backstop only.
 
 ## §6 Standalone tool requirements
 
@@ -201,6 +227,8 @@ an artifact written by a v1 skill is consumed correctly by its v2 counterpart, a
 | `question`-issue body schema + `audience:*` labels | question issues |
 | `## Handoff` schema + closed-set state markers | session output |
 | Config marker blocks (`issue-resolver-*`, `pr-evaluator-*`, `drafter-open-question-markers`, `worktree-setup`/`-teardown`, `claude-code-stack-profile`) | consuming repo `CLAUDE.md`/`COMMANDS.md` |
+| `<!-- doc-catalogue -->` grounding-doc declaration (setup-written, planner/drafter-read) | consuming repo `docs/README.md` |
+| Deliverable-slice sub-issue body + `<parent#>/S<K>` title convention (slicer-written) | slice issues |
 | `epic/<N>-<slug>` integration-branch naming | consuming repo branches |
 
 ## §8 Grounding & workspace requirements
@@ -248,7 +276,11 @@ an artifact written by a v1 skill is consumed correctly by its v2 counterpart, a
 ## §10 Success metrics
 
 - Prompt text a pipeline session loads (router + the one playbook) is at most half of the v1
-  `SKILL.md` line count for that skill (v1 baseline recorded by implementation step S1).
+  `SKILL.md` line count for that skill (v1 baseline recorded by implementation step S1). A stage with
+  **no v1 baseline** (the `slicer`) records a **measured** bar instead, derived from the closest real
+  precedent with its derivation written beside the constant — halving does not apply, since there is no
+  monolith to halve. Per the S19 doc-reviewer ruling, an honest implementation that exceeds a recorded
+  bar is adjudicated and re-recorded; precision is never trimmed out of a prompt to hit a number.
 - Session startup performs at most one state-assembly invocation — exactly one for the pipeline
   stages (§9.2).
 - The contract-token census (S1 baseline) shows zero unintended losses after each skill cutover.

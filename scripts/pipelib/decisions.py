@@ -78,9 +78,9 @@ DECISION_CODES = frozenset(
 # Non-blocking notice codes ride in ``notices: []`` (architecture.md §3) rather than as a
 # ``needs_decision`` — they are not part of the closed decision-code set and are not exhaustively
 # enumerated here (a script may introduce a new notice without a contract change, since notices
-# are informational, not gating). ``DEPS_UNSUPPORTED`` and ``SUBISSUES_UNSUPPORTED`` are named
-# because pipelib/tests reference them directly (the two capability-gated native-relation
-# degradations).
+# are informational, not gating). ``DEPS_UNSUPPORTED``, ``SUBISSUES_UNSUPPORTED`` and
+# ``DOC_CATALOGUE_ABSENT`` are named because pipelib/tests reference them directly (the two
+# capability-gated native-relation degradations, plus the missing-grounding-declaration one).
 DEPS_UNSUPPORTED = "DEPS_UNSUPPORTED"
 
 # The native parent/sub-issue relation (``gh issue create --parent``, ``gh issue view --json
@@ -91,6 +91,16 @@ DEPS_UNSUPPORTED = "DEPS_UNSUPPORTED"
 # wrong fallback. On this notice, epic↔story hierarchy readers fall back to parsing the legacy
 # ``## Stories`` checklist (skills/_shared/epic-story-hierarchy.md).
 SUBISSUES_UNSUPPORTED = "SUBISSUES_UNSUPPORTED"
+
+# The consuming repo declares no grounding documents: no ``docs/README.md``, no
+# ``<!-- doc-catalogue -->`` block in it, or a malformed one
+# (skills/_shared/doc-catalogue.md). Deliberately loud rather than silent, because the fallback is
+# *no doc grounding at all* — there is no built-in path list to fall back to and no filesystem walk,
+# so a planner or drafter that would once have read a hardcoded ``docs/prd.md`` now grounds on
+# nothing. The remedy is always the same (author the catalogue, or re-run `setup`), which is why one
+# notice serves every reader; what a reader DOES about it differs by consumer, and that asymmetry
+# lives in the shared contract, not here.
+DOC_CATALOGUE_ABSENT = "DOC_CATALOGUE_ABSENT"
 
 
 def needs_decision(code, summary, context=None, options=None):

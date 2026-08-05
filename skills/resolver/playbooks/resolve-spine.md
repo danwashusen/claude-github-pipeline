@@ -171,6 +171,26 @@ ready except at the last-phase handoff, and never add `Closes #N` in reaction to
 are the evaluator's judgment. Projection failure does **not** abort the run (re-entry reconciliation is
 the backstop); log it and continue.
 
+**Close the slice its last phase just completed.** When the shipped phase carries `sub_issue: <M>`
+(`facts.phases`, the tri-state key — `"(none)"` is substrate and `null` is unmapped; both close
+nothing), check the just-updated `## Phase tracker`: the map is N:1, so a slice closes on the **last**
+of the phases serving it, never the first. When every phase naming `#<M>` is now ticked, close it and
+tick its criteria — its bar is *demonstrable*, and a phase shipped to this branch is demonstrable, so
+"closed" claims the increment exists and can be shown, not that its code is on the default branch (the
+parent's own state claims that). Stage the slice body with every `- [ ]` under its
+`## Acceptance criteria` flipped to `- [x]`, then:
+
+```bash
+${CLAUDE_PLUGIN_ROOT}/scripts/gh_persist.py edit-body <owner/repo> <M> "<facts.scratch>/slice-<M>-ticked.md"
+${CLAUDE_PLUGIN_ROOT}/scripts/gh_persist.py close <owner/repo> <M> --reason completed
+```
+
+Both are idempotent, so re-entry reconciliation re-runs them safely: any slice whose serving phases are
+all ticked but which is still open gets closed here, the same backstop posture as DoD projection.
+Without this the parent's rollup would read `0/N` forever — the whole reason slices are issues
+([`../../_shared/epic-story-hierarchy.md`](../../_shared/epic-story-hierarchy.md)). A slice body with no
+`## Acceptance criteria` section closes without a body edit; failure to close logs and continues.
+
 ## S7 — Follow-ups
 
 File `file-now` follow-ups (retry-ladder deferrals, review-deferred items) in-flight so `// TODO(#NNN)`

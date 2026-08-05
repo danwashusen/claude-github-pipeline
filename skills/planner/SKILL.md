@@ -23,7 +23,7 @@ ${CLAUDE_PLUGIN_ROOT}/scripts/prep_planner.py <issue> <owner/repo>
 It returns one JSON **facts block** (`architecture.md §4`): `target` (number/title/state/labels/
 `blocked_by`/`blocking`), `vector` (`type` × `mode` × `plan_ref_row`), `suggested_playbook`, `plan_ref`
 (a **bare** branch name), `plan` (present/SHA/comment-id/url — a present plan is the **revise**
-trigger), `research` (dossier present + staged path), `grounding_docs` (present at `plan_ref`),
+trigger), `research` (dossier present + staged path), `grounding_docs` (the repo's declared docs, resolved at `plan_ref` — `role`/`authority`/`present`),
 `open_questions` + `open_question_candidates` (the Bug (a) tracker search), `grounding` (the observed
 ambient checkout, asserted against `plan_ref`; its `sha` the footer records), `epic`/`story` (stories
 + state; parent epic + plan + delivery log), `revise` (prior-plan SHA vs grounding SHA + any open PR's
@@ -64,7 +64,7 @@ Every playbook opens by reading the shared spine `playbooks/plan-spine.md` (S1�
 persist). The routed playbook supplies only what **differs in actions**: the schema sections it fills,
 the reviewer dimension set it passes, its pre-draft reconnaissance, and its handoff shape. Type
 differences the spine consumes (`plan_ref`, the dimension set, which schema sections, `off-ramp` —
-whether the seam gate offers the epic off-ramp) are **facts / values**, never branches.
+which off-ramps the shape triage may offer) are **facts / values**, never branches.
 
 **Override rule** (`architecture.md §5`): honor `suggested_playbook` unless the thread carries evidence
 the script could not see (e.g. it supersedes the labels' type) — state the reason. Never interleave type

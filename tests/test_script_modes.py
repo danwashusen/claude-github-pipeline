@@ -87,6 +87,7 @@ class DispatchedCliScriptsAreExecutableTests(unittest.TestCase):
             "prep_planner.py",
             "prep_researcher.py",
             "prep_resolver.py",
+            "prep_slicer.py",
             "prep_workspace_close.py",
             "prep_workspace_open.py",
         ):

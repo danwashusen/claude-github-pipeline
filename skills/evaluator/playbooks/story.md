@@ -22,6 +22,19 @@ is a safe no-op — `gh_persist.py close` is idempotent):
 ${CLAUDE_PLUGIN_ROOT}/scripts/gh_persist.py close <owner/repo> <story> --reason completed
 ```
 
+**Then close any of the story's own open sub-issues** — by construction those are its deliverable
+slices ([`../../_shared/epic-story-hierarchy.md`](../../_shared/epic-story-hierarchy.md)), and the
+resolver normally closes each as its last serving phase ships. This is the **backstop only**, for a run
+interrupted before that: a slice still open behind a merged story leaves the story's rollup permanently
+short, which is the one thing the slices exist to get right. Same idempotent close, once per open slice:
+
+```bash
+${CLAUDE_PLUGIN_ROOT}/scripts/gh_persist.py close <owner/repo> <slice> --reason completed
+```
+
+Don't tick the slices' `## Acceptance criteria` here — the resolver owns that projection, and inventing
+it at merge time would create a second writer for one fact.
+
 ## Action 2 — Project story progress onto the epic
 
 **Skip entirely when the epic carries the native sub-issue relation** (`facts.epic.stories_source:
