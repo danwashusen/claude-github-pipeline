@@ -28,8 +28,8 @@ A slice is a **phase marker**: the resolver ships it as a phase on the *parent's
 
 ## Ownership
 
-- **Writer, epic→story — `drafter` (sole writer).** Every path that files a story under an epic passes `--parent <epic-#>` to `gh_persist.py create`, so the relation is established in the same round-trip that files the issue: the fresh epic batch, the promotion path, and epic-revise's new-stories path (`skills/drafter/playbooks/epic-split.md`). No skill establishes the relation after the fact.
-- **Writer, story→slice — `slicer` (sole writer).** Same mechanism, same round-trip: `gh_persist.py create --parent <parent-#>`, one slice at a time in the operator-approved order.
+- **Writer, epic→story — `slicer` (sole writer).** Every path that files a story under an epic passes `--parent <epic-#>` to `gh_persist.py create`, so the relation is established in the same round-trip that files the issue: the fresh epic cut, the promotion path, and a resume's new-stories path (`skills/slicer/playbooks/cut.md`). The **one** after-the-fact path is adoption: `gh_persist.py add-parent` parents an issue that is already filed, so an epic can be drawn around stories authored upstream. It is slicer-only and gated like every other write in that flow — nothing else establishes either relation after the fact. (Before #16 this edge was the drafter's, written only at filing time; the drafter now drafts and revises one issue's body and decomposes nothing.)
+- **Writer, story→slice — `slicer` (sole writer).** Same mechanism, same round-trip: `gh_persist.py create --parent <parent-#>`, one slice at a time in the operator-approved order. Both edges have one writer, and it is the same one: decomposition is one operation at two altitudes, differing only in the bar each child clears.
 - **Readers — `planner`, `resolver`, `evaluator`.** They read the epic's story set, a story's parent epic, epic progress, and the slice set of a non-epic target. None of them writes either relation, and **none of them gates on its absence** — a missing relation degrades what GitHub renders, never whether work can proceed.
 
 Filing with `--parent` also fixes the display order for free: GitHub appends each sub-issue, so filing in dependency order gives the panel that order. For slices this is load-bearing rather than convenient — creation order **is** delivery order, so it is fixed at approval time, never repaired afterwards.
@@ -70,7 +70,7 @@ An epic's story set comes from two sources, and `stories_source` reports which o
 
 The fallback is load-bearing, not vestigial: epics filed before the native relation was written carry only the checklist, and `subissues_available: false` hosts can't serve the relation at all. Neither case is repaired automatically — there is **no backfill path**, so a legacy epic reads as `checklist` for its whole life.
 
-`mixed` is reachable without anyone doing anything wrong: epic-revise files a **new** story under a legacy epic with `--parent`, so that one story is native while its siblings remain checklist bullets. It is a real state to read correctly, not an error to report.
+`mixed` is reachable without anyone doing anything wrong: a slicer resume files a **new** story under a legacy epic with `--parent`, so that one story is native while its siblings remain checklist bullets. It is a real state to read correctly, not an error to report — the reader unions both halves, and the slicer keeps the checklist reconciled (behind its write gate) because for those entries it is still the only record.
 
 Consequences of the source in play:
 

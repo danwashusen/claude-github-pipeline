@@ -129,8 +129,8 @@ Open questions`" is an always-checked condition, not because a hybrid worked exa
 **Why:** epic #160 had no plan when this session started (invoked on #161, its first story). The planner authored the epic plan first — pinning the #161→#162 contract — then continued in this same session to plan #161 against it, checked against `## Story contracts` (Dimension 8); both grounded at `origin/main`, the bootstrap ref. The digest-frequency default (`prd.md §5`) has no filed companion question yet: the plan builds the decided default as a provisional choice and flags the alternative in `## Risks & watchpoints`; it retires once a question is filed and answered.
 ```
 
-**Epic plan posted, child stories not yet filed.** Forward to the drafter to file them; `Grounding:`
-reads at `origin/main` (bootstrap, before the epic branch exists).
+**Epic plan posted, child stories not yet filed.** Forward to the slicer to cut and file them;
+`Grounding:` reads at `origin/main` (bootstrap, before the epic branch exists).
 
 ```
 ## Handoff
@@ -139,11 +139,11 @@ reads at `origin/main` (bootstrap, before the epic branch exists).
 **Stories:** plain bullets (not yet filed as issues)
 **Grounding:** read at origin/main@d4e5f6a · docs/architecture.md §2 (layer rules), §5 (session model) · full detail in the plan's ## Doc grounding
 
-**Next:** file the child stories in a fresh session, then re-run the planner on the Epic.
+**Next:** cut #150 into stories in a fresh session, then re-run the planner on the Epic.
 
-    /github-pipeline:drafter
+    /github-pipeline:slicer 150
 
-**Why:** the planner doesn't file issues — that's the drafter's job. Once the stories are filed (each with the `**Epic:** #150` backlink), re-run `/github-pipeline:planner #150` to refresh the epic plan, then plan each story just-in-time as you build it.
+**Why:** the planner doesn't file issues — decomposition is the slicer's, at epic altitude. Once the stories are filed as real sub-issues (each with the `**Epic:** #150` backlink), re-run `/github-pipeline:planner #150` to refresh the epic plan, then plan each story just-in-time as you build it.
 ```
 
 **Plan posted with planned-around open questions.** The issue depended on open questions but had
@@ -197,21 +197,26 @@ fact-check; route to the researcher rather than posting a guess. `research: ✗ 
 **Why:** the plan turns on <dependency> v<X> behaviour that postdates my training cutoff — planning on recall would lock a guess. The researcher posts a cited dossier; re-run `/github-pipeline:planner #142` afterward and it ingests the refreshed dossier.
 ```
 
-**Epic-shaped, planning aborted — re-route to the drafter.** The seam gate's triage chose "Split as
-epic" (`references/seam-dispositions.md`): the planner posted the lean seam-analysis comment and
-stopped. `plan: ✗`, no `Grounding:` (no plan posted), no `planned` label.
+**Epic-shaped, planning aborted — re-route to the slicer.** The seam gate's triage chose "Split as
+epic" (`references/seam-dispositions.md` off-ramp A): the planner posted the lean seam-analysis comment
+and stopped. `plan: ✗`, no `Grounding:` (no plan posted), no `planned` label.
 
 ```
 ## Handoff
 
 **Issue:** #142 — Build patient dashboard · open · feature · plan: ✗
 
-**Next:** revise #142 as an Epic in a fresh session, splitting per the seam-analysis comment.
+**Next:** promote #142 to an Epic and cut its stories, splitting per the seam-analysis comment.
 
-    /github-pipeline:drafter revise #142 as an Epic — split per the seam-analysis comment
+    /github-pipeline:slicer promote #142 to an Epic — split per the seam-analysis comment
 
-**Why:** planning surfaced 4 seams outside #142's Definition of done; a single-issue plan would pin contracts this issue doesn't own. The epic machinery (`## Story contracts` + just-in-time story plans) is built to hold that seam registry. The seam-analysis comment on #142 carries the inventory and suggested story boundaries; after promotion, re-run `/github-pipeline:planner #142` for the epic plan.
+**Why:** planning surfaced 4 seams outside #142's Definition of done, each its own shippable unit; a single-issue plan would pin contracts this issue doesn't own. The epic machinery (`## Story contracts` + just-in-time story plans) is built to hold that seam registry. The seam-analysis comment on #142 carries the inventory and suggested story boundaries, and the slicer's prep spills it with the thread; after promotion, re-run `/github-pipeline:planner #142` for the epic plan.
 ```
+
+Both off-ramps name the **slicer** since #16 — it is one operation at two altitudes, and the triage
+picks the altitude, not the skill. The two shapes still differ in what gets posted (this one leaves a
+seam-analysis comment; off-ramp B posts nothing) and in what happens to the target (this one reshapes it
+into an Epic behind the slicer's own rewrite gate).
 
 **Too large to plan as one unit — re-route to the slicer.** The shape triage chose "Slice first"
 (`references/seam-dispositions.md` off-ramp B): the increments are each demonstrable but share one

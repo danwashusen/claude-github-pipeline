@@ -604,8 +604,20 @@ class SharedContractTests(unittest.TestCase):
         self.assertRegex(self.hierarchy, r"independently \*\*demonstrable\*\*")
         self.assertRegex(self.hierarchy, r"A slice is never itself sliced")
 
-    def test_hierarchy_names_the_slicer_as_the_slice_edge_writer(self):
+    def test_hierarchy_names_the_slicer_as_the_writer_of_both_edges(self):
+        """#16: one writer for the whole hierarchy. Before it, epic→story was the drafter's and the
+        file stated that no skill established the relation after the fact — adoption is now the one
+        exception, so both clauses had to change together."""
         self.assertRegex(self.hierarchy, r"Writer, story→slice — `slicer`")
+        self.assertRegex(self.hierarchy, r"Writer, epic→story — `slicer`")
+        self.assertRegex(self.hierarchy, r"after-the-fact path is adoption")
+        self.assertNotRegex(self.hierarchy, r"No skill establishes the relation after the fact")
+
+    def test_the_epic_off_ramp_arm_is_registered_as_a_slicer_arm(self):
+        """Both seam-gate off-ramps land on the slicer, so the shared re-route table must not still
+        register an epic-shaped arm pointing at the drafter."""
+        self.assertRegex(self.handoff, r"planner → slicer, epic-shaped")
+        self.assertNotRegex(self.handoff, r"planner → drafter")
 
     def test_hierarchy_records_the_closing_contract_and_the_reopen_gap(self):
         self.assertRegex(self.hierarchy, r"closes a slice when its last serving phase ships")
