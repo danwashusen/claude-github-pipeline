@@ -15,6 +15,7 @@ Subcommands (unchanged surface from v1 — same names, same flags, same position
     gh_persist.py link        <repo> <issue>
                                [--add-blocked-by N]... [--remove-blocked-by N]...
                                [--add-blocking N]...   [--remove-blocking N]...     [--dry-run]
+    gh_persist.py add-parent  <repo> <child> <parent>                              [--dry-run]
     gh_persist.py comment     <repo> <target> <id> <body_path>
                                [--review-action approve|comment|request-changes]
                                [--delete-marker-id <id>]                            [--dry-run]
@@ -111,6 +112,25 @@ carrying both descends the ``_create_flag_ladder`` rungs and names exactly which
 reader that sees ``SUBISSUES_UNSUPPORTED`` falls back to the legacy ``## Stories`` checklist
 (``skills/_shared/epic-story-hierarchy.md``), which is a different fallback from prose dependency
 linking.
+
+``add-parent`` (added #16, additive-only) is the one **after-the-fact** parenting op: it adopts an
+issue that is ALREADY FILED as a parent's sub-issue, which ``create --parent`` cannot do (that flag
+only sets the relation in the same round-trip that files a new issue). Its caller is the slicer at
+epic altitude, drawing an epic around stories authored upstream. It is **bodyless** (relationship
+edit only — mirrors ``link``/``edit-labels``, not ``comment``) and takes **one child per call**, so
+sequential calls in the operator-approved order give the epic's sub-issue panel that order for free
+(sub-issues append). It is deliberately a SEPARATE subcommand rather than a flag on ``link``:
+dependencies and hierarchy are independent relations with independent capability gates, and both a
+rejected ``--parent`` and a rejected ``--add-blocked-by`` surface as ``unknown flag`` — carrying them
+in one ``gh issue edit`` would make the capability-miss classification ambiguous about which relation
+actually degraded, exactly what ``_create_flag_ladder`` descends a rung-per-relation to avoid. Same
+attempt-and-classify gate as ``create --parent`` (``_is_subissues_error``; never a ``--help``/version
+probe — ``gh issue edit --parent`` postdates the >= 2.40 floor this plugin declares): on a capability
+miss the relation is dropped as a no-op success + ``SUBISSUES_UNSUPPORTED`` notice (``changed:
+false``), mirroring ``link``'s deps degradation, because there is no without-the-relation retry to
+make — the relation IS the whole edit. Any other failure surfaces hard: a parenting-integrity error
+(``the parent issue is closed``, ``cannot add a parent to itself``) must reach the caller, never be
+swallowed as a benign notice.
 
 Exit codes (architecture.md §3 — the only two forms this script uses):
     0   envelope present on stdout; consult ``status`` (``ok`` or ``needs_decision`` — both are
@@ -525,6 +545,66 @@ def _cmd_link(args, parser):
     return 1
 
 
+# ---- add-parent ----
+
+
+def _cmd_add_parent(args, parser):
+    # Adopting an issue into a parent it is already a child of is a gh/GitHub-API no-op success, so
+    # no "is it already parented?" pre-check happens here — same discipline as close/reopen/
+    # edit-labels. Parenting an issue to ITSELF, though, is a caller error that gh would reject
+    # anyway; catch it as a usage error so the failure names the real problem.
+    if args.child == args.parent:
+        parser.error("add-parent: child and parent must differ (cannot parent an issue to itself)")
+
+    cmd = ["gh", "issue", "edit", args.child, "--repo", args.repo, "--parent", args.parent]
+
+    if args.dry_run:
+        emit_ok(payload={
+            "op": "add-parent",
+            "issue": args.child,
+            "parent": args.parent,
+            "dry_run": True,
+            "changed": True,
+            "subissues_unsupported": False,
+            "would_run": _quote_cmd(cmd),
+        })
+        return EXIT_OK
+
+    result = process.run(cmd, cwd=args.cwd)
+    if result.auth_required:
+        emit_needs_decision(_auth_decision(result))
+        return EXIT_OK
+    if result.returncode == 0:
+        emit_ok(payload={
+            "op": "add-parent",
+            "issue": args.child,
+            "parent": args.parent,
+            "dry_run": False,
+            "changed": True,
+            "subissues_unsupported": False,
+            "url": result.stdout.strip(),
+        })
+        return EXIT_OK
+
+    if _is_subissues_error(result.stderr):
+        # Relationship-only, so a rejected attempt changed nothing — and unlike `create` there is no
+        # lower rung to descend to: dropping the relation would leave an empty edit. Reported as a
+        # no-op success + notice, mirroring `link`'s deps degradation. The caller (the slicer) keeps
+        # the adoption out of the epic's panel and says so; it never retries.
+        emit_ok(payload={
+            "op": "add-parent",
+            "issue": args.child,
+            "parent": args.parent,
+            "dry_run": False,
+            "changed": False,
+            "subissues_unsupported": True,
+        }, notices=[SUBISSUES_UNSUPPORTED])
+        return EXIT_OK
+
+    sys.stderr.write(result.stderr)
+    return 1
+
+
 # ---- comment ----
 
 
@@ -752,6 +832,12 @@ def _build_parser():
         p_link.add_argument(flag, dest="link_edit_flags", action=_OrderedLinkFlagAction, metavar="N")
     p_link.add_argument("--dry-run", action="store_true")
 
+    p_add_parent = sub.add_parser("add-parent")
+    p_add_parent.add_argument("repo")
+    p_add_parent.add_argument("child")
+    p_add_parent.add_argument("parent")
+    p_add_parent.add_argument("--dry-run", action="store_true")
+
     p_comment = sub.add_parser("comment")
     p_comment.add_argument("repo")
     p_comment.add_argument("target", choices=["issue", "pr", "pr-review"])
@@ -786,6 +872,7 @@ def _build_parser():
             "edit-body": p_edit,
             "edit-labels": p_edit_labels,
             "link": p_link,
+            "add-parent": p_add_parent,
             "comment": p_comment,
             "close": p_close,
             "close-pr": p_close_pr,
@@ -813,6 +900,9 @@ def main(argv):
         # error (e.g. "no relationship flags given") reports link's own usage line, not the
         # generic top-level one listing all six subcommands.
         return _cmd_link(args, subparsers_by_name["link"])
+    if args.subcommand == "add-parent":
+        # Own sub-parser for the self-parenting usage error, same rationale as link above.
+        return _cmd_add_parent(args, subparsers_by_name["add-parent"])
     if args.subcommand == "comment":
         return _cmd_comment(args, subparsers_by_name["comment"])
     if args.subcommand == "close":

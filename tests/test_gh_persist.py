@@ -941,6 +941,164 @@ class LinkTests(unittest.TestCase):
             self.assertEqual(result.returncode, 0, msg=result.stderr)
 
 
+class AddParentTests(unittest.TestCase):
+    """`add-parent` is the one AFTER-THE-FACT parenting op (#16): it adopts an already-filed issue
+    as a parent's sub-issue, which `create --parent` cannot do. Bodyless and one-child-per-call, so
+    sequential calls fix the epic's sub-issue panel order. Same attempt-and-classify capability gate
+    as `create --parent`, but with `link`'s degradation shape (no lower rung to descend to — the
+    relation IS the whole edit), which is why the assertions below mirror LinkTests rather than
+    CreateParentSubIssueTests' ladder.
+    """
+
+    def test_self_parenting_is_a_usage_error(self):
+        result = _run_script(["add-parent", "o/r", "42", "42"])
+        self.assertEqual(result.returncode, 2)
+        self.assertEqual(result.stdout, "")
+
+    def test_missing_parent_argument_is_a_usage_error(self):
+        result = _run_script(["add-parent", "o/r", "42"])
+        self.assertEqual(result.returncode, 2)
+        self.assertEqual(result.stdout, "")
+
+    def test_happy_path_edits_the_child_and_reports_changed(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            # The child is edited, not the parent: GitHub's relation is set from the child's side,
+            # and this argv is the contract a fixture-replaying caller matches exactly.
+            cmd = ["issue", "edit", "151", "--repo", "o/r", "--parent", "150"]
+            _write_stdout_file(tmp, "url.txt", b"https://github.com/o/r/issues/151\n")
+            _write_manifest(tmp, [{"argv": cmd, "stdout_file": "url.txt"}])
+            result = _run_script(["add-parent", "o/r", "151", "150"], fixtures_dir=tmp)
+            self.assertEqual(result.returncode, 0, msg=result.stderr)
+            env = _parse_envelope(result)
+            envelope_asserts.assert_full_envelope_conformance(env)
+            self.assertEqual(env["op"], "add-parent")
+            self.assertEqual(env["issue"], "151")
+            self.assertEqual(env["parent"], "150")
+            self.assertTrue(env["changed"])
+            self.assertFalse(env["subissues_unsupported"])
+            self.assertEqual(env["notices"], [])
+            # Bodyless: no write receipt, unlike every body-bearing op.
+            self.assertNotIn("body_sha256", env)
+
+    def test_accepts_a_url_as_the_parent(self):
+        # --parent takes a number OR a url (gh resolves it); the script passes it through opaquely,
+        # exactly as create --parent does — no client-side number parsing to get wrong.
+        with tempfile.TemporaryDirectory() as tmp:
+            parent_url = "https://github.com/o/r/issues/150"
+            cmd = ["issue", "edit", "151", "--repo", "o/r", "--parent", parent_url]
+            _write_stdout_file(tmp, "url.txt", b"https://github.com/o/r/issues/151\n")
+            _write_manifest(tmp, [{"argv": cmd, "stdout_file": "url.txt"}])
+            result = _run_script(["add-parent", "o/r", "151", parent_url], fixtures_dir=tmp)
+            self.assertEqual(result.returncode, 0, msg=result.stderr)
+            self.assertEqual(_parse_envelope(result)["parent"], parent_url)
+
+    def test_surfaces_a_non_capability_failure(self):
+        # Any failure _is_subissues_error doesn't recognize surfaces hard, so the shim's exit_code
+        # alone drives this branch — no stderr text needed, keeping it a real subprocess test.
+        with tempfile.TemporaryDirectory() as tmp:
+            cmd = ["issue", "edit", "151", "--repo", "o/r", "--parent", "150"]
+            _write_manifest(tmp, [{"argv": cmd, "exit_code": 1}])
+            result = _run_script(["add-parent", "o/r", "151", "150"], fixtures_dir=tmp)
+            self.assertEqual(result.returncode, 1)
+            self.assertEqual(result.stdout, "")
+
+    def test_reports_no_op_success_with_subissues_unsupported_notice(self):
+        # In-process (see _ScriptedProcessRun): the capability classification reads stderr TEXT the
+        # offline shim cannot deliver through a real subprocess.
+        subissues_failure = process.CommandResult(
+            returncode=1, stdout="", stderr="unknown flag: --parent\n"
+        )
+        exit_code, env, calls = self._run_add_parent_in_process(
+            ["add-parent", "o/r", "151", "150"], [subissues_failure]
+        )
+        self.assertEqual(exit_code, 0)
+        envelope_asserts.assert_full_envelope_conformance(env)
+        self.assertEqual(env["status"], "ok")
+        self.assertFalse(env["changed"])
+        self.assertTrue(env["subissues_unsupported"])
+        self.assertIn("SUBISSUES_UNSUPPORTED", env["notices"])
+        self.assertNotIn("url", env)
+        # No retry: dropping the relation would leave an empty edit, so there is nothing to descend
+        # to -- exactly one call, matching link's deps degradation rather than create's ladder.
+        self.assertEqual(len(calls), 1)
+
+    def test_parenting_integrity_failure_surfaces_instead_of_degrading(self):
+        # The load-bearing half of _is_subissues_error's "err toward SURFACING" rule: an error that
+        # merely MENTIONS a parent is a real integrity failure, not a capability miss. Degrading it
+        # to a benign notice would tell the caller the adoption was skipped for host reasons when in
+        # fact its real parenting attempt failed.
+        for stderr_text in (
+            "the parent issue is closed\n",
+            "cannot add a parent to itself\n",
+        ):
+            with self.subTest(stderr=stderr_text):
+                integrity_failure = process.CommandResult(
+                    returncode=1, stdout="", stderr=stderr_text
+                )
+                fake = _ScriptedProcessRun([integrity_failure])
+                original_run = gh_persist.process.run
+                gh_persist.process.run = fake
+                try:
+                    buf_out, buf_err = io.StringIO(), io.StringIO()
+                    parser, subparsers_by_name = gh_persist._build_parser()
+                    args = parser.parse_args(["add-parent", "o/r", "151", "150"])
+                    with contextlib.redirect_stdout(buf_out), contextlib.redirect_stderr(buf_err):
+                        exit_code = gh_persist._cmd_add_parent(
+                            args, subparsers_by_name["add-parent"]
+                        )
+                finally:
+                    gh_persist.process.run = original_run
+                self.assertEqual(exit_code, 1)
+                self.assertEqual(buf_out.getvalue(), "")
+                self.assertIn(stderr_text.strip(), buf_err.getvalue())
+
+    def test_surfaces_auth_required_as_needs_decision(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            cmd = ["issue", "edit", "151", "--repo", "o/r", "--parent", "150"]
+            _write_manifest(tmp, [{"argv": cmd, "exit_code": 4}])
+            result = _run_script(["add-parent", "o/r", "151", "150"], fixtures_dir=tmp)
+            self.assertEqual(result.returncode, 0, msg=result.stderr)
+            env = _parse_envelope(result)
+            envelope_asserts.assert_full_envelope_conformance(env)
+            self.assertEqual(env["status"], "needs_decision")
+            self.assertEqual(env["decision"]["code"], "AUTH_REQUIRED")
+
+    def test_dry_run_previews_the_parent_flag_and_never_calls_gh(self):
+        fake = _ScriptedProcessRun([])
+        original_run = gh_persist.process.run
+        gh_persist.process.run = fake
+        try:
+            buf = io.StringIO()
+            parser, subparsers_by_name = gh_persist._build_parser()
+            args = parser.parse_args(["add-parent", "o/r", "151", "150", "--dry-run"])
+            with contextlib.redirect_stdout(buf):
+                exit_code = gh_persist._cmd_add_parent(args, subparsers_by_name["add-parent"])
+            env = json.loads(buf.getvalue().splitlines()[0])
+        finally:
+            gh_persist.process.run = original_run
+        self.assertEqual(exit_code, 0)
+        self.assertTrue(env["dry_run"])
+        self.assertIn("--parent 150", env["would_run"])
+        self.assertNotIn("url", env)
+        self.assertEqual(fake.calls, [])
+
+    def _run_add_parent_in_process(self, cli_args, scripted_results):
+        fake = _ScriptedProcessRun(scripted_results)
+        original_run = gh_persist.process.run
+        gh_persist.process.run = fake
+        try:
+            buf = io.StringIO()
+            parser, subparsers_by_name = gh_persist._build_parser()
+            args = parser.parse_args(cli_args)
+            with contextlib.redirect_stdout(buf):
+                exit_code = gh_persist._cmd_add_parent(args, subparsers_by_name["add-parent"])
+            lines = buf.getvalue().splitlines()
+            self.assertEqual(len(lines), 1, "expected exactly one JSON line, got %r" % (lines,))
+            return exit_code, json.loads(lines[0]), fake.calls
+        finally:
+            gh_persist.process.run = original_run
+
+
 class CommentPostThenDeleteOrderingTests(unittest.TestCase):
     """architecture.md §12: "Post-new-before-delete-old on marker replacement" — the new comment
     call must be issued (and succeed) BEFORE the delete call. Verified two ways: (1) the delete
