@@ -153,12 +153,28 @@ ground these are produced by implementation step S1. Lettered items are individu
 - **§5.6 slicer.** Appended after §5.5 rather than inserted at its conceptual position: §5.x numbers
   are cited individually elsewhere (e.g. §5.4(b), §5.5(f)), so renumbering would dangle those
   references. The conceptual order is drafter → researcher → **slicer** → planner.
-  - (a) Cuts ONE filed issue into ordered, operator-approved **deliverable slices** and files them as
-    native sub-issues via the single write path, in approved order (creation order is display order —
-    sub-issues append).
+  - (a) Cuts ONE filed issue into ordered, operator-approved children and files them as native
+    sub-issues via the single write path, in approved order (creation order is display order —
+    sub-issues append). **One operation at two altitudes** (#16), differing in exactly one parameter —
+    the independence bar, set by whether the child gets its own branch and PR: a story or standalone
+    issue cuts into **deliverable slices** (*demonstrable*), an epic cuts into **stories**
+    (*shippable*). The bar is stated once, in the method reference; the flow reads it as
+    `vector.altitude` rather than forking.
   - (b) Reachable two ways: operator invocation, and a planner re-route when the seam gate's shape
-    triage finds the issue too large to plan as one unit with only *demonstrable*-independent seams.
-    It hands back to the planner, whose phases then map onto the slices (`sub-issue:`).
+    triage finds the issue too large to plan as one unit — with *demonstrable*-independent seams it
+    cuts slices, and with *shippable*-independent seams it promotes the issue to an Epic and cuts
+    stories (both of the gate's off-ramps land here since #16). It hands back to the planner, whose
+    phases then map onto the slices (`sub-issue:`).
+  - (b2) **Promotion.** On the epic-shaped off-ramp it rewrites the target's body as an Epic and swaps
+    its type label, behind its **own** explicit diff-and-confirm gate ahead of the cut's write gate —
+    a body rewrite is destructive where a `create` is not. Declining leaves the target untouched.
+  - (b3) **Epic over existing issues.** Adopts already-filed issues as an epic's children through the
+    single write path (`gh_persist.py add-parent`, the one after-the-fact parenting write), reporting
+    each candidate's live state — and never silently moving an issue out of another parent.
+  - (b4) **Adversarially reviewed before the operator sees it.** A context-blind cut reviewer (§8)
+    holds the ordering and sizing judgment for both altitudes, including the bookend-slot check at
+    epic altitude; findings resolve under a pass cap and a circular guard. This is the judgment that
+    previously lived as dimensions 5 and 7 of the drafter's issue reviewer.
   - (c) **Grounding gate.** Refuses to decompose without adequate grounding, and every slice cites
     what it derives from. Grounding sources are the consuming repo's own declaration (the
     `<!-- doc-catalogue -->` block, §7) or sources the operator names at invocation — never
@@ -167,11 +183,14 @@ ground these are produced by implementation step S1. Lettered items are individu
     A partial failure after the gate reports exactly what landed and never claims completion.
   - (e) **Resume, don't duplicate.** Re-running against a partially-sliced issue detects the existing
     slices and cuts only the remainder.
-  - (f) Never edits the parent issue's body. Slice detail lives only in slice bodies; no `## Slices`
-    section is written.
-  - (g) Refuses, with a reason, on a target that is an epic (the drafter owns epic decomposition), is
-    itself a slice (**never slice a slice**), is a `question`, is closed, or is blocked by an open
-    native blocker or an `in-scope (blocked)` open question read from live state.
+  - (f) The **cut** never edits the parent issue's body. Child detail lives only in child bodies; no
+    `## Slices` section is written. Exactly two parent-body writes are sanctioned, each behind its own
+    explicit gate and never as a side effect of filing: the promotion rewrite (b2), and reconciling a
+    legacy `## Stories` checklist on an epic that has no native relation for those entries.
+  - (g) Refuses, with a reason, on a target that is itself a slice (**never slice a slice**), is a
+    `question`, is closed, or is blocked by an open native blocker or an `in-scope (blocked)` open
+    question read from live state. An **epic is not refused** since #16 — it is the epic-altitude
+    happy path.
   - (h) Slices are **phase markers**, not sub-stories: the resolver ships each as a phase on the
     parent's branch and closes it as its last serving phase lands, so the parent's rollup is a live
     progress record ([`skills/_shared/epic-story-hierarchy.md`](../skills/_shared/epic-story-hierarchy.md)).

@@ -374,6 +374,7 @@ result or a typed §3 decision code, cannot call `AskUserQuestion`, and never wr
 | fitness audit | resolver | read workspace + issue + plan | findings by dimension (incl. plan-vs-code currency) |
 | plan reviewer | planner | plan draft + the asserted grounding checkout | findings by dimension |
 | issue reviewer | drafter | draft + repo context | findings by dimension |
+| cut reviewer | slicer | parent body (path) + proposed children + repo root | findings by dimension |
 | research validator | researcher | dossier draft | findings by dimension |
 | test-selection | resolver, evaluator | diff scope + pinned test config | `COMMAND:` + `RATIONALE:` |
 | review-loop | resolver | PR + review verdict file | items-addressed JSON |

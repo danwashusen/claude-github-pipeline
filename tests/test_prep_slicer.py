@@ -1,23 +1,29 @@
-"""Unit tests for scripts/prep_slicer.py — the slicer's facts block in one call (#17;
+"""Unit tests for scripts/prep_slicer.py — the slicer's facts block in one call (#17, #16;
 architecture.md §4).
 
 Two strategies, matching the sibling prep suites:
 
   - **Pure-core unit tests** call the module's own non-emitting helpers directly (type detection,
-    the slice set, the refusal set, the blocker filters) — fast, and they pin the exact arithmetic
-    without a subprocess.
+    the altitude, the child sets, the refusal set, the blocker filters) — fast, and they pin the
+    exact arithmetic without a subprocess.
   - **Subprocess tests** drive `prep_slicer.py` as a real process against the fixture-replaying `gh`
     shim, proving the envelope contract and the one-round-trip budget end to end.
 
 What this suite exists to protect:
 
-  - **The refusal set is a fact, not a decision code.** Five conditions must land in
+  - **The refusal set is a fact, not a decision code.** Four conditions must land in
     `vector.refusals` with `suggested_playbook: None`, never as a `needs_decision` — a refusal is a
-    routing outcome with its own handoff, not a one-card question.
-  - **Resume, don't duplicate.** `next_index` must OVER-count rather than risk re-issuing a live
-    designator, including when a child was hand-retitled out of the `<N>/S<K>` form.
+    routing outcome with its own handoff, not a one-card question. An epic is deliberately NOT among
+    them since #16: it is the epic-altitude happy path.
+  - **The altitude is a parameter, not a fork.** One `children` key serves both altitudes with `kind`
+    naming which, so the flow reads values rather than branching.
+  - **Resume, don't duplicate.** At story altitude `next_index` must OVER-count rather than risk
+    re-issuing a live designator, including when a child was hand-retitled out of the `<N>/S<K>` form.
+  - **The two-tier epic read never halves the story set.** `mixed` unions both halves with native
+    state winning; taking one and dropping the other silently loses stories.
   - **The slice-target guard.** The by-construction identification rule (a non-epic's sub-issues are
-    slices) only holds if nothing ever slices a slice, so the parent-type check is load-bearing.
+    slices) only holds if nothing ever slices a slice, so the parent-type check is load-bearing — and
+    it must not misfire on an epic, which is the one shape that can never be a slice.
 """
 
 import json
@@ -78,10 +84,44 @@ class TypeDetectionTests(unittest.TestCase):
         self.assertEqual(prep_slicer._detect_type(["story", "question"], "x"), "story")
 
 
+class AltitudeTests(unittest.TestCase):
+    """#16: one operation, two altitudes, selected by whether the child gets its own branch. The bar
+    itself is stated once in `slicing-method.md` §1; this is only the fact selecting it."""
+
+    def test_an_epic_cuts_at_epic_altitude(self):
+        self.assertEqual(prep_slicer._detect_altitude("epic"), "epic")
+
+    def test_a_story_or_standalone_issue_cuts_at_story_altitude(self):
+        self.assertEqual(prep_slicer._detect_altitude("story"), "story")
+        self.assertEqual(prep_slicer._detect_altitude("standard"), "story")
+
+    def test_promotion_forces_epic_altitude_because_the_target_becomes_an_epic(self):
+        self.assertEqual(prep_slicer._detect_altitude("standard", promote=True), "epic")
+
+
 class SliceSetTests(unittest.TestCase):
     def test_empty_child_set_starts_at_one(self):
         result = prep_slicer._build_slice_set([], 103)
-        self.assertEqual(result, {"entries": [], "count": 0, "open_count": 0, "next_index": 1})
+        self.assertEqual(
+            result,
+            {
+                "kind": "slices",
+                "entries": [],
+                "count": 0,
+                "open_count": 0,
+                "next_index": 1,
+                "source": None,
+            },
+        )
+
+    def test_the_slice_edge_reports_no_source_because_it_has_no_fallback(self):
+        """`epic-story-hierarchy.md`: "The slice edge has no checklist fallback and never will" — so
+        a `stories_source`-style flag has no slice analogue and must stay null."""
+        result = prep_slicer._build_slice_set(
+            [{"number": 104, "title": "103/S1 — a", "state": "OPEN"}], 103
+        )
+        self.assertEqual(result["kind"], "slices")
+        self.assertIsNone(result["source"])
 
     def test_designators_parsed_and_open_count_derived(self):
         subs = [
@@ -128,10 +168,16 @@ class RefusalTests(unittest.TestCase):
     def test_no_refusal_for_a_standalone_non_epic_issue(self):
         self.assertEqual(prep_slicer._build_refusals("standard", "OPEN", None, [], []), [])
 
-    def test_epic_target_refused(self):
+    def test_an_epic_target_is_no_longer_refused(self):
+        """#16 retargeted this stage to epic altitude: an epic is the happy path, not a refusal."""
+        self.assertEqual(prep_slicer._build_refusals("epic", "OPEN", None, [], []), [])
+        self.assertFalse(hasattr(prep_slicer, "REFUSAL_EPIC_TARGET"))
+
+    def test_a_parent_on_an_epic_does_not_read_as_a_slice(self):
+        """An epic is the top of the hierarchy, so a parent on one is malformed data — not evidence
+        the epic is a slice. Misreading it would refuse the epic-altitude happy path."""
         self.assertEqual(
-            prep_slicer._build_refusals("epic", "OPEN", None, [], []),
-            [prep_slicer.REFUSAL_EPIC_TARGET],
+            prep_slicer._build_refusals("epic", "OPEN", {"type": "story"}, [], []), []
         )
 
     def test_slice_target_refused_when_the_parent_is_not_an_epic(self):
@@ -165,17 +211,83 @@ class RefusalTests(unittest.TestCase):
 
     def test_refusal_order_is_stable_for_deterministic_rendering(self):
         refusals = prep_slicer._build_refusals(
-            "epic", "CLOSED", {"type": "story"}, [{"number": 61}], []
+            "question", "CLOSED", {"type": "story"}, [{"number": 61}], []
         )
         self.assertEqual(
             refusals,
             [
-                prep_slicer.REFUSAL_EPIC_TARGET,
+                prep_slicer.REFUSAL_QUESTION_TARGET,
                 prep_slicer.REFUSAL_SLICE_TARGET,
                 prep_slicer.REFUSAL_CLOSED_TARGET,
                 prep_slicer.REFUSAL_BLOCKED,
             ],
         )
+
+
+class StorySetTests(unittest.TestCase):
+    """Epic altitude reads through `epic-story-hierarchy.md`'s two-tier read, relocated here from
+    `prep_drafter.py` with #16. `source` reports which tier answered so the flow knows whether there
+    are checkboxes to reconcile at all."""
+
+    def test_native_relation_reports_sub_issues_and_mirrors_live_state(self):
+        subs = [
+            {"number": 151, "title": "Story A", "state": "CLOSED"},
+            {"number": 152, "title": "Story B", "state": "OPEN"},
+        ]
+        children, attention, decision = prep_slicer._build_story_set(subs, "", "o/r")
+        self.assertIsNone(decision)
+        self.assertEqual(children["kind"], "stories")
+        self.assertEqual(children["source"], "sub-issues")
+        self.assertEqual([e["number"] for e in children["entries"]], [151, 152])
+        self.assertEqual([e["checked"] for e in children["entries"]], [True, False])
+        self.assertEqual(children["open_count"], 1)
+        # Stories are titled plainly, so there is no designator numbering to resume.
+        self.assertIsNone(children["next_index"])
+        # `checked` mirrors live state, so a mismatch is unrepresentable on this tier.
+        self.assertEqual(attention, [])
+
+    def test_a_fresh_epic_with_no_children_reports_no_source(self):
+        children, attention, decision = prep_slicer._build_story_set([], "## Goal\nx\n", "o/r")
+        self.assertIsNone(decision)
+        self.assertEqual(children["count"], 0)
+        self.assertIsNone(children["source"])
+        self.assertEqual(attention, [])
+
+    def test_panel_order_is_preserved_because_it_is_delivery_order(self):
+        subs = [
+            {"number": 153, "title": "Story C", "state": "OPEN"},
+            {"number": 151, "title": "Story A", "state": "OPEN"},
+        ]
+        children, _attention, _decision = prep_slicer._build_story_set(subs, "", "o/r")
+        self.assertEqual([e["number"] for e in children["entries"]], [153, 151])
+
+
+class StoriesSectionParseTests(unittest.TestCase):
+    """The legacy `## Stories` checklist grammar — byte-identical to `prep_planner.py`'s copy."""
+
+    def test_filed_and_placeholder_entries(self):
+        body = (
+            "## Stories\n"
+            "- [x] #151 — Story A\n"
+            "- [ ] #152 — Story B\n"
+            "- [ ] Story C placeholder (not filed)\n"
+        )
+        self.assertEqual(
+            prep_slicer._parse_stories_section(body),
+            [
+                {"number": 151, "title": "Story A", "checked": True},
+                {"number": 152, "title": "Story B", "checked": False},
+                {"number": None, "title": "Story C placeholder (not filed)", "checked": False},
+            ],
+        )
+
+    def test_absent_section(self):
+        self.assertEqual(prep_slicer._parse_stories_section("## Goal\n- [ ] not stories\n"), [])
+
+    def test_stops_at_the_next_heading(self):
+        body = "## Stories\n- [ ] #151 — A\n\n## Definition of done\n- [ ] #999 — not a story\n"
+        entries = prep_slicer._parse_stories_section(body)
+        self.assertEqual([e["number"] for e in entries], [151])
 
 
 class BlockerFilterTests(unittest.TestCase):
@@ -203,7 +315,7 @@ class SuggestedPlaybookTests(unittest.TestCase):
         self.assertEqual(prep_slicer._suggested_playbook([]), "cut.md")
 
     def test_a_refusal_routes_to_no_playbook(self):
-        self.assertIsNone(prep_slicer._suggested_playbook([prep_slicer.REFUSAL_EPIC_TARGET]))
+        self.assertIsNone(prep_slicer._suggested_playbook([prep_slicer.REFUSAL_SLICE_TARGET]))
 
 
 # ---------------------------------------------------------------------------
@@ -280,7 +392,9 @@ class FreshHappyPathTests(PrepSlicerSandboxTestCase):
             "target",
             "vector",
             "suggested_playbook",
-            "slices",
+            "promotion",
+            "children",
+            "adoption_candidates",
             "grounding_docs",
             "research",
             "open_questions",
@@ -288,10 +402,16 @@ class FreshHappyPathTests(PrepSlicerSandboxTestCase):
             "attention",
         ):
             self.assertIn(key, envelope, key)
-        self.assertEqual(envelope["vector"], {"type": "story", "mode": "fresh", "refusals": []})
+        self.assertEqual(
+            envelope["vector"],
+            {"type": "story", "altitude": "story", "mode": "fresh", "refusals": []},
+        )
         self.assertEqual(envelope["suggested_playbook"], "cut.md")
-        self.assertEqual(envelope["slices"]["count"], 0)
-        self.assertEqual(envelope["slices"]["next_index"], 1)
+        self.assertEqual(envelope["children"]["kind"], "slices")
+        self.assertEqual(envelope["children"]["count"], 0)
+        self.assertEqual(envelope["children"]["next_index"], 1)
+        self.assertFalse(envelope["promotion"])
+        self.assertEqual(envelope["adoption_candidates"], [])
         self.assertEqual(envelope["attention"], [])
         self.assertEqual(envelope["notices"], [])
 
@@ -326,15 +446,145 @@ class ResumeModeTests(PrepSlicerSandboxTestCase):
         envelope = self._envelope(103, "prep_slicer_resume")
         self.assertEqual(envelope["vector"]["mode"], "resume")
         self.assertEqual(envelope["suggested_playbook"], "cut.md")
-        self.assertEqual(envelope["slices"]["count"], 2)
-        self.assertEqual(envelope["slices"]["open_count"], 1)
-        self.assertEqual(envelope["slices"]["next_index"], 3)
+        self.assertEqual(envelope["children"]["kind"], "slices")
+        self.assertEqual(envelope["children"]["count"], 2)
+        self.assertEqual(envelope["children"]["open_count"], 1)
+        self.assertEqual(envelope["children"]["next_index"], 3)
 
     def test_resume_raises_an_attention_line_so_nothing_re_files_silently(self):
         envelope = self._envelope(103, "prep_slicer_resume")
         self.assertTrue(
             any("resume mode" in item for item in envelope["attention"]), envelope["attention"]
         )
+
+
+class EpicAltitudeTests(PrepSlicerSandboxTestCase):
+    """#16: an epic is the epic-altitude happy path, not a refusal. Children are STORIES, read
+    through `epic-story-hierarchy.md`'s two-tier read (the relocated epic-revise gather)."""
+
+    def test_a_fresh_epic_cuts_at_epic_altitude_with_no_children(self):
+        envelope = self._envelope(150, "prep_slicer_epic_fresh")
+        self.assertEqual(envelope["vector"]["refusals"], [])
+        self.assertEqual(envelope["suggested_playbook"], "cut.md")
+        self.assertEqual(
+            envelope["vector"],
+            {"type": "epic", "altitude": "epic", "mode": "fresh", "refusals": []},
+        )
+        self.assertEqual(envelope["children"]["kind"], "stories")
+        self.assertEqual(envelope["children"]["count"], 0)
+        self.assertIsNone(envelope["children"]["source"])
+        # Stories are titled plainly -- no designator numbering to resume.
+        self.assertIsNone(envelope["children"]["next_index"])
+
+    def test_native_story_set_resumes_and_costs_no_per_story_fetch(self):
+        # The fixture's manifest carries NO per-story entries, so a regression that added one would
+        # fail as a shim MISS rather than passing quietly.
+        envelope = self._envelope(150, "prep_slicer_epic_resume_native")
+        self.assertEqual(envelope["vector"]["mode"], "resume")
+        self.assertEqual(envelope["children"]["source"], "sub-issues")
+        self.assertEqual([e["number"] for e in envelope["children"]["entries"]], [151, 152])
+        self.assertEqual(envelope["children"]["open_count"], 1)
+
+    def test_legacy_checklist_epic_reports_its_source_and_surfaces_a_mismatch(self):
+        envelope = self._envelope(160, "prep_slicer_epic_resume_checklist")
+        children = envelope["children"]
+        self.assertEqual(children["source"], "checklist")
+        self.assertEqual(children["count"], 3)
+        # The unfiled bullet rides with no live state rather than being dropped.
+        self.assertEqual([e["number"] for e in children["entries"]], [151, 152, None])
+        # #151 is unchecked in the body but CLOSED live -- surfaced, never silently reconciled here
+        # (reconciling the body is a write the flow proposes at its gate).
+        self.assertTrue(
+            any("checkbox is unchecked but live state is CLOSED" in i
+                for i in envelope["attention"]),
+            envelope["attention"],
+        )
+        self.assertTrue(
+            any("legacy `## Stories` checklist" in i for i in envelope["attention"]),
+            envelope["attention"],
+        )
+
+    def test_mixed_epic_unions_both_halves_and_never_drops_one(self):
+        envelope = self._envelope(170, "prep_slicer_epic_mixed")
+        children = envelope["children"]
+        self.assertEqual(children["source"], "mixed")
+        # Native first, then the checklist remainder -- both halves present.
+        self.assertEqual([e["number"] for e in children["entries"]], [153, 151])
+
+
+class PromotionTests(PrepSlicerSandboxTestCase):
+    """`--promote` is router-passed (prep cannot read the invocation prose). It forces epic altitude
+    because the target BECOMES an epic, behind the flow's own rewrite gate."""
+
+    def test_promote_forces_epic_altitude_on_a_standard_target(self):
+        envelope = self._envelope(200, "prep_slicer_standalone", extra_args=["--promote"])
+        self.assertEqual(envelope["vector"]["type"], "standard")
+        self.assertEqual(envelope["vector"]["altitude"], "epic")
+        self.assertTrue(envelope["promotion"])
+        self.assertEqual(envelope["children"]["kind"], "stories")
+        self.assertTrue(
+            any("promotion requested" in i for i in envelope["attention"]), envelope["attention"]
+        )
+
+    def test_promote_on_an_already_epic_target_is_a_no_op_not_an_error(self):
+        envelope = self._envelope(150, "prep_slicer_epic_fresh", extra_args=["--promote"])
+        self.assertEqual(envelope["vector"]["altitude"], "epic")
+        self.assertFalse(envelope["promotion"])
+        self.assertTrue(
+            any("already an epic" in i for i in envelope["attention"]), envelope["attention"]
+        )
+
+    def test_without_promote_a_standard_target_stays_at_story_altitude(self):
+        envelope = self._envelope(200, "prep_slicer_standalone")
+        self.assertEqual(envelope["vector"]["altitude"], "story")
+        self.assertFalse(envelope["promotion"])
+
+
+class AdoptionTests(PrepSlicerSandboxTestCase):
+    """"Epic over existing issues": `--adopt N` reports each candidate's live state so the flow can
+    present it; the write is `gh_persist.py add-parent`."""
+
+    def test_candidates_carry_live_state_in_the_order_named(self):
+        envelope = self._envelope(
+            180, "prep_slicer_adopt", extra_args=["--adopt", "301", "--adopt", "302"]
+        )
+        candidates = envelope["adoption_candidates"]
+        self.assertEqual([c["number"] for c in candidates], [301, 302])
+        self.assertEqual(candidates[0]["state"], "OPEN")
+        self.assertEqual(candidates[0]["type"], "story")
+
+    def test_an_already_parented_candidate_is_surfaced_before_the_write(self):
+        envelope = self._envelope(
+            180, "prep_slicer_adopt", extra_args=["--adopt", "301", "--adopt", "302"]
+        )
+        candidates = {c["number"]: c for c in envelope["adoption_candidates"]}
+        self.assertFalse(candidates[301]["already_parented"])
+        self.assertTrue(candidates[302]["already_parented"])
+        self.assertEqual(candidates[302]["parent"], 199)
+        self.assertTrue(
+            any("already has parent #199" in i for i in envelope["attention"]),
+            envelope["attention"],
+        )
+
+    def test_no_adopt_flag_costs_no_extra_gh_call(self):
+        # The epic_fresh manifest has only the three base entries, so any candidate lookup on a run
+        # without --adopt would fail as a shim MISS.
+        envelope = self._envelope(150, "prep_slicer_epic_fresh")
+        self.assertEqual(envelope["adoption_candidates"], [])
+
+    def test_adopt_check_is_a_one_shot_lookup_with_no_facts_block(self):
+        # The one-shot mode names no issue, so it never re-runs the gather -- the whole point of the
+        # mode for candidates the operator names mid-session.
+        result = self._run(
+            ["octo/widgets", "--adopt-check", "301", "--adopt-check", "302", "--cwd", str(self.root)],
+            fixture_case="prep_slicer_adopt",
+        )
+        self.assertEqual(result.returncode, 0, msg="stderr: %s" % result.stderr)
+        envelope = _parse_one_envelope(result.stdout)
+        envelope_asserts.assert_full_envelope_conformance(envelope)
+        self.assertEqual([c["number"] for c in envelope["adoption_candidates"]], [301, 302])
+        self.assertNotIn("vector", envelope)
+        self.assertNotIn("children", envelope)
 
 
 class RefusalFactTests(PrepSlicerSandboxTestCase):
@@ -345,11 +595,6 @@ class RefusalFactTests(PrepSlicerSandboxTestCase):
         self.assertEqual(envelope["status"], "ok")
         self.assertIsNone(envelope["suggested_playbook"])
         return envelope
-
-    def test_epic_target(self):
-        envelope = self._refusal(150, "prep_slicer_epic_target")
-        self.assertEqual(envelope["vector"]["refusals"], [prep_slicer.REFUSAL_EPIC_TARGET])
-        self.assertTrue(any("is an epic" in i for i in envelope["attention"]))
 
     def test_slice_target(self):
         envelope = self._refusal(105, "prep_slicer_slice_target")
@@ -416,6 +661,23 @@ class SingleInvocationBudgetTests(PrepSlicerSandboxTestCase):
     def test_a_parented_target_makes_exactly_one_parent_lookup(self):
         envelope = self._envelope(103, "prep_slicer_fresh")
         self.assertEqual(envelope["target"]["parent"]["number"], 150)
+
+    def test_epic_altitude_costs_one_fetch_per_filed_checklist_entry_and_no_more(self):
+        """The `checklist` tier is the only rung that pays per-story `gh` calls: the native tier reads
+        state straight out of the gather, and an unfiled bullet has no issue to look up. The manifest
+        carries exactly two story entries for three bullets, so a third lookup would miss."""
+        envelope = self._envelope(160, "prep_slicer_epic_resume_checklist")
+        self.assertEqual(envelope["children"]["source"], "checklist")
+        self.assertEqual(
+            [e["number"] for e in envelope["children"]["entries"] if e["number"] is not None],
+            [151, 152],
+        )
+
+    def test_a_mixed_epic_fetches_only_the_checklist_half(self):
+        """The native half already carries authoritative live state, so re-fetching it would be a
+        wasted call -- the mixed fixture's manifest has one story entry, not two."""
+        envelope = self._envelope(170, "prep_slicer_epic_mixed")
+        self.assertEqual(envelope["children"]["source"], "mixed")
 
 
 class ScratchDirTests(PrepSlicerSandboxTestCase):
