@@ -48,7 +48,7 @@ scripts/
   branching.py        # import-only: branch naming, type detection, prior-PR rows, linked branches
   parse.py            # dod | oq-links | phases subcommands
   gh_gather.py  gh_pr_gather.py  gh_persist.py  config_block.py   # executor ports (S21)
-  prep_drafter.py  prep_researcher.py  prep_planner.py  prep_resolver.py  prep_evaluator.py
+  prep_drafter.py  prep_researcher.py  prep_slicer.py  prep_planner.py  prep_resolver.py  prep_evaluator.py
   prep_question_sweep.py  prep_question_resolver.py
   prep_workspace_open.py  prep_workspace_close.py   # the v3 operator-side lifecycle tools
 skills/

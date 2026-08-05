@@ -1,0 +1,473 @@
+"""Routing / structural gates for the `slicer` skill (#17).
+
+Prose has no compiler, so these are it. The suite mirrors the house set every
+`tests/test_<skill>_routing.py` carries — frontmatter pins, routing-table ↔ disk ↔ prep agreement,
+the structural bars, fence-scoped grep bans, `--dry-run` persist envelopes, handoff-rendering pins —
+plus the gates specific to this stage:
+
+  - **The write-gate posture.** "Zero GitHub mutations before the one gate" is the invariant that
+    makes the stage safe to abort; it must be stated in the loaded prompt, not only in a reference.
+  - **The refusal set is closed and matches prep.** The router names exactly the tokens
+    `prep_slicer` can emit — a router that renders a refusal prep never produces, or misses one prep
+    does, is a silent dead end.
+  - **Never slice a slice, and never edit the parent body.** Both are load-bearing: the first keeps
+    the by-construction slice identification sound, the second keeps the rollup the single source of
+    truth about the slice set.
+
+## The line bar
+
+There is no v1 slicer, so prd.md §10's "half the v1 `SKILL.md` line count" has no input. `SLICER_BAR`
+is **measured, not halved** — see the constant's comment below for the derivation.
+"""
+
+import json
+import os
+import re
+import subprocess
+import sys
+import tempfile
+import unittest
+from pathlib import Path
+
+REPO_ROOT = Path(__file__).resolve().parent.parent
+SCRIPTS_DIR = REPO_ROOT / "scripts"
+SKILL_DIR = REPO_ROOT / "skills" / "slicer"
+ROUTER = SKILL_DIR / "SKILL.md"
+PLAYBOOKS_DIR = SKILL_DIR / "playbooks"
+REFERENCES_DIR = SKILL_DIR / "references"
+GH_PERSIST = SCRIPTS_DIR / "gh_persist.py"
+SHARED = REPO_ROOT / "skills" / "_shared"
+
+ROUTABLE_PLAYBOOKS = {"cut.md"}
+
+# MEASURED, not halved. prd.md §10's formula ("router + the one playbook <= half the v1 SKILL.md line
+# count") has no input here: there was never a v1 slicer, and the working prototype this stage is
+# based on (a repo-local skill: 284-line SKILL.md + a 179-line method reference) is ALREADY split
+# router/reference, so halving it would double-count a compression that already happened.
+#
+# Derivation: the prototype's generic core is 284 lines minus ~85 lines of repo-local board mechanics
+# and ~15 lines of local worked example, i.e. ~145-165 lines of loaded prompt. The plugin version
+# drops the remaining board half and adds the four-section router anatomy, the facts block, the
+# handoff section and the re-route arm — which roughly cancel. Hence 170, sitting between the
+# researcher (141 against a 144 bar) and the planner (251 against 251).
+#
+# prd.md §10 carries the general provision: a stage with no v1 baseline records a measured bar. Per
+# the S19 doc-reviewer precedent, if an honest implementation lands over this, record the
+# adjudication — never trim precision out of the prompt to hit a number.
+SLICER_BAR = 170
+
+sys.path.insert(0, str(SCRIPTS_DIR))
+
+import prep_slicer  # noqa: E402
+from tests.support import envelope_asserts, shimenv  # noqa: E402
+from tests.support.retired_tokens import (  # noqa: E402
+    FORBIDDEN_CONTRACT_TOKENS,
+    V1_INVOCATION_PREFIX,
+    retired_name_hits,
+)
+
+_ROUTE_ROW_RE = re.compile(
+    r"^\|\s*`?(?P<vector>[^|]+?)`?\s*\|\s*`(?P<playbook>playbooks/[a-z0-9-]+\.md)`\s*\|"
+)
+
+
+def _parse_router_routing_table(router_text):
+    rows = []
+    for line in router_text.splitlines():
+        match = _ROUTE_ROW_RE.match(line)
+        if match:
+            rows.append((match.group("vector").strip(), match.group("playbook")))
+    return rows
+
+
+def _fence_stripped_lines(path):
+    in_fence = False
+    for i, line in enumerate(path.read_text(encoding="utf-8").splitlines(), 1):
+        if line.strip().startswith("```"):
+            in_fence = not in_fence
+            yield i, line, in_fence
+            continue
+        yield i, line, in_fence
+
+
+def _iter_md(dir_path):
+    yield from sorted(dir_path.rglob("*.md"))
+
+
+def _normalized(text):
+    """Collapse whitespace and drop markdown emphasis, so a prose pin survives a re-wrap.
+
+    Every one of these files is hard-wrapped at ~110 columns and every invariant here is bold, so a
+    literal regex against the raw text pins the *line breaks* as much as the words — and then a
+    legitimate compression that re-flows a paragraph fails a test about meaning. Normalizing keeps the
+    pins about the sentence."""
+    return re.sub(r"\s+", " ", text.replace("**", "").replace("*", ""))
+
+
+class RouterStructureTests(unittest.TestCase):
+    def setUp(self):
+        self.router_text = ROUTER.read_text(encoding="utf-8")
+
+    def test_router_exists_and_has_no_model_effort_pins(self):
+        self.assertTrue(ROUTER.is_file())
+        head = "\n".join(self.router_text.splitlines()[:8])
+        self.assertIn("name: slicer", head)
+        self.assertNotIn("model:", head)
+        self.assertNotIn("effort:", head)
+
+    def test_router_is_model_invocable(self):
+        """A pipeline stage, not a standalone tool — `disable-model-invocation` belongs to the five
+        tools that carry it, and adding it here would make the planner's re-route undiscoverable."""
+        head = "\n".join(self.router_text.splitlines()[:8])
+        self.assertNotIn("disable-model-invocation", head)
+
+    def test_router_carries_the_four_anatomy_sections_in_order(self):
+        headings = [
+            line.strip()
+            for line in self.router_text.splitlines()
+            if line.startswith("## ")
+        ]
+        self.assertEqual(
+            headings, ["## 1. Prep", "## 2. Route", "## 3. Invariants", "## 4. Handoff"]
+        )
+
+    def test_router_dispatches_prep_by_plugin_root(self):
+        self.assertIn("${CLAUDE_PLUGIN_ROOT}/scripts/prep_slicer.py", self.router_text)
+
+
+class RoutingTableTests(unittest.TestCase):
+    def setUp(self):
+        self.rows = _parse_router_routing_table(ROUTER.read_text(encoding="utf-8"))
+
+    def test_table_names_exactly_the_routable_playbook(self):
+        self.assertEqual({Path(pb).name for _v, pb in self.rows}, ROUTABLE_PLAYBOOKS)
+
+    def test_exactly_the_routable_playbooks_on_disk(self):
+        self.assertEqual({p.name for p in PLAYBOOKS_DIR.glob("*.md")}, ROUTABLE_PLAYBOOKS)
+
+    def test_every_routed_playbook_file_exists(self):
+        for _vector, playbook in self.rows:
+            self.assertTrue((SKILL_DIR / playbook).is_file(), playbook)
+
+    def test_table_matches_prep_suggested_playbook(self):
+        """Prep proposes; the router confirms. A refusal routes to no playbook at all."""
+        self.assertEqual(prep_slicer._suggested_playbook([]), "cut.md")
+        self.assertIn("cut.md", {Path(pb).name for _v, pb in self.rows})
+        self.assertIsNone(prep_slicer._suggested_playbook([prep_slicer.REFUSAL_EPIC_TARGET]))
+
+    def test_both_modes_share_the_one_playbook(self):
+        """`fresh`/`resume` differ in values, not actions — so they must not be separate playbooks."""
+        router = ROUTER.read_text(encoding="utf-8")
+        self.assertIn("fresh", router)
+        self.assertIn("resume", router)
+        self.assertEqual(len(ROUTABLE_PLAYBOOKS), 1)
+
+
+class RefusalSetTests(unittest.TestCase):
+    """The router must name exactly the refusal tokens prep can emit — no dead ends either way."""
+
+    def setUp(self):
+        self.router_text = ROUTER.read_text(encoding="utf-8")
+        self.renderings = (REFERENCES_DIR / "handoff-renderings.md").read_text(encoding="utf-8")
+
+    def test_prep_refusal_tokens_are_all_named_in_the_router(self):
+        for token in (
+            prep_slicer.REFUSAL_EPIC_TARGET,
+            prep_slicer.REFUSAL_SLICE_TARGET,
+            prep_slicer.REFUSAL_QUESTION_TARGET,
+            prep_slicer.REFUSAL_CLOSED_TARGET,
+            prep_slicer.REFUSAL_BLOCKED,
+        ):
+            self.assertIn(token, self.router_text, token)
+
+    def test_router_sends_refusals_to_the_renderings_without_reading_the_playbook(self):
+        self.assertRegex(self.router_text, r"do not read the playbook")
+        self.assertIn("references/handoff-renderings.md", self.router_text)
+
+    def test_every_refusal_has_a_rendering_shape(self):
+        for phrase in (
+            "Refused — no grounding",
+            "Refused — blocked",
+            "Refused — epic target",
+            "Refused — closed target",
+        ):
+            self.assertIn(phrase, self.renderings, phrase)
+        self.assertRegex(self.renderings, r"Refused — the target is itself a slice")
+
+    def test_grounding_refusal_routes_to_setup(self):
+        self.assertIn("/github-pipeline:setup", self.renderings)
+
+
+class StructuralBarTests(unittest.TestCase):
+    def test_router_at_most_150_lines(self):
+        lines = len(ROUTER.read_text(encoding="utf-8").splitlines())
+        self.assertLessEqual(lines, 150, "router must fit one default Read (architecture.md §9)")
+
+    def test_router_plus_largest_playbook_within_the_measured_bar(self):
+        router_lines = len(ROUTER.read_text(encoding="utf-8").splitlines())
+        playbook_lines = {
+            p.name: len(p.read_text(encoding="utf-8").splitlines())
+            for p in PLAYBOOKS_DIR.glob("*.md")
+        }
+        largest = max(playbook_lines.values())
+        self.assertLessEqual(
+            router_lines + largest,
+            SLICER_BAR,
+            "router (%d) + largest playbook (%d) = %d exceeds the measured bar %d: %r"
+            % (router_lines, largest, router_lines + largest, SLICER_BAR, playbook_lines),
+        )
+
+    def test_references_are_unbounded_but_present(self):
+        """The method and the renderings live in references precisely so the bar doesn't force them
+        thin — assert they exist rather than capping them."""
+        for name in ("slicing-method.md", "handoff-renderings.md"):
+            self.assertTrue((REFERENCES_DIR / name).is_file(), name)
+
+
+class InvariantLanguageTests(unittest.TestCase):
+    """The invariants that make this stage safe must be in the LOADED prompt, not only a reference."""
+
+    def setUp(self):
+        self.loaded = _normalized(
+            ROUTER.read_text(encoding="utf-8")
+            + "\n"
+            + (PLAYBOOKS_DIR / "cut.md").read_text(encoding="utf-8")
+        )
+
+    def test_zero_mutations_before_the_one_write_gate(self):
+        self.assertRegex(self.loaded, r"[Zz]ero GitHub mutations before the one write gate")
+        self.assertIn("prd.md §8.2", self.loaded)
+
+    def test_parent_body_is_never_edited_and_no_slices_section_is_written(self):
+        self.assertRegex(self.loaded, r"parent'?s? body is never edited")
+        self.assertRegex(self.loaded, r"no `## Slices` section is ever written")
+
+    def test_a_slice_is_never_sliced(self):
+        self.assertRegex(self.loaded, r"a slice is never sliced")
+
+    def test_creation_order_is_display_order_and_filing_is_sequential(self):
+        self.assertRegex(self.loaded, r"creation order is display")
+        self.assertRegex(self.loaded, r"one slice at a time")
+
+    def test_partial_failure_is_never_rounded_up(self):
+        self.assertRegex(self.loaded, r'never "all done" after a partial run')
+
+    def test_resume_does_not_duplicate(self):
+        self.assertRegex(self.loaded, r"[Rr]esume, don't duplicate")
+        self.assertIn("next_index", self.loaded)
+
+    def test_the_grounding_gate_cannot_degrade_into_proceeding(self):
+        playbook = _normalized((PLAYBOOKS_DIR / "cut.md").read_text(encoding="utf-8"))
+        self.assertRegex(playbook, r"cannot degrade into proceeding")
+        self.assertIn("DOC_CATALOGUE_ABSENT", playbook)
+
+
+class MethodReferenceTests(unittest.TestCase):
+    def setUp(self):
+        self.method = (REFERENCES_DIR / "slicing-method.md").read_text(encoding="utf-8")
+
+    def test_the_independence_bar_is_a_parameter_so_16_is_a_retarget(self):
+        self.assertRegex(self.method, r"independence bar is a parameter")
+        self.assertIn("demonstrable", self.method)
+        self.assertIn("shippable", self.method)
+
+    def test_anti_over_split_bias_is_stated_with_its_threshold(self):
+        self.assertRegex(self.method, r"few, thick-enough slices")
+        self.assertRegex(self.method, r"ten or more is an anti-pattern")
+
+    def test_the_one_sentence_demo_test_is_present(self):
+        self.assertRegex(self.method, r"one\s+sentence, the cut is wrong")
+
+    def test_template_uses_acceptance_criteria_not_a_definition_of_done(self):
+        """A DoD on a slice would be a checkbox set nothing ticks — the resolver projects onto the
+        PARENT. The reference must say so, or a later editor "harmonizes" it back."""
+        self.assertIn("## Acceptance criteria", self.method)
+        self.assertRegex(self.method, r"deliberately not `## Definition of done`")
+        self.assertRegex(self.method, r"checkbox set\s+nothing ticks")
+
+    def test_tier_1_ticking_and_the_tier_2_trigger_with_its_diagnosis(self):
+        self.assertRegex(self.method, r"ticks \*\*all\*\* of a slice's criteria")
+        self.assertRegex(self.method, r"cut is too thick")
+
+    def test_citation_duty_is_stated(self):
+        self.assertRegex(self.method, r"[Cc]itation duty")
+        self.assertRegex(self.method, r"can cite \*\*nothing\*\* does not exist")
+
+    def test_the_four_named_non_slices_are_listed(self):
+        for phrase in ("database tables", "API endpoints", "the UI", "background job"):
+            self.assertIn(phrase, self.method, phrase)
+
+
+class HandoffRenderingTests(unittest.TestCase):
+    def setUp(self):
+        self.renderings = (REFERENCES_DIR / "handoff-renderings.md").read_text(encoding="utf-8")
+
+    def test_reference_cites_the_shared_schema_as_the_owner(self):
+        self.assertIn("_shared/handoff-format.md", self.renderings)
+
+    def test_forward_route_is_the_planner(self):
+        self.assertIn("/github-pipeline:planner", self.renderings)
+
+    def test_slices_line_uses_the_designator_form(self):
+        self.assertRegex(self.renderings, r"\*\*Slices:\*\* #\d+ \d+/S1 \(open\)")
+
+    def test_progress_count_form_is_shown_too(self):
+        self.assertRegex(self.renderings, r"\*\*Slices:\*\* \d+ of \d+ closed · next:")
+
+    def test_grounding_line_present_on_filed_exits_and_omitted_otherwise(self):
+        self.assertRegex(self.renderings, r"\*\*Grounding:\*\*")
+        self.assertRegex(self.renderings, r"omitted on every exit that\s+filed nothing")
+
+    def test_declined_gate_shape_states_zero_writes(self):
+        self.assertRegex(self.renderings, r"\*\*Zero GitHub writes happened\*\*")
+
+    def test_no_slices_state_marker_was_invented(self):
+        """The closed sets are unchanged: absence is expressed by OMITTING the line."""
+        self.assertNotRegex(self.renderings, r"slices: (✓|✗)")
+
+    def test_binding_language_is_prose_not_inside_a_code_fence(self):
+        for lineno, line, in_fence in _fence_stripped_lines(
+            REFERENCES_DIR / "handoff-renderings.md"
+        ):
+            if "Copy the shape verbatim" in line:
+                self.assertFalse(in_fence, "binding rule at line %d is inside a fence" % lineno)
+
+
+class ContractTokenGateTests(unittest.TestCase):
+    def test_no_forbidden_contract_tokens(self):
+        for path in _iter_md(SKILL_DIR):
+            text = path.read_text(encoding="utf-8")
+            match = FORBIDDEN_CONTRACT_TOKENS.search(text)
+            self.assertIsNone(match, "%s carries %r" % (path, match.group(0) if match else None))
+
+    def test_no_retired_v1_names_or_namespace(self):
+        for path in _iter_md(SKILL_DIR):
+            text = path.read_text(encoding="utf-8")
+            self.assertEqual(retired_name_hits(text), [], str(path))
+            self.assertNotIn(V1_INVOCATION_PREFIX, text, str(path))
+
+    def test_no_raw_persist_or_gather_writes_in_code_fences(self):
+        raw_write = re.compile(
+            r"\bgh\s+(issue|pr)\s+(create|edit|comment|review|close|reopen)\b"
+            r"|\bgh\s+api\b[^\n]*\bDELETE\b"
+        )
+        for path in _iter_md(SKILL_DIR):
+            for lineno, line, in_fence in _fence_stripped_lines(path):
+                if not in_fence:
+                    continue
+                self.assertIsNone(
+                    raw_write.search(line), "%s:%d raw gh write in a fence: %s" % (path, lineno, line)
+                )
+
+    def test_no_ref_arithmetic_in_code_fences(self):
+        banned = re.compile(r"git\s+show\s+[^\s]+:|git\s+grep\s+(?!-)")
+        for path in _iter_md(SKILL_DIR):
+            for lineno, line, in_fence in _fence_stripped_lines(path):
+                if not in_fence:
+                    continue
+                self.assertIsNone(banned.search(line), "%s:%d ref arithmetic: %s" % (path, lineno, line))
+
+    def test_no_w_slash_shorthand(self):
+        shorthand = re.compile(r"\bw/")
+        for path in _iter_md(SKILL_DIR):
+            for lineno, line in enumerate(path.read_text(encoding="utf-8").splitlines(), 1):
+                self.assertIsNone(shorthand.search(line), "%s:%d %r" % (path, lineno, line))
+
+    def test_no_bare_stack_assumption(self):
+        stack = re.compile(r"swift|xcode|xcb\.sh|foodjournal|rails|rspec|pytest", re.IGNORECASE)
+        for path in _iter_md(SKILL_DIR):
+            for lineno, line in enumerate(path.read_text(encoding="utf-8").splitlines(), 1):
+                self.assertIsNone(stack.search(line), "%s:%d stack assumption: %s" % (path, lineno, line))
+
+
+class PersistDryRunTests(unittest.TestCase):
+    """The one write this stage prescribes, run through `gh_persist.py --dry-run`: conformant
+    envelope, `would_run` present, `--parent` visible in it, no live gh call."""
+
+    def _run_persist(self, args, fixture_case=None):
+        env = shimenv.intercepted_env(base_env=os.environ, fixture_case=fixture_case)
+        return subprocess.run(
+            [sys.executable, str(GH_PERSIST)] + args,
+            env=env,
+            capture_output=True,
+            encoding="utf-8",
+            check=False,
+        )
+
+    def test_slice_create_with_parent_dry_run(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            body = Path(tmp) / "slice-S1.md"
+            body.write_text(
+                "**Parent:** #103 — Patient: access\n\n## Outcome\nFirst login works.\n",
+                encoding="utf-8",
+            )
+            result = self._run_persist(
+                [
+                    "create",
+                    "octo/widgets",
+                    str(body),
+                    "--title",
+                    "103/S1 — patient completes first login",
+                    "--parent",
+                    "103",
+                    "--dry-run",
+                ]
+            )
+            self.assertEqual(result.returncode, 0, msg=result.stderr)
+            envelope = json.loads(result.stdout.strip())
+            envelope_asserts.assert_full_envelope_conformance(envelope)
+            self.assertEqual(envelope["op"], "create")
+            self.assertTrue(envelope["dry_run"])
+            self.assertIn("would_run", envelope)
+            self.assertIn("--parent", envelope["would_run"])
+            self.assertNotIn("url", envelope)
+
+    def test_empty_body_is_gated_before_any_write(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            body = Path(tmp) / "slice-S1.md"
+            body.write_text("", encoding="utf-8")
+            result = self._run_persist(
+                ["create", "octo/widgets", str(body), "--title", "103/S1 — x", "--parent", "103"]
+            )
+            self.assertEqual(result.returncode, 0, msg=result.stderr)
+            envelope = json.loads(result.stdout.strip())
+            self.assertEqual(envelope["status"], "needs_decision")
+            self.assertEqual(envelope["decision"]["code"], "EMPTY_BODY_FILE")
+
+
+class SharedContractTests(unittest.TestCase):
+    """The slicer's schema deltas landed in the shared files, not restated locally."""
+
+    def setUp(self):
+        self.handoff = (SHARED / "handoff-format.md").read_text(encoding="utf-8")
+        self.hierarchy = (SHARED / "epic-story-hierarchy.md").read_text(encoding="utf-8")
+
+    def test_handoff_format_counts_the_slicer_among_the_pipeline_skills(self):
+        self.assertRegex(self.handoff, r"six pipeline skills")
+        self.assertIn("`slicer`", self.handoff)
+
+    def test_handoff_format_owns_the_slices_line(self):
+        self.assertIn("**Slices:**", self.handoff)
+
+    def test_grounding_omission_rule_covers_the_slicer(self):
+        self.assertRegex(self.handoff, r"planner and \*\*slicer\*\*")
+
+    def test_re_route_arms_are_registered(self):
+        self.assertRegex(self.handoff, r"planner → slicer")
+        self.assertRegex(self.handoff, r"slicer → setup")
+
+    def test_hierarchy_defines_the_slice_and_its_bar(self):
+        self.assertRegex(self.hierarchy, r"deliverable slice\*\* is the smallest increment")
+        self.assertRegex(self.hierarchy, r"independently \*\*demonstrable\*\*")
+        self.assertRegex(self.hierarchy, r"A slice is never itself sliced")
+
+    def test_hierarchy_names_the_slicer_as_the_slice_edge_writer(self):
+        self.assertRegex(self.hierarchy, r"Writer, story→slice — `slicer`")
+
+    def test_hierarchy_records_the_closing_contract_and_the_reopen_gap(self):
+        self.assertRegex(self.hierarchy, r"closes a slice when its last serving phase ships")
+        self.assertRegex(self.hierarchy, r"Reopen is unowned")
+
+
+if __name__ == "__main__":
+    unittest.main()

@@ -1,6 +1,6 @@
 # Handoff format — shared reference
 
-The five pipeline skills (`drafter`, `researcher`, `planner`, `resolver`, `evaluator`) close every clean run with a single **`## Handoff`** block. Each skill runs in its own Claude Code session, so the handoff is the only bridge between sessions — it must read cold and carry a copy-pasteable command for the user to start the next session.
+The six pipeline skills (`drafter`, `researcher`, `slicer`, `planner`, `resolver`, `evaluator`) close every clean run with a single **`## Handoff`** block. Each skill runs in its own Claude Code session, so the handoff is the only bridge between sessions — it must read cold and carry a copy-pasteable command for the user to start the next session.
 
 This file is the single source of truth for the schema, the omission rules, and the state-marker vocabulary. Per-skill renderings (which clean-exit branches a given skill emits, and the exact wording for each) live in that skill's `references/handoff-renderings.md`.
 
@@ -10,6 +10,7 @@ This file is the single source of truth for the schema, the omission rules, and 
 ## Handoff
 
 **Issue:** #N — <title> · <state> · <type> · research: <✓ | ✗ | stale> · plan: <✓ | ✗ | stale>
+**Slices:** #M <N>/S1 (<state>) · … — or — <K> of <T> closed · next: #M <N>/S<K>
 **Grounding:** read at <plan-ref>@<short-sha> · <docs the plan was built on, with §refs> · external: <sources> · full detail in the plan's ## Doc grounding
 **PR:** #M — <title> · <state> · base <ref> · review: <verdict | not run> · health: <✅/❌ at <short-sha> | not run> · merge: <strategy → <ref>@<short-sha> | skipped (<reason>) | not run>
 **Cleanup:** <one-line worktree / branch / scratch summary>
@@ -32,7 +33,8 @@ The block is always present on a clean exit. Lines are omitted (not blanked, not
   - A story under an Epic (evaluator after a story PR merges, resolver working on a story) → `Story:` for the story plus an `Epic:` line for the parent's progress (e.g. `open (3 of 5 stories closed)`).
 - **`research:`** — the research-dossier marker, placed before `plan:` on the `Issue:` / `Story:` line. Present on the researcher's own clean exits (`✓` dossier posted, `✗` judged nothing-to-research) and carried forward on any later skill's handoff for an issue that has a dossier (e.g. the planner shows `research: ✓` once it has ingested one). **Omitted entirely** on issues that never went through the researcher — so the drafter's renderings, and the planner / resolver / evaluator renderings on dossier-less issues, are unchanged. When the marker carries a URL (the researcher's clean exit), append it in parentheses like `plan:` does.
 - **Question-type issue (drafter and resolver)** — a `question` is answered by a human in the issue thread, not built by the pipeline, so it never enters research/plan. Its `Issue:` line is `#N — <title> · <state> · question` with the `research:` and `plan:` markers **omitted** (they don't apply), plus a question-only `**Audience:** <comma-separated audience:* labels>` line. Its clean exit is **terminal** (see Terminal endings).
-- **`Grounding:`** — planner-only, and only on clean exits that **posted a plan**. Opens with `read at <plan-ref>@<short-sha>` — the integration ref the docs were read at (the same `<plan-ref>@<short-sha>` the plan footer records), so the reader knows *which branch's* version of those docs grounded the plan (the same section can differ between `main`, an epic branch, and a PR head). Then lists the project docs (with §refs) the plan was grounded on, summarized from the plan's `## Doc grounding`, plus — when present — the external sources from `## External sources consulted` as a `· external: <sources>` segment, and a pointer to the plan's `## Doc grounding` for the full reasoning. Omitted when no plan was posted (the planner's trivial-change and knowledge-gap re-route exits, both `plan: ✗`) and when the plan grounded against no docs (no `## Doc grounding` section). It is **free-form text, not a state marker** — so it has no entry in the closed-set state-marker vocabulary table.
+- **`Slices:`** — slicer-only among writers, and only on clean exits that **filed or found** deliverable slices; carried forward by a later skill's handoff when the reader benefits from the parent's slice progress (see the variant below). Omitted when the parent has no slices, and on every slicer exit that filed nothing (declined write gate, any refusal). Free-form text, not a state marker.
+- **`Grounding:`** — planner and **slicer**, and only on clean exits that **posted a plan** (planner) or **filed slices** (slicer — the catalogue docs the cut derived from, so a reader can see what the decomposition was grounded on; a cut that hides its grounding defeats the grounding gate). Opens with `read at <plan-ref>@<short-sha>` — the integration ref the docs were read at (the same `<plan-ref>@<short-sha>` the plan footer records), so the reader knows *which branch's* version of those docs grounded the plan (the same section can differ between `main`, an epic branch, and a PR head). Then lists the project docs (with §refs) the plan was grounded on, summarized from the plan's `## Doc grounding`, plus — when present — the external sources from `## External sources consulted` as a `· external: <sources>` segment, and a pointer to the plan's `## Doc grounding` for the full reasoning. Omitted when no plan was posted (the planner's trivial-change and knowledge-gap re-route exits, both `plan: ✗`) and when the plan grounded against no docs (no `## Doc grounding` section). It is **free-form text, not a state marker** — so it has no entry in the closed-set state-marker vocabulary table.
 - **`Open questions:`** — optional, drafter and planner; placed after `Grounding:` and before `PR:` / the fenced next-action block. When the issue (drafter) or plan (planner) gates on unresolved open questions (see [`open-question-links.md`](open-question-links.md)), the handoff carries a free-form `**Open questions:** #<N> | (not filed) (audience:…) [<disposition-or-treatment>], … — <trailing summary>` line listing the companion `question` issues, each in whichever vocabulary the emitting skill uses — the drafter's build-issue set (`scoped-out` / `in-scope (blocked)` / `provisional-default`) or the planner's plan-level set (`planned-around` / `recorded-blocked` / `provisional-default`). The per-entry disposition/treatment token is there when each companion question maps to one clean disposition (the planner's usual case); when several gated scopes share one companion question or the dispositions read more clearly summarized (the drafter's usual case), fold them into the trailing summary instead and skip the per-entry token — either way, always end with a trailing summary in that skill's own style (the drafter's count, e.g. `1 scoped out / 1 blocked-by`; the planner's pointer, e.g. `see the plan's ## Open questions`). Like `Grounding:`, it is **free-form text, not a state marker** — no closed-set entry. Omit when the issue gated no open questions.
 - **`PR:`** — omit entirely when no PR exists. Drafter clean exits and the planner's plan-comment-only clean exits skip this line. Resolver clean exits always have a PR. Evaluator clean exits always have a PR.
 - **`Cleanup:`** — evaluator-only, and only after the merge ran. Its value under the v3 workspace model is `scratch dir purged; worktree retained — release with workspace-close` (the story variant adds its bookkeeping segments): the evaluator no longer removes the worktree — the operator releases it with `/github-pipeline:workspace-close`, which the terminal fence carries. Omit on the evaluator's no-merge branches (soft-reject, DIRTY/BLOCKED-skip, operator-deferred merge, operator Needs-Revision / Reject) and on every other skill's clean exit.
@@ -86,7 +88,22 @@ When the work shape involves an Epic, the heading line and supporting state expa
   **Epic:** #150 — Chat & session UX polish · open (1 of 5 stories closed)
   ```
 
-The Grounding / Open questions / PR / Cleanup / Next / Why lines follow the standard rules — `Open questions:`, when present, sits right after `Grounding:` in both the Epic and Story shapes. When the planner posts an Epic plan, `Grounding:` follows the `Stories:` line; for a story plan, it follows the parent `Epic:` line.
+- **A parent carrying deliverable slices** (slicer on any clean exit that filed slices; see [`epic-story-hierarchy.md`](epic-story-hierarchy.md)). Add a `Slices:` line below the issue/story line, listing each slice with its `<parent#>/S<K>` designator and state marker:
+
+  ```
+  **Issue:** #103 — Patient: access & set up account · open · story · plan: ✗
+  **Slices:** #104 103/S1 (open) · #105 103/S2 (open) · #106 103/S3 (open)
+  ```
+
+  Once slices start closing, switch to the progress-count form the `Stories:` line uses, and flag the next one:
+
+  ```
+  **Slices:** 2 of 3 closed · next: #106 103/S3
+  ```
+
+  Omitted entirely when the parent has no slices — including the slicer's own declined-write-gate and refusal exits, where nothing was filed. Like `Grounding:`, the payload is **free-form text, not a state marker**: there is no `slices:` entry in the closed sets below, and none is needed, because absence is expressed by omitting the line.
+
+The Grounding / Open questions / PR / Cleanup / Next / Why lines follow the standard rules — `Open questions:`, when present, sits right after `Grounding:` in both the Epic and Story shapes. When the planner posts an Epic plan, `Grounding:` follows the `Stories:` line; for a story plan, it follows the parent `Epic:` line. A `Slices:` line sits immediately after the line it qualifies, before `Grounding:`.
 
 ## Terminal endings
 
@@ -117,8 +134,10 @@ A re-route is a handoff whose `Next:` points at a prior skill — typically:
 - planner → researcher (the plan needs current external truth the model can't reliably recall — a dependency/API/version at or past the training cutoff; gather and verify the research first, then re-run the planner)
 - planner → (answer the open question) (every plannable part of the issue is gated by an unresolved open question the planner must not resolve itself; a human answers the companion `question` issue, then the planner re-runs). Terminal-style: the `Next:` names no follow-up skill — the decision is a human's — but carries a re-run breadcrumb. If no companion question is filed yet, point at the drafter to file it first.
 - planner → drafter (the seam gate found a standard issue epic-shaped — most of its seams fall outside the issue's Definition of done; the planner aborts, posts a lean seam-analysis comment, and the drafter promotes #N into an Epic in place, splitting per that comment)
+- planner → slicer (the seam gate found the issue too large to plan as one unit, but its seams are *demonstrable*-independent rather than shippable-independent — it wants deliverable slices, not promotion to an Epic; the planner aborts and the slicer cuts them, handing back)
+- slicer → setup (the consuming repo declares no grounding documents, so the decomposition would invent scope; the slicer refuses and files nothing. Terminal-style for the pipeline: the remedy is a `<!-- doc-catalogue -->` block, not another pipeline stage, but the `Next:` fence carries the setup command)
 
-(The reverse, researcher → planner, is the *forward* route this pipeline normally takes — research is the planner's input — and follows the standard schema, not these re-route rules.)
+(The reverse, researcher → planner, is the *forward* route this pipeline normally takes — research is the planner's input — and follows the standard schema, not these re-route rules. Likewise slicer → planner: the slicer's own forward route, after a cut, is the planner.)
 
 **Forward re-entry of the planner (not a re-route).** Under an epic, the planner is *also* re-entered going forward — once per story, to author that story's just-in-time plan against current epic HEAD. The trigger is the evaluator's "next story" handoff after a sibling story PR merges, or the resolver's epic/story plan gate when a story has no plan yet. This points at the planner (a "prior" skill) but is the **normal epic cadence, not a regression**: it follows the standard schema, and its `Why:` names the next story to plan. Distinguish it from the resolver → planner *revise* re-route above, whose `Why:` quotes the locked decision that broke.
 
@@ -129,6 +148,8 @@ The schema does not change. The `Why:` line is the load-bearing piece — it mus
 - Researcher re-routes (planner → researcher): name the specific ungroundable fact verbatim (the dependency/API/version and what's unknown), so the researcher targets exactly that gap rather than re-researching the whole issue.
 - Open-question re-routes (planner → answer the question): name the blocking OQ id and the companion `question` issue `#N` (and its `audience:*`), so the reader knows exactly which decision unblocks the plan.
 - Epic-shape re-routes (planner → drafter): name how many seams fell outside the issue's Definition of done and point at the seam-analysis comment carrying the inventory and suggested story boundaries.
+- Slice re-routes (planner → slicer): name what makes the issue too large to plan as one unit and why its seams are demonstrable- rather than shippable-independent, so the reader can see why this isn't the Epic off-ramp. No comment is posted for the slicer to read — it re-derives its cut from the grounding docs, so the `Why:` is the whole carrier.
+- Grounding refusals (slicer → setup): name what is absent (no `docs/README.md`, or no catalogue block in it) and that nothing was filed, so the reader knows the issue is untouched.
 
 The resolver does **not** invoke the prior skill via the `Skill` tool on a re-route. The handoff is the only signal; the user runs the revise command in a fresh session. This is intentional: session-per-skill is the architectural choice that lets each skill stay context-clean, and crossing session boundaries silently from inside a skill defeats it.
 

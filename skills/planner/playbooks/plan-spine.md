@@ -46,8 +46,8 @@ researcher (naming the ungroundable fact) rather than planning on a guess.
 *cite*; classify and gate each per
 [`../references/seam-dispositions.md`](../references/seam-dispositions.md) (out-of-slice seams
 hard-gate; follow-ups file through its drafter proxy **before S5** so boundary bullets cite real issue
-numbers; the epic off-ramp only where the routed playbook's `off-ramp` fact offers it — on "Split as
-epic", run its off-ramp flow and end with the abort handoff: no plan posted, no `planned` label).
+numbers; the shape triage offers only the off-ramps the routed playbook's `off-ramp` fact names — on
+either, run its flow and end with the abort handoff: no plan posted, no `planned` label).
 **Deviation (§6):** if the best approach genuinely departs from architecture / architecture-notes /
 ui-design / precedent, stop before drafting and gate (`header: "Deviation"`): **Approve** (record in
 `## Deviations from project docs` with the date) / **Reject — re-plan** / **Update doc first**. A

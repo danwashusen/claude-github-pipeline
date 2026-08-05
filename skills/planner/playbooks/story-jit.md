@@ -34,8 +34,10 @@ this route supplies:
   backlink as the **first line after** the marker (never above it) and a `## Epic contract` section —
   `Delivers` (matching the epic's `## Story contracts`) and `Consumes` (each already in the delivery
   log), every line `[epic-plan: #<N>]`-cited (see [`../references/plan-schema.md`](../references/plan-schema.md)).
-- **Off-ramp (spine S4).** `off-ramp: not offered` — a story that outgrows its slice is an epic-contract
-  problem: re-route to the planner on the parent epic in revise mode (the feedback edge above).
+- **Off-ramp (spine S4).** `off-ramp: slicer offered — epic not offered` — a story too large to plan as
+  one unit is sliceable (slices are phases on its own branch), but a story that outgrows its epic
+  *contract* is an epic-contract problem: re-route to the planner on the parent epic in revise mode
+  (the feedback edge above), never promote a story to an epic.
 - **Reviewer dimensions (spine S7).** `1, 2, 3, 4, 6, 8`; add `7` for a multi-phase story, passing
   `<<live_slices>>` from `facts.slices` so its slice-coverage check runs — pass the epic plan + delivery-log staged
   paths so Dimension 8 checks the `## Epic contract` against the epic's `## Story contracts` and the

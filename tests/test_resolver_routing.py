@@ -350,6 +350,57 @@ def _run_persist(args, body_text=None):
     return proc, envelope
 
 
+class SliceClosingRungTests(unittest.TestCase):
+    """S6's slice-closing rung (#17). Slices exist so GitHub's rollup tracks delivery progress, so a
+    slice set that never closes leaves a permanent `0/N` — worse than filing none. These pin the three
+    things that make the rung correct rather than merely present."""
+
+    def setUp(self):
+        raw = (PLAYBOOKS_DIR / SPINE).read_text(encoding="utf-8")
+        self.spine = re.sub(r"\s+", " ", raw.replace("**", ""))
+        self.rule = re.sub(
+            r"\s+",
+            " ",
+            (REFERENCES_DIR / "dod-projection-rule.md").read_text(encoding="utf-8").replace("**", ""),
+        )
+
+    def test_the_rung_keys_off_the_phase_sub_issue_field(self):
+        self.assertIn("sub_issue", self.spine)
+        self.assertIn("facts.phases", self.spine)
+
+    def test_it_closes_on_the_last_serving_phase_not_the_first(self):
+        """N:1 — several phases may serve one slice. Closing on the first would report an increment
+        complete while part of it is still unbuilt."""
+        self.assertRegex(self.spine, r"closes on the last of the phases serving it, never the first")
+        self.assertRegex(self.rule, r"Close only when every phase naming it is ticked")
+
+    def test_substrate_and_unmapped_phases_close_nothing(self):
+        self.assertRegex(self.spine, r"\(none\).{0,20}is substrate")
+        self.assertRegex(self.spine, r"is unmapped; both close nothing")
+        self.assertRegex(self.rule, r"close nothing")
+
+    def test_closing_before_merge_is_justified_by_the_demonstrable_bar(self):
+        """The objection this pre-empts: "you closed an issue whose code isn't on main"."""
+        self.assertRegex(self.spine, r"bar is .demonstrable.")
+        self.assertRegex(self.spine, r"not that its code is on the default branch")
+
+    def test_tier_1_ticks_the_acceptance_criteria_not_a_dod(self):
+        self.assertIn("## Acceptance criteria", self.spine)
+        self.assertRegex(self.rule, r"DoD contract above applies to the parent")
+
+    def test_both_writes_are_idempotent_so_the_backstop_can_re_run(self):
+        self.assertRegex(self.spine, r"[Bb]oth are idempotent")
+        self.assertRegex(self.rule, r"Already-closed slice.*no-op")
+
+    def test_slice_close_dry_run(self):
+        proc, env = _run_persist(["close", "octo/widgets", "104", "--reason", "completed", "--dry-run"])
+        self.assertEqual(proc.returncode, 0, msg="stderr: %s" % proc.stderr)
+        envelope_asserts.assert_full_envelope_conformance(env)
+        self.assertEqual(env.get("op"), "close")
+        self.assertTrue(env.get("dry_run"))
+        self.assertIn("would_run", env)
+
+
 class PlaybookPersistDryRunTests(unittest.TestCase):
     """Each GitHub write the resolver playbooks specify, run with --dry-run: a conformant envelope,
     status ok, `would_run` present, exit 0, no live gh call. These are the exact gh_persist invocation

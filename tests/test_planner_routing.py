@@ -326,6 +326,58 @@ class SubIssueReconciliationRuleTests(unittest.TestCase):
         self.assertEqual(n, 128, "plan-spine.md is %d lines; the 251 bar assumes 128" % n)
 
 
+class ShapeTriageOffRampTests(unittest.TestCase):
+    """The seam gate's shape triage offers TWO off-ramps, selected by the independence bar the seams
+    clear (#17): shippable-independent → the epic split; demonstrable-independent → the slicer.
+
+    The asymmetry between them is the load-bearing part: off-ramp A posts a seam-analysis comment the
+    drafter splits *per*, while off-ramp B posts **nothing**, because the slicer re-derives its cut from
+    the repo's grounding docs and a planner-authored proposal would compete with it. An editor who
+    "harmonizes" the two by adding a comment to B creates exactly the stale second decomposition #18's
+    one-way-pointer rule exists to prevent.
+    """
+
+    def setUp(self):
+        raw = (REFERENCES_DIR / "seam-dispositions.md").read_text(encoding="utf-8")
+        self.seams = re.sub(r"\s+", " ", raw.replace("**", ""))
+        self.renderings = re.sub(
+            r"\s+", " ", (REFERENCES_DIR / "handoff-renderings.md").read_text(encoding="utf-8")
+        )
+
+    def test_triage_selects_on_the_independence_bar(self):
+        self.assertIn("Shape triage", self.seams)
+        self.assertIn("demonstrable", self.seams)
+        self.assertIn("shippable", self.seams)
+        self.assertRegex(self.seams, r"Slice first")
+        self.assertRegex(self.seams, r"Split as epic")
+
+    def test_both_off_ramp_flows_exist_and_are_distinguished(self):
+        self.assertIn("Off-ramp A", self.seams)
+        self.assertIn("Off-ramp B", self.seams)
+
+    def test_off_ramp_b_posts_nothing(self):
+        self.assertRegex(self.seams, r"On \"Slice first\": post nothing at all")
+        self.assertRegex(self.seams, r"asymmetry with off-ramp A is deliberate")
+
+    def test_off_ramp_b_is_a_round_trip_back_through_reconciliation(self):
+        self.assertRegex(self.seams, r"slicer hands back here")
+        self.assertIn("sub-issue-reconciliation.md", self.seams)
+
+    def test_rendering_exists_and_routes_to_the_slicer(self):
+        self.assertIn("Too large to plan as one unit", self.renderings)
+        self.assertIn("/github-pipeline:slicer", self.renderings)
+
+    def test_single_offers_both_off_ramps_and_story_jit_only_the_slicer(self):
+        single = (PLAYBOOKS_DIR / "single.md").read_text(encoding="utf-8")
+        story_jit = (PLAYBOOKS_DIR / "story-jit.md").read_text(encoding="utf-8")
+        self.assertIn("`off-ramp: epic + slicer offered`", single)
+        self.assertIn("`off-ramp: slicer offered — epic not offered`", story_jit)
+        # A story is never promoted to an epic — that stays an epic-contract re-route.
+        self.assertRegex(
+            re.sub(r"\s+", " ", story_jit), r"never promote a story to an epic"
+        )
+
+
 class PlaybookInterleavingGrepTests(unittest.TestCase):
     """A playbook is a linear narrative for exactly one route — zero cross-route conditionals. Fails on
     either an `if … <route> … else …` construct or a `when the issue/type is a <route>` prose branch, over

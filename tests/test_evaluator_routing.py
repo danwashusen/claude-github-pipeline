@@ -340,6 +340,55 @@ class PlaybookPersistDryRunTests(unittest.TestCase):
         self.assertNotIn("url", env, "a dry-run must not carry a live-write url")
 
 
+class SliceBackstopTests(unittest.TestCase):
+    """The merge-time slice-closing backstop (#17). The resolver owns closing a slice as its last
+    serving phase ships; the evaluator only catches slices an interrupted run left open, because a
+    slice still open behind a merged parent leaves the rollup permanently short."""
+
+    def setUp(self):
+        self.story = re.sub(
+            r"\s+", " ", (PLAYBOOKS_DIR / "story.md").read_text(encoding="utf-8").replace("**", "")
+        )
+        self.standard = re.sub(
+            r"\s+", " ", (PLAYBOOKS_DIR / "standard.md").read_text(encoding="utf-8").replace("**", "")
+        )
+        self.epic = (PLAYBOOKS_DIR / "epic-integration.md").read_text(encoding="utf-8")
+
+    def test_story_route_closes_the_stories_own_slices(self):
+        self.assertRegex(self.story, r"close any of the story's own open sub-issues")
+        self.assertIn("epic-story-hierarchy.md", self.story)
+
+    def test_standard_route_closes_the_issues_slices_since_auto_close_does_not(self):
+        """The parent auto-closes on merge into `main`; its sub-issues never do."""
+        self.assertRegex(self.standard, r"its sub-issues do not")
+        self.assertRegex(self.standard, r"close any remaining deliverable slices")
+
+    def test_both_routes_frame_it_as_a_backstop_not_the_owner(self):
+        for text, name in ((self.story, "story.md"), (self.standard, "standard.md")):
+            self.assertRegex(text, r"backstop only", name)
+            self.assertRegex(text, r"resolver normally closes each as its last serving phase ships", name)
+
+    def test_neither_route_ticks_acceptance_criteria(self):
+        """Two writers for one projection is the defect this avoids."""
+        for text, name in ((self.story, "story.md"), (self.standard, "standard.md")):
+            self.assertRegex(text, r"Don't tick the slices' `## Acceptance criteria` here", name)
+
+    def test_epic_integration_is_untouched(self):
+        """An epic's sub-issues are STORIES, not slices, and this route explicitly files no story
+        bookkeeping — adding a slice sweep here would contradict that sentence."""
+        self.assertIn("files no story bookkeeping", self.epic)
+        self.assertNotIn("deliverable slice", self.epic)
+
+    def test_slice_close_dry_run(self):
+        proc, envelope = _run_persist(
+            ["close", "octo/widgets", "104", "--reason", "completed", "--dry-run"]
+        )
+        self.assertEqual(proc.returncode, 0, msg="stderr: %s" % proc.stderr)
+        envelope_asserts.assert_full_envelope_conformance(envelope)
+        self.assertEqual(envelope.get("op"), "close")
+        self.assertTrue(envelope.get("dry_run"))
+
+
 class ArtifactRenderingByteCompatTests(unittest.TestCase):
     """The artifact renderings this skill writes must diff clean against the S1-captured v1 examples
     (S7 DoD box 2). Parses the fenced template block out of each reference and the matching example

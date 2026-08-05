@@ -24,13 +24,24 @@ Conform to [`../../_shared/asking-the-user.md`](../../_shared/asking-the-user.md
 question, 2–4 options, recommendation as option 1, the auto-appended "Other" absorbs anything the
 options omit.
 
-1. **Epic-shape triage** (`header: "Issue shape"`) — only when several seams are out-of-slice **and**
-   the routed playbook's `off-ramp` fact is `offered`: the issue is structurally an epic filed as a
-   standard issue. Offer **Split as epic** (recommended — the epic machinery's `## Story contracts`
-   + just-in-time story plans is built to hold exactly this seam registry) / **Gate per-seam**
-   (proportionate when the epic's standing ceremony — integration branch, delivery log, per-story
-   review round-trips — isn't warranted). On "Split as epic", run the off-ramp flow below and stop —
-   no per-seam questions.
+1. **Shape triage** (`header: "Issue shape"`) — only when the seam inventory says this issue is too
+   large to plan as one unit, and only for the off-ramps the routed playbook's `off-ramp` fact
+   actually offers. Which off-ramp depends on **one** thing: the independence bar the seams clear.
+
+   | Seam inventory | Bar the children clear | Offer |
+   |---|---|---|
+   | few seams, all inside the issue's DoD | — | nothing: gate per-seam and plan it multi-phase |
+   | many increments, each **demonstrable** but sharing one branch and PR | demonstrable | **Slice first** (off-ramp B) |
+   | most seams **outside** the DoD, each its own shippable unit | shippable | **Split as epic** (off-ramp A) |
+
+   Offer the apt off-ramp plus **Gate per-seam** (proportionate when the ceremony isn't warranted —
+   for an epic that means the integration branch, delivery log, and per-story review round-trips).
+   Recommend **Split as epic** when the seams are shippable-independent: the epic machinery's
+   `## Story contracts` + just-in-time story plans is built to hold exactly that seam registry.
+   Recommend **Slice first** when they are only demonstrable-independent: slices are phase markers on
+   *this* issue's branch, so promoting to an epic would buy ceremony the work doesn't need while
+   splitting one deliverable across several PRs. On either off-ramp, run its flow below and stop — no
+   per-seam questions.
 2. **Per-seam questions** — one question per under-defined / out-of-slice seam (`header:` the seam's
    short name), at most 4 seams per `AskUserQuestion` call, further seams in follow-on calls. Offer
    the 3–4 dispositions most apt for that seam:
@@ -73,7 +84,7 @@ Record every gated seam's answer — the plan is the resolver's only view of the
 No new schema section: the residue rides the existing `## Architecture decisions` vocabulary, so the
 resolver's "plan decisions are binding" contract covers it unchanged.
 
-## Off-ramp flow (planning aborted; the issue becomes an Epic)
+## Off-ramp A (planning aborted; the issue becomes an Epic)
 
 On "Split as epic": stage a **lean** seam-analysis comment to `<facts.scratch>/seam-analysis.md` —
 the seam inventory (name, classification, one line each) plus suggested story boundaries, nothing
@@ -91,3 +102,22 @@ Then end the session with the **Epic-shaped, planning aborted** handoff
 drafter revising #N as an Epic. Post **no** plan and **no** `planned` label — nothing was planned;
 the comment is the analysis' durable record, and the drafter's prep spills it with the thread, so
 the split candidates arrive in that session for free.
+
+## Off-ramp B (planning aborted; the issue is sliced first)
+
+On "Slice first": **post nothing at all** and end with the **Too large to plan as one unit** handoff
+([`handoff-renderings.md`](handoff-renderings.md)): `plan: ✗`, no `Grounding:` line, no `planned`
+label, `Next:` the slicer on #N.
+
+The asymmetry with off-ramp A is deliberate. The drafter splits *per* the seam-analysis comment, so
+that comment is the handover artifact; the slicer instead re-derives its own cut from the repo's
+declared grounding docs ([`../../slicer/references/slicing-method.md`](../../slicer/references/slicing-method.md)),
+so a planner-authored comment would be a second, staler decomposition proposal competing with it —
+and one the operator would have to reconcile. The `Why:` line carries everything the slicer's reader
+needs: what makes the issue too large, and why its seams are demonstrable- rather than
+shippable-independent.
+
+The slicer hands back here. Its slices then arrive as facts on the next run — `facts.slices` plus the
+plan-versus-live diff — and the phase set must satisfy the cardinality rule in
+[`sub-issue-reconciliation.md`](sub-issue-reconciliation.md). So this off-ramp is a round trip, not a
+dead end, and the second pass plans *against* the approved cut rather than re-deciding it.

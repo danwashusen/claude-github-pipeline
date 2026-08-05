@@ -64,7 +64,7 @@ Every playbook opens by reading the shared spine `playbooks/plan-spine.md` (S1�
 persist). The routed playbook supplies only what **differs in actions**: the schema sections it fills,
 the reviewer dimension set it passes, its pre-draft reconnaissance, and its handoff shape. Type
 differences the spine consumes (`plan_ref`, the dimension set, which schema sections, `off-ramp` —
-whether the seam gate offers the epic off-ramp) are **facts / values**, never branches.
+which off-ramps the shape triage may offer) are **facts / values**, never branches.
 
 **Override rule** (`architecture.md §5`): honor `suggested_playbook` unless the thread carries evidence
 the script could not see (e.g. it supersedes the labels' type) — state the reason. Never interleave type

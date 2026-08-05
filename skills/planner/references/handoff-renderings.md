@@ -213,6 +213,25 @@ stopped. `plan: ✗`, no `Grounding:` (no plan posted), no `planned` label.
 **Why:** planning surfaced 4 seams outside #142's Definition of done; a single-issue plan would pin contracts this issue doesn't own. The epic machinery (`## Story contracts` + just-in-time story plans) is built to hold that seam registry. The seam-analysis comment on #142 carries the inventory and suggested story boundaries; after promotion, re-run `/github-pipeline:planner #142` for the epic plan.
 ```
 
+**Too large to plan as one unit — re-route to the slicer.** The shape triage chose "Slice first"
+(`references/seam-dispositions.md` off-ramp B): the increments are each demonstrable but share one
+branch and PR, so they are deliverable slices, not stories. **Nothing is posted** — no plan, no
+`planned` label, and (unlike the epic off-ramp) no seam-analysis comment: the slicer re-derives its cut
+from the repo's declared grounding docs, so a planner-authored proposal would compete with it. `plan: ✗`,
+no `Grounding:`. This is a round trip — the slicer hands back.
+
+```
+## Handoff
+
+**Issue:** #103 — Patient: access & set up account · open · story · plan: ✗
+
+**Next:** cut #103 into deliverable slices, then re-run the planner.
+
+    /github-pipeline:slicer 103
+
+**Why:** #103 carries five distinct observable increments — first login, returning login, password reset, intake step one, intake completion — each demonstrable on its own but none independently shippable, since they land on one branch behind one PR. That is a slice set, not an epic's story set: promoting #103 would buy the integration branch, delivery log, and per-story review round-trips that this work doesn't need, and would split one deliverable across five PRs. A single-issue plan would instead hide the sequencing in phases nothing tracks. After the cut, re-run `/github-pipeline:planner 103` — `facts.slices` then carries the approved set and reconciliation maps phases onto it (`references/sub-issue-reconciliation.md`).
+```
+
 **Open question blocks the whole plan — re-route to answer it.** Every plannable part is gated by an
 unresolved open question the planner must not resolve. Terminal-style: no follow-up skill (a human
 answers), with a re-run breadcrumb. `plan: ✗`.

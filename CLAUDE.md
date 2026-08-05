@@ -14,7 +14,7 @@ artifact and no package manager. The "source" is:
   `gh_pr_gather.py`, `gh_persist.py`, `config_block.py`), `workspace.py` (worktree mechanics:
   ensure/attach/remove/gc/lint), `refblocks.py` (the origin/main pin + at-ref config reads) and
   `branching.py` (branch naming / type detection / prior-PR rows / linked branches — both
-  import-only), `parse.py` (DoD / open-question-links / phases), the ten `prep_*.py`
+  import-only), `parse.py` (DoD / open-question-links / phases), the eleven `prep_*.py`
   state-assembly scripts (including `prep_workspace_open.py` / `prep_workspace_close.py`, whose
   prep IS the tool's action), the `oq_tracker.py` and `doc_catalogue.py` helpers the preps compose
   (the open-question tracker search; the consuming repo's declared grounding docs), and
@@ -61,13 +61,13 @@ any prompt edit; they are cheap and they are the only regression net prose has.
 
 ## Architecture
 
-### Eleven skills: five pipeline stages, six standalone tools
+### Twelve skills: six pipeline stages, six standalone tools
 
 ```
-draft ──▶ research ──▶ plan ──▶ resolve ──▶ evaluate
+draft ──▶ research ──▶ slice ──▶ plan ──▶ resolve ──▶ evaluate
 ```
 
-The **pipeline stages** are `drafter`, `researcher`, `planner`, `resolver`, `evaluator`; the
+The **pipeline stages** are `drafter`, `researcher`, `slicer`, `planner`, `resolver`, `evaluator`; the
 **standalone tools** are `setup`, `question-sweep`, `question-resolver`, `doc-reviewer`,
 `workspace-open`, `workspace-close` ([prd.md §2](docs/prd.md)). The two workspace tools are the
 v3 operator-owned lifecycle: the operator runs `workspace-open <issue>` between planning and
@@ -86,7 +86,16 @@ the drafter** when its seam gate finds a standard issue epic-shaped (most seams 
 DoD): it aborts with a lean seam-analysis comment and the drafter promotes #N into an Epic in place
 (`skills/planner/references/seam-dispositions.md`). v1 behaved identically — the S15 parity
 record's Scenario 4(b) has v1's drafter `Next:` pointing at its own planner — so this is doc truth
-being corrected, not a behavior change. The stage/tool split is load-bearing, not cosmetic:
+being corrected, not a behavior change.
+
+`slice` is the **second** conditional detour off `plan`, and the planner's seam gate picks between the
+two off-ramps on one criterion — the independence bar the seams clear. Seams *shippable*-independent
+(each wants its own branch and PR) → the drafter promotes to an Epic; seams only
+*demonstrable*-independent (increments sharing one branch) → the **slicer** cuts deliverable slices and
+hands **back** to the planner, whose phases then map onto them via `sub-issue:`. The slicer is also
+operator-invocable directly. Unlike the epic off-ramp it posts **no** analysis comment: it re-derives
+its cut from the repo's declared grounding docs, so a planner-authored proposal would be a competing,
+staler decomposition. The stage/tool split is load-bearing, not cosmetic:
 
 - A pipeline stage runs in **its own Claude Code session** and ends with a `## Handoff` — a
   cold-readable summary plus the copy-pasteable command that starts the next session. There is no
@@ -270,16 +279,23 @@ where the gate-weakening threat model cannot apply.
   absent-catalogue rule (including that a proceeding reader and a refusing reader are **both** correct
   responses to the same absent fact — don't "fix" one to match the other). The *read mechanics* belong
   to `scripts/doc_catalogue.py` and the *authoring flow* to `skills/setup/references/block-authoring.md`.
-- `epic-story-hierarchy.md` — the epic↔story relation: GitHub's **native parent/sub-issue**
-  relation, written only by the **drafter** at filing time (`gh_persist.py create --parent`) on every
-  path that files a story under an epic (fresh batch, promotion, epic-revise's new stories), and read
-  by the **planner**, **resolver**, and **evaluator** through a two-tier read — native first, the
-  legacy `## Stories` checklist second, `stories_source` reporting which answered. A fresh epic body
-  has **no** `## Stories` section (a checklist can't self-tick and can't drive GitHub's panel, rollup,
-  or a Project's Sub-issues progress field). The fallback is load-bearing: there is **no backfill
-  path**, so epics filed before 3.1.0 — and any host where `subissues_available: false` — live on
-  the `checklist` source permanently; an epic with both reads as `mixed` and is unioned, never
-  halved. No reader ever gates on the relation's absence.
+- `epic-story-hierarchy.md` — the **three-level** hierarchy `epic → story → deliverable slice`, both
+  edges being GitHub's **native parent/sub-issue** relation. The epic↔story edge is written only by the
+  **drafter** at filing time (`gh_persist.py create --parent`) on every path that files a story under an
+  epic (fresh batch, promotion, epic-revise's new stories); the story↔slice edge only by the
+  **slicer**. Read by the **planner**, **resolver**, and **evaluator** through a two-tier read — native
+  first, the legacy `## Stories` checklist second, `stories_source` reporting which answered. A fresh
+  epic body has **no** `## Stories` section (a checklist can't self-tick and can't drive GitHub's panel,
+  rollup, or a Project's Sub-issues progress field). The fallback is load-bearing: there is **no
+  backfill path**, so epics filed before 3.1.0 — and any host where `subissues_available: false` — live
+  on the `checklist` source permanently; an epic with both reads as `mixed` and is unioned, never
+  halved. No reader ever gates on the relation's absence. This file also defines **deliverable slice**
+  once (the one-parameter difference from a story: *demonstrable* vs *shippable*, set by whether the
+  child gets its own branch), the by-construction identification rule (a non-epic's sub-issues are
+  slices) with its two constraints (slices only under non-epic targets; **never slice a slice**), the
+  closing contract (the resolver closes on the *last* serving phase; the evaluator is a merge-time
+  backstop), and the recorded gap that **reopen is unowned**. The slice edge has no checklist fallback
+  and never will — slices postdate the relation.
 - `epic-delivery-log.md` — the `<!-- epic-delivery-log:v1 -->` comment contract and its
   writer/reader split. The **evaluator** is the sole writer (one entry per story at merge); the
   **planner** reads it (just-in-time story planning + the "consumes only what's shipped" check). It
