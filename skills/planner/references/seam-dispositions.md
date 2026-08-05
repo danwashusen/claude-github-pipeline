@@ -124,7 +124,7 @@ planner-authored comment would be a second, staler decomposition proposal compet
 the operator would have to reconcile. The `Why:` line carries everything that reader needs: what makes
 the issue too large, and why its seams are demonstrable- rather than shippable-independent.
 
-The slicer hands back here. Its slices then arrive as facts on the next run — `facts.children` plus the
+The slicer hands back here. Its slices then arrive as facts on the next run — `facts.slices` plus the
 plan-versus-live diff — and the phase set must satisfy the cardinality rule in
 [`sub-issue-reconciliation.md`](sub-issue-reconciliation.md). So this off-ramp is a round trip, not a
 dead end, and the second pass plans *against* the approved cut rather than re-deciding it.

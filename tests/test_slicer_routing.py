@@ -68,9 +68,23 @@ ROUTABLE_PLAYBOOKS = {"cut.md"}
 #   +12  router: the promote rule (the one thing only the router can decide), the rewritten refusal
 #        set, and the added handoff fields.
 #
-# The router itself still fits one default Read (120 <= 150), which is the bar that actually protects
-# session startup; the growth is in the playbook, loaded only on the routed path.
-SLICER_BAR = 261
+# RE-ADJUDICATED AGAIN by the #16 code review (261 -> 278). The review found precision MISSING rather
+# than surplus, and every line added closes a defect it demonstrated:
+#
+#   +6   router: the third sanctioned parent-body write (the bookend-omission `## Background` note,
+#        which S4 gates and S5 executes — it was required by the method with no gate and no step, so
+#        the instruction was unexecutable), the facts keys the playbook actually reads (`root`,
+#        `scratch`, `entries`, `placeholder_count`), and the two further decision codes the composed
+#        gather can return.
+#   +11  cut.md: unfiled `## Stories` bullets are the cut's INPUT, not its resume set (they were being
+#        counted as existing children, so the flow reported "cut only the remainder" and filed
+#        nothing); the `<<pass>>` and `<<changed_summary>>` inputs the reviewer prompt defines and
+#        hangs behaviour on but nothing filled; the S4 gate row and S5 step for the bookend note.
+#
+# Trimming any of it would restore a defect, which is precisely what prd.md §10's provision and the
+# S19 precedent forbid. The router still fits one default Read (126 <= 150) — the bar that actually
+# protects session startup; the growth is in the playbook, loaded only on the routed path.
+SLICER_BAR = 278
 
 sys.path.insert(0, str(SCRIPTS_DIR))
 

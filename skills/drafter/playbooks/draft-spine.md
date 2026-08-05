@@ -103,7 +103,7 @@ Before showing the draft, hand it to the isolated review sub-agent
 [`../references/issue-reviewer-prompt.md`](../references/issue-reviewer-prompt.md) — it runs **without
 the conversation history**, so it tests whether the issue stands on its own the way a teammate reading
 it cold would; it runs for both new drafts and revisions — don't skip it. Dispatch an `Explore`
-sub-agent, inlining the draft, the `mode` (`draft` / `revise <N>` / `split`), the **review tier**,
+sub-agent, inlining the draft, the `mode` (`draft` / `revise <N>`), the **review tier**,
 `facts.root.path` (ground every read there **by absolute path** — the sub-agent has its own cwd,
 and the session's checkout IS the intended vantage), `facts.config.oq_markers`, and the **dimension set the routed playbook names**, plus (Epic)
 the sibling drafts. The routed playbook names the tier — default **full** absent a stated tier; a

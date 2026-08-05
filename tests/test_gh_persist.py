@@ -1016,7 +1016,10 @@ class AddParentTests(unittest.TestCase):
         self.assertEqual(env["status"], "ok")
         self.assertFalse(env["changed"])
         self.assertTrue(env["subissues_unsupported"])
-        self.assertIn("SUBISSUES_UNSUPPORTED", env["notices"])
+        # Exact, not `in`: emitting DEPS_UNSUPPORTED as well would send the reader to the prose
+        # dependency-linking fallback instead of the legacy `## Stories` checklist — the confusion the
+        # two codes are kept separate to prevent.
+        self.assertEqual(env["notices"], ["SUBISSUES_UNSUPPORTED"])
         self.assertNotIn("url", env)
         # No retry: dropping the relation would leave an empty edit, so there is nothing to descend
         # to -- exactly one call, matching link's deps degradation rather than create's ladder.
@@ -1028,8 +1031,25 @@ class AddParentTests(unittest.TestCase):
         # to a benign notice would tell the caller the adoption was skipped for host reasons when in
         # fact its real parenting attempt failed.
         for stderr_text in (
+            # Messages that do NOT name the relation — the easy half.
             "the parent issue is closed\n",
             "cannot add a parent to itself\n",
+            "could not resolve to an Issue with the number 99999\n",
+            "HTTP 403: You must have write access to the repository\n",
+            "API rate limit exceeded\n",
+            # The load-bearing half: every one of these NAMES the relation, so the bare-noun
+            # alternative in _SUBISSUES_ERROR_PATTERN matches them. They are integrity, quota and
+            # permission failures, not a missing capability, and degrading any of them tells the
+            # caller the host doesn't serve sub-issues when in fact its real write failed.
+            "Unprocessable Entity: Sub-issue is already parented\n",
+            "this issue is already a sub-issue of #5\n",
+            "You have exceeded the maximum number of sub-issues (100)\n",
+            "sub-issues cannot be nested more than 8 levels deep\n",
+            "A sub-issue must belong to the same repository as its parent\n",
+            "Sub-issue cannot be its own parent\n",
+            # gh appends the failing GraphQL path to API errors, and `--parent` is implemented via
+            # the addSubIssue mutation — so a plain 403 arrives carrying the relation's name.
+            "GraphQL: Resource not accessible by personal access token (addSubIssue)\n",
         ):
             with self.subTest(stderr=stderr_text):
                 integrity_failure = process.CommandResult(
@@ -1051,6 +1071,43 @@ class AddParentTests(unittest.TestCase):
                 self.assertEqual(exit_code, 1)
                 self.assertEqual(buf_out.getvalue(), "")
                 self.assertIn(stderr_text.strip(), buf_err.getvalue())
+
+    def test_genuine_capability_misses_still_degrade(self):
+        """The other side of the deny list: it must not over-reach and turn a real capability miss into
+        a hard failure, which would break `add-parent` on every host that genuinely lacks the flag."""
+        for stderr_text in (
+            "unknown flag: --parent\n",
+            'unknown JSON field: "subIssues"\n',
+            "sub-issues are not available on this host\n",
+            "sub-issue support is disabled for this repository\n",
+        ):
+            with self.subTest(stderr=stderr_text):
+                self.assertTrue(gh_persist._is_subissues_error(stderr_text), stderr_text)
+
+    def test_self_parenting_is_caught_through_every_equivalent_spelling(self):
+        """gh accepts a bare number and a URL interchangeably, so a raw string compare let `42` +
+        `#42` (or a URL for the same issue) reach gh, leaving gh's own rejection text as the only
+        backstop — and that text names the relation, so it used to be degraded."""
+        for child, parent in (
+            ("42", "#42"),
+            ("#42", "42"),
+            ("42", " 42 "),
+            ("42", "https://github.com/o/r/issues/42"),
+            ("https://github.com/o/r/issues/42", "42"),
+            ("42", "https://github.com/o/r/issues/42/"),
+        ):
+            with self.subTest(child=child, parent=parent):
+                result = _run_script(["add-parent", "o/r", child, parent])
+                self.assertEqual(result.returncode, 2, "%r vs %r must be a usage error" % (child, parent))
+                self.assertEqual(result.stdout, "")
+
+    def test_distinct_issues_are_not_confused_by_the_normalizer(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            cmd = ["issue", "edit", "151", "--repo", "o/r", "--parent", "#150"]
+            _write_stdout_file(tmp, "url.txt", b"https://github.com/o/r/issues/151\n")
+            _write_manifest(tmp, [{"argv": cmd, "stdout_file": "url.txt"}])
+            result = _run_script(["add-parent", "o/r", "151", "#150"], fixtures_dir=tmp)
+            self.assertEqual(result.returncode, 0, msg=result.stderr)
 
     def test_surfaces_auth_required_as_needs_decision(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -1080,6 +1137,10 @@ class AddParentTests(unittest.TestCase):
         self.assertTrue(env["dry_run"])
         self.assertIn("--parent 150", env["would_run"])
         self.assertNotIn("url", env)
+        # No outcome claim on a run that wrote nothing: `cut.md` documents that the caller reads
+        # `changed`, so `changed: true` here would record every rehearsed adoption as applied.
+        self.assertNotIn("changed", env)
+        self.assertNotIn("subissues_unsupported", env)
         self.assertEqual(fake.calls, [])
 
     def _run_add_parent_in_process(self, cli_args, scripted_results):

@@ -843,7 +843,7 @@ class ReviewTierAndAnchorRuleTests(unittest.TestCase):
             self.spine_flat,
             "the spine's tier default must be route-neutral (no per-route enumeration)",
         )
-        # Full tier keeps the literal mechanics epic-split.md cross-references by name.
+        # Full tier keeps the literal review-loop control mechanics by name.
         self.assertIn("3-pass cap", self.spine)
         self.assertIn("**circular** exit", self.spine)
 

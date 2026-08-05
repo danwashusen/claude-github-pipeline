@@ -32,10 +32,13 @@ Assemble the entire starting state in **one** call:
 ${CLAUDE_PLUGIN_ROOT}/scripts/prep_slicer.py <issue> <owner/repo>
 ```
 
-It returns one JSON **facts block** (`architecture.md §4`): `vector` (`type` × `altitude` (`story`/`epic`)
+It returns one JSON **facts block** (`architecture.md §4`): `repo`, `scratch` (where bodies are
+staged), `root` (`path`/`sha` — the grounding vantage), `vector` (`type` × `altitude` (`story`/`epic`)
 × `mode` (`fresh`/`resume`) × `refusals`), `suggested_playbook`, `target` (number/title/state/labels/`type`,
 the typed `parent`, open `blocked_by`), `promotion`, `children` (what already exists, in panel order —
-`kind` (`slices`/`stories`), `count`, `open_count`, `next_index`, `source`), `adoption_candidates`,
+`kind` (`slices`/`stories`), `entries`, `count` and `open_count` (**filed** children only),
+`placeholder_count` (legacy `## Stories` bullets naming stories nobody filed — the cut still files
+those), `total_named`, `next_index`, `source`), `adoption_candidates`,
 `grounding_docs` (the repo's `<!-- doc-catalogue -->` entries — `path`/`role`/`authority`/`present`),
 `research` (dossier present), `open_questions` (the `in-scope (blocked)` entries), `sections` (spilled
 body/thread paths), and `attention`. Consume each as **data** — never re-derive the type, the altitude,
@@ -48,7 +51,8 @@ one-shot `prep_slicer.py <owner/repo> --adopt-check <N>` reports live state with
 
 **Decision card rule.** If prep exits `status: needs_decision`, render its `decision` as one
 `AskUserQuestion` card (per [`../_shared/asking-the-user.md`](../_shared/asking-the-user.md)), act,
-and re-run prep — the single universal handler for every closed-set code (`AUTH_REQUIRED`).
+and re-run prep — the single universal handler for every closed-set code (`AUTH_REQUIRED`,
+`MARKER_AMBIGUOUS`, `TARGET_IS_PR`).
 
 ## 2. Route
 
@@ -78,13 +82,15 @@ recommends it, ask first (`header: "Issue size"`) — promotion rewrites the iss
 
 - **Zero GitHub mutations before the one write gate.** Everything up to the cut summary is a read;
   everything after it is a write ([prd.md §8.2](../../docs/prd.md) report-then-apply). Aborting at the
-  gate costs nothing — that is the point of the gate, so never let a write creep earlier. A promotion
-  rewrite is the one write that precedes it, behind its **own** explicit confirmation (S0) — the cut
-  itself still mutates nothing before its gate.
+  gate costs nothing — that is the point of the gate, so never let a write creep earlier. The promotion
+  rewrite and its label swap are the only writes that precede it, behind their **own** explicit
+  confirmation (S0) — the cut itself still mutates nothing before its gate.
 - **The parent's body is never edited** by the cut, and no `## Slices` section is ever written (the
-  shared contract says why). Child detail lives only in child bodies. Exactly two parent-body writes are
-  sanctioned, each behind its own explicit gate: the promotion rewrite (S0) and a legacy `## Stories`
-  checklist reconciliation (S5) — never as a side effect of filing.
+  shared contract says why). Child detail lives only in child bodies. Exactly three parent-body writes
+  are sanctioned, each an approved row in the S4 gate rather than a side effect of filing: the promotion
+  rewrite (S0), a legacy `## Stories` checklist reconciliation, and — at epic altitude — the
+  `## Background` note recording an **omitted bookend** and its reason, which has to live in the epic
+  body to survive later resumes (method §5.2). Anything else touching the parent is a defect.
 - **Grounding is required, and every child cites it.** Cut only from what the repo's declared docs,
   the issue body/thread, and any dossier actually record. A child citing nothing is a gap in the
   source or invented scope — surface it, never file it. No catalogue and no operator-named sources →

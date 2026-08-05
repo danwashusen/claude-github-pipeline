@@ -149,7 +149,7 @@ to this epic's theme. Three things to check before proposing one:
   progress to the rollup. Say so.
 - **Itself an epic** — never a child. The hierarchy has exactly three levels.
 
-An adopted issue's body is **not** rewritten to match the templates below: it was authored elsewhere
+An adopted issue's body is **not** rewritten to match the §8 templates: it was authored elsewhere
 and adopting it is a relation write, not an edit. If its scope genuinely overlaps a story you were
 about to propose, adopt it *instead of* filing that story rather than doing both.
 

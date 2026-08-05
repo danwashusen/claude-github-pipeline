@@ -128,9 +128,14 @@ attempt-and-classify gate as ``create --parent`` (``_is_subissues_error``; never
 probe — ``gh issue edit --parent`` postdates the >= 2.40 floor this plugin declares): on a capability
 miss the relation is dropped as a no-op success + ``SUBISSUES_UNSUPPORTED`` notice (``changed:
 false``), mirroring ``link``'s deps degradation, because there is no without-the-relation retry to
-make — the relation IS the whole edit. Any other failure surfaces hard: a parenting-integrity error
-(``the parent issue is closed``, ``cannot add a parent to itself``) must reach the caller, never be
-swallowed as a benign notice.
+make — the relation IS the whole edit. Any other failure surfaces hard: an integrity, quota or
+permission error (``Sub-issue is already parented``, ``maximum number of sub-issues``, a 403 arriving
+as ``Resource not accessible … (addSubIssue)``) must reach the caller, never be swallowed as a benign
+notice. That property is NOT free from ``_SUBISSUES_ERROR_PATTERN`` alone — it matches the bare noun
+``sub-issue``, which every one of those messages contains — so it is enforced by the
+``_SUBISSUES_INTEGRITY_PATTERN`` deny list checked ahead of it. ``add-parent`` is what made the deny
+list necessary: ``already parented`` is unreachable through ``create --parent``, since a
+freshly-created issue has no parent to conflict with.
 
 Exit codes (architecture.md §3 — the only two forms this script uses):
     0   envelope present on stdout; consult ``status`` (``ok`` or ``needs_decision`` — both are
@@ -193,9 +198,29 @@ def _is_deps_error(stderr_text):
 # with "unknown flag", which the first alternative already covers.
 _SUBISSUES_ERROR_PATTERN = re.compile(r"unknown (flag|json field)|sub[ -]?issue", re.IGNORECASE)
 
+# The deny list, checked FIRST. `_SUBISSUES_ERROR_PATTERN` above matches the bare noun `sub-issue`,
+# which `_DEPS_ERROR_PATTERN` deliberately refuses to do for its own noun — and every non-capability
+# way GitHub can reject a parenting attempt NAMES the feature: "Sub-issue is already parented",
+# "maximum number of sub-issues", "sub-issues cannot be nested", "A sub-issue must belong to the same
+# repository". Worse, `gh` appends the failing GraphQL path to API errors, so an ordinary 403 arrives
+# as "Resource not accessible by personal access token (addSubIssue)" and the bare-noun alternative
+# matches `SubIssue` inside `addSubIssue`. Without this list every one of those is swallowed as a
+# benign "the host doesn't serve the relation", which is the exact inversion of the
+# err-toward-SURFACING discipline both patterns claim: an integrity, quota or permission failure MUST
+# reach the caller. Ordering matters — a message that trips this list is never a capability miss,
+# even when it also contains "unknown flag".
+_SUBISSUES_INTEGRITY_PATTERN = re.compile(
+    r"already (a )?(sub[ -]?issue|parented)|maximum number|exceed|nest|same repository"
+    r"|its own parent|not accessible|permission|forbidden|unauthor|rate limit",
+    re.IGNORECASE,
+)
+
 
 def _is_subissues_error(stderr_text):
-    return bool(_SUBISSUES_ERROR_PATTERN.search(stderr_text or ""))
+    text = stderr_text or ""
+    if _SUBISSUES_INTEGRITY_PATTERN.search(text):
+        return False
+    return bool(_SUBISSUES_ERROR_PATTERN.search(text))
 
 
 def _create_flag_ladder(dep_flags, parent_flags):
@@ -548,24 +573,40 @@ def _cmd_link(args, parser):
 # ---- add-parent ----
 
 
+def _issue_ref_key(value):
+    """A comparison key for the two interchangeable issue-reference spellings `--parent` accepts (a
+    bare number or a URL), so `42`, `#42`, ` 42 ` and `https://github.com/o/r/issues/42` compare
+    equal. Used only by the self-parenting guard below; the value passed to `gh` stays verbatim,
+    because gh resolves the reference itself and this script never parses it."""
+    text = (value or "").strip().rstrip("/")
+    if "/" in text:
+        text = text.rsplit("/", 1)[-1]
+    return text.lstrip("#")
+
+
 def _cmd_add_parent(args, parser):
     # Adopting an issue into a parent it is already a child of is a gh/GitHub-API no-op success, so
     # no "is it already parented?" pre-check happens here — same discipline as close/reopen/
-    # edit-labels. Parenting an issue to ITSELF, though, is a caller error that gh would reject
-    # anyway; catch it as a usage error so the failure names the real problem.
-    if args.child == args.parent:
-        parser.error("add-parent: child and parent must differ (cannot parent an issue to itself)")
+    # edit-labels. Parenting an issue to ITSELF, though, is a caller error; catch it as a usage error
+    # so the failure names the real problem. Compared on the normalized key rather than raw strings:
+    # gh accepts a number and a URL interchangeably, so a raw compare would let `42` + `#42` (or a
+    # URL for the same issue) through to gh, and the only backstop would be gh's own rejection text.
+    if _issue_ref_key(args.child) == _issue_ref_key(args.parent):
+        parser.error("child and parent must differ (cannot parent an issue to itself)")
 
     cmd = ["gh", "issue", "edit", args.child, "--repo", args.repo, "--parent", args.parent]
 
     if args.dry_run:
+        # `changed`/`subissues_unsupported` are deliberately OMITTED here, not set to True: they are
+        # outcome claims, and no write happened. `cut.md` documents that the caller reads `changed`,
+        # so a rehearsal run asserting `changed: true` would record every adoption as applied. This
+        # follows close/reopen/edit-body/comment (which omit their outcome flag on the dry-run path)
+        # rather than `link`, whose `changed: True` predates that convention being consistent.
         emit_ok(payload={
             "op": "add-parent",
             "issue": args.child,
             "parent": args.parent,
             "dry_run": True,
-            "changed": True,
-            "subissues_unsupported": False,
             "would_run": _quote_cmd(cmd),
         })
         return EXIT_OK

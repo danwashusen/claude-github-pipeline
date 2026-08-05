@@ -135,7 +135,7 @@ from pipelib import process  # noqa: E402
 from pipelib.decisions import (  # noqa: E402
     AUTH_REQUIRED,
     DOC_CATALOGUE_ABSENT,
-    SUBISSUES_UNSUPPORTED,
+    SUBISSUE_FIELD_UNAVAILABLE,
     needs_decision,
 )
 from pipelib.envelope import emit_needs_decision, emit_ok  # noqa: E402
@@ -150,6 +150,7 @@ RESEARCH_MARKER = "<!-- issue-research:v1 -->"
 # `prep_planner.py`'s module docstring for the "no prep-to-prep imports" convention that keeps this a
 # local arm over the shared core rather than a fourth copy of the whole rule.
 _QUESTION_LABEL = "question"
+_EPIC_LABEL = "epic"
 
 # The slice title designator: `<parent#>/S<K> — <behaviour>` (recorded on #17). Parsed best-effort to
 # resume numbering; a child whose title doesn't match simply doesn't contribute an index, which is
@@ -206,6 +207,14 @@ def _root_sha(root):
 # ---------------------------------------------------------------------------
 # Type detection (shared core + the local `question` arm).
 # ---------------------------------------------------------------------------
+
+
+def _has_epic_label(labels):
+    """Whether the `epic` LABEL is present — a stronger signal than `branching.detect_type`'s title
+    arm, which also types any issue titled `Epic: …` as an epic. The refusal set needs the stronger
+    signal in one place: overriding a structural hierarchy signal (this target has a parent) must rest
+    on more than a human titling convention."""
+    return _EPIC_LABEL in {(label or "").strip().lower() for label in labels or []}
 
 
 def _detect_type(labels, title):
@@ -281,7 +290,13 @@ def _fetch_adoption_candidate(repo, number, cwd=None):
     """One `--adopt` candidate's live state, including its CURRENT parent — the field that decides
     whether adopting it would steal another parent's child. `parent` is capability-gated exactly as
     the gather's ladder gates it, so a host that doesn't serve the relation degrades to
-    `parent: None` + a `SUBISSUES_UNSUPPORTED` notice rather than failing the whole prep.
+    `parent: None` (unknown) + a notice rather than failing the whole prep.
+
+    The degradation notice is deliberately NOT ``SUBISSUES_UNSUPPORTED``: the flow reads that token as
+    "a child was filed but the relation was not established — stop, file no more"
+    (``skills/slicer/playbooks/cut.md``). Nothing has been written here, so reusing it would abort the
+    cut and report a nonexistent unparented child. ``SUBISSUE_FIELD_UNAVAILABLE`` says the narrower,
+    true thing: this host could not tell us the candidate's CURRENT parent.
 
     Returns `(candidate_dict, notices, decision_or_none)`."""
     notices = []
@@ -289,10 +304,18 @@ def _fetch_adoption_candidate(repo, number, cwd=None):
     result = process.run(
         ["gh", "issue", "view", str(number), "--repo", repo, "--json", fields], cwd=cwd
     )
-    if result.returncode != 0 and not result.auth_required and gh_gather._is_unknown_field_error(
-        result.stderr
+    parent_field_unavailable = False
+    if (
+        result.returncode != 0
+        and not result.auth_required
+        and gh_gather._is_unknown_field_error(result.stderr)
+        and "parent" in (result.stderr or "").lower()
     ):
-        notices.append(SUBISSUES_UNSUPPORTED)
+        # Scoped to `parent`: `_is_unknown_field_error` matches any unknown-field text, and the retry
+        # below drops ONLY that field, so attributing an unrelated unknown-field error to it would
+        # mislabel a failure the retry cannot fix.
+        parent_field_unavailable = True
+        notices.append(SUBISSUE_FIELD_UNAVAILABLE)
         result = process.run(
             ["gh", "issue", "view", str(number), "--repo", repo, "--json", "state,title,labels"],
             cwd=cwd,
@@ -318,7 +341,9 @@ def _fetch_adoption_candidate(repo, number, cwd=None):
             "labels": labels,
             "type": _detect_type(labels, data.get("title") or ""),
             "parent": (parent_node or {}).get("number") if parent_node else None,
-            "already_parented": bool(parent_node),
+            # None (unknown), never False, when the field could not be read: `False` is a CLAIM that
+            # the candidate is unparented, and acting on it silently re-parents another epic's child.
+            "already_parented": None if parent_field_unavailable else bool(parent_node),
         },
         notices,
         None,
@@ -460,24 +485,39 @@ def _build_story_set(sub_issues, issue_body, repo, cwd=None):
                 "live_title": state_fact["title"],
             }
         )
-    return (
-        _children(
-            "stories",
-            native + from_checklist,
-            source="mixed" if native else "checklist",
-        ),
-        attention,
-        None,
-    )
+    # `mixed` only when BOTH tiers actually contributed. A checklist whose every entry is already
+    # native contributes nothing after the dedup above, so calling that `mixed` would be untrue — and
+    # the attention line it triggers claims those entries have "no native relation", which is exactly
+    # backwards, on the strength of which the flow proposes a parent-body write.
+    if native and from_checklist:
+        source = "mixed"
+    elif native:
+        source = "sub-issues"
+    else:
+        source = "checklist"
+    return _children("stories", native + from_checklist, source=source), attention, None
 
 
 def _children(kind, entries, source=None, next_index=None):
-    """The one `facts.children` shape both altitudes fill (module docstring)."""
+    """The one `facts.children` shape both altitudes fill (module docstring).
+
+    `count`/`open_count` deliberately count only children that are actually **filed** — an entry with
+    `number: None` is a legacy `## Stories` bullet naming a story nobody has filed yet. Counting those
+    would make `mode` read `resume` on an epic with zero real children, so the flow would report
+    "cut only the remainder" and file nothing, leaving the permanently empty rollup this stage exists
+    to prevent. It would also make `count - open_count` read as "all closed" for stories that were
+    never filed. `placeholder_count` keeps them representable, and `total_named` is what a progress
+    line should describe.
+    """
+    filed = [e for e in entries if e.get("number") is not None]
+    placeholders = [e for e in entries if e.get("number") is None]
     return {
         "kind": kind,
         "entries": entries,
-        "count": len(entries),
-        "open_count": sum(1 for e in entries if (e.get("state") or "").upper() == "OPEN"),
+        "count": len(filed),
+        "open_count": sum(1 for e in filed if (e.get("state") or "").upper() == "OPEN"),
+        "placeholder_count": len(placeholders),
+        "total_named": len(entries),
         "next_index": next_index,
         "source": source,
     }
@@ -520,18 +560,24 @@ def _build_slice_set(sub_issues, target_number):
 # ---------------------------------------------------------------------------
 
 
-def _build_refusals(target_type, target_state, parent, blocked_by, oq_blocked):
+def _build_refusals(target_type, target_state, parent, blocked_by, oq_blocked, target_labels=None):
     """The closed refusal set (module docstring). Order is stable so the router's rendering choice is
     deterministic when more than one applies — the router renders the FIRST."""
     refusals = []
     if target_type == "question":
         refusals.append(REFUSAL_QUESTION_TARGET)
     # A parent that is not an epic means the target is itself a slice (epic -> story -> slice, and
-    # the relation has exactly three levels), so slicing it would create a fourth. Skipped for an
-    # epic target: an epic is the top of the hierarchy, so a parent on it is malformed data, not
-    # evidence that the epic is a slice — misreading it that way would refuse the epic-altitude
-    # happy path for the one shape it can never legitimately be.
-    if target_type != "epic" and parent is not None and parent.get("type") != "epic":
+    # the relation has exactly three levels), so slicing it would create a fourth.
+    #
+    # The one exemption is a LABEL-confirmed epic: an epic is the top of the hierarchy, so a parent on
+    # it is malformed data rather than evidence the epic is a slice, and refusing there would block
+    # the epic-altitude happy path for the one shape it can never legitimately be. The exemption is
+    # deliberately NOT extended to a title-detected epic: `branching.detect_type` types any issue
+    # titled `Epic: …` as an epic, so a plainly-titled sub-issue of a story would otherwise escape
+    # this guard entirely and the flow would file stories beneath a story — the fourth level the
+    # by-construction identification rule forbids. A title is a human convention; only the label is
+    # evidence strong enough to override a structural signal.
+    if parent is not None and parent.get("type") != "epic" and not _has_epic_label(target_labels):
         refusals.append(REFUSAL_SLICE_TARGET)
     if (target_state or "").upper() == "CLOSED":
         refusals.append(REFUSAL_CLOSED_TARGET)
@@ -621,12 +667,27 @@ def _build_attention(
         )
     if children["count"] and not refusals:
         attention.append(
-            "target #%s already has %d %s — resume mode: report them and cut only the remainder, "
-            "never re-file" % (target["number"], children["count"], children["kind"])
+            "target #%s already has %d filed %s — resume mode: report them and cut only the "
+            "remainder, never re-file" % (target["number"], children["count"], children["kind"])
+        )
+    if children.get("placeholder_count") and not refusals:
+        attention.append(
+            "target #%s's `## Stories` checklist names %d story/stories with no issue number — they "
+            "are planned, NOT filed, so they are not part of the resume set: file them as part of "
+            "this cut" % (target["number"], children["placeholder_count"])
+        )
+    if target.get("type") == "epic" and target.get("parent") is not None and not refusals:
+        # An epic is the top of the hierarchy, so this is malformed data. The refusal set exempts a
+        # label-confirmed epic rather than calling it a slice, which means the anomaly would otherwise
+        # be invisible — surface it with evidence instead of swallowing it.
+        attention.append(
+            "epic #%s has a parent (#%s) — an epic is the top of the hierarchy, so this relation is "
+            "malformed; cutting proceeds, but check whether #%s was mislabelled"
+            % (target["number"], (target["parent"] or {}).get("number"), target["number"])
         )
     if children.get("source") in ("checklist", "mixed"):
         attention.append(
-            "epic #%s carries a legacy `## Stories` checklist (stories_source: %s) — it has no native "
+            "epic #%s carries a legacy `## Stories` checklist (children.source: %s) — it has no native "
             "relation for those entries, so the checklist is still their only record"
             % (target["number"], children["source"])
         )
@@ -750,7 +811,6 @@ def build_facts(issue, repo, root=".", scratch_dir=None, cwd=None, promote=False
 
     # 5) The altitude, then the child set through the read that altitude's contract defines.
     altitude = _detect_altitude(target_type, promote=promote)
-    promotion = bool(promote and target_type != "epic")
     child_attention = []
     if altitude == "epic":
         children, child_attention, children_decision = _build_story_set(
@@ -760,14 +820,6 @@ def build_facts(issue, repo, root=".", scratch_dir=None, cwd=None, promote=False
             return None
     else:
         children = _build_slice_set(issue_envelope.get("sub_issues"), issue_envelope["number"])
-
-    # 6) Adoption candidates — only when the router named some.
-    adoption_candidates, adoption_notices, adoption_decision = _build_adoption_candidates(
-        adopt, repo, cwd=cwd
-    )
-    notices.extend(n for n in adoption_notices if n not in notices)
-    if _forward_decision(adoption_decision, notices=notices):
-        return None
 
     target = {
         "kind": "issue",
@@ -783,8 +835,29 @@ def build_facts(issue, repo, root=".", scratch_dir=None, cwd=None, promote=False
     }
 
     refusals = _build_refusals(
-        target_type, issue_envelope["state"], parent, open_blockers, oq_blocked
+        target_type,
+        issue_envelope["state"],
+        parent,
+        open_blockers,
+        oq_blocked,
+        target_labels=issue_labels,
     )
+    # Gated on `not refusals` so the fact set can never contradict itself: a refusal means the router
+    # stops without reading the playbook, so `promotion: true` would advertise an S0 gate that never
+    # runs (and an attention line describing it).
+    promotion = bool(promote and target_type != "epic" and not refusals)
+
+    # 6) Adoption candidates — only when the router named some, and only when the run can proceed: a
+    #    refusal stops the router before the playbook, so a lookup per candidate would be a wasted
+    #    round-trip on a guaranteed-terminal path.
+    adoption_candidates = []
+    if adopt and not refusals:
+        adoption_candidates, adoption_notices, adoption_decision = _build_adoption_candidates(
+            adopt, repo, cwd=cwd
+        )
+        notices.extend(n for n in adoption_notices if n not in notices)
+        if _forward_decision(adoption_decision, notices=notices):
+            return None
     mode = "resume" if children["count"] else "fresh"
 
     sections = {
@@ -889,7 +962,16 @@ def main(argv):
 
     # One-shot adoption lookup — deliberately before the facts path so a mid-flow check costs one
     # `gh` call per candidate instead of a whole re-gather (the `prep_drafter --oq-query` precedent).
+    if "/" not in args.repo:
+        parser.error("repo must be <owner>/<repo>, got %r" % args.repo)
+
     if args.adopt_check:
+        if args.issue is not None:
+            parser.error(
+                "--adopt-check is a one-shot mode and takes no issue argument (got %r); it reports "
+                "only candidate state, so silently discarding the facts run would leave the flow "
+                "with no facts block" % args.issue
+            )
         candidates, notices, decision = _build_adoption_candidates(
             args.adopt_check, args.repo, cwd=args.cwd
         )

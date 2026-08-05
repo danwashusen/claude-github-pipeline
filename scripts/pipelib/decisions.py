@@ -92,6 +92,16 @@ DEPS_UNSUPPORTED = "DEPS_UNSUPPORTED"
 # ``## Stories`` checklist (skills/_shared/epic-story-hierarchy.md).
 SUBISSUES_UNSUPPORTED = "SUBISSUES_UNSUPPORTED"
 
+# A READ of the parent/sub-issue relation could not retrieve one field (`gh issue view --json parent`
+# rejected), so a caller that needed the CURRENT parent of an issue does not know it. Kept separate
+# from ``SUBISSUES_UNSUPPORTED`` for the same "wrong fallback" reason that keeps that one separate from
+# ``DEPS_UNSUPPORTED``: consumers read ``SUBISSUES_UNSUPPORTED`` as a WRITE outcome — the relation was
+# not established, so a filed child is unparented — and the slicer's flow aborts its cut on it. A
+# failed read has written nothing and leaves nothing unparented; conflating the two would abort a cut
+# and report a child that does not exist. On this notice a reader treats the parent as UNKNOWN, never
+# as absent.
+SUBISSUE_FIELD_UNAVAILABLE = "SUBISSUE_FIELD_UNAVAILABLE"
+
 # The consuming repo declares no grounding documents: no ``docs/README.md``, no
 # ``<!-- doc-catalogue -->`` block in it, or a malformed one
 # (skills/_shared/doc-catalogue.md). Deliberately loud rather than silent, because the fallback is

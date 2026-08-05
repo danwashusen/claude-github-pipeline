@@ -20,7 +20,15 @@ the cut derived from). Every other marker comes from the shared closed sets.
 phase markers on one branch.
 
 The `Grounding:` line is present on **every exit that filed children**, and omitted on every exit that
-filed nothing — a cut that hides what it was grounded on defeats the grounding gate.
+filed nothing — a cut that hides what it was grounded on defeats the grounding gate. When present it
+opens with `read at <ref>@<short-sha>` — `main@<facts.root.sha[:7]>`, the vantage the docs were read at —
+because the same doc section can differ between refs, and a citation without its ref is unverifiable.
+
+**On an epic target, every shape below swaps its lead field and adds a child line.** `closed-target`,
+`blocked` and the declined-write-gate exit are all reachable at epic altitude, and the shared schema
+requires an epic to lead with `Epic:` and carry a `Stories:` line. So: `**Issue:**` → `**Epic:**`, and add
+`**Stories:**` — the live set on a resume, or `none yet — cut into stories next` when the epic has no
+children. The `Why:` wording is unchanged; only the reason text names stories rather than slices.
 
 ## Renderings
 
@@ -32,7 +40,7 @@ filed nothing — a cut that hides what it was grounded on defeats the grounding
 
 **Issue:** #103 — Patient: access & set up account · open · story · plan: ✗
 **Slices:** #104 103/S1 (open) · #105 103/S2 (open) · #106 103/S3 (open)
-**Grounding:** docs/prd.md §4 (account lifecycle, binding); docs/architecture.md §3 (service layer, binding); docs/ui-design.md §7 (auth screens, informative)
+**Grounding:** read at main@d4e5f6a · docs/prd.md §4 (account lifecycle, binding) · docs/architecture.md §3 (service layer, binding) · docs/ui-design.md §7 (auth screens, informative)
 
 **Next:** plan #103 — its phases must map onto the three approved slices.
 
@@ -50,7 +58,7 @@ session's delta; the `Why:` names which were added.
 
 **Issue:** #103 — Patient: access & set up account · open · story · plan: ✗
 **Slices:** #104 103/S1 (closed) · #105 103/S2 (open) · #106 103/S3 (open)
-**Grounding:** docs/prd.md §4 (account lifecycle, binding); docs/architecture.md §3 (service layer, binding)
+**Grounding:** read at main@d4e5f6a · docs/prd.md §4 (account lifecycle, binding) · docs/architecture.md §3 (service layer, binding)
 
 **Next:** plan #103 — its phases must map onto the full slice set, including the two just added.
 
@@ -83,7 +91,7 @@ line. `plan: ✗` because the cut precedes planning.
 
 **Epic:** #150 — Epic: onboarding funnel · open · epic · plan: ✗
 **Stories:** #151, #152, #153, #154, #155 (5 filed, dependency-ordered)
-**Grounding:** docs/prd.md §4 (account lifecycle, binding); docs/architecture.md §3 (service layer, binding)
+**Grounding:** read at main@d4e5f6a · docs/prd.md §4 (account lifecycle, binding) · docs/architecture.md §3 (service layer, binding)
 
 **Next:** plan the Epic — the planner pins the cross-story contracts and sequencing; each story is planned just-in-time as it is built.
 
@@ -101,7 +109,7 @@ the planner's aborted run needs to know the target changed shape.
 
 **Epic:** #142 — Epic: patient onboarding · open · epic · plan: ✗
 **Stories:** #143, #144, #145 (3 filed, dependency-ordered)
-**Grounding:** docs/prd.md §4 (account lifecycle, binding); docs/architecture.md §3 (service layer, binding)
+**Grounding:** read at main@d4e5f6a · docs/prd.md §4 (account lifecycle, binding) · docs/architecture.md §3 (service layer, binding)
 
 **Next:** re-run the planner on #142 — now at epic altitude, against the approved story set.
 
@@ -120,7 +128,7 @@ adding new scope.
 
 **Epic:** #180 — Epic: reporting · open · epic · plan: ✗
 **Stories:** #181 (closed), #301 (open), #302 (open), #182 (open)
-**Grounding:** docs/prd.md §6 (reporting, binding)
+**Grounding:** read at main@d4e5f6a · docs/prd.md §6 (reporting, binding)
 
 **Next:** plan #180 against its full story set, including the two adopted issues.
 
@@ -208,7 +216,7 @@ right next action is on the parent.
 ```
 ## Handoff
 
-**Issue:** #105 — 103/S2 — password reset · open · plan: ✗
+**Issue:** #105 — 103/S2 — password reset · open · story · plan: ✗
 
 **Next:** (terminal — no follow-up skill)
 

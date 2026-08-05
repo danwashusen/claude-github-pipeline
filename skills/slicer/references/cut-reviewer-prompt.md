@@ -19,6 +19,9 @@ job is to attack the cut — find the strongest case it is *wrong* — and repor
 
 ## Inputs
 
+- **Pass**: `<<pass>>` — `split` (titles + one-line scopes only, no bodies yet) or `re-confirm` (full
+  bodies present). Echo it in the `Pass:` output field; the `conformance` dimension and the bookend
+  body-branch run only on `re-confirm`.
 - **Altitude**: `<<altitude>>` — `story` or `epic`. This sets the bar every child must clear, and it is
   the only thing that differs between the two reviews:
   - `story` — children are **deliverable slices**. Bar: independently **demonstrable** (someone can

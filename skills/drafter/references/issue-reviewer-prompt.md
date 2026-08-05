@@ -67,7 +67,7 @@ you're here to surface.
 Run only the dimensions named in the inputs. **5 and 7 are absent by design** —
 dependency-graph ordering and sizing / over-split (with the bookend check) are decomposition
 judgments, and they live in the slicer's `references/cut-reviewer-prompt.md`, which applies them at
-both altitudes (#16). This reviewer reads ONE issue; it never reasons across a sibling set.
+both altitudes (#16). This reviewer reads **one** issue; it never reasons across a sibling set.
 
 1. **Doc coherence.** Cross-reference the body against the project docs. Four patterns to flag:
    - **Contradicts** — the body proposes something a doc explicitly forbids or counters. Cite the doc

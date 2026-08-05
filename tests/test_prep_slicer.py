@@ -109,6 +109,8 @@ class SliceSetTests(unittest.TestCase):
                 "entries": [],
                 "count": 0,
                 "open_count": 0,
+                "placeholder_count": 0,
+                "total_named": 0,
                 "next_index": 1,
                 "source": None,
             },
@@ -173,11 +175,31 @@ class RefusalTests(unittest.TestCase):
         self.assertEqual(prep_slicer._build_refusals("epic", "OPEN", None, [], []), [])
         self.assertFalse(hasattr(prep_slicer, "REFUSAL_EPIC_TARGET"))
 
-    def test_a_parent_on_an_epic_does_not_read_as_a_slice(self):
+    def test_a_parent_on_a_label_confirmed_epic_does_not_read_as_a_slice(self):
         """An epic is the top of the hierarchy, so a parent on one is malformed data — not evidence
         the epic is a slice. Misreading it would refuse the epic-altitude happy path."""
         self.assertEqual(
-            prep_slicer._build_refusals("epic", "OPEN", {"type": "story"}, [], []), []
+            prep_slicer._build_refusals(
+                "epic", "OPEN", {"type": "story"}, [], [], target_labels=["epic"]
+            ),
+            [],
+        )
+
+    def test_a_title_only_epic_under_a_non_epic_parent_is_still_refused(self):
+        """The hole the label check closes. `branching.detect_type` types ANY issue titled `Epic: …`
+        as an epic, so exempting every epic-typed target from the slice guard would let a plainly
+        titled sub-issue of a story through — and the flow would file stories beneath a story, the
+        fourth hierarchy level the by-construction identification rule forbids. A title is a human
+        convention; only the label is evidence strong enough to override a structural signal."""
+        self.assertEqual(
+            prep_slicer._detect_type([], "Epic: rework the auth flow"), "epic",
+            "precondition: the title arm types this as an epic",
+        )
+        self.assertEqual(
+            prep_slicer._build_refusals(
+                "epic", "OPEN", {"type": "story"}, [], [], target_labels=[]
+            ),
+            [prep_slicer.REFUSAL_SLICE_TARGET],
         )
 
     def test_slice_target_refused_when_the_parent_is_not_an_epic(self):
@@ -260,6 +282,40 @@ class StorySetTests(unittest.TestCase):
         ]
         children, _attention, _decision = prep_slicer._build_story_set(subs, "", "o/r")
         self.assertEqual([e["number"] for e in children["entries"]], [153, 151])
+
+
+class PlaceholderChildTests(unittest.TestCase):
+    """A legacy `## Stories` bullet with no issue number names a story nobody has FILED. Counting one
+    as an existing child made `mode` read `resume` on an epic with zero real children, so the flow
+    reported "cut only the remainder" and filed nothing — recreating the permanently-empty rollup this
+    stage exists to prevent — and made `count - open_count` read as "all closed" for stories that were
+    never filed."""
+
+    def test_unfiled_bullets_are_not_counted_as_existing_children(self):
+        body = "## Stories\n- [ ] Login\n- [ ] Signup\n- [ ] Reset\n"
+        children, _attention, _decision = prep_slicer._build_story_set([], body, "o/r")
+        self.assertEqual(children["count"], 0, "no story is filed, so there is nothing to resume")
+        self.assertEqual(children["placeholder_count"], 3)
+        self.assertEqual(children["total_named"], 3)
+        # `entries` still carries them — they are the cut's input, not its resume set.
+        self.assertEqual(len(children["entries"]), 3)
+
+    def test_a_progress_reading_cannot_conclude_all_closed(self):
+        """`count - open_count` is the arithmetic behind the documented `<K> of <T> closed` rendering."""
+        body = "## Stories\n- [ ] Login\n- [ ] Signup\n"
+        children, _attention, _decision = prep_slicer._build_story_set([], body, "o/r")
+        self.assertEqual(children["count"] - children["open_count"], 0)
+
+    def test_a_checklist_fully_covered_natively_is_not_mixed(self):
+        """`mixed` must mean BOTH tiers contributed. When every checklist entry is already native the
+        checklist half contributes nothing after the dedup, and calling that `mixed` triggers an
+        attention line claiming those entries have no native relation — on the strength of which the
+        flow proposes a parent-body write."""
+        subs = [{"number": 11, "title": "A", "state": "OPEN"}]
+        children, _attention, _decision = prep_slicer._build_story_set(
+            subs, "## Stories\n- [ ] #11 — A\n", "o/r"
+        )
+        self.assertEqual(children["source"], "sub-issues")
 
 
 class StoriesSectionParseTests(unittest.TestCase):
@@ -489,8 +545,11 @@ class EpicAltitudeTests(PrepSlicerSandboxTestCase):
         envelope = self._envelope(160, "prep_slicer_epic_resume_checklist")
         children = envelope["children"]
         self.assertEqual(children["source"], "checklist")
-        self.assertEqual(children["count"], 3)
-        # The unfiled bullet rides with no live state rather than being dropped.
+        # Only FILED entries count. The unfiled bullet still rides in `entries` rather than being
+        # dropped, but it is not part of the resume set — see the dedicated test below.
+        self.assertEqual(children["count"], 2)
+        self.assertEqual(children["placeholder_count"], 1)
+        self.assertEqual(children["total_named"], 3)
         self.assertEqual([e["number"] for e in children["entries"]], [151, 152, None])
         # #151 is unchecked in the body but CLOSED live -- surfaced, never silently reconciled here
         # (reconciling the body is a write the flow proposes at its gate).
