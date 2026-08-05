@@ -4,14 +4,14 @@ Surfaces the S15 DoD / Testing section names:
 
 1. **Routing-table fixtures** (`vector` → `playbooks/<file>`). The router's visible routing table
    (`skills/drafter/SKILL.md` §2) maps a prep-derived `vector` to the one playbook a session reads.
-   These parse that table, assert it covers exactly the four routable playbooks
-   (new / revise / epic-split / question), that each points at a real `playbooks/<file>`, and that the
+   These parse that table, assert it covers exactly the three routable playbooks
+   (new / revise / question), that each points at a real `playbooks/<file>`, and that the
    (mode, type)→playbook mapping is byte-consistent with `prep_drafter._suggested_playbook`
    (architecture.md §5 "prep proposes; the router confirms"). The new-mode classification override rule
    (`new.md` classifies Epic/question and the router re-routes) is asserted as visible router prose.
 
 2. **The interleaving pattern-grep, committed as a validator** (DoD box: playbooks are
-   type-conditional-free by construction). Greps the four routable playbooks + the shared spine for
+   type-conditional-free by construction). Greps the three routable playbooks + the shared spine for
    cross-route conditionals and fails on a hit. Patterns broadened per the S10 carried advisory to the
    drafter's route set.
 
@@ -31,7 +31,7 @@ Surfaces the S15 DoD / Testing section names:
 
 6. **The falsifiable OQ-absorption rule** — written as fence-scoped prose in the spine and pinned by grep.
 
-7. **Structural bars** — router ≤ 150, exactly four routable playbooks + one spine, router + largest
+7. **Structural bars** — router ≤ 150, exactly three routable playbooks + one spine, router + largest
    playbook ≤ 288 (half of v1's 576), frontmatter pins carried from v1.
 
 No network: gh_persist.py's `gh` calls resolve to the offline shim via tests/run.py's PATH wiring; the
@@ -60,8 +60,9 @@ GH_PERSIST = SCRIPTS_DIR / "gh_persist.py"
 SHARED = REPO_ROOT / "skills" / "_shared"
 EXAMPLES = REPO_ROOT / "docs" / "specs" / "examples"
 
-# The four routable playbooks (the spine is a shared file, not a routable route).
-ROUTABLE_PLAYBOOKS = {"new.md", "revise.md", "epic-split.md", "question.md"}
+# The three routable playbooks (the spine is a shared file, not a routable route). #16 retired
+# epic-split.md: the drafter drafts and revises one issue's body and decomposes nothing.
+ROUTABLE_PLAYBOOKS = {"new.md", "revise.md", "question.md"}
 SPINE = "draft-spine.md"
 
 # Half of the v1 drafter SKILL.md (576 lines, docs/specs/baseline.md §1) = 288.
@@ -160,7 +161,7 @@ class RouterRoutingTableTests(unittest.TestCase):
         self.assertEqual(
             {Path(pb).name for pb in self.playbooks},
             ROUTABLE_PLAYBOOKS,
-            "router routing table must map exactly the four routable playbooks, got %r"
+            "router routing table must map exactly the three routable playbooks, got %r"
             % (sorted(Path(pb).name for pb in self.playbooks),),
         )
 
@@ -169,7 +170,7 @@ class RouterRoutingTableTests(unittest.TestCase):
         self.assertEqual(
             on_disk,
             ROUTABLE_PLAYBOOKS | {SPINE},
-            "playbooks/ must be exactly the four routable playbooks + the one shared spine, got %r"
+            "playbooks/ must be exactly the three routable playbooks + the one shared spine, got %r"
             % (sorted(on_disk),),
         )
 
@@ -186,7 +187,6 @@ class RouterRoutingTableTests(unittest.TestCase):
         # (mode, issue_type) -> playbook. `new` mode has type None (Step 1 classifies it).
         cases = [
             ("new", None, "new.md"),
-            ("epic-revise", "epic", "epic-split.md"),
             ("revise", "question", "question.md"),
             ("revise", "standard", "revise.md"),
             ("revise", "story", "revise.md"),
@@ -208,9 +208,10 @@ class RouterRoutingTableTests(unittest.TestCase):
 
     def test_new_mode_classification_override_rule_is_visible_in_router(self):
         # The router must state that a new-mode session classifying its feedback as Epic/question
-        # overrides suggested_playbook to epic-split.md/question.md (architecture.md §5; S13 precedent).
+        # overrides suggested_playbook to question.md (architecture.md §5; S13 precedent). An Epic
+        # classification needs no override since #16 — it is one issue, filed by new.md.
         self.assertIn("New-mode classification override rule", self.router_text)
-        self.assertIn("epic-split.md", self.router_text)
+        self.assertIn("question.md", self.router_text)
         self.assertIn("question.md", self.router_text)
         self.assertRegex(
             self.router_text,
@@ -247,12 +248,12 @@ class RouterStructuralBarTests(unittest.TestCase):
 class PlaybookInterleavingGrepTests(unittest.TestCase):
     """A playbook is a linear narrative for exactly one route — zero cross-route conditionals. Fails on
     either an `if … <route> … else …` construct or a `when the issue/type is a <route>` prose branch, over
-    the four routable playbooks and the shared spine. Patterns broadened (S10 carried advisory) to the
-    drafter's route set — the routing modes are new/revise/epic-split/question; the classification cues
+    the three routable playbooks and the shared spine. Patterns broadened (S10 carried advisory) to the
+    drafter's route set — the routing modes are new/revise/question; the classification cues
     (bug/incomplete/feature/story/standard) are legitimately named within new.md and are NOT routes, so
     they are excluded (the planner precedent excludes its own scale-to-work sub-classes identically)."""
 
-    _ROUTES = r"(new|revise|epic-split|question)"
+    _ROUTES = r"(new|revise|question)"
     _IF_ELSE = re.compile(r"\bif\b[^.\n]{0,50}\b" + _ROUTES + r"\b[^.\n]{0,50}\belse\b", re.IGNORECASE)
     _WHEN_TYPE = re.compile(
         r"\bwhen (the (issue|type) is|it.?s)\s+(a |an )?" + _ROUTES + r"\b", re.IGNORECASE
@@ -385,7 +386,8 @@ class PlaybookPersistDryRunTests(unittest.TestCase):
         self.assertIn("audience:business", env.get("would_run", ""))
 
     def test_epic_stories_link_patch_edit_body_dry_run(self):
-        # epic-split.md Step E3: patch the Epic's ## Stories placeholders to real #NN links via edit-body.
+        # A legacy epic's `## Stories` checklist is reconciled via edit-body. That write is the
+        # slicer's since #16 (cut.md S5, behind its write gate); this test covers the gh_persist op.
         proc, env = _run_persist(
             ["edit-body", "octo/widgets", "150", "@BODY@", "--dry-run"],
             body_text="## Goal\n…\n\n## Stories\n- [ ] #151 — first slice\n- [ ] #152 — second slice\n",
@@ -775,12 +777,24 @@ class OperatorGateCoverageTests(unittest.TestCase):
 
 
 class CarriedReferenceTests(unittest.TestCase):
-    def test_reviewer_prompt_present_and_carries_seven_dimensions(self):
-        prompt = (REFERENCES_DIR / "issue-reviewer-prompt.md").read_text(encoding="utf-8")
-        for dim in range(1, 8):
-            self.assertRegex(prompt, r"(?m)^%d\.\s+\*\*" % dim, "reviewer dimension %d missing" % dim)
-        # facts-path input (v2 grounding vantage — the current checkout, not a ref).
-        self.assertIn("facts.root.path", prompt)
+    def test_reviewer_prompt_present_and_carries_its_five_dimensions(self):
+        """#16 moved dimensions 5 (ordering) and 7 (sizing / over-split, with the bookend check) to the
+        slicer's cut reviewer, which applies them at both altitudes. The numbering keeps its GAPS on
+        purpose: renumbering the survivors would silently change what every caller's dimension set
+        means, and every playbook names its set by number."""
+        prompt_path = REFERENCES_DIR / "issue-reviewer-prompt.md"
+        self.assertTrue(prompt_path.is_file())
+        text = prompt_path.read_text(encoding="utf-8")
+        for n in (1, 2, 3, 4, 6):
+            self.assertRegex(text, r"(?m)^%d\.\s+\*\*" % n, "dimension %d must be present" % n)
+        for n in (5, 7):
+            self.assertNotRegex(
+                text, r"(?m)^%d\.\s+\*\*" % n, "dimension %d moved to the slicer" % n
+            )
+        # A tombstone, so a later editor learns where they went instead of "restoring" them.
+        self.assertIn("cut-reviewer-prompt.md", text)
+        # `split` mode retired with the batch it served.
+        self.assertNotIn("Mode: <draft | revise N | split>", text)
 
     def test_reviewer_prompt_does_not_cite_retired_signal_doc(self):
         prompt = (REFERENCES_DIR / "issue-reviewer-prompt.md").read_text(encoding="utf-8")
@@ -790,88 +804,6 @@ class CarriedReferenceTests(unittest.TestCase):
         templates = (REFERENCES_DIR / "issue-templates.md").read_text(encoding="utf-8")
         for section in ("## Steps to reproduce", "## User story", "## Stories", "**Epic:** #<epic-#>"):
             self.assertIn(section, templates, "built-in template fragment %r missing" % section)
-
-
-class BookendStoriesTests(unittest.TestCase):
-    """An epic split defaults to two planner-filled bookend slots (technical-foundation first,
-    finalization last); the drafter never decides their content, omission is justified in the Epic
-    body, and the split reviewer's dimension 7 carries the matching adversarial check. Pinned by
-    grep in BOTH files so a compression pass can't drop one side of the pair."""
-
-    def setUp(self):
-        self.split = (PLAYBOOKS_DIR / "epic-split.md").read_text(encoding="utf-8")
-        self.prompt = (REFERENCES_DIR / "issue-reviewer-prompt.md").read_text(encoding="utf-8")
-
-    def test_split_playbook_carries_both_bookends(self):
-        self.assertIn("Bookend stories", self.split)
-        self.assertRegex(self.split, r"[Ff]oundation story")
-        self.assertRegex(self.split, r"[Ff]inali[sz]ation story")
-
-    def test_split_playbook_defers_content_to_the_planner(self):
-        # The drafter files slots; the planner fills them (seam dispositions / delivery log).
-        self.assertRegex(self.split, re.compile(r"specified\s+at planning time"))
-        self.assertRegex(self.split, re.compile(r"grounded on the epic\s+delivery log"))
-        self.assertIn("deferral placeholder", self.split)
-
-    def test_omission_is_justified_and_durable_in_the_epic_body(self):
-        """The omission note lives in `## Background`. It moved there when the epic body stopped
-        carrying a `## Stories` section (the story set is the native sub-issue relation —
-        skills/_shared/epic-story-hierarchy.md); both sides must name the same surviving section, or
-        the reviewer looks for the justification where the drafter never wrote it."""
-        self.assertIn("never silent", self.split)
-        self.assertRegex(
-            self.prompt,
-            re.compile(r"Epic body carries it as a note\s+in `## Background`"),
-            "the reviewer must be told where the omission justification lives",
-        )
-        self.assertRegex(
-            self.split,
-            re.compile(r"Epic\s+body's `## Background`"),
-            "the playbook must record the omission reason in the Epic body under ## Background",
-        )
-
-    def test_reviewer_dimension_seven_carries_the_matching_check(self):
-        self.assertIn("Bookend check", self.prompt)
-        self.assertRegex(self.prompt, r"[Ff]oundation story")
-        self.assertRegex(self.prompt, r"[Ff]inali[sz]ation story")
-        # Missing-foundation with grep-proven duplicated groundwork is the one BLOCKER.
-        self.assertRegex(
-            self.prompt,
-            re.compile(r"No foundation story.*?→\s*BLOCKER", re.DOTALL),
-            "finding 1 must carry BLOCKER severity",
-        )
-        # Thin-by-design exemption: a deferral body is not merge-signal evidence (signals 2 or 3).
-        self.assertRegex(
-            self.prompt,
-            re.compile(r"thinness is not evidence for merge\s+signals 2 or 3"),
-            "the bookend merge-signal exemption is missing from dimension 7",
-        )
-        # Dimension 6 must not flag the sanctioned deferral placeholder as incomplete, and must
-        # quote the same exemplar deferral strings the playbook stages (the cross-file pair).
-        self.assertRegex(
-            self.prompt,
-            re.compile(r"deferral placeholder.*not an empty section", re.DOTALL),
-            "the dimension-6 deferral-placeholder exemption is missing",
-        )
-        self.assertRegex(self.prompt, re.compile(r"specified\s+at planning time"))
-        self.assertRegex(self.prompt, re.compile(r"grounded on the epic\s+delivery\s+log"))
-
-    def test_epic_revise_rerun_carries_the_bookend_check(self):
-        self.assertRegex(
-            self.split,
-            re.compile(r"bookend check rides this\s+same re-run"),
-            "epic-revise must re-run the dimension-7 bookend check",
-        )
-
-    def test_planner_seam_gate_defaults_shared_groundwork_to_the_foundation_slot(self):
-        # Cross-skill pair: the split playbook delegates seam pinning to the planner's seam
-        # dispositions; the planner side must default a shared-groundwork seam into the foundation
-        # slot instead of double-filing a follow-up issue.
-        seams = (
-            REPO_ROOT / "skills" / "planner" / "references" / "seam-dispositions.md"
-        ).read_text(encoding="utf-8")
-        self.assertIn("Foundation-slot default", seams)
-        self.assertRegex(seams, re.compile(r"double-file", re.IGNORECASE))
 
 
 class ReviewTierAndAnchorRuleTests(unittest.TestCase):

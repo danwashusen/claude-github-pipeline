@@ -1,8 +1,8 @@
-# Draft spine — shared across new / revise / epic-split / question
+# Draft spine — shared across new / revise / question
 
 The draft-and-verify-and-file backbone every route runs, ending in a hand-back to the routed playbook
 for its handoff. Type differences here are **facts** (which template, which reviewer dimensions, which
-review tier, single-vs-batch filing), never branches — the routed playbook reads this spine first, then
+review tier), never branches — the routed playbook reads this spine first, then
 supplies its deltas. All facts come from the prep facts block (SKILL.md §1); all GitHub writes go
 through `${CLAUDE_PLUGIN_ROOT}/scripts/gh_persist.py` with a staged body path in `facts.scratch`.
 
@@ -124,8 +124,8 @@ Present the full draft (title, labels, priority, body between `---` fences), plu
 findings. **Before asking, stage the approved body to disk** — write the exact rendered body to
 `<facts.scratch>/<name>.md`; the staged file *is* the body. Then gate (`header: "File issue?"`): **File
 it** / **Keep iterating**. Treat anything other than an explicit "File it" as keep-iterating — never file
-without that go-ahead. (The Epic one-shot batch is the sole exception — `epic-split.md` files autonomously
-on a clean E1+E2 pass.)
+without that go-ahead. Every route files exactly one issue behind this gate — the Epic batch's
+gate-skip retired with the batch (#16).
 
 ## Staged filing — the single write path
 

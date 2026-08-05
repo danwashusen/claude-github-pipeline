@@ -38,13 +38,6 @@ you're here to surface.
   - `draft` — no issue number yet; review the body verbatim.
   - `revise <N>` — issue #N is already filed; fetch the live state with `gh issue view <N> --comments
     --json …` and walk the thread.
-  - `split` — Epic *split loop*: no story bodies exist yet. The proposed split (each story's title + a
-    one-line scope naming the files, layer, and test surface it will touch — bookend slots carry
-    slot-level scopes instead) is in `<<related_drafts>>`, and
-    the Epic body is in **Draft**. Run **dimensions 5 and 7 only**, adversarially, and ground every
-    overlap claim by grepping the codebase — you're reasoning from scopes, not bodies, so an overlap
-    claim you can't grep is a dropped finding. (Dimension 7's bookend structural checks are the
-    exception: their evidence is the Epic body and the story list, not a grep.)
 - **Repo root**: `<<repo_root>>` — absolute path (the drafter's current checkout, `facts.root.path`; the
   drafter grounds on the working tree, not a pinned ref — the checkout the session was started in IS
   the vantage by design). Read `docs/prd.md`, `docs/architecture.md`,
@@ -63,16 +56,18 @@ you're here to surface.
   names), or the heuristic cues, per [`../../_shared/open-question-detection.md`](../../_shared/open-question-detection.md).
   Empty when neither applies. Used by the dimension-1 frozen-undecided check to tell an *open* decision
   from a settled one. Read the named source when this is non-empty.
-- **Dimensions to check**: `<<dimensions>>` — a subset of {1, 2, 3, 4, 5, 6, 7}. Only run the listed
-  dimensions. Don't fabricate findings outside the list.
-- **Related drafts**: `<<related_drafts>>` — for an Epic, the sibling stories so you can reason across them
-  for dimensions 5 and 7. In `split` mode it carries each story's **title + one-line scope** (files /
-  layer / test surface; bookend slots carry slot-level scopes). In the body re-confirm it carries each
-  story's **title + full body**. Empty unless type is `epic`.
+- **Dimensions to check**: `<<dimensions>>` — a subset of {1, 2, 3, 4, 6}. Only run the listed
+  dimensions. Don't fabricate findings outside the list. The numbering has gaps on purpose: dimensions
+  **5** (dependency-graph ordering) and **7** (sizing / over-split, with the bookend check) moved to the
+  slicer's cut reviewer with #16, which reviews a decomposition at both altitudes. Renumbering the
+  survivors would silently change what every caller's dimension set means.
 
 ## Dimensions
 
-Run only the dimensions named in the inputs.
+Run only the dimensions named in the inputs. **5 and 7 are absent by design** —
+dependency-graph ordering and sizing / over-split (with the bookend check) are decomposition
+judgments, and they live in the slicer's `references/cut-reviewer-prompt.md`, which applies them at
+both altitudes (#16). This reviewer reads ONE issue; it never reasons across a sibling set.
 
 1. **Doc coherence.** Cross-reference the body against the project docs. Four patterns to flag:
    - **Contradicts** — the body proposes something a doc explicitly forbids or counters. Cite the doc
@@ -121,14 +116,6 @@ Run only the dimensions named in the inputs.
    author has agreed to a different approach. Compare the issue body to that direction. If the body still
    describes a superseded approach, flag it.
 
-5. **Story ordering** *(only when type is `epic` and `<<related_drafts>>` contains sibling stories — split
-   scopes in `split` mode, full bodies otherwise)*. Build a dependency graph: for each story, infer
-   dependencies from the files/APIs/types it claims to consume vs. what other stories claim to deliver.
-   Compare a topological order of that graph to the story order given in `<<related_drafts>>` — the order
-   the batch will be filed in, which becomes the epic's sub-issue order. If that order
-   makes a story unimplementable until a later story ships, flag the violation with both orders and a
-   proposed swap.
-
 6. **Completeness.** For drafts especially: are the required template sections present? User story for
    features. Definition of done for stories. Steps to reproduce + expected vs. actual for bugs. Goal +
    Background + Definition of done for Epics (an Epic body does **not** list its stories — that's the
@@ -136,57 +123,15 @@ Run only the dimensions named in the inputs.
    or whose References cite nothing a reader could follow, is incomplete). If a section is missing, flag
    it; if a section exists but is empty or a placeholder, flag that too — with one exception: a bookend
    story's explicit deferral placeholder ("specified at planning time" / "grounded on the epic delivery
-   log") is the sanctioned form for content the planner owns, not an empty section; don't flag it.
-
-7. **Story sizing / over-split** *(only when type is `epic` and `<<related_drafts>>` contains sibling
-   stories; adversarial)*. Your job is to attack the proposed split — find the strongest case it is
-   *wrong*, in **either** direction. Splitting an Epic has a fixed cost the bodies never show: each story
-   pays for its own worktree (and any per-worktree resources — simulator, test DB, port), baseline, cold
-   build or app boot, targeted test run, and review-loop round-trip, so a slice that's too thin spends more
-   on overhead than on work.
-
-   - **Too granular → recommend MERGE** when any of these fire for a pair (or cluster) of stories:
-     1. *Shared verification surface* — they would re-run the **same** build, the **same** integration-test
-        target, or the **same** golden/snapshot set. Splitting pays that expensive verification twice for
-        one logical change.
-     2. *Sequential with no standalone value* — one story exists only to feed the next and delivers nothing
-        a reviewer could sign off on its own.
-     3. *Same files or layer, individually thin* — several small edits to the same files/layer a reviewer
-        would naturally read as one change.
-   - **Over-coalesced → recommend SPLIT** (the guardrail): a story bundles slices that each have
-     independent value, a clean contract, *and* a cheaper isolated test surface — the clearest case being
-     distinct pure-function or model layers covered by fast unit tests with no build/UI/snapshot cost. Thin
-     alone is not mergeable; a small slice introducing a real contract worth reviewing on its own (a schema
-     field, a new public type with its own suite) earns its own story.
-   - **Bookend check.** A split defaults to two planner-filled bookend slots: an opening
-     technical-foundation story (shared groundwork two or more later stories consume) and a closing
-     finalization story (cleanup + doc-reality sweep). Three findings:
-     1. No foundation story while ≥2 stories' scopes each introduce/consume the same new groundwork →
-        BLOCKER (grep-grounded like every claim here); remediation: extract the shared groundwork into
-        an opening foundation story.
-     2. Either bookend absent with no omission justification — the Epic body carries it as a note
-        in `## Background` — → SUGGESTION. A stated justification the evidence contradicts →
-        flag at the severity the evidence supports.
-     3. Leakage: a feature story *defining* shared groundwork a foundation story exists to hold →
-        SUGGESTION to move the claim there; a bookend body enumerating concrete seams or cleanup items
-        (content the planner owns, via seam dispositions and the delivery-log-grounded just-in-time
-        plan) → SUGGESTION to restore the deferral placeholder. The body branch runs only where bodies
-        exist (the re-confirm and revise modes, never `split`).
-     A bookend's deferral body is planner-owned by design: its thinness is not evidence for merge
-     signals 2 or 3 and draws no merge recommendation on that basis.
-
-   You are reasoning from scope descriptors (files / layer / test surface), not full bodies, so **ground
-   every overlap claim by grepping the codebase**: confirm two stories really touch the same files or the
-   same test target before recommending a merge. A merge/split recommendation without a grepped overlap is
-   a dropped finding (see "Evidence is mandatory"). Name the signal (1/2/3 or guardrail) in each finding.
+   log") is the sanctioned form for content the planner owns, not an empty section; don't flag it. The
+   drafter no longer authors bookend stories, but it still **revises** them, so the carve-out stays.
 
 ## Severity
 
 Each finding carries one severity:
 
 - **BLOCKER** — the issue is concretely wrong: a referenced API doesn't exist, the PRD directly
-  contradicts, story order makes a story unimplementable, a required template section is empty without an
-  explicit `[to be filled in]` placeholder.
+  contradicts, a required template section is empty without an explicit `[to be filled in]` placeholder.
 - **SUGGESTION** — would meaningfully improve clarity or alignment but isn't strictly wrong.
 - **NIT** — small polish (typo, slight rewording for searchability).
 
@@ -208,7 +153,7 @@ Emit a single Markdown block with this exact shape, so the orchestrator can pars
 
 ```
 ## Review summary
-Mode: <draft | revise N | split>
+Mode: <draft | revise N>
 Type: <bug | incomplete | feature | epic | story | question>
 Dimensions checked: <comma-separated list of dimension numbers>
 Findings: <BLOCKER count> blocker, <SUGGESTION count> suggestion, <NIT count> nit
@@ -230,7 +175,7 @@ If there are no findings (after evidence-filtering), output exactly:
 
 ```
 ## Review summary
-Mode: <draft | revise N | split>
+Mode: <draft | revise N>
 Type: <...>
 Dimensions checked: <...>
 Findings: 0

@@ -359,6 +359,17 @@ class EpicAltitudeTests(unittest.TestCase):
         self.assertIn("technical-foundation", self.reviewer_norm)
         self.assertIn("finalization", self.reviewer_norm)
         self.assertIn("thinness is not evidence for merge signals 2 or 3", self.reviewer_norm)
+        # The severity ladder came across intact: the shared-groundwork case is the BLOCKER, and it is
+        # grep-grounded like every other claim this reviewer makes.
+        self.assertRegex(self.reviewer_norm, r"No foundation story while ≥2 stories.{0,120}BLOCKER")
+        self.assertIn("grep-grounded", self.reviewer_norm)
+        # The three MERGE signals and the SPLIT guardrail, which are what "sizing" actually decides.
+        for phrase in (
+            "Sequential with no standalone value",
+            "Same files or layer, individually thin",
+            "recommend SPLIT",
+        ):
+            self.assertIn(phrase, self.reviewer_norm, phrase)
         # Findings-only: it never asks the operator and returns no decision code.
         self.assertIn("never calls `AskUserQuestion`", self.reviewer_norm)
         self.assertIn("returns no decision code", self.reviewer_norm)
@@ -378,6 +389,20 @@ class EpicAltitudeTests(unittest.TestCase):
         for phrase in ("specified at planning time", "grounded on the epic delivery log"):
             self.assertIn(phrase, self.method_norm, phrase)
             self.assertIn(phrase, self.reviewer_norm, phrase)
+        self.assertIn("deferral placeholder", self.method_norm)
+        # Where the omission justification is RECORDED, not just that one is required — it has to
+        # survive every later resume, so a session-only note would not do.
+        self.assertIn("epic body's `## Background`", self.method_norm)
+        # The planner's foundation-slot default keys on this slot existing, and its wording is the
+        # cross-skill half of the contract (it previously pinned against the drafter's epic-split).
+        seams = _normalized(
+            (
+                REPO_ROOT / "skills" / "planner" / "references" / "seam-dispositions.md"
+            ).read_text(encoding="utf-8")
+        )
+        self.assertIn("Foundation-slot default", seams)
+        self.assertIn("double-file", seams)
+        self.assertIn("slicer-filed technical-foundation slot", seams)
 
     def test_the_method_states_the_dod_inversion_at_epic_altitude(self):
         """A slice must NOT carry a DoD and a story MUST — the two rules look contradictory unless the

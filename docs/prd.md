@@ -91,7 +91,11 @@ ground these are produced by implementation step S1. Lettered items are individu
   - (c) Grounds framing in the consuming repo's PRD, surfacing contradicts / extends / gap
     tensions as a `## PRD impact` note and conflict gate.
   - (d) Runs an adversarial draft review before filing.
-  - (e) Splits an epic into story issues with the epic body linking them.
+  - (e) *(Retired at #16 — see §5.6.)* The drafter drafts and revises **one** issue's body, an Epic's
+    included, and decomposes nothing: splitting an epic into story issues is the slicer's, at epic
+    altitude. The letter is kept rather than renumbered because §5.x letters are cited individually.
+    (Its original wording — "with the epic body linking them" — was already superseded by the native
+    parent/sub-issue relation at 3.1.0, which retired the `## Stories` checklist on a fresh epic.)
   - (f) Never silently absorbs an unresolved open question from a source doc: each is matched
     against the question registry (search before file), filed if untracked, and recorded on the
     build issue per disposition — `scoped-out`, `in-scope (blocked)` (with a native `blocked by`
