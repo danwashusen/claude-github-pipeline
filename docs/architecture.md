@@ -149,7 +149,13 @@ Every script emits exactly one JSON envelope on stdout.
   `docs/README.md`, or no `<!-- doc-catalogue -->` block in it — see
   [`skills/_shared/doc-catalogue.md`](../skills/_shared/doc-catalogue.md)), so the planner and drafter
   ground on none. It has **no fallback rung** by design — no built-in path list, no filesystem walk —
-  which is why the degradation is a loud notice rather than a silent default. The notice set is
+  which is why the degradation is a loud notice rather than a silent default.
+  `SUBISSUE_FIELD_UNAVAILABLE` is a fifth: a *read* of the relation could not retrieve the `parent`
+  field, so a caller that needed an issue's CURRENT parent (`prep_slicer.py`'s adoption-candidate
+  lookup) does not know it. It is deliberately NOT `SUBISSUES_UNSUPPORTED`, which consumers read as a
+  WRITE outcome — a filed child left unparented — and abort on; a failed read has written nothing, so
+  reusing that token would abort a cut and report a child that does not exist. On this notice a reader
+  treats the parent as UNKNOWN, never as absent. The notice set is
   deliberately **open** — unlike decision codes, a script may add one without a contract change
   ([`scripts/pipelib/decisions.py`](../scripts/pipelib/decisions.py)).
 - **Spill routing.** Any verbatim section (body, thread, diff, marker comment) is inline when
@@ -244,9 +250,9 @@ re-derivation. Inline-mode sections carry the content in the bare field (`issue_
   component is script-derived.
 - **The routing table lives in `SKILL.md`, visibly**: `vector → playbooks/<file>` rows. Prep
   proposes (`suggested_playbook`); the router confirms against the table and may override only
-  on evidence the script cannot see (e.g. thread supersedes labels; the drafter's promotion
-  override, where the invocation asks a revise target to be re-shaped as an Epic — the receiving
-  end of the planner's seam-gate off-ramp), stating why.
+  on evidence the script cannot see (e.g. thread supersedes labels; the slicer's promote rule, where
+  the invocation asks a target to be re-shaped as an Epic — the receiving end of the planner's
+  seam-gate off-ramp, which was the drafter's until #16), stating why.
 - **Parameterize before you playbook.** A branch that differs only in *values* (base ref, branch
   name, merge strategy, cleanup list) is not a branch — the values are facts. A playbook exists
   only for flows that differ in *actions taken* (epic bootstrap files stories; story completion
@@ -374,6 +380,7 @@ result or a typed §3 decision code, cannot call `AskUserQuestion`, and never wr
 | fitness audit | resolver | read workspace + issue + plan | findings by dimension (incl. plan-vs-code currency) |
 | plan reviewer | planner | plan draft + the asserted grounding checkout | findings by dimension |
 | issue reviewer | drafter | draft + repo context | findings by dimension |
+| cut reviewer | slicer | parent body (path) + proposed children + repo root | findings by dimension |
 | research validator | researcher | dossier draft | findings by dimension |
 | test-selection | resolver, evaluator | diff scope + pinned test config | `COMMAND:` + `RATIONALE:` |
 | review-loop | resolver | PR + review verdict file | items-addressed JSON |
@@ -473,7 +480,7 @@ not a deviation.
 | Post-new-before-delete-old on marker replacement | a crash must not lose the marker | `gh_persist.py` + tests |
 | Spill threshold on verbatim sections | context blowout | `pipelib` spill + tests |
 | Capability-gated degradation (native deps; native parent/sub-issues) with a per-relation notice | consuming repos and `gh` versions vary, and the two relations have different fallbacks | `gh_persist.py`/`gh_gather.py` ladders + tests |
-| Epic↔story hierarchy is the native parent/sub-issue relation, written at filing time by the drafter alone; readers fall back to a legacy `## Stories` checklist and never gate on the relation's absence | GitHub's sub-issue panel, progress rollup, and a Project's Sub-issues progress field are driven by the relation, not by markdown a checklist can't self-tick; and no backfill path exists, so pre-relation epics must keep working | [`skills/_shared/epic-story-hierarchy.md`](../skills/_shared/epic-story-hierarchy.md) + `create --parent` + prep two-tier reads + tests |
+| Epic↔story hierarchy is the native parent/sub-issue relation, written only by the slicer — at filing time via `create --parent`, or after the fact via `add-parent` when an epic adopts an already-filed issue; readers fall back to a legacy `## Stories` checklist and never gate on the relation's absence | GitHub's sub-issue panel, progress rollup, and a Project's Sub-issues progress field are driven by the relation, not by markdown a checklist can't self-tick; and no backfill path exists, so pre-relation epics must keep working | [`skills/_shared/epic-story-hierarchy.md`](../skills/_shared/epic-story-hierarchy.md) + `create --parent` + prep two-tier reads + tests |
 | `main` changes only via PR; a session never commits outside its own asserted workspace; the landing tools treat their starting checkout as read-only | trust topology (§6) | `workspace.py` decisions + prompt invariant |
 | Gate config is read only at the `origin/main` pin via git plumbing (`refblocks`), never from a PR head or any working tree | a PR must not weaken its own gates (§6) | prep scripts + tests |
 | All tracked-file changes land via PR | write-protected `main` | prompt invariant + review |

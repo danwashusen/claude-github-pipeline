@@ -60,7 +60,7 @@ options omit.
      existing `## Open questions` machinery (companion issue + treatment), not a seam disposition.
 
 **Foundation-slot default.** When the target is an epic (or a story under one) whose story set
-carries a drafter-filed technical-foundation slot — an opening story whose body defers its content
+carries a slicer-filed technical-foundation slot — an opening story whose body defers its content
 to planning time — a shared-groundwork seam's home is that story: pin the contract into its
 `## Story contracts` entry rather than filing a new issue ("Contract only" / "Own issue" would
 double-file groundwork the slot exists to hold). Offer those dispositions only for a seam that
@@ -90,8 +90,8 @@ On "Split as epic": stage a **lean** seam-analysis comment to `<facts.scratch>/s
 the seam inventory (name, classification, one line each) plus suggested story boundaries, nothing
 else. No grounding citations and no draft-plan content (grounding is cheap to redo and the epic
 planner redoes it at the right altitude; half-finished plan prose would read as authority to the
-drafter). The body must **not** begin with `<!-- implementation-plan:v1 -->` — a marker there would
-flip the next planner run into revise mode. Post it through the single write path:
+session that splits it). The body must **not** begin with `<!-- implementation-plan:v1 -->` — a marker
+there would flip the next planner run into revise mode. Post it through the single write path:
 
 ```bash
 ${CLAUDE_PLUGIN_ROOT}/scripts/gh_persist.py comment <owner/repo> issue <N> "<facts.scratch>/seam-analysis.md"
@@ -99,9 +99,14 @@ ${CLAUDE_PLUGIN_ROOT}/scripts/gh_persist.py comment <owner/repo> issue <N> "<fac
 
 Then end the session with the **Epic-shaped, planning aborted** handoff
 ([`handoff-renderings.md`](handoff-renderings.md)): `plan: ✗`, no `Grounding:` line, `Next:` the
-drafter revising #N as an Epic. Post **no** plan and **no** `planned` label — nothing was planned;
-the comment is the analysis' durable record, and the drafter's prep spills it with the thread, so
-the split candidates arrive in that session for free.
+**slicer** promoting #N to an Epic. Post **no** plan and **no** `planned` label — nothing was planned;
+the comment is the analysis' durable record, and the slicer's prep spills it with the thread, so the
+candidate story boundaries arrive in that session for free.
+
+Since #16 both off-ramps land on the same stage, one operation at two altitudes: here it promotes #N
+to an Epic (behind its own body-rewrite gate) and cuts *shippable*-independent **stories**; on
+off-ramp B it cuts *demonstrable*-independent **slices** in place. The bar the seams clear is the whole
+difference, which is why the triage table selects on exactly that.
 
 ## Off-ramp B (planning aborted; the issue is sliced first)
 
@@ -109,13 +114,15 @@ On "Slice first": **post nothing at all** and end with the **Too large to plan a
 ([`handoff-renderings.md`](handoff-renderings.md)): `plan: ✗`, no `Grounding:` line, no `planned`
 label, `Next:` the slicer on #N.
 
-The asymmetry with off-ramp A is deliberate. The drafter splits *per* the seam-analysis comment, so
-that comment is the handover artifact; the slicer instead re-derives its own cut from the repo's
-declared grounding docs ([`../../slicer/references/slicing-method.md`](../../slicer/references/slicing-method.md)),
-so a planner-authored comment would be a second, staler decomposition proposal competing with it —
-and one the operator would have to reconcile. The `Why:` line carries everything the slicer's reader
-needs: what makes the issue too large, and why its seams are demonstrable- rather than
-shippable-independent.
+The asymmetry with off-ramp A is deliberate, and it is about **altitude, not about which skill runs**
+(both off-ramps reach the slicer since #16). A promotion reshapes the target itself and needs the
+shippable-independence evidence and the suggested story boundaries to argue from, so that comment is a
+genuine handover artifact. A demonstrable-altitude cut in place needs no such argument: it re-derives
+from the repo's declared grounding docs
+([`../../slicer/references/slicing-method.md`](../../slicer/references/slicing-method.md)), so a
+planner-authored comment would be a second, staler decomposition proposal competing with it — and one
+the operator would have to reconcile. The `Why:` line carries everything that reader needs: what makes
+the issue too large, and why its seams are demonstrable- rather than shippable-independent.
 
 The slicer hands back here. Its slices then arrive as facts on the next run — `facts.slices` plus the
 plan-versus-live diff — and the phase set must satisfy the cardinality rule in
