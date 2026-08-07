@@ -48,8 +48,8 @@ anything is appended to it).
 On a refusal, **do not read the playbook**: state the first refusal's reason (the `attention`
 line carries the evidence) plus its breadcrumb, and stop — nothing is written on any refusal
 path. The set is closed and fully mechanical: `epic-target` (an epic's DoD is outcome-level;
-requirements belong on its stories — breadcrumb the open stories, or `/github-pipeline:drafter`
-when none exist), `slice-target` (a slice carries the slicer's `## Acceptance criteria`, never a
+requirements belong on its stories — breadcrumb the open stories, or `/github-pipeline:slicer`
+when none exist, since the slicer cuts an epic into stories), `slice-target` (a slice carries the slicer's `## Acceptance criteria`, never a
 DoD — breadcrumb the parent story), `question-target` (a question issue carries no DoD by
 contract; a human answers it in its thread), `closed-target` (criteria on delivered work can
 never be projected or verified).

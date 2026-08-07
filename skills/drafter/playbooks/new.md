@@ -19,13 +19,17 @@ The type sets the template, the gather set, and the reviewer dimensions. Cue-mat
 - **Question** — a request for a human decision, not a unit of work. The tell: *no code follows from
   filing it* — someone has to answer first.
 
-**Feature vs. Epic — ask, don't promote.** When Epic signals fire but scope is genuinely the user's call,
-gate (`header: "Issue size"`): **One feature** / **Epic + child stories**. If genuinely ambiguous between
-bug / feature / epic, ask — don't guess.
+**Feature vs. Epic — ask, don't assume.** When Epic signals fire but scope is genuinely the user's call,
+gate (`header: "Issue size"`): **One feature** / **Epic (stories cut separately)**. If genuinely ambiguous
+between bug / feature / epic, ask — don't guess.
 
-An **Epic** or **question** classification is the router's new-mode override signal (SKILL.md §2): stop
-here and return to the router — it reads `epic-split.md` or `question.md` instead. State the override
-reason. Everything below runs for a single build issue (bug / incomplete / feature / story).
+A **question** classification is the router's new-mode override signal (SKILL.md §2): stop here and return
+to the router — it reads `question.md` instead. State the override reason.
+
+An **Epic** classification stays on this route: an Epic is **one issue** with its own template, filed
+through the same spine and the same Step-6 gate as any other. Its child stories are **not** drafted here —
+the slicer cuts them at epic altitude afterwards (#16), which is why the Epic template carries no
+`## Stories` section and the handoff below forwards to the slicer rather than the planner.
 
 ## Step 2 — Run the spine
 
@@ -34,7 +38,8 @@ Read [`draft-spine.md`](draft-spine.md) and execute it end to end (gather → re
 
 - **Template + title.** The classification's built-in template ([`../references/issue-templates.md`](../references/issue-templates.md))
   when the repo has none. Titles: `[Bug] <component>: <what's wrong>`, `[Incomplete] <component>: <what's
-  missing>`, `<verb> <object>` (feature/story). Drop the prefix when the repo labels type.
+  missing>`, `<verb> <object>` (feature/story), `Epic: <theme>` (epic). Drop the prefix when the repo
+  labels type — except an Epic's, which the type detector also reads.
 - **Reviewer dimensions (spine review loop).** `1, 2, 3, 6` (`draft` mode). Dimension 1 carries the PRD
   contradicts/extends/gap + frozen-undecided check; dimension 3 the internal + `## Open questions`
   consistency check.
@@ -56,3 +61,6 @@ rename a field or restructure it:
 - **Single issue filed with open questions**: same shape + the `**Open questions:**` line (companion
   `question` issues + a disposition tally covering every OQ); `Why:` notes the planner plans only the
   decided scope.
+- **Epic filed** (`type: epic`): `Epic:` line (`plan: ✗`) + a `Stories:` line reading `none yet — cut into
+  stories next` + `Next: /github-pipeline:slicer <N>`; `Why:` the epic has no children yet, and an epic
+  plan pins cross-story contracts, so the stories must exist before the planner runs.

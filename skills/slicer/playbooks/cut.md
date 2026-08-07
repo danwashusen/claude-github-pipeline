@@ -1,15 +1,43 @@
-# cut — ground, decompose, approve, file
+# cut — ground, decompose, review, approve, file
 
-The one flow: ground → decompose → approve → the write gate → sequential filing → handoff. `fresh` and
-`resume` differ only in values (`facts.slices` holds what exists; `next_index` is where numbering
-continues). Facts come from prep (SKILL.md §1); the write discipline, the zero-mutation gate, the
-never-edit-the-parent rule and the partial-failure rule are SKILL.md §3, not restated here.
+The one flow: (promote) → ground → decompose → adversarial review → approve → the write gate →
+sequential filing → handoff. Both altitudes and both modes run these same steps and differ only in
+values: `facts.vector.altitude` sets the bar and the child template, `facts.children` holds what exists,
+`next_index` is where story-altitude numbering continues. Facts come from prep (SKILL.md §1); the write
+discipline, the zero-mutation gate, the never-edit-the-parent rule, the review-loop control and the
+partial-failure rule are SKILL.md §3, not restated here.
+
+## S0 — Promote (only when `facts.promotion`)
+
+The target is a standard issue the operator asked to become an Epic. Rewrite it **before** cutting, so
+the rest of the session is an ordinary epic-altitude run.
+
+Draft the Epic body from the house Epic template
+([`../../drafter/references/issue-templates.md`](../../drafter/references/issue-templates.md)),
+redistributing #N's own content between the Epic body and the story bodies you will propose (edit history
+preserves the original). A planner seam-analysis comment in the thread pre-seeds the candidate story list
+— a proposal to test in S2, never authority.
+
+This rewrite is destructive where a `create` is not, so it does **not** ride the cut's gate: diff-show the
+old→new body (Title; Labels ±; changed/added/removed sections) and wait for **explicit confirmation**,
+then apply. Preserve any `> 📋 **Implementation plan:**` pointer line verbatim — the superseded plan
+comment is the planner's artifact, and the Epic's own re-plan replaces it. A `## Stories` section in the
+original body is dropped by the rewrite: the native relation, not body text, is the story record.
+
+```bash
+${CLAUDE_PLUGIN_ROOT}/scripts/gh_persist.py edit-body <owner/repo> <N> "<facts.scratch>/epic.md"
+${CLAUDE_PLUGIN_ROOT}/scripts/gh_persist.py edit-labels <owner/repo> <N> --add epic --remove <old-type>
+```
+
+On decline: perform neither write and emit the *Declined at the promotion gate* shape. Nothing else in
+this flow runs — an unpromoted issue cut at epic altitude would file stories under a non-epic parent,
+which the by-construction rule reads as slices.
 
 ## S1 — Ground, or refuse
 
 `Read` [`../references/slicing-method.md`](../references/slicing-method.md) first — the method, the
-per-slice template, and the presentation format this flow delegates to. Then read the target's body and
-thread from `facts.sections` (spilled paths).
+per-altitude child templates, and the presentation format this flow delegates to. Then read the target's
+body and thread from `facts.sections` (spilled paths).
 
 Read the docs `facts.grounding_docs` declares, from `facts.root.path` by absolute path — plain
 `Read`/`Grep`. Treat each per its `role` (what it answers) and `authority`: `binding` = a cut that
@@ -26,55 +54,99 @@ and proceed.
 
 Write the **decomposition strategy** first — two or three sentences: which seam carries the most risk,
 what the walking skeleton is, what is deliberately deferred. It stays in this session; persisting it
-parent-side would create a second source of truth about the slice set, and each slice's own `## Why a
-separate slice` reconstructs the reasoning.
+parent-side would create a second source of truth about the child set, and each child's own rationale
+section reconstructs the reasoning.
 
-Cut per the method reference: walking skeleton first; each subsequent slice adds exactly one observable
-increment; every slice demonstrable in one sentence; prefer few thick-enough slices. On `mode: resume`
-treat `facts.slices` as fixed — already approved, possibly already shipped — and cut only the
-remainder, numbering from `facts.slices.next_index`.
+Cut per the method reference **at `facts.vector.altitude`**: walking skeleton first; each subsequent
+child adds exactly one observable increment; every child clears its bar in one sentence; prefer few,
+thick-enough children. At epic altitude also apply the coalescing pass and the two bookend slots (method
+§5) — an omitted bookend is recorded with its reason in the epic body's `## Background` (an approved S4
+row, never a silent write and never a silent omission). On `mode: resume` treat `facts.children` as fixed
+— already approved, possibly already shipped — and cut only the remainder, numbering from
+`facts.children.next_index` at story altitude. `facts.children.placeholder_count` entries are the
+exception: a legacy `## Stories` bullet with no issue number names a story nobody has **filed**, so it is
+part of what this cut files, not part of what it treats as done.
 
-**Citation duty.** Every slice's `## Grounding` names what it derives from: the catalogue docs (with
-§refs) recording the behaviour, the issue body/thread, the dossier. A slice that can cite nothing is a
-gap in the source or invented scope — surface it as a finding and leave it out of the cut. Carry any
-`provisional-default` marker from `facts.open_questions` into the `## Grounding` of every slice it
-touches.
+Include any `facts.adoption_candidates` as candidate children, marked as adoptions with their live state;
+adopt an existing issue *instead of* filing a new child whose scope it already covers, never both. For a
+candidate the operator names now, run the one-shot `--adopt-check` (SKILL.md §1).
 
-## S3 — Present and iterate
+**Citation duty.** Every child's grounding names what it derives from: the catalogue docs (with §refs)
+recording the behaviour, the issue body/thread, the dossier. A child that can cite nothing is a gap in the
+source or invented scope — surface it as a finding and leave it out of the cut. Carry any
+`provisional-default` marker from `facts.open_questions` into the grounding of every child it touches.
+
+## S3 — Review adversarially
+
+Dispatch [`../references/cut-reviewer-prompt.md`](../references/cut-reviewer-prompt.md) (resolve its
+absolute path yourself — a reference path is not substituted in a dispatched prompt). Fill `<<altitude>>`,
+the parent (staging its body to `facts.scratch` and passing the **path**), the ordered candidates, any
+existing children, `facts.grounding_docs`, and `facts.root.path` as `<<repo_root>>`. Run the **split
+pass** (`<<pass>>: split`, dimensions `ordering, sizing`) on titles-plus-scopes, then the **re-confirm
+pass** (`<<pass>>: re-confirm`, dimensions `ordering, sizing, conformance`) once bodies exist — a body
+can reveal a child is bigger or smaller than its scope claimed. On passes 2+ also fill
+`<<changed_summary>>` with what changed since the last pass, so the reviewer re-verifies only that plus
+its own prior findings instead of re-reading the whole cut.
+
+Apply the merges, splits and re-orders the findings justify; contest one you can refute with evidence and
+say so. Re-loop under SKILL.md §3's control (3-pass cap, circular guard). A BLOCKER you neither fix nor
+refute goes to the operator in S4's closing note — never silently past it.
+
+## S4 — Present, iterate, and the write gate
 
 Show the operator, per the method reference's presentation format: the grounding summary (one line per
-doc read or noted absent), the strategy, the ordered slice list (designator + outcome sentence each), the
-full proposed bodies, then a closing note of risks, assumptions, and anything wanting stakeholder
-clarification. They may approve, re-cut, reorder, retitle, or drop slices — iterate until approved. An
-open question surfacing here is **not** a slice: route it out (`/github-pipeline:drafter` files the
-companion `question` issue) rather than burying a decision in a slice body.
+doc read or noted absent), the strategy (and what coalescing merged, at epic altitude), the ordered child
+list (designator-or-title + outcome sentence each, adoptions marked), the full proposed bodies, then a
+closing note of risks, assumptions, unresolved reviewer findings, and anything wanting stakeholder
+clarification. They may approve, re-cut, reorder, retitle, or drop children — iterate until approved. An
+open question surfacing here is **not** a child: route it out (`/github-pipeline:drafter` files the
+companion `question` issue) rather than burying a decision in a child body.
 
-## S4 — The write gate
+Then one summary table — designator-or-title · title · one-line outcome · the pending write (`create
+--parent` for a new child, `add-parent` for an adoption, `edit-body` for a checklist reconciliation or a
+bookend-omission `## Background` note) —
+and **one** explicit `AskUserQuestion` gate (per
+[`../../_shared/asking-the-user.md`](../../_shared/asking-the-user.md)). Aborting here costs nothing; on
+decline perform no writes and emit the *Declined at the write gate* shape (the proposed cut is in the
+transcript; a re-run re-derives it).
 
-One summary table — designator · title · one-line outcome · pending write — then **one** explicit
-`AskUserQuestion` gate (per [`../../_shared/asking-the-user.md`](../../_shared/asking-the-user.md)).
-Aborting here costs nothing; on decline perform no writes and emit the *Declined at the write gate*
-shape (the proposed cut is in the transcript; a re-run re-derives it).
+## S5 — File the approved children
 
-## S5 — File the approved slices
-
-Stage each body to `<facts.scratch>/slice-S<K>.md`, then file **one at a time, in approved order**:
+Stage each body to `<facts.scratch>/` — `slice-S<K>.md` at story altitude, `story-<i>.md` at epic
+altitude — then apply the approved list **one at a time, in approved order**, interleaving creates and
+adoptions exactly as approved:
 
 ```bash
 ${CLAUDE_PLUGIN_ROOT}/scripts/gh_persist.py create <owner/repo> "<facts.scratch>/slice-S<K>.md" \
   --title "<N>/S<K> — <behaviour phrase>" --parent <N>
+${CLAUDE_PLUGIN_ROOT}/scripts/gh_persist.py create <owner/repo> "<facts.scratch>/story-<i>.md" \
+  --title "<story title>" --label story --parent <N>
+${CLAUDE_PLUGIN_ROOT}/scripts/gh_persist.py add-parent <owner/repo> <adopted-#> <N>
 ```
 
-The envelope returns the new issue's `url`, not its number — parse `#<n>` from the URL's trailing segment
-for the report and the handoff.
+A `create` envelope returns the new issue's `url`, not its number — parse `#<n>` from the URL's trailing
+segment for the report and the handoff. `add-parent` reports `changed`; an adopted issue's body is never
+rewritten here.
 
-A `SUBISSUES_UNSUPPORTED` notice means the relation was not established, so that slice is **unparented**:
-stop, report it, file no more. An unparented slice drives no rollup — the entire reason these are issues
-— so prose-linked slices are worse than none: they read as tracked progress that does not exist.
+At epic altitude, an **omitted bookend** approved at S4 lands as its `## Background` note in the same
+`edit-body` that reconciles the checklist when both apply, or its own otherwise. It goes in the epic body
+rather than this session's report because the reviewer re-reads it on every later resume to judge whether
+the justification still holds; a session-only note would be gone by then.
+
+When `facts.children.source` is `checklist` or `mixed`, the epic's legacy `## Stories` section is still
+the only record of those entries: reconcile its checkboxes against live state (closed → checked, open →
+unchecked) with **one** `edit-body`, and leave the section in place. `facts.attention` already names each
+mismatch. This is the second sanctioned parent-body write, and it was approved at S4 like any other row.
+
+A `SUBISSUES_UNSUPPORTED` notice means the relation was not established, so that child is **unparented**:
+stop, report it, file no more. An unparented child drives no rollup — the entire reason these are issues —
+so prose-linked children are worse than none: they read as tracked progress that does not exist.
 
 ## S6 — Handoff
 
 Emit the matching shape from [`../references/handoff-renderings.md`](../references/handoff-renderings.md)
-verbatim, per SKILL.md §4. The forward route is the planner: its phases must map onto the slices just
+verbatim, per SKILL.md §4. The forward route is the planner: its phases must map onto the children just
 filed (`sub-issue:` in [`../../planner/references/plan-schema.md`](../../planner/references/plan-schema.md)),
-and its reconciliation reads the live set — so a plan authored before this cut is now stale.
+and its reconciliation reads the live set — so a plan authored before this cut is now stale. At epic
+altitude the planner posts the epic-level plan (cross-story contracts + sequencing) and each story is
+then planned just-in-time as it is built.

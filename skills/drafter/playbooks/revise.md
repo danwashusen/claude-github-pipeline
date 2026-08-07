@@ -1,9 +1,10 @@
 # Revise an existing issue
 
-Route for a **revise** session on a standalone issue or a story (`vector.mode: revise`, `vector.type` ≠
-`question`; `vector.type: epic` routes to `epic-split.md` instead, as does a promotion-to-Epic override —
-SKILL.md §2). Refresh a stale issue against today's reality without re-filing: start from the filed body,
-end in `edit-body`.
+Route for a **revise** session on any non-`question` issue — a standalone issue, a story, or an Epic
+(`vector.mode: revise`). Refresh a stale issue against today's reality without re-filing: start from the
+filed body, end in `edit-body`. Revising an **Epic** revises that one body and nothing else: its story set
+is the native sub-issue relation, so changing *which* stories exist is a slicer run at epic altitude, not a
+body edit here (SKILL.md §2).
 
 ## Step R1 — Read the target
 
