@@ -204,11 +204,14 @@ class StoryBaseTests(PrepWorkspaceOpenSandboxTestCase):
 
 
 class EnsureGatePropagationTests(PrepWorkspaceOpenSandboxTestCase):
-    def test_root_dirty_propagates_from_the_composed_ensure(self):
+    def test_a_dirty_invoker_opens_and_the_notice_is_forwarded(self):
+        """v3.x: ROOT_DIRTY is retired, and the ensure core's HOOK_SOURCE_DIRTY notice must reach
+        the prep's own envelope — this prep used to discard the composed core's notices, which
+        would have made the dirty-source report invisible to the operator."""
         _write(self.root / "dirty.txt", "uncommitted\n")
         envelope = self._envelope()
-        self.assertEqual(envelope["status"], "needs_decision")
-        self.assertEqual(envelope["decision"]["code"], "ROOT_DIRTY")
+        self.assertEqual(envelope["status"], "ok")
+        self.assertIn("HOOK_SOURCE_DIRTY", envelope["notices"])
 
     def test_branch_in_use_propagates(self):
         elsewhere_ctx = tempfile.TemporaryDirectory()

@@ -198,7 +198,6 @@ import doc_catalogue  # noqa: E402  (the consuming repo's declared grounding doc
 import gh_gather  # noqa: E402
 import gh_pr_gather  # noqa: E402
 import oq_tracker  # noqa: E402
-import refblocks  # noqa: E402  (the origin/main pin — root.sha provenance, uniform across preps)
 import parse  # noqa: E402  (the prior plan's `## Phases` parse for the sub-issue diff — best-effort,
 # see step 4.5; also keeps `prep_planner.parse` resolving for tests/test_prep_planner.py's direct
 # `prep_planner.parse.parse_oq_links(...)` call, per the S14-promotion's "tests unmodified" bar.
@@ -231,8 +230,6 @@ RESEARCH_MARKER = "<!-- issue-research:v1 -->"
 # planner, staged for both an epic-as-target run (its OWN delivery log, informational) and a
 # story-under-epic JIT run (the reconciliation input against the epic plan's pinned contracts).
 DELIVERY_LOG_MARKER = "<!-- epic-delivery-log:v1 -->"
-
-ROOT_MAIN_BRANCH = "main"
 
 # Grounding docs come from the CONSUMING repo's `<!-- doc-catalogue -->` block, not from any path
 # list here (`skills/_shared/doc-catalogue.md`; `scripts/doc_catalogue.py`). This prep previously
@@ -999,13 +996,14 @@ PLAN_REF_ROW_STORY_NO_PARENT = "story-no-open-parent-epic"
 PLAN_REF_ROW_DEFAULT = "no-open-pr-default-branch"
 
 
-def _select_plan_ref(issue_type, epic_branch_name, open_pr_headref, parent_epic_open=False):
+def _select_plan_ref(issue_type, epic_branch_name, open_pr_headref, root_branch, parent_epic_open=False):
     """Pure lookup table: `(issue_type, epic_branch_name, open_pr_headref, parent_epic_open)` ->
     `(plan_ref, plan_ref_row)`. `epic_branch_name` is the discovered branch (or `None` on
     bootstrap/no-parent); `open_pr_headref` is the target issue's own first open PR's
     `headRefName`, or `None`; `parent_epic_open` (story only — ignored for every other
     `issue_type`) distinguishes row 5 (D4 fix: an open parent whose branch hasn't bootstrapped yet)
-    from row 6 (no parent, or a closed one) — both still resolve `plan_ref` to `main`, but the row
+    from row 6 (no parent, or a closed one) — both still resolve `plan_ref` to the default
+    branch (`root_branch`, derived — never a hardcoded `main`), but the row
     LABEL must say which reality produced it (architecture.md §4: facts are data, never
     re-derived — including the row name itself, not just the ref value). Checked in table order —
     the open-PR-head check runs FIRST and unconditionally, so the "open-PR-head wins when more than
@@ -1017,14 +1015,14 @@ def _select_plan_ref(issue_type, epic_branch_name, open_pr_headref, parent_epic_
     if issue_type == "epic":
         if epic_branch_name:
             return epic_branch_name, PLAN_REF_ROW_EPIC_BRANCH
-        return ROOT_MAIN_BRANCH, PLAN_REF_ROW_EPIC_BOOTSTRAP
+        return root_branch, PLAN_REF_ROW_EPIC_BOOTSTRAP
     if issue_type == "story":
         if epic_branch_name:
             return epic_branch_name, PLAN_REF_ROW_STORY_PARENT_BRANCH
         if parent_epic_open:
-            return ROOT_MAIN_BRANCH, PLAN_REF_ROW_STORY_PARENT_BOOTSTRAP
-        return ROOT_MAIN_BRANCH, PLAN_REF_ROW_STORY_NO_PARENT
-    return ROOT_MAIN_BRANCH, PLAN_REF_ROW_DEFAULT
+            return root_branch, PLAN_REF_ROW_STORY_PARENT_BOOTSTRAP
+        return root_branch, PLAN_REF_ROW_STORY_NO_PARENT
+    return root_branch, PLAN_REF_ROW_DEFAULT
 
 
 # ---------------------------------------------------------------------------
@@ -1196,6 +1194,7 @@ def build_facts(issue_number, repo, root=".", scratch_dir=None, refresh=False, c
     # grounding for a story, a plan-PR head on the revise row); ls-remote discovery and the
     # origin/main pin key off the main checkout regardless.
     root = str(workspace._resolve_main_root(root))
+    root_branch = workspace.default_branch(root)
     if scratch_dir is None:
         scratch_dir = "/tmp/gh-planner-%s" % issue_number
     Path(scratch_dir).mkdir(parents=True, exist_ok=True)
@@ -1489,12 +1488,13 @@ def build_facts(issue_number, repo, root=".", scratch_dir=None, refresh=False, c
 
     # 5) plan_ref selection (docs/specs/planner.md Step 4.5's FULL table — see module docstring).
     plan_ref, plan_ref_row = _select_plan_ref(
-        issue_type, epic_branch_name, open_pr_headref, parent_epic_open=parent_epic_open
+        issue_type, epic_branch_name, open_pr_headref, root_branch,
+        parent_epic_open=parent_epic_open,
     )
 
     # 6) Ambient grounding (v3): the planner grounds on the CHECKOUT THE SESSION WAS STARTED IN,
     #    asserted against the selected plan_ref — never a script-created read worktree. For a
-    #    `main` plan_ref (the fresh-standard default), any clean up-to-date `main` checkout —
+    #    default-branch plan_ref (the fresh-standard default), any up-to-date checkout of it —
     #    including the project root — passes (`allow_main_root`; plan-before-open is the canonical
     #    posture). For a non-main plan_ref (the parent-epic branch for a story, an open plan-PR's
     #    head on the revise row, the epic branch for epic-level planning) the operator must sit
@@ -1502,17 +1502,15 @@ def build_facts(issue_number, repo, root=".", scratch_dir=None, refresh=False, c
     #    checkout strictly behind origin/<plan_ref> is WORKSPACE_MISMATCH(stale_checkout) — a
     #    stale footer SHA would be an immediate `plan: stale` downstream. No hooks (grounding is
     #    read-only; unchanged from the read-workspace era). Skipped on --refresh, mirroring
-    #    prep_resolver.py's / prep_evaluator.py's identical contract. `root.sha` is the
-    #    origin/main pin (refblocks), keeping the root fact's provenance uniform across the three
-    #    stage preps even though the planner reads no gate config.
+    #    prep_resolver.py's / prep_evaluator.py's identical contract. `root` reports the main
+    #    checkout's path and the derived default branch — uniform across the three stage preps;
+    #    the grounding SHA a plan footer renders is `grounding.sha`, this checkout's own HEAD.
     if not refresh:
-        root_sha = refblocks.fetch_pin(root)
-
         grounding_envelope, gw_notices, gw_decision = workspace._build_attach(
             cwd if cwd is not None else ".",
             plan_ref,
             run_hooks=False,
-            allow_main_root=(plan_ref == ROOT_MAIN_BRANCH),
+            allow_main_root=(plan_ref == root_branch),
             check_remote_staleness=True,
         )
         if _forward_decision(gw_decision, notices=notices):
@@ -1521,7 +1519,6 @@ def build_facts(issue_number, repo, root=".", scratch_dir=None, refresh=False, c
         grounding_docs, catalogue_notices = _grounding_doc_inventory(grounding_envelope["path"])
         _merge_notices(notices, catalogue_notices)
     else:
-        root_sha = None
         grounding_envelope = None
         grounding_docs = []
 
@@ -1555,7 +1552,7 @@ def build_facts(issue_number, repo, root=".", scratch_dir=None, refresh=False, c
     facts = {
         "repo": repo,
         "scratch": scratch_dir,
-        "root": {"path": root, "sha": root_sha, "source": "origin/main", "fresh": not refresh},
+        "root": {"path": root, "default_branch": root_branch, "fresh": not refresh},
         "target": {
             "kind": "issue",
             "number": issue_envelope["number"],

@@ -41,7 +41,7 @@ ambient checkout — the worktree the operator started the session in — so its
 reads the invoking cwd on purpose. It verifies the checkout (expected branch, not the project
 root, not detached, not stale against ``--expect-remote-sha``), records ``sha``/``dirty``/
 ``unpushed_commits``, and re-runs the ``<!-- worktree-setup -->`` hooks discovered at the
-``origin/main`` pin (``refblocks``) — every mismatch is a ``WORKSPACE_MISMATCH`` decision, never a
+worktree's own working tree — every mismatch is a ``WORKSPACE_MISMATCH`` decision, never a
 silent proceed. ``remove --work`` also emits ``WORKSPACE_MISMATCH`` (reason ``cwd_inside_target``)
 when invoked from inside the worktree it would remove.
 
@@ -54,20 +54,17 @@ Path conventions (architecture.md §6)
 multi-segment ref like ``epic/42-journal`` collapses to one segment) with ``-`` — one worktree
 directory per logical ref regardless of how many slashes its name has.
 
-Root-freshness protocol (architecture.md §6, §12)
----------------------------------------------------
-Verify root is on ``main`` and clean, then ``git fetch`` then ``git merge --ff-only`` and record
-the resulting SHA. Failures are §3 decisions, **never auto-fixed** (§12: "root is never written"):
-``ROOT_NOT_ON_MAIN`` (HEAD isn't ``main``), ``ROOT_DIRTY`` (``git status --porcelain`` is
-non-empty), ``ROOT_DIVERGED`` (``git merge --ff-only`` refuses — local root history has commits
-``origin/main`` doesn't). Run before ``ensure --work``, ``remove --work``, and ``root-status`` — a
-freshness failure short-circuits the whole subcommand as a ``needs_decision`` envelope with no
-worktree side effect. ``ensure --read`` and ``gc`` do not require root freshness: neither forks off
-the root's own HEAD (``ensure --read`` grounds directly at a freshly fetched ``origin/<ref>``, so
-root-on-main+clean is irrelevant to it; ``gc`` only ages/removes already-detached ``ro-*``
-workspaces by mtime, independent of root state), and ``lint`` performs no worktree operation at
-all. So root-freshness applies only to the subcommands that create/remove a work worktree or
-explicitly report root status — not to the three that never touch root's own checkout.
+The operator's checkout is never inspected or written (architecture.md §6, §12)
+------------------------------------------------------------------------------
+No subcommand gates on the state of the checkout it was invoked from. Through v3 this module ran a
+"root-freshness protocol" before ``ensure --work`` and ``root-status`` — on-the-default-branch +
+clean + fast-forwarded, with ``ROOT_NOT_ON_MAIN`` / ``ROOT_DIRTY`` / ``ROOT_DIVERGED`` decisions and
+a ``git merge --ff-only`` that MUTATED the operator's checkout. All three codes are retired: the
+operator decides which branch they stand on, and that branch's working tree is exactly what supplies
+hook and gate config now, so gating on it would forbid the workflow the change exists to enable
+(testing an unmerged config edit). What ``ensure --work`` actually needs is ``origin/<base>``, and
+it fetches that itself — a fresh worktree forks from the real remote tip no matter what the local
+branch is doing. ``root-status`` survives as pure reporting (branch, HEAD, dirty, default branch).
 
 Hook execution (the §1 carve-out)
 -----------------------------------
@@ -87,6 +84,7 @@ that module's own docstring.
 """
 
 import argparse
+import json
 import re
 import sys
 import time
@@ -95,20 +93,15 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 import config_block  # noqa: E402  (import after sys.path setup, by necessity; in-process composition)
-import refblocks  # noqa: E402  (attach-path hook discovery at the origin/main pin)
 from pipelib import hooks, process  # noqa: E402
 from pipelib.decisions import (  # noqa: E402
     AMBIGUOUS,
     BRANCH_IN_USE,
-    ROOT_DIRTY,
-    ROOT_DIVERGED,
-    ROOT_NOT_ON_MAIN,
     WORKSPACE_MISMATCH,
     needs_decision,
 )
 from pipelib.envelope import EXIT_OK, emit_needs_decision, emit_ok  # noqa: E402
 
-ROOT_BRANCH = "main"
 DEFAULT_MAX_AGE_DAYS = 7
 WORKTREES_EXCLUDE_ENTRY = ".worktrees/"
 READ_WORKTREE_PREFIX = "ro-"
@@ -124,8 +117,7 @@ def _git(argv, cwd):
     """Run ``git <argv>`` cwd'd to ``cwd`` via the locked-down runner. Returns the
     :class:`pipelib.process.CommandResult`. Never raises on a non-zero exit — callers branch on
     ``returncode`` themselves, since "the git command failed" means different things in different
-    contexts here (a ``merge --ff-only`` failure IS the ``ROOT_DIVERGED`` signal, not an error to
-    bubble up)."""
+    contexts here (an ``ls-remote`` miss is a fact, not an error to bubble up)."""
     return process.run(["git"] + list(argv), cwd=str(cwd))
 
 
@@ -274,6 +266,9 @@ def list_work_branches(root):
 # `ROOT_DIRTY` — making a prep script that calls `ensure` more than once in one clone (e.g. the
 # planner's just-in-time composite epic+story session, which grounds twice) non-re-runnable, and
 # forcing the consuming repo to commit a plugin-authored `.gitignore` edit it never asked for.
+# The `ROOT_DIRTY` gate itself is retired, but this stays load-bearing for a plainer reason: a
+# plugin-authored write must never show up in the operator's `git status`, whether or not anything
+# gates on it.
 # `.git/info/exclude` has the identical ignore semantics as `.gitignore` (both are gitignore-syntax
 # pattern files git consults when computing untracked status) but lives OUTSIDE the working tree —
 # under the git directory itself — so writing to it can never appear in `git status --porcelain`
@@ -282,6 +277,13 @@ def list_work_branches(root):
 # mechanism, just the correct one for a tool-authored exclusion no consuming repo should have to
 # commit.
 # ---------------------------------------------------------------------------
+
+
+def _toplevel_of(path):
+    """The working-tree root of the checkout containing ``path`` — ``git rev-parse
+    --show-toplevel``, NOT ``_resolve_main_root``. The two differ inside a linked worktree, and
+    the callers that want this one want the checkout the operator is actually standing in."""
+    return str(Path(_git_stdout(["rev-parse", "--show-toplevel"], str(Path(path).resolve()))).resolve())
 
 
 def _resolve_main_root(root):
@@ -295,6 +297,63 @@ def _resolve_main_root(root):
     (bare repos, detached git dirs) hard-fail earlier in ``_git_common_dir``'s rev-parse with
     faithful stderr rather than being guessed at."""
     return _git_common_dir(str(Path(root).resolve())).parent
+
+
+_DEFAULT_BRANCH_CACHE = {}
+
+
+def default_branch(root):
+    """The repo's DEFAULT branch, derived — never the hardcoded ``"main"`` this module carried
+    through v3 (a repo on ``master``/``develop``/``trunk`` was simply unsupported).
+
+    Derivation order, and why it matters:
+
+    1. ``git symbolic-ref refs/remotes/origin/HEAD`` — offline, recorded by ``git clone``, so it
+       answers in every checkout and in the offline test sandbox. **This must stay first**: the
+       test harness's ``gh`` shim matches fixture argv by exact list equality and exits 2 on a
+       miss, so a ``gh``-first order would break every fixtured prep case, and
+       ``prep_workspace_close.py``'s zero-``gh`` branch-resolution path (its whole point is that
+       closing a workspace needs no network) would start spawning ``gh``.
+    2. ``gh repo view --json defaultBranchRef`` — the authoritative answer, for a checkout whose
+       ``origin/HEAD`` was never set (an old clone, or ``git init`` + ``git remote add``).
+    3. Neither → hard failure (exit 1) naming the one-line remedy, rather than guessing a name and
+       cutting branches off the wrong base.
+
+    Cached per resolved main root: a prep is one process per run, and several call sites
+    (base selection, unpushed-count fallbacks, plan-ref selection) want the same answer.
+    """
+    main_root = str(_resolve_main_root(root))
+    if main_root in _DEFAULT_BRANCH_CACHE:
+        return _DEFAULT_BRANCH_CACHE[main_root]
+
+    prefix = "refs/remotes/origin/"
+    symbolic = _git(["symbolic-ref", "--quiet", "refs/remotes/origin/HEAD"], main_root)
+    name = None
+    if symbolic.returncode == 0 and symbolic.stdout.strip().startswith(prefix):
+        name = symbolic.stdout.strip()[len(prefix):]
+
+    if not name:
+        try:
+            view = process.run(["gh", "repo", "view", "--json", "defaultBranchRef"], cwd=main_root)
+        except OSError:
+            view = None  # `gh` not installed at all — fall through to the remedy below
+        if view is not None and view.returncode == 0:
+            try:
+                name = (json.loads(view.stdout).get("defaultBranchRef") or {}).get("name")
+            except ValueError:
+                name = None
+
+    if not name:
+        sys.stderr.write(
+            "cannot determine the repo's default branch: refs/remotes/origin/HEAD is unset in %s "
+            "and `gh repo view` did not answer.\n"
+            "Remedy: run `git remote set-head origin --auto` in that checkout, then re-run.\n"
+            % main_root
+        )
+        sys.exit(1)
+
+    _DEFAULT_BRANCH_CACHE[main_root] = name
+    return name
 
 
 def _git_common_dir(root):
@@ -343,121 +402,10 @@ def _ensure_worktrees_excluded(root):
 
 
 # ---------------------------------------------------------------------------
-# Root-freshness protocol (architecture.md §6, §12) — never auto-fixed.
-# ---------------------------------------------------------------------------
-
-
-def _root_freshness(root):
-    """Verify root is on ``main`` and clean, fetch, fast-forward, and record the SHA.
-
-    Returns either ``("ok", sha)`` on success, or a §3 decision dict (one of
-    ``ROOT_NOT_ON_MAIN`` / ``ROOT_DIRTY`` / ``ROOT_DIVERGED``) — never raises, and never mutates
-    root beyond the ``fetch``/``--ff-only merge`` the protocol itself performs. The caller
-    distinguishes the two return shapes (tuple vs dict): each pure ``_build_*`` core that gates on
-    freshness (``_build_ensure_work``, ``_build_root_status``) returns the dict as its own
-    ``decision`` channel, and its thin emit wrapper turns that into a ``needs_decision`` envelope
-    without proceeding further.
-    """
-    branch = _current_branch(root)
-    if branch != ROOT_BRANCH:
-        return needs_decision(
-            ROOT_NOT_ON_MAIN,
-            summary="project root is on branch %r, not %r" % (branch, ROOT_BRANCH),
-            context={"root": str(root), "current_branch": branch, "expected_branch": ROOT_BRANCH},
-            options=["checkout %s manually in the project root, then re-run" % ROOT_BRANCH],
-        )
-
-    if _is_dirty(root):
-        return needs_decision(
-            ROOT_DIRTY,
-            summary="project root has uncommitted changes",
-            context={"root": str(root)},
-            options=["commit, stash, or discard the root's local changes manually, then re-run"],
-        )
-
-    fetch_result = _git(["fetch", "origin", ROOT_BRANCH], root)
-    if fetch_result.returncode != 0:
-        raise RuntimeError(
-            "git fetch origin %s (cwd=%s) failed: %s" % (ROOT_BRANCH, root, fetch_result.stderr)
-        )
-
-    merge_result = _git(["merge", "--ff-only", "origin/%s" % ROOT_BRANCH], root)
-    if merge_result.returncode != 0:
-        return needs_decision(
-            ROOT_DIVERGED,
-            summary=(
-                "project root has local commits origin/%s does not — cannot fast-forward"
-                % ROOT_BRANCH
-            ),
-            context={"root": str(root), "merge_stderr": merge_result.stderr},
-            options=["resolve the divergence manually (rebase/reset) in the project root, then re-run"],
-        )
-
-    return "ok", _current_sha(root)
-
-
-# ---------------------------------------------------------------------------
 # Hook discovery + execution — the §1 carve-out. workspace.py is pipelib.hooks's only importer.
 # ---------------------------------------------------------------------------
 
-_INCLUDE_TOKEN_RE = re.compile(r"@([A-Za-z0-9._/-]+)")
-_INCLUDE_LOOKS_LIKE_PATH_RE = re.compile(r"(/|\.[A-Za-z0-9]+$)")
 _LIST_ITEM_COMMAND_RE = re.compile(r"^\s*-\s*`([^`]*)`")
-
-
-def _find_includes(file_path):
-    """Return the ``@``-included paths (one level) found in ``file_path`` — v1's
-    ``find_includes``, re-expressed: matches an ``@``-prefixed token that looks like a file path
-    (has a slash or a dotted extension), which excludes bare ``@mentions``. Existence is
-    re-checked by the caller, so a stray match is harmless."""
-    path = Path(file_path)
-    if not path.is_file():
-        return []
-    text = path.read_text(encoding="utf-8")
-    return [tok for tok in _INCLUDE_TOKEN_RE.findall(text) if _INCLUDE_LOOKS_LIKE_PATH_RE.search(tok)]
-
-
-def _candidate_hook_files(root):
-    """Ordered candidate list for hook-block discovery: ``COMMANDS.md``, ``CLAUDE.md``, then every
-    file either ``@``-includes (one level) — matching v1's ``discover_and_parse`` candidate list
-    exactly (architecture.md §6, ``skills/_shared/worktree-lifecycle.md``)."""
-    root_path = Path(root)
-    candidates = [root_path / "COMMANDS.md", root_path / "CLAUDE.md"]
-    for root_file in (root_path / "COMMANDS.md", root_path / "CLAUDE.md"):
-        for inc in _find_includes(root_file):
-            inc_path = Path(inc)
-            candidates.append(inc_path if inc_path.is_absolute() else root_path / inc)
-    return candidates
-
-
-def _read_hook_block_from_file(file_path, marker_name):
-    """Read the named marker block's interior lines from ``file_path`` by calling
-    ``config_block``'s own line-scan primitives directly (in-process module import + function
-    call — architecture.md §2's "compose in-process," and the only viable form here, since
-    architecture.md §1 permits a script to spawn only ``git``/``gh`` as external processes, so a
-    second ``python3 config_block.py`` subprocess is not an option). This calls exactly the two
-    functions ``config_block.py``'s own ``run_read`` composes — ``_read_lines_or_empty`` then
-    ``_scan_marker`` — never its CLI/argparse/``sys.exit`` surface, and never re-implements the
-    scan itself ("delegate the block read — don't re-parse").
-
-    Returns ``(present, interior_lines)``. ``present`` is ``False`` when the marker doesn't open
-    in this file at all, or is malformed there (duplicate/unterminated) — matching the v1 hook
-    runner's own candidate-file loop, which treats both "absent in this file" and
-    "malformed in this file" as "try the next candidate," reserving a hard failure only for when
-    NO candidate file yields a well-formed block (this module's caller reports that as
-    ``phase_present=False`` after exhausting every candidate — the same "no usable block found"
-    outcome, without inventing a new decision code for a case architecture.md §3's closed set does
-    not name)."""
-    lines = config_block._read_lines_or_empty(str(file_path))
-    open_count, close_count, open_index, close_index = config_block._scan_marker(lines, marker_name)
-    if open_count == 0:
-        return False, []
-    if open_count > 1 or close_count > 1:
-        return False, []
-    if open_count != close_count or close_index < open_index:
-        return False, []
-    interior = lines[open_index:close_index - 1]
-    return True, interior
 
 
 def _parse_command_list(interior_lines):
@@ -474,15 +422,16 @@ def _parse_command_list(interior_lines):
 
 
 def _discover_hook_commands(root, phase):
-    """Discover the ``<!-- worktree-<phase> -->`` block across the ordered candidate files
-    (:func:`_candidate_hook_files`) — first present block wins. Returns
-    ``(phase_present, commands)``."""
-    marker_name = "worktree-%s" % phase
-    for candidate in _candidate_hook_files(root):
-        present, interior = _read_hook_block_from_file(candidate, marker_name)
-        if present:
-            return True, _parse_command_list(interior)
-    return False, []
+    """Discover the ``<!-- worktree-<phase> -->`` block in ``root``'s WORKING TREE, delegating the
+    candidate walk and the marker scan to ``config_block.read_block_anywhere`` (COMMANDS.md ->
+    CLAUDE.md -> one level of ``@``-include; a malformed block in one candidate is treated exactly
+    like an absent one, so the walk continues). This module carried its own byte-identical copies
+    of that walk and scan until the pin retired; one implementation now serves hook discovery and
+    gate-config discovery alike.
+
+    Returns ``(phase_present, commands, source_file_or_none)``."""
+    present, interior, source = config_block.read_block_anywhere(str(root), "worktree-%s" % phase)
+    return (present, _parse_command_list(interior) if present else [], source)
 
 
 def _tail_lines(text, n):
@@ -491,10 +440,10 @@ def _tail_lines(text, n):
 
 
 def _execute_setup_commands(phase_present, commands, workspace_path):
-    """The shared fail-fast setup-command executor behind :func:`_run_setup_hooks`
-    (working-tree discovery — the ensure path) and :func:`_run_setup_hooks_at_ref` (origin/main
-    pin discovery — the attach path). Same result shape as always: ``{"phase_present",
-    "commands_run", "succeeded", "first_failure"?}``."""
+    """The shared fail-fast setup-command executor behind every setup-hook run (ensure and
+    attach alike — both now discover from a working tree, so there is one discovery path and one
+    executor). Same result shape as always: ``{"phase_present", "commands_run", "succeeded",
+    "first_failure"?}``."""
     result = {"phase_present": phase_present, "commands_run": 0, "succeeded": True}
     for step, command_text in enumerate(commands, start=1):
         hook_result = hooks.run_repo_owned_hook_command(command_text, cwd=workspace_path)
@@ -510,19 +459,19 @@ def _execute_setup_commands(phase_present, commands, workspace_path):
     return result
 
 
-def _run_setup_hooks_at_ref(root, pin_sha, workspace_path):
-    """Attach-path setup-hook runner (v3): discover the ``<!-- worktree-setup -->`` block from the
-    ``origin/main`` **blobs at the pin SHA** (``refblocks.read_block_at_ref`` — the same
-    COMMANDS.md -> CLAUDE.md -> one-level-``@``-include order, resolved at the ref) and run the
-    commands fail-fast inside ``workspace_path``. Pinning hook *content* to trust matters here for
-    the same reason gate config is pinned: attach runs inside a PR-branch worktree, and hook
-    commands are arbitrary repo-owned shell run automatically on session entry — they must come
-    from ``origin/main``, never from whatever the ambient checkout (or any working tree) contains.
-    Consequence, documented in ``skills/_shared/worktree-lifecycle.md``: a hook block that exists
-    only as an uncommitted local edit is not seen by attach."""
-    present, interior, _source = refblocks.read_block_at_ref(root, pin_sha, "worktree-setup")
-    commands = _parse_command_list(interior) if present else []
-    return _execute_setup_commands(present, commands, workspace_path)
+def _hook_source_facts(root, source_file):
+    """Provenance for a hook/teardown run: WHICH checkout supplied the block, on what branch, at
+    what commit, and whether that tree had uncommitted changes. Reporting, never gating — the v3.x
+    posture trusts the operator's checkout, so the compensating control is that every run says
+    where its commands came from. ``file`` is ``None`` when no block was found at all."""
+    facts = {"path": str(root), "file": source_file}
+    try:
+        facts["branch"] = _current_branch(root)
+        facts["sha"] = _current_sha(root)
+        facts["dirty"] = _is_dirty(root)
+    except RuntimeError:
+        pass  # not a git checkout (never happens on the three real call paths) — report what we have
+    return facts
 
 
 def _run_setup_hooks(root, workspace_path):
@@ -556,26 +505,36 @@ def _run_setup_hooks(root, workspace_path):
     Deliberate v1 divergence: a MALFORMED block. The v1 hook runner's ``discover_and_parse``
     hard-exits 2 with ``MALFORMED_BLOCK: ...`` the moment a candidate file's block is malformed
     (duplicate/unterminated), even though earlier or later candidates might still yield a good one.
-    v2's :func:`_read_hook_block_from_file` instead treats a malformed block in one candidate file
-    exactly like an absent one — ``phase_present=False`` for that file, try the next candidate — and
+    ``config_block.read_block_anywhere`` (the shared discovery this delegates to) instead treats a
+    malformed block in one candidate file exactly like an absent one — ``phase_present=False`` for that file, try the next candidate — and
     only reports no-block-found after exhausting every candidate. This is intentional, not an
     oversight: the closed decision-code set (architecture.md §3, ``pipelib/decisions.py``) has no
     malformed-block code, so degrading gracefully to "try the next candidate" is safer than
     inventing a new code or hard-blocking the whole ``ensure``/``remove`` envelope over one
     malformed candidate file when a later candidate (or "no block at all") would have been fine.
     """
-    phase_present, commands = _discover_hook_commands(root, "setup")
-    return _execute_setup_commands(phase_present, commands, workspace_path)
+    phase_present, commands, source_file = _discover_hook_commands(root, "setup")
+    result = _execute_setup_commands(phase_present, commands, workspace_path)
+    result["source"] = _hook_source_facts(root, source_file)
+    return result
 
 
 def _run_teardown_hooks(root, workspace_path):
     """Best-effort: run every discovered teardown command inside ``workspace_path`` in order,
     logging (never stopping on) each failure. Always reports ``succeeded: True`` (v1's own
     contract: teardown always exits 0). Returns ``{"phase_present", "commands_run", "succeeded"
-    (always True), "failures": [...]}`` — see :func:`_run_setup_hooks` for the full v1-key
-    correspondence table (shared by both hook runners) and the MALFORMED-block divergence note."""
-    phase_present, commands = _discover_hook_commands(root, "teardown")
+    (always True), "failures": [...], "source"}`` — see :func:`_run_setup_hooks` for the full
+    v1-key correspondence table (shared by both hook runners) and the MALFORMED-block divergence
+    note.
+
+    ``remove --work`` passes the worktree BEING CLOSED as ``root``, so a branch's teardown block
+    is the one that runs for that branch's workspace — the same working-tree rule setup follows.
+    Note the interaction with the dirty gate: an *uncommitted* teardown edit can never execute,
+    because a dirty worktree is refused (``AMBIGUOUS``) before teardown is reached. ``lint
+    --phase teardown --root <worktree>`` is the preview for an uncommitted edit."""
+    phase_present, commands, source_file = _discover_hook_commands(root, "teardown")
     result = {"phase_present": phase_present, "commands_run": 0, "succeeded": True, "failures": []}
+    result["source"] = _hook_source_facts(root, source_file)
     for step, command_text in enumerate(commands, start=1):
         hook_result = hooks.run_repo_owned_hook_command(command_text, cwd=workspace_path)
         result["commands_run"] += 1
@@ -600,6 +559,13 @@ def _build_ensure_work(root, branch, base):
     **never emits** (no ``print``/``emit_ok``/``emit_needs_decision``). ``prep_evaluator`` calls
     this directly, retiring the S6 ``redirect_stdout`` bridge.
 
+    Hook discovery reads **the invoking checkout's working tree** — ``root`` as given, BEFORE the
+    main-root normalization every other operation here applies. The two differ whenever the
+    operator runs this from inside another worktree, and the invoking checkout is the one whose
+    branch they chose: "the operator decides which branch they are in before opening a workspace"
+    is the whole point of retiring the pin. The freshly created worktree cannot be the source —
+    on a fresh branch it has no content of its own yet.
+
     Return contract (the type-level distinction the S8 retro asks for):
       - ``decision is not None`` → a ``needs_decision`` (``ROOT_*`` from freshness, or
         ``BRANCH_IN_USE``); ``payload`` is ``None`` and the caller propagates the decision.
@@ -612,11 +578,12 @@ def _build_ensure_work(root, branch, base):
       - a hard `git` failure still ``sys.exit(1)`` with faithful stderr and no envelope (§3
         exit-code contract — unchanged), not a returnable decision.
     """
+    hook_root = _toplevel_of(root)
     root = str(_resolve_main_root(root))
-    freshness = _root_freshness(root)
-    if isinstance(freshness, dict):
-        return None, [], freshness
-
+    # No root-freshness gate and no fast-forward: v3.x never inspects or mutates the operator's
+    # checkout. The branch/dirty/diverged state of wherever they are standing is their business —
+    # what this call needs is `origin/<base>`, which the fetch below makes current regardless of
+    # the local branch's state, so a fresh worktree still forks from the real remote tip.
     fetch_result = _git(["fetch", "origin", base], root)
     if fetch_result.returncode != 0:
         sys.stderr.write(fetch_result.stderr)
@@ -692,7 +659,8 @@ def _build_ensure_work(root, branch, base):
 
     _ensure_worktrees_excluded(root)
 
-    hook_result = _run_setup_hooks(root, str(target_path))
+    hook_result = _run_setup_hooks(hook_root, str(target_path))
+    notices = ["HOOK_SOURCE_DIRTY"] if (hook_result.get("source") or {}).get("dirty") else []
     if not hook_result["succeeded"]:
         # Fail-fast (matching v1's setup exit 1): the worktree exists but isn't ready — report the
         # failure with as much fact context as we already have, but do NOT compute/report
@@ -706,7 +674,7 @@ def _build_ensure_work(root, branch, base):
             "base_ref": base,
             "reused": reused,
             "setup": hook_result,
-        }, [], None
+        }, notices, None
 
     dirty = _is_dirty(str(target_path))
     unpushed = _unpushed_commits(str(target_path), branch, base)
@@ -723,7 +691,7 @@ def _build_ensure_work(root, branch, base):
         "unpushed_commits": unpushed,
         "sha": sha,
         "setup": hook_result,
-    }, [], None
+    }, notices, None
 
 
 def _cmd_ensure_work(args):
@@ -825,10 +793,9 @@ def _workspace_mismatch(reason, summary, context, options):
 def _build_attach(
     path,
     expected_branch,
-    base_for_unpushed=ROOT_BRANCH,
+    base_for_unpushed=None,
     run_hooks=True,
     allow_main_root=False,
-    pin_sha=None,
     expected_remote_sha=None,
     require_exact_remote_sha=False,
     accept_branch_pattern=None,
@@ -862,13 +829,16 @@ def _build_attach(
        needed for the ahead test, because an ahead checkout by definition already contains the
        remote SHA in its local history, and a behind one by definition cannot.
 
-    Hooks: with ``run_hooks``, the ``<!-- worktree-setup -->`` commands are discovered at the
-    ``origin/main`` pin (:func:`_run_setup_hooks_at_ref`) and run fail-fast inside the checkout —
-    the every-session-entry hook cadence ``skills/_shared/worktree-lifecycle.md`` requires.
-    ``pin_sha`` is the caller's own pin (a prep passes the same SHA it reads gate config at, so
-    hooks and gates come from ONE origin/main commit); when omitted — the bare-CLI convenience —
-    attach pins for itself via ``refblocks.fetch_pin``. A setup-hook failure is the same
-    partial-but-honest payload shape as ``ensure --work`` (``setup.succeeded: false``, no
+    Hooks: with ``run_hooks``, the ``<!-- worktree-setup -->`` commands are discovered in **this
+    checkout's own working tree** — the worktree the session runs in, uncommitted edits included —
+    and run fail-fast inside it, the every-session-entry hook cadence
+    ``skills/_shared/worktree-lifecycle.md`` requires. Until v3.x this read ``origin/main`` blobs at
+    a pin, so a branch could not supply hook commands to an automatic path; that pin is retired by
+    operator decision (the operator chooses the checkout, and a branch versioning its own hooks is
+    the point — it is the only way to test a hook change before merging it). ``setup.source``
+    reports which checkout/branch/SHA answered and whether it was dirty: reporting is the
+    compensating control, and there is deliberately no confirmation gate. A setup-hook failure is
+    the same partial-but-honest payload shape as ``ensure --work`` (``setup.succeeded: false``, no
     ``sha``/``dirty``/``unpushed_commits``), mapped to process exit 1 by the emit wrapper.
     """
     top_result = _git(["rev-parse", "--show-toplevel"], str(Path(path).resolve()))
@@ -954,11 +924,9 @@ def _build_attach(
                 ],
             )
 
-    hooks_pin_sha = None
     setup_result = None
     if run_hooks:
-        hooks_pin_sha = pin_sha if pin_sha is not None else refblocks.fetch_pin(main_root)
-        setup_result = _run_setup_hooks_at_ref(main_root, hooks_pin_sha, top)
+        setup_result = _run_setup_hooks(top, top)
         if not setup_result["succeeded"]:
             return {
                 "op": "attach",
@@ -967,7 +935,6 @@ def _build_attach(
                 "branch": branch,
                 "expected_branch": expected_branch,
                 "main_root": main_root,
-                "hooks_pin_sha": hooks_pin_sha,
                 "setup": setup_result,
             }, [], None
 
@@ -980,8 +947,11 @@ def _build_attach(
         "main_root": main_root,
         "sha": sha,
         "dirty": _is_dirty(top),
-        "unpushed_commits": _unpushed_commits(top, branch, base_for_unpushed),
-        "hooks_pin_sha": hooks_pin_sha,
+        "unpushed_commits": _unpushed_commits(
+            top,
+            branch,
+            base_for_unpushed if base_for_unpushed is not None else default_branch(main_root),
+        ),
     }
     if setup_result is not None:
         payload["setup"] = setup_result
@@ -995,7 +965,6 @@ def _cmd_attach(args):
         base_for_unpushed=args.base,
         run_hooks=not args.no_hooks,
         allow_main_root=args.allow_root,
-        pin_sha=args.pin_sha,
         expected_remote_sha=args.expected_remote_sha,
         accept_branch_pattern=args.accept_branch_pattern,
         check_remote_staleness=args.check_remote_staleness,
@@ -1073,13 +1042,13 @@ def _build_remove_work(root, branch, invoker_cwd=None, merged_pr=None):
 
     dirty = _is_dirty(str(target_path))
     # remove --work has no --base (the subcommand signature is `remove --work <branch>` only), so
-    # the fallback reference for "never pushed at all" is ROOT_BRANCH (origin/main) rather than
+    # the fallback reference for "never pushed at all" is the repo's default branch rather than
     # the worktree's original --base — every work worktree ultimately traces back through the
     # trust topology's root branch (architecture.md §6), so this never UNDER-counts risk. It can
     # OVER-count for a story branch created off an unmerged epic branch that is itself ahead of
-    # main (that epic's own commits would be included too) — a known, accepted narrow edge case,
-    # since remove's CLI has no --base to give a tighter answer.
-    unpushed = _unpushed_commits(str(target_path), branch, ROOT_BRANCH)
+    # the default branch (that epic's own commits would be included too) — a known, accepted narrow
+    # edge case, since remove's CLI has no --base to give a tighter answer.
+    unpushed = _unpushed_commits(str(target_path), branch, default_branch(root))
 
     head_sha = _current_sha(str(target_path))
     merged_at_head = (
@@ -1137,7 +1106,7 @@ def _build_remove_work(root, branch, invoker_cwd=None, merged_pr=None):
             ],
         )
 
-    teardown_result = _run_teardown_hooks(root, str(target_path))
+    teardown_result = _run_teardown_hooks(str(target_path), str(target_path))
 
     remove_result = _git(["worktree", "remove", str(target_path)], root)
     if remove_result.returncode != 0:
@@ -1216,17 +1185,20 @@ def _cmd_gc(args):
 
 
 def _build_root_status(root):
-    """Pure ``root-status`` core (S8 pattern lock): run the root-freshness protocol and return
-    ``(payload, notices, decision)`` — **never emits**. On a freshness failure the ``ROOT_*``
-    decision rides in ``decision`` (``payload`` is ``None``); on success the fresh-SHA status rides
-    in ``payload``. A hard `git` failure (e.g. ``fetch`` itself failing) still raises out of
-    ``_root_freshness`` (§3 — unchanged)."""
+    """Pure ``root-status`` core: report the main checkout's branch, HEAD, dirty state, and the
+    repo's derived default branch. Purely informational since v3.x — it used to run the
+    root-freshness protocol and could return ``ROOT_NOT_ON_MAIN`` / ``ROOT_DIRTY`` /
+    ``ROOT_DIVERGED``, but no path gates on the operator's checkout any more, so there is nothing
+    left to decide. ``decision`` is therefore always ``None``."""
     root = str(_resolve_main_root(root))
-    outcome = _root_freshness(root)
-    if isinstance(outcome, dict):
-        return None, [], outcome
-    _, sha = outcome
-    return {"op": "root-status", "root": root, "branch": ROOT_BRANCH, "sha": sha}, [], None
+    return {
+        "op": "root-status",
+        "root": root,
+        "branch": _current_branch(root),
+        "default_branch": default_branch(root),
+        "sha": _current_sha(root),
+        "dirty": _is_dirty(root),
+    }, [], None
 
 
 def _cmd_root_status(args):
@@ -1253,7 +1225,7 @@ def _build_lint(root, phase):
     inside its landing workspace (``lint setup --root <workspace>``), and hopping to the main
     checkout would silently lint the un-edited originals instead."""
     root = str(Path(root).resolve())
-    phase_present, commands = _discover_hook_commands(root, phase)
+    phase_present, commands, _source = _discover_hook_commands(root, phase)
     return {
         "op": "lint",
         "phase": phase,
@@ -1291,10 +1263,13 @@ def _build_parser():
     p_attach = sub.add_parser("attach")
     p_attach.add_argument("--expect-branch", dest="expected_branch", metavar="BRANCH", required=True)
     p_attach.add_argument("--path", default=".", help="the checkout to attach to (default: ambient cwd — attach's subject)")
-    p_attach.add_argument("--base", default=ROOT_BRANCH, help="fallback base for the unpushed-commit count")
+    p_attach.add_argument(
+        "--base",
+        default=None,
+        help="fallback base for the unpushed-commit count (default: the repo's default branch)",
+    )
     p_attach.add_argument("--no-hooks", dest="no_hooks", action="store_true")
     p_attach.add_argument("--allow-root", dest="allow_root", action="store_true")
-    p_attach.add_argument("--pin-sha", dest="pin_sha", default=None, metavar="SHA")
     p_attach.add_argument("--expect-remote-sha", dest="expected_remote_sha", default=None, metavar="SHA")
     p_attach.add_argument("--accept-branch-pattern", dest="accept_branch_pattern", default=None, metavar="REGEX")
     p_attach.add_argument("--check-remote-staleness", dest="check_remote_staleness", action="store_true")

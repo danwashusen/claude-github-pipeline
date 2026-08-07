@@ -208,12 +208,13 @@ class HappyPathFactsSchemaTests(PrepEvaluatorSandboxTestCase):
             self.assertIn(key, envelope, "missing architecture.md §4 facts-block key %r" % key)
 
     def test_root_facts_shape(self):
+        # v3.x: the retired origin/main pin took `sha`/`source` with it; `root` now carries the
+        # main checkout's path and the DERIVED default branch.
         envelope = self._envelope()
         self.assertEqual(envelope["root"]["path"], str(self.root))
-        self.assertEqual(len(envelope["root"]["sha"]), 40)
-        # v3: root.sha IS the origin/main pin — the fetched remote tip.
-        self.assertEqual(envelope["root"]["sha"], _git(["rev-parse", "origin/main"], self.root))
-        self.assertEqual(envelope["root"]["source"], "origin/main")
+        self.assertEqual(envelope["root"]["default_branch"], "main")
+        self.assertNotIn("sha", envelope["root"])
+        self.assertNotIn("source", envelope["root"])
         self.assertTrue(envelope["root"]["fresh"])
 
     def test_target_facts_shape(self):
@@ -251,10 +252,34 @@ class HappyPathFactsSchemaTests(PrepEvaluatorSandboxTestCase):
         wt = self.root / ".worktrees" / "88-fix-widget"
         self.assertEqual(envelope["workspace"]["sha"], _git(["rev-parse", "HEAD"], wt))
 
-    def test_config_pinned_at_origin_main_sha(self):
+    def test_config_reads_the_pr_head_worktree_including_uncommitted_edits(self):
+        """The evaluator half of the v3.x inversion, and the sharpest edge of the trade the
+        operator chose: the PR-head worktree supplies the gate config the evaluator judges that
+        same PR by. Through v3 this was impossible by construction (pinned blob reads). The
+        compensating control is provenance — `config.source.dirty` plus an attention line."""
+        envelope_before = self._envelope()
+        wt = Path(envelope_before["workspace"]["path"])
+        _write(
+            wt / "COMMANDS.md",
+            "<!-- pr-evaluator-static-checks -->\n- `true` — weakened\n"
+            "<!-- /pr-evaluator-static-checks -->\n",
+        )
         envelope = self._envelope()
-        self.assertEqual(envelope["config"]["sha"], envelope["root"]["sha"])
-        self.assertEqual(envelope["config"]["sha"], _git(["rev-parse", "origin/main"], self.root))
+        self.assertEqual(envelope["status"], "ok")
+        self.assertEqual(envelope["config"]["static_checks"], ["true"])
+        self.assertTrue(envelope["config"]["source"]["dirty"])
+        self.assertTrue(
+            any("uncommitted changes" in line for line in envelope["attention"]),
+            "a dirty gate-config source must be surfaced, never silent: %r" % envelope["attention"],
+        )
+
+    def test_config_source_is_the_asserted_pr_head_worktree(self):
+        envelope = self._envelope()
+        source = envelope["config"]["source"]
+        self.assertEqual(source["path"], envelope["workspace"]["path"])
+        self.assertEqual(source["branch"], envelope["workspace"]["branch"])
+        self.assertEqual(len(source["sha"]), 40)
+        self.assertFalse(source["dirty"])
 
     def test_merge_config_facts_from_repo_api(self):
         envelope = self._envelope()
@@ -740,13 +765,13 @@ class PureHelperUnitTests(unittest.TestCase):
         self.assertEqual(cls2, "none")
 
     def test_detect_pr_type_epic_integration(self):
-        self.assertEqual(prep_evaluator._detect_pr_type("main", "epic/42-journal"), "epic-integration")
+        self.assertEqual(prep_evaluator._detect_pr_type("main", "epic/42-journal", "main"), "epic-integration")
 
     def test_detect_pr_type_story(self):
-        self.assertEqual(prep_evaluator._detect_pr_type("epic/42-journal", "88-add-search"), "story")
+        self.assertEqual(prep_evaluator._detect_pr_type("epic/42-journal", "88-add-search", "main"), "story")
 
     def test_detect_pr_type_standard(self):
-        self.assertEqual(prep_evaluator._detect_pr_type("main", "88-fix-widget"), "standard")
+        self.assertEqual(prep_evaluator._detect_pr_type("main", "88-fix-widget", "main"), "standard")
 
     def test_detect_pr_type_epic_head_but_non_main_base_is_story_not_epic_integration(self):
         # headRefName matching epic/<N>-<slug> alone is not sufficient -- baseRefName must be
@@ -754,7 +779,7 @@ class PureHelperUnitTests(unittest.TestCase):
         # baseRefName == main"). Here baseRefName itself matches the epic pattern, so `story`
         # correctly takes precedence.
         self.assertEqual(
-            prep_evaluator._detect_pr_type("epic/1-old", "epic/2-new"), "story"
+            prep_evaluator._detect_pr_type("epic/1-old", "epic/2-new", "main"), "story"
         )
 
     def test_parse_merge_policy_reads_ask_and_auto(self):

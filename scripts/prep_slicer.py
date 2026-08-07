@@ -39,7 +39,7 @@ reads no PR head and gates no merge, so architecture.md §6's "a PR must not wea
 cannot apply. It runs *before* a workspace exists (its whole output is the input to planning, which
 precedes `workspace-open`). `root` therefore carries only `{path, sha}` — informational, never
 enforced — and the doc catalogue is read at that same working vantage, deliberately NOT through
-`refblocks`: a catalogue names no gate (`skills/_shared/doc-catalogue.md` "Where the catalogue is
+a pinned ref: a catalogue names no gate (`skills/_shared/doc-catalogue.md` "Where the catalogue is
 read from"), and an uncommitted catalogue edit should count for a decomposition the operator is
 running right now.
 

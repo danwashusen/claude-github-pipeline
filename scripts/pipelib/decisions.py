@@ -19,9 +19,6 @@ Meaning + canonical emitter per code (architecture.md §3):
   workspace side effect.
 - ``DOD_MALFORMED`` — a DoD bullet or annotation outside the closed set; ``parse.py dod``.
 - ``PHASES_MALFORMED`` — a plan ``## Phases`` section that doesn't parse; ``parse.py phases``.
-- ``ROOT_NOT_ON_MAIN`` / ``ROOT_DIRTY`` / ``ROOT_DIVERGED`` — root-freshness failures on the
-  workspace-creating paths (the landing tools' staging ``ensure --work`` and workspace-open);
-  ``workspace.py``.
 - ``BRANCH_IN_USE`` — the branch is checked out in another worktree (``ensure --work``, reached
   via the landing tools and workspace-open); ``workspace.py``.
 - ``WORKSPACE_MISMATCH`` — the ambient checkout is not the expected workspace (wrong or detached
@@ -42,9 +39,6 @@ MARKER_AMBIGUOUS = "MARKER_AMBIGUOUS"
 TARGET_IS_PR = "TARGET_IS_PR"
 DOD_MALFORMED = "DOD_MALFORMED"
 PHASES_MALFORMED = "PHASES_MALFORMED"
-ROOT_NOT_ON_MAIN = "ROOT_NOT_ON_MAIN"
-ROOT_DIRTY = "ROOT_DIRTY"
-ROOT_DIVERGED = "ROOT_DIVERGED"
 BRANCH_IN_USE = "BRANCH_IN_USE"
 WORKSPACE_MISMATCH = "WORKSPACE_MISMATCH"
 PLAN_MISSING = "PLAN_MISSING"
@@ -63,10 +57,7 @@ DECISION_CODES = frozenset(
         TARGET_IS_PR,
         DOD_MALFORMED,
         PHASES_MALFORMED,
-        ROOT_NOT_ON_MAIN,
-        ROOT_DIRTY,
-        ROOT_DIVERGED,
-        BRANCH_IN_USE,
+                    BRANCH_IN_USE,
         WORKSPACE_MISMATCH,
         PLAN_MISSING,
         THREAD_SUPERSEDED_PLAN,

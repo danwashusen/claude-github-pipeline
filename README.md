@@ -56,7 +56,7 @@ workspace path and ready-to-run commands printed instead.
 `skills/_shared/` holds the cross-skill contracts (handoff schema, Definition-of-done annotations,
 the epic → story → slice hierarchy, the open-question contracts, the worktree hook-block format and
 the doc-catalogue format); `scripts/` holds the Python scripts
-the skills invoke — the `gh`/git executors, `workspace.py`, `refblocks.py`, `branching.py`,
+the skills invoke — the `gh`/git executors, `workspace.py`, `branching.py`,
 `parse.py`, and one `prep_*.py` state-assembly script per skill.
 
 ## Requirements
@@ -81,10 +81,11 @@ standalone tools except `setup` are explicit-invocation only.
 These skills are **convention-driven** rather than fully parameterised. They degrade gracefully
 when a convention is absent, but work best when the repo provides:
 
-- **A write-protected `main`.** Everything the pipeline changes lands through a PR. All work
-  happens in worktrees under `.worktrees/`, opened by `workspace-open` and released by
-  `workspace-close`; the pipeline reads its gate configuration from `origin/main` directly, so a
-  PR branch can never weaken the checks that judge it.
+- **A write-protected default branch.** Everything the pipeline changes lands through a PR. All
+  work happens in worktrees under `.worktrees/`, opened by `workspace-open` and released by
+  `workspace-close`. The pipeline reads its gate configuration from the checkout the session runs
+  in — so a config change is testable before you merge it, and every run reports which checkout,
+  branch, and commit supplied it.
 - **Epic integration branches** named `epic/<N>-<slug>` (`workspace-open` creates them; resolver
   and evaluator classify Epic and story PRs by this pattern).
 - **Test / build / static-check commands** declared in `CLAUDE.md` or `COMMANDS.md` inside these
@@ -101,7 +102,8 @@ when a convention is absent, but work best when the repo provides:
 - **Worktree hooks** (optional) — `<!-- worktree-setup -->` / `<!-- worktree-teardown -->` blocks
   declaring the commands that provision and release per-worktree resources (a simulator, a port, a
   scratch database). Setup runs at workspace-open and again on every resolver/evaluator session
-  entry, so the commands must be idempotent; the committed block on `origin/main` is what runs.
+  entry, so the commands must be idempotent. The block in the checkout the command runs in is what
+  runs — committed or not — so you can test a hook change before merging it.
 - **An open-question marker convention** (optional) — `<!-- drafter-open-question-markers -->`
   tells the drafter and planner how this repo marks unresolved open questions; without it they fall
   back to built-in heuristic cues.

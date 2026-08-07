@@ -12,9 +12,8 @@ artifact and no package manager. The "source" is:
   contract renderings).
 - **Stdlib-only Python scripts** — `scripts/*.py`: the four GitHub/git executors (`gh_gather.py`,
   `gh_pr_gather.py`, `gh_persist.py`, `config_block.py`), `workspace.py` (worktree mechanics:
-  ensure/attach/remove/gc/lint), `refblocks.py` (the origin/main pin + at-ref config reads) and
-  `branching.py` (branch naming / type detection / prior-PR rows / linked branches — both
-  import-only), `parse.py` (DoD / open-question-links / phases), the eleven `prep_*.py`
+  ensure/attach/remove/gc/lint, plus the derived-default-branch helper) and `branching.py` (branch
+  naming / type detection / prior-PR rows / linked branches — import-only), `parse.py` (DoD / open-question-links / phases), the eleven `prep_*.py`
   state-assembly scripts (including `prep_workspace_open.py` / `prep_workspace_close.py`, whose
   prep IS the tool's action), the `oq_tracker.py` and `doc_catalogue.py` helpers the preps compose
   (the open-question tracker search; the consuming repo's declared grounding docs), and
@@ -196,10 +195,10 @@ per [architecture.md §7](docs/architecture.md)'s mapping table).
 - `config_block.py` — deterministic marker-block `read`/`list`/`upsert`/`remove`; the single
   execution path for `setup`, and the block reader `workspace.py` composes in-process.
 - `workspace.py` — the worktree mechanics owner: `attach` (the v3 stage-session assertion —
-  expected branch / pattern acceptance / staleness, hook re-run at the caller's origin/main pin;
-  mismatches are `WORKSPACE_MISMATCH` decisions with a closed `reason` set), `ensure --work|--read`
-  (the creating path — root freshness `ROOT_NOT_ON_MAIN` / `ROOT_DIRTY` / `ROOT_DIVERGED` and
-  branch exclusivity `BRANCH_IN_USE` live here; used by workspace-open and the landing tools),
+  expected branch / pattern acceptance / staleness, hook re-run from the worktree's own working
+  tree; mismatches are `WORKSPACE_MISMATCH` decisions with a closed `reason` set),
+  `ensure --work|--read` (the creating path — branch exclusivity `BRANCH_IN_USE` lives here; used
+  by workspace-open and the landing tools),
   `remove --work` (teardown best-effort before removal; dirty/unpushed gated, merged-PR-aware,
   `cwd_inside_target`-refusing; driven by workspace-close), `gc`, `root-status`, `lint`, plus the
   import-only `list_work_branches` core (which branches currently have a work worktree — the local,
@@ -209,11 +208,18 @@ per [architecture.md §7](docs/architecture.md)'s mapping table).
   `<!-- worktree-setup/teardown -->` commands and maintains the `.worktrees/` exclusion in the
   repo's `info/exclude` — **never** a `.gitignore` edit, because `info/exclude` lives outside the
   working tree and so can never surface in `git status` on its own write.
-- `refblocks.py` (import-only) — the v3 gate-config trust rule: `fetch_pin` (one `git fetch` +
-  `rev-parse origin/main`) and `read_block_at_ref` (marker blocks from that commit's **blobs** via
-  `git show`, COMMANDS.md → CLAUDE.md → one-level `@`-includes). Pin once, read many — a PR-branch
-  session can never weaken the gates that judge it, and the v2 TOCTOU (plain `open()` after a
-  freshness check) is closed.
+- **`refblocks.py` is retired** (v3.x, and this is the one deletion to understand before touching
+  this area). It held the v3 gate-config trust rule — pin `origin/main`, read marker blocks from
+  that commit's blobs — so a PR-branch session could not weaken the gates judging it. It is gone by
+  operator decision: pinning also made the *consuming repo's own config* untestable, since a
+  `<!-- worktree-setup -->` or gate-block edit could not run until it merged, and a bad one then
+  broke every workspace-open and every session entry. All block reads now go through
+  `config_block.read_block_anywhere` against the ambient checkout's working tree. Two notes for a
+  future editor: the v2 TOCTOU the pin also closed (a plain `open()` racing a freshness check) does
+  **not** return — there is no freshness check left to race — and the security property genuinely
+  is weaker, traded knowingly for provenance reporting (`config.source` / `setup.source`) instead of
+  a confirmation card that would fire on every session entry. Don't reinstate the pin as a bug fix;
+  see architecture.md §6 rule 1 and the §12 invariant.
 - `branching.py` (import-only) — branch naming (`-vN` collision suffixing), issue-type detection,
   the 7-row prior-PR classification, epic-branch discovery, parent-epic search, GitHub linked
   branches (`gh issue develop`, with the `ISSUE_LINK_UNSUPPORTED` degradation), and two precision
@@ -241,23 +247,24 @@ sessions, released by `workspace-close` (teardown hooks, then removal gated on d
 state, merged-PR-aware, refused from inside the target). Resolver/evaluator sessions start
 **inside** it; their preps observe + assert the ambient checkout (`workspace.py attach` — wrong
 branch / project root / detached / stale are `WORKSPACE_MISMATCH` decisions) and re-run the
-`<!-- worktree-setup -->` hooks on every entry, discovered at the origin/main pin. The planner
-grounds on its asserted ambient checkout (`facts.grounding`; a `main` plan_ref passes from any
-clean current `main` checkout including the project root — plan-before-open). A `read` workspace
+`<!-- worktree-setup -->` hooks on every entry, discovered in that worktree's own working tree. The
+planner grounds on its asserted ambient checkout (`facts.grounding`; a default-branch plan_ref
+passes from any current checkout of it including the project root — plan-before-open). A `read` workspace
 is `.worktrees/ro-<ref-slug>` (detached HEAD at `origin/<ref>`, reset on every ensure, `gc`'d by
 age — and only `ro-*` is ever gc'd): script-internal plumbing for the resolver's audit view.
 
-Two trust rules replace the v2 clean-root vantage (`main` still changes only via PR): gate config
-(test target, checks, merge policy) is read from **`origin/main` blobs via `refblocks`** — pin
-once, read many, never any working tree — so a PR cannot weaken the gates that judge it even
-though the session sits in the PR's own worktree; and pinned-ref grounding stays in the internal
-`ro-*` views. Stage sessions no longer police the main checkout at all — the `ROOT_*` freshness
-gates live only on the workspace-creating paths (the landing tools' staging `ensure --work` and
-workspace-open). The prompt-visible rule is: **your workspace is the ambient checkout, reported
-as `facts.workspace`** — and every Read / Grep / Explore / test / command still names
-`facts.workspace.path` by absolute path, because sub-agents and background commands run in their
-own cwd. The drafter stays root-only and reads its OQ-marker hint from the ambient checkout,
-where the gate-weakening threat model cannot apply.
+Two rules govern config reads (the default branch still changes only via PR, and it is **derived**
+via `workspace.default_branch`, never hardcoded): **every marker block — worktree hooks and gate
+config (test target, checks, merge policy) alike — is read from the working tree of the checkout the
+command runs in**, committed or not, with `setup.source` / `teardown.source` / `config.source`
+reporting which checkout, branch, and SHA answered and whether it was dirty; and pinned-ref grounding
+stays in the internal `ro-*` views. No path inspects or writes the operator's checkout any more —
+the `ROOT_*` freshness gates and the `git merge --ff-only` that fast-forwarded it are retired with
+the pin. The prompt-visible rule is: **your workspace is the ambient checkout, reported as
+`facts.workspace`** — and every Read / Grep / Explore / test / command still names
+`facts.workspace.path` by absolute path, because sub-agents and background commands run in their own
+cwd. The drafter stays root-only and reads its OQ-marker hint from the ambient checkout, which is
+now the same rule everything else follows rather than an exception.
 
 ### Shared contracts in `skills/_shared/`
 
@@ -270,8 +277,9 @@ where the gate-weakening threat model cannot apply.
   annotations.
 - `worktree-lifecycle.md` — the **external** `<!-- worktree-setup -->` / `<!-- worktree-teardown -->`
   block format a consuming repo declares, and what those commands must guarantee (setup idempotent
-  because it runs at workspace-open *and* on every resolver/evaluator session entry, discovered at
-  the origin/main pin; teardown best-effort and before removal, run by workspace-close). The
+  because it runs at workspace-open *and* on every resolver/evaluator session entry, discovered in
+  the working tree of the checkout the command runs in; teardown best-effort and before removal, run
+  by workspace-close from the worktree being closed). The
   *mechanics* belong to `workspace.py` and architecture §6 — this file does not restate them.
 - `doc-catalogue.md` — the **external** `<!-- doc-catalogue -->` block a consuming repo declares in
   its `docs/README.md`: the fixed home, the one-line entry grammar, the closed `binding` /
@@ -368,8 +376,8 @@ the *consuming* repo provides — not by plugin config:
   line per document carrying its path, `role`, `authority` (`binding` = a conflict is a blocker |
   `informative` = context), and a summary. `setup` writes it (seeding via a context-blind derivation
   sub-agent, re-ingesting an existing block as the base); `prep_planner.py`/`prep_drafter.py` read it
-  through `scripts/doc_catalogue.py`, at the same vantage as the docs themselves — **not** through
-  `refblocks`, since a catalogue names no gate. When it is absent the readers emit the
+  through `scripts/doc_catalogue.py`, at the same vantage as the docs themselves (as every config
+  family now is — this was a deliberate exception while gate config was pinned). When it is absent the readers emit the
   `DOC_CATALOGUE_ABSENT` notice and ground on **nothing**: there is no built-in path list and no
   filesystem walk, because a guessed doc layout is exactly what the block removes. The plugin
   formerly hardcoded `docs/prd.md` / `docs/architecture.md` / `docs/constitution.md` / `CLAUDE.md` in
@@ -482,7 +490,7 @@ the *consuming* repo provides — not by plugin config:
       words in running prose.)
     - **Paraphrasing a contract token** — a synonym for a parsed identifier is a contract break,
       not a compression. Preserve verbatim: marker comments (`<!-- … -->`), §3 decision codes
-      (`EMPTY_BODY_FILE`, `ROOT_DIRTY`, `AMBIGUOUS`, …), facts-block key names the playbooks read,
+      (`EMPTY_BODY_FILE`, `BRANCH_IN_USE`, `AMBIGUOUS`, …), facts-block key names the playbooks read,
       script names and subcommands, `/github-pipeline:<skill>` invocation strings, scratch-dir
       conventions (`/tmp/gh-resolver-<N>/`), §-anchors, and the closed-set vocabularies in
       `skills/_shared/handoff-format.md` and `dod-annotations.md` (`open`/`closed`,

@@ -21,7 +21,7 @@ external processes any script may spawn are git/gh")::
                                              equal pr.headRefOid — never health-check or cache
                                              against code the checkout doesn't contain)
     parse.parse_dod_bullets(...)          -- the closing issue's ## Definition of done, parsed
-    refblocks.fetch_pin / read_block_at_ref
+    config_block.read_block_anywhere
                                           -- the origin/main pin + the four gate-config blocks,
                                              read from the pinned BLOBS — never any working tree,
                                              so a PR cannot weaken its own gates
@@ -65,7 +65,6 @@ import config_block  # noqa: E402  (import after sys.path setup, by necessity; i
 import gh_gather  # noqa: E402
 import gh_pr_gather  # noqa: E402
 import parse  # noqa: E402
-import refblocks  # noqa: E402  (origin/main pin + at-ref gate-config reads)
 import workspace  # noqa: E402
 from pipelib import process  # noqa: E402
 from pipelib.decisions import AMBIGUOUS, needs_decision  # noqa: E402
@@ -121,8 +120,6 @@ _EPIC_BRANCH_NUMBER_RE = re.compile(r"^epic/(\d+)-.+$")
 _STORIES_HEADING_RE = re.compile(r"^##\s+Stories\s*$", re.IGNORECASE)
 _ANY_HEADING_RE = re.compile(r"^##\s+\S")
 _STORY_FILED_BULLET_RE = re.compile(r"^-\s*\[([ xX])\]\s*#(\d+)\b\s*(?:—|--|-)?\s*(.*)$")
-
-ROOT_MAIN_BRANCH = "main"
 
 
 # ---------------------------------------------------------------------------
@@ -215,11 +212,13 @@ def _parse_merge_policy(interior_lines):
     return policy
 
 
-def _read_gate_config(root, pin_sha):
-    """Read all four gate-config blocks (plus the legacy single-block fallback) once, at the
-    ``origin/main`` pin (v3: refblocks blob reads — never any working tree, so a PR-branch
-    session cannot weaken the gates that judge it). Returns the ``config`` facts-block sub-object
-    (without ``sha``, added by the caller from the same pin) plus a ``notices`` list for
+def _read_gate_config(gate_root):
+    """Read all four gate-config blocks (plus the legacy single-block fallback) once, from
+    ``gate_root``'s working tree — the asserted PR-head worktree, uncommitted edits included. Until
+    v3.x these were ``origin/main`` blob reads at a pin, so a PR could not set the gates that judge
+    it; the operator's checkout is now the trusted source by decision, and ``config.source``
+    reports which checkout/branch/SHA answered. Returns the ``config`` facts-block sub-object
+    (without ``source``, added by the caller) plus a ``notices`` list for
     graceful-degradation cases the evaluator playbook should know about (e.g. "legacy block
     only") — mirroring architecture.md §3's ``notices: []`` channel for non-blocking
     degradations. Never itself asks the operator anything (gates-only-for-decisions,
@@ -228,21 +227,11 @@ def _read_gate_config(root, pin_sha):
     """
     notices = []
 
-    static_present, static_lines, static_source = refblocks.read_block_at_ref(
-        root, pin_sha, _STATIC_CHECKS_MARKER
-    )
-    test_target_present, test_target_lines, test_target_source = refblocks.read_block_at_ref(
-        root, pin_sha, _TEST_TARGET_MARKER
-    )
-    escalation_present, escalation_lines, _escalation_source = refblocks.read_block_at_ref(
-        root, pin_sha, _ESCALATION_LABELS_MARKER
-    )
-    merge_policy_present, merge_policy_lines, _merge_policy_source = refblocks.read_block_at_ref(
-        root, pin_sha, _MERGE_POLICY_MARKER
-    )
-    legacy_present, legacy_lines, legacy_source = refblocks.read_block_at_ref(
-        root, pin_sha, _LEGACY_HEALTH_CHECKS_MARKER
-    )
+    static_present, static_lines, static_source = config_block.read_block_anywhere(gate_root, _STATIC_CHECKS_MARKER)
+    test_target_present, test_target_lines, test_target_source = config_block.read_block_anywhere(gate_root, _TEST_TARGET_MARKER)
+    escalation_present, escalation_lines, _escalation_source = config_block.read_block_anywhere(gate_root, _ESCALATION_LABELS_MARKER)
+    merge_policy_present, merge_policy_lines, _merge_policy_source = config_block.read_block_anywhere(gate_root, _MERGE_POLICY_MARKER)
+    legacy_present, legacy_lines, legacy_source = config_block.read_block_anywhere(gate_root, _LEGACY_HEALTH_CHECKS_MARKER)
 
     if not static_present and legacy_present:
         # Backward-compat: treat the legacy flat list as the static-checks list and note the
@@ -331,8 +320,8 @@ def _classify_ci_rollup(status_check_rollup):
 # ---------------------------------------------------------------------------
 
 
-def _detect_pr_type(base_ref_name, head_ref_name):
-    if _EPIC_BRANCH_RE.match(head_ref_name or "") and base_ref_name == ROOT_MAIN_BRANCH:
+def _detect_pr_type(base_ref_name, head_ref_name, root_branch):
+    if _EPIC_BRANCH_RE.match(head_ref_name or "") and base_ref_name == root_branch:
         return "epic-integration"
     if _EPIC_BRANCH_RE.match(base_ref_name or ""):
         return "story"
@@ -639,6 +628,7 @@ def build_facts(pr_number, repo, root=".", scratch_dir=None, refresh=False, cwd=
     # sits inside the PR-head worktree. NOT on --refresh: that path touches no git at all (its
     # contract is "never requires a root"), so it must not spawn the normalizing rev-parse either.
     root = str(Path(root).resolve()) if refresh else str(workspace._resolve_main_root(root))
+    root_branch = workspace.default_branch(root)
     if scratch_dir is None:
         scratch_dir = "/tmp/gh-evaluator-%s" % pr_number
     Path(scratch_dir).mkdir(parents=True, exist_ok=True)
@@ -660,17 +650,15 @@ def build_facts(pr_number, repo, root=".", scratch_dir=None, refresh=False, cwd=
     #    IS that worktree, at exactly the PR's head OID (require_exact: the evaluator must never
     #    health-check, diff-read, or cache against code the checkout doesn't contain — a stale or
     #    diverged checkout is WORKSPACE_MISMATCH(stale_checkout), a decision, never a silent
-    #    proceed), and re-runs the setup hooks from the same origin/main pin the gate config
-    #    reads (pin once, read many).
+    #    proceed), and re-runs the setup hooks from that worktree's own working tree — the same
+    #    checkout the gate config below is read from.
+    config_attention = []
     if not refresh:
-        pin_sha = refblocks.fetch_pin(root)
-
         workspace_envelope, _ws_notices, ws_decision = workspace._build_attach(
             cwd if cwd is not None else ".",
             pr_envelope["headRefName"],
             base_for_unpushed=pr_envelope["baseRefName"],
             run_hooks=True,
-            pin_sha=pin_sha,
             expected_remote_sha=pr_envelope["headRefOid"],
             require_exact_remote_sha=True,
         )
@@ -681,9 +669,16 @@ def build_facts(pr_number, repo, root=".", scratch_dir=None, refresh=False, cwd=
         # A hard git failure already sys.exit(1)'d inside the core with faithful stderr and no
         # envelope (§3), so there is nothing to guard for here anymore.
 
-        # 3) Gate config, read at the origin/main pin just fetched.
-        gate_config, config_notices = _read_gate_config(root, pin_sha)
-        gate_config["sha"] = pin_sha
+        # 3) Gate config, read from the PR-head worktree just asserted.
+        gate_root = workspace_envelope["path"]
+        gate_config, config_notices = _read_gate_config(gate_root)
+        gate_config["source"] = workspace._hook_source_facts(gate_root, None)
+        gate_config["source"].pop("file", None)  # per-block *_source names the file; this is the tree
+        if gate_config["source"].get("dirty"):
+            config_attention.append(
+                "gate config was read from a checkout with uncommitted changes (%s) — this PR is "
+                "being judged by the checks in that working tree" % gate_root
+            )
     else:
         # --refresh: re-derive only PR state + CI + health-cache hit/miss. Root freshness,
         # workspace ensure (and its setup hooks), and gate config are NOT re-run/re-read — the S6
@@ -753,7 +748,9 @@ def build_facts(pr_number, repo, root=".", scratch_dir=None, refresh=False, cwd=
 
     # 6) CI rollup classification, PR-type detection, health-cache SHA compare.
     ci_class, ci_fail_checks = _classify_ci_rollup(pr_envelope.get("statusCheckRollup"))
-    pr_type = _detect_pr_type(pr_envelope.get("baseRefName"), pr_envelope.get("headRefName"))
+    pr_type = _detect_pr_type(
+        pr_envelope.get("baseRefName"), pr_envelope.get("headRefName"), root_branch
+    )
     health_cache = _health_cache_fact(pr_envelope, pr_envelope.get("headRefOid"))
 
     if pr_type == "story":
@@ -770,7 +767,7 @@ def build_facts(pr_number, repo, root=".", scratch_dir=None, refresh=False, cwd=
     facts = {
         "repo": repo,
         "scratch": scratch_dir,
-        "root": {"path": root, "sha": gate_config.get("sha"), "source": "origin/main", "fresh": not refresh},
+        "root": {"path": root, "default_branch": root_branch, "fresh": not refresh},
         "target": {
             "kind": "pr",
             "number": pr_envelope["number"],
@@ -806,7 +803,8 @@ def build_facts(pr_number, repo, root=".", scratch_dir=None, refresh=False, cwd=
         "dod": dod_by_issue,
         "blocked_by": blocked_by_by_issue,
         "deps_available": deps_available_by_issue,
-        "attention": _build_attention(workspace_envelope, pr_envelope, blocked_by_by_issue),
+        "attention": _build_attention(workspace_envelope, pr_envelope, blocked_by_by_issue)
+        + config_attention,
         "notices": list(config_notices) + list(issue_gather_notices),
     }
     if epic_facts is not None:

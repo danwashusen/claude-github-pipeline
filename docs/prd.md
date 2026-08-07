@@ -246,14 +246,15 @@ an artifact written by a v1 skill is consumed correctly by its v2 counterpart, a
   actions, and the summary reports the workspace path and the ready-to-run landing commands.
 - **§8.3 Workspaces.** A building or evaluating session runs **inside** the work worktree the
   operator opened (`workspace-open`) and starts the session in; its prep asserts that checkout
-  before judgment runs and reports it as the session's workspace. Gate config is read at the
-  `origin/main` pin via git plumbing — checkout-independent — and pinned-ref grounding views are
-  script-internal.
+  before judgment runs and reports it as the session's workspace. Gate config and worktree hooks
+  are read from that checkout's working tree, committed or not, and each read reports its source;
+  pinned-ref grounding views are script-internal.
 - **§8.4 Pinned grounding.** Plans, audits, and evaluations ground on an explicitly recorded
   commit SHA, and their artifacts state it.
-- **§8.5 Checkout state is respected.** A mismatched, stale, diverged, or root-seated session
-  checkout is surfaced as a decision gate (`WORKSPACE_MISMATCH`); a dirty or off-`main` checkout
-  on a workspace-creating path is likewise a gate (`ROOT_*`); neither is ever auto-corrected.
+- **§8.5 Checkout state is respected.** A mismatched, stale, or root-seated session checkout is
+  surfaced as a decision gate (`WORKSPACE_MISMATCH`), never auto-corrected. The operator's own
+  checkout is otherwise left alone: no path gates on its branch or dirty state, and none writes to
+  it.
 
 ## §9 Engineering-quality requirements
 

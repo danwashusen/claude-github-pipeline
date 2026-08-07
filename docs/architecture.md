@@ -43,8 +43,7 @@ Module filenames use underscores so the test suite can import them.
 ```
 scripts/
   pipelib/            # shared package: envelope, spill, decisions, sha256, subprocess runner
-  workspace.py        # ensure / attach / remove / gc / lint; root-freshness on the creating paths
-  refblocks.py        # import-only: the origin/main pin + at-ref config-block reads (v3)
+  workspace.py        # ensure / attach / remove / gc / lint; default-branch derivation
   branching.py        # import-only: branch naming, type detection, prior-PR rows, linked branches
   parse.py            # dod | oq-links | phases subcommands
   gh_gather.py  gh_pr_gather.py  gh_persist.py  config_block.py   # executor ports (S21)
@@ -116,9 +115,6 @@ Every script emits exactly one JSON envelope on stdout.
     workspace side effect (context carries the linked issue numbers derivable from the PR body).
   - `DOD_MALFORMED` — a DoD bullet or annotation outside the closed set; `parse.py dod`.
   - `PHASES_MALFORMED` — a plan `## Phases` section that doesn't parse; `parse.py phases`.
-  - `ROOT_NOT_ON_MAIN` / `ROOT_DIRTY` / `ROOT_DIVERGED` — root-freshness failures on the
-    workspace-creating paths (the landing tools' staging `ensure --work` and workspace-open);
-    `workspace.py`.
   - `BRANCH_IN_USE` — the branch is checked out in another worktree (`ensure --work`, reached via
     the landing tools and workspace-open); `workspace.py`.
   - `WORKSPACE_MISMATCH` — the ambient checkout is not the expected workspace (wrong or detached
@@ -171,14 +167,16 @@ below is `prep_evaluator.py` (S6, the pilot prep script):
   "status": "ok",
   "repo": "owner/name",
   "scratch": "/tmp/gh-evaluator-88",
-  "root": { "path": "/abs/repo", "sha": "abc123…", "source": "origin/main", "fresh": true },
+  "root": { "path": "/abs/repo", "default_branch": "main", "fresh": true },
   "target": { "kind": "pr", "number": 88, "title": "…", "state": "OPEN", "labels": ["story"] },
   "vector": { "type": "story", "mode": "continue", "pr_state": "open-by-you" },
   "suggested_playbook": "story.md",
   "workspace": { "path": "/abs/repo/.worktrees/88-fix-x", "branch": "88-fix-x",
                   "expected_branch": "88-fix-x", "base_ref": "epic/42-journal", "sha": "def456…",
                   "dirty": false, "unpushed_commits": 2, "source": "ambient" },
-  "config": { "sha": "abc123…", "static_checks": ["…"], "static_checks_present": true,
+  "config": { "source": { "path": "/abs/repo/.worktrees/88-fix-x", "branch": "88-fix-x",
+                            "sha": "def456…", "dirty": false },
+               "static_checks": ["…"], "static_checks_present": true,
                "test_target_present": true, "test_target_raw": "…", "test_target_source": "…",
                "escalation_labels": ["…"], "merge_policy": {"story": "ask", "epic-integration": "ask"},
                "merge_policy_present": true, "legacy_health_checks_present": false,
@@ -215,7 +213,10 @@ the two ride together per issue rather than as an independent top-level list. `w
 the **observed ambient checkout**, asserted by prep (`workspace.py attach`) — never a worktree the
 prep created; `base_ref` is a *derived* fact (the PR's own base / the story's epic branch / `main`)
 since an assertion cannot observe a base, and it feeds the resolver's `create-pr --base` slot.
-`root.sha` is the `origin/main` pin (`refblocks.fetch_pin`) — the same SHA `config.sha` records.
+`root.default_branch` is derived (`workspace.default_branch` — `git symbolic-ref
+refs/remotes/origin/HEAD`, falling back to `gh repo view`), never assumed to be `main`.
+`config.source` is the checkout whose **working tree** supplied every gate block, with its branch,
+SHA, and dirty state; each `*_source` is the file path within it.
 `epic` is present only on a **story** PR: the parent epic (derived from the PR's own
 `epic/<N>-<slug>` base ref — no search) plus its story set and GitHub's progress rollup, resolved
 per [`skills/_shared/epic-story-hierarchy.md`](../skills/_shared/epic-story-hierarchy.md) (`sub-issues` / `checklist` / `mixed`). `stories_source` is what tells the
@@ -271,16 +272,31 @@ workspace is opened by the operator (`/github-pipeline:workspace-open <issue>` �
 project root, not detached, not stale against the expected remote state — every mismatch a
 `WORKSPACE_MISMATCH` decision) and re-run the setup hooks on every session entry; they never
 create work worktrees. The planner grounds the same way on its asserted ambient checkout
-(`facts.grounding`); a `main` plan_ref accepts any clean, current `main` checkout including the
+(`facts.grounding`); a default-branch plan_ref accepts any current checkout of it including the
 project root — fresh planning happens *before* workspace-open (plan-before-open).
 
-**Two trust rules replace the v2 root vantage** (`main` still changes only via PR):
-1. **Gate config is read at `origin/main` via git plumbing.** Preps pin once
-   (`refblocks.fetch_pin`) and read every test-target / checks / merge-policy block from that
-   commit's blobs (`git show`) — never from any working tree — so a PR still cannot weaken its
-   own gates even though the session sits inside the PR's own worktree. The attach path's hook
-   *discovery* reads the same pin (hook commands are repo-owned shell run automatically on
-   session entry — they must come from trust, not from the ambient checkout).
+**The default branch is derived, never assumed** — `workspace.default_branch` reads `git
+symbolic-ref refs/remotes/origin/HEAD`, falling back to `gh repo view --json defaultBranchRef`, and
+hard-fails naming `git remote set-head origin --auto` rather than guessing. A repo on `master`,
+`develop`, or `trunk` is ordinary.
+
+**Two rules govern where config is read (v3.x; the default branch still changes only via PR):**
+1. **Every marker block is read from the working tree of the checkout the command runs in** —
+   hooks *and* gate config (test target, checks, escalation labels, merge policy), committed or
+   not. workspace-open reads the checkout it was invoked from; a stage-session attach and its
+   gate-config read use that session's own worktree; workspace-close reads the worktree being
+   closed. **This is a deliberate reversal.** Through v3 gate config and attach-path hook
+   discovery read `origin/main` blobs at a pin (`refblocks.fetch_pin`), so a PR could not weaken
+   the gates judging it and a branch could not supply hook commands to an automatic path. The pin
+   made the *consuming repo's own config unchangeable without merging it first* — a
+   `<!-- worktree-setup -->` edit could not be tested until it landed on the default branch, and a
+   bad one then broke every workspace-open and every session entry. The operator's decision is
+   that they choose the checkout and it is trusted. The compensating control is **provenance, not
+   a gate**: `setup.source` / `teardown.source` / `config.source` each name the supplying
+   checkout, branch, SHA, and dirty state, and a dirty gate-config source raises an `attention`
+   line. There is deliberately **no confirmation card** — one that fired on every session entry
+   would be clicked through, which is worse than either honest posture. Do not "restore" the pin
+   as a bug fix; it was removed on purpose (§12).
 2. **Pinned-ref grounding stays in script-internal `ro-*` read worktrees.** The resolver's audit
    second view is plumbing prep hands out — the operator never opens or sees it.
 
@@ -288,15 +304,14 @@ project root — fresh planning happens *before* workspace-open (plan-before-ope
 |---|---|---|
 | Path | `.worktrees/<branch>` | `.worktrees/ro-<ref-slug>` |
 | Checkout | branch | detached HEAD at `origin/<ref>` |
-| Hooks | setup at workspace-open (create **and** reuse) and on every stage-session attach (fail-fast, discovered at the origin/main pin); teardown at workspace-close, before removal (best-effort) | none |
+| Hooks | setup at workspace-open (create **and** reuse) and on every stage-session attach (fail-fast, discovered in the invoking / the session's own working tree); teardown at workspace-close, before removal (best-effort, discovered in the worktree being closed) | none |
 | Lifecycle | **operator-owned**: workspace-open creates (and owns epic/`<N>`-`<slug>` integration-branch creation); persists across sessions; workspace-close tears down + removes (`remove --work` — gated on dirty/unpushed, merged-PR-aware, and refused from inside the target) | script-internal: reuse per logical ref; **fetch, then reset to current `origin/<ref>` on every ensure**; `workspace.py gc` removes `ro-*` older than `--max-age` (default 7 days) — and only `ro-*` |
 | Facts | observed: branch, expected_branch, derived base_ref, path, SHA, dirty/unpushed state | path + the exact SHA grounded on |
 
 - **`workspace.py` owns the mechanics**: `attach` (the stage-session assertion — expected
-  branch / pattern acceptance, staleness against the expected remote state, hook re-run at the
-  caller's pin; every mismatch a `WORKSPACE_MISMATCH` decision with a closed `reason` set),
-  `ensure --work|--read` (workspace-open and the landing tools create through it; root freshness —
-  `ROOT_NOT_ON_MAIN` / `ROOT_DIRTY` / `ROOT_DIVERGED`, never auto-fixed — and branch exclusivity —
+  branch / pattern acceptance, staleness against the expected remote state, hook re-run from the
+  worktree's own tree; every mismatch a `WORKSPACE_MISMATCH` decision with a closed `reason` set),
+  `ensure --work|--read` (workspace-open and the landing tools create through it; branch exclusivity —
   `BRANCH_IN_USE` — live on this creating path), `remove --work` (teardown hooks best-effort, then
   `git worktree remove`; dirty or unpushed state is a decision, never a silent discard; merged-PR
   context reframes the squash-merge false positive; `cwd_inside_target` refuses to remove the
@@ -318,13 +333,13 @@ project root — fresh planning happens *before* workspace-open (plan-before-ope
 - **No ref arithmetic in prompts.** `git show ref:path` / `git grep <ref>` are script-internal
   tools only. Grounding SHAs come from the workspace facts (a plan's "planned at `<sha>`" *is*
   its grounding checkout's HEAD).
-- **Gate config is pinned to trust** (rule 1 above), uniformly for the stage preps — and the
-  drafter, a **root-only** skill whose OQ-marker block is a detection hint, not a merge/build
-  gate, keeps reading its ambient checkout as-is (no gate-weakening exposure exists there).
-  Stage sessions no longer police the main checkout's state at all — a dirty or diverged main
-  checkout is invisible to resolver/evaluator/planner **by design** (the `ROOT_*` gates live on
-  the workspace-creating paths: the landing tools and workspace-open); staleness that matters is
-  asserted per-checkout instead (`stale_checkout`).
+- **Gate config comes from the ambient checkout** (rule 1 above), uniformly — the stage preps, and
+  the drafter, whose OQ-marker block was always read from its ambient checkout, now share one rule
+  instead of two. **No path inspects or writes the operator's checkout**: not its branch, not its
+  dirty state, not its divergence — the `ROOT_*` gates and the `git merge --ff-only` that used to
+  fast-forward it are retired, so the operator's working tree is theirs alone. Staleness that
+  matters is asserted per-checkout instead (`stale_checkout`), and `ensure --work` fetches
+  `origin/<base>` itself so a new worktree forks from the real remote tip regardless.
 
 ## §7 GitHub I/O & write discipline
 
@@ -375,7 +390,7 @@ result or a typed §3 decision code, cannot call `AskUserQuestion`, and never wr
 | plan reviewer | planner | plan draft + the asserted grounding checkout | findings by dimension |
 | issue reviewer | drafter | draft + repo context | findings by dimension |
 | research validator | researcher | dossier draft | findings by dimension |
-| test-selection | resolver, evaluator | diff scope + pinned test config | `COMMAND:` + `RATIONALE:` |
+| test-selection | resolver, evaluator | diff scope + the ambient checkout's test config | `COMMAND:` + `RATIONALE:` |
 | review-loop | resolver | PR + review verdict file | items-addressed JSON |
 | question-status reader | question-sweep, question-resolver | question thread (path) | status or `AMBIGUOUS` |
 
@@ -474,8 +489,9 @@ not a deviation.
 | Spill threshold on verbatim sections | context blowout | `pipelib` spill + tests |
 | Capability-gated degradation (native deps; native parent/sub-issues) with a per-relation notice | consuming repos and `gh` versions vary, and the two relations have different fallbacks | `gh_persist.py`/`gh_gather.py` ladders + tests |
 | Epic↔story hierarchy is the native parent/sub-issue relation, written at filing time by the drafter alone; readers fall back to a legacy `## Stories` checklist and never gate on the relation's absence | GitHub's sub-issue panel, progress rollup, and a Project's Sub-issues progress field are driven by the relation, not by markdown a checklist can't self-tick; and no backfill path exists, so pre-relation epics must keep working | [`skills/_shared/epic-story-hierarchy.md`](../skills/_shared/epic-story-hierarchy.md) + `create --parent` + prep two-tier reads + tests |
-| `main` changes only via PR; a session never commits outside its own asserted workspace; the landing tools treat their starting checkout as read-only | trust topology (§6) | `workspace.py` decisions + prompt invariant |
-| Gate config is read only at the `origin/main` pin via git plumbing (`refblocks`), never from a PR head or any working tree | a PR must not weaken its own gates (§6) | prep scripts + tests |
+| The default branch changes only via PR; a session never commits outside its own asserted workspace; the landing tools treat their starting checkout as read-only | trust topology (§6) | `workspace.py` decisions + prompt invariant |
+| Hook and gate config are read from the working tree of the checkout the command runs in — committed or not — and every read reports its source (checkout, branch, SHA, dirty) as `setup.source` / `teardown.source` / `config.source`; no path gates on that source, and none inspects or writes the operator's checkout | the operator chooses the checkout and it is trusted; the retired `origin/main` pin made the consuming repo's own config untestable before merge, and reporting rather than a per-entry confirmation card is the compensating control (§6 rule 1 — a reversal of the v3 "a PR must not weaken its own gates" invariant, made deliberately) | prep scripts + `workspace.py` + tests |
+| The default branch is derived (`git symbolic-ref refs/remotes/origin/HEAD`, then `gh repo view`), never hardcoded | repos on `master`/`develop`/`trunk` are ordinary | `workspace.default_branch` + tests |
 | All tracked-file changes land via PR | write-protected `main` | prompt invariant + review |
 | No ref arithmetic, no raw `gh` writes in prompts; the ambient checkout is prep-asserted (`WORKSPACE_MISMATCH`) before use, and sub-agent dispatches name absolute paths | the drift class the rewrite exists to kill | §10 prompt validators + prep tests (carve-outs in §10: `gh pr merge` / `gh pr ready` [evaluator `--undo`; resolver draft→ready flip]; bare `git show <commit>`) |
 | Contract tokens are frozen (marker strings, op names, closed sets) | cross-skill/GitHub parse compatibility | census greps (§10) |

@@ -68,7 +68,7 @@ with no requirement that the tree be clean or on `main` (the skill's own primary
 is mid-development ... notices things," i.e. very plausibly *while* the tree is dirty on a feature
 branch). Unlike the resolver/evaluator (whose gate config — test-target/checks/merge-policy — would weaken
 a real merge gate if read from an untrusted ref, which is why their preps read those blocks from
-the `origin/main` pin via `refblocks`, never any working tree), the drafter's OQ-marker block only
+the ambient checkout's working tree), the drafter's OQ-marker block only
 informs a **detection hint** for drafting, never a merge/build gate — so reading the ambient
 checkout "as-is" carries no gate-weakening exposure, and asserting or pinning anything here would
 make this prep fail on the exact mid-feature-branch working tree its most common real trigger

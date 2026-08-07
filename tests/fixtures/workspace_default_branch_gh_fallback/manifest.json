@@ -1,0 +1,6 @@
+[
+  {
+    "argv": ["repo", "view", "--json", "defaultBranchRef"],
+    "stdout_file": "repo_view.json"
+  }
+]

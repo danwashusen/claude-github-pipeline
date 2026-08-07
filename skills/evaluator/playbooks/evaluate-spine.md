@@ -63,7 +63,8 @@ failing check names when red):
   it, re-invoke until it returns. Then re-run prep `--refresh` and re-read `facts.ci.class`. If the PR
   head advanced during the wait, the `--refresh` facts already key on the new SHA — re-enter S3.1.
 
-**S3.3 Local gate config.** `facts.config` carries the gate blocks read at the root `main` SHA:
+**S3.3 Local gate config.** `facts.config` carries the gate blocks read from the asserted PR-head
+worktree (`facts.config.source`):
 `static_checks` (+ `static_checks_present`), `test_target_raw` (+ `test_target_present`),
 `escalation_labels`, and the `LEGACY_HEALTH_CHECKS_BLOCK` notice when only the legacy single-block is
 present. If neither static-checks nor the legacy block is present (`static_checks == []` and the

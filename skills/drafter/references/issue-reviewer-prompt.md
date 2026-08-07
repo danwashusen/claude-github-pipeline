@@ -46,8 +46,8 @@ you're here to surface.
     claim you can't grep is a dropped finding. (Dimension 7's bookend structural checks are the
     exception: their evidence is the Epic body and the story list, not a grep.)
 - **Repo root**: `<<repo_root>>` — absolute path (the drafter's current checkout, `facts.root.path`; the
-  drafter grounds on the working tree, not a pinned ref — the checkout the session was started in IS
-  the vantage by design). Read `docs/prd.md`, `docs/architecture.md`,
+  drafter grounds on the working tree — the checkout the session was started in IS the vantage by
+  design). Read `docs/prd.md`, `docs/architecture.md`,
   `docs/constitution.md`, `CLAUDE.md` if they exist; grep the source tree from this root. Run **every**
   grep/find/Read from this root **by absolute path — never a bare relative path in YOUR OWN ambient
   working directory**: a sub-agent's cwd is not the drafter's, and a relative read would silently

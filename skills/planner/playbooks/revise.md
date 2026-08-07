@@ -82,8 +82,8 @@ this route supplies:
      facts decide). But this session's AMBIENT checkout is the superseded PR's worktree, which no
      longer matches that fresh `plan_ref` — a re-run of prep here would (correctly) refuse with
      `WORKSPACE_MISMATCH`. Emit the HARD-revise handoff instead, with the remedy matched to the
-     fresh `plan_ref`: `main` → "re-run `/github-pipeline:planner <N>` from a clean `main`
-     checkout" (**not** workspace-open — no branch should exist before a plan does); the parent
+     fresh `plan_ref`: the default branch → "re-run `/github-pipeline:planner <N>` from a current
+     default-branch checkout" (**not** workspace-open — no branch should exist before a plan does); the parent
      epic's branch → "re-run from the parent-epic worktree". Carry a `Workspace:` line naming that
      target checkout, plus the captured predecessor facts (step 1) the fresh run needs: the closed
      PR number/branch, the stale plan's comment id, and the DoD bullets to un-tick.

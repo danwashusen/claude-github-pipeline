@@ -9,8 +9,8 @@ description: Release an issue/PR work workspace — run the repo's worktree-tear
 The operator-side closer of the v3 workspace lifecycle: **open → work → evaluate → close**. Every
 workspace — merged, abandoned, or mis-opened — is reclaimed the same way, through this tool: it
 runs the consuming repo's `<!-- worktree-teardown -->` hooks (best-effort, **before** removal —
-the teardown commands live inside the worktree), then removes it, refusing on dirty or unpushed
-state. One interactive session; ends with a plain summary, never a `## Handoff`.
+the teardown commands live inside the worktree, and the block is discovered there too, so a branch
+may version its own teardown), then removes it, refusing on dirty or unpushed state. One interactive session; ends with a plain summary, never a `## Handoff`.
 
 ## 1. Prep
 
@@ -47,6 +47,8 @@ No mode fork: close (the prep call) → render the receipt → summary.
 - **Never from inside the target.** The script refuses (`cwd_inside_target`) when run from
   within the worktree being removed — relay its remedy: re-run from the project root.
 - **Teardown is best-effort and never blocks removal**; its failures are reported, not retried.
+  `teardown.source` names the worktree the block was read from — report it when the operator
+  expected commands that did not run.
 - **Worktrees, not remote branches.** This tool removes the local worktree; remote-branch
   deletion is the repo's `delete_branch_on_merge` policy (or a manual choice) — never this
   tool's. `ro-*` read views are `workspace.py gc`'s, never this tool's.

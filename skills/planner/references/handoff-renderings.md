@@ -21,10 +21,11 @@ example verbatim.
 The plan-comment footer (`plan-spine.md` S5) and the handoff `Grounding:` line record the **same**
 `<plan-ref>@<short-sha>`. Two renderings of one ref:
 
-- `<plan-ref>` renders **`origin/main`** for the default branch, and the **bare, un-truncated**
-  `epic/<N>-<slug>` or the open PR's `headRefName` otherwise (the `origin/` prefix is dropped for a
-  non-default branch). Never emit a bare `main@<sha>` — the default branch always carries the `origin/`
-  prefix; every other branch never does. This exact string is the resolver's PR base, so eliding the
+- `<plan-ref>` renders **`origin/<default-branch>`** for the default branch (`origin/main` in every
+  example below — read the repo's own name off `facts.root.default_branch`, never assume `main`), and
+  the **bare, un-truncated** `epic/<N>-<slug>` or the open PR's `headRefName` otherwise (the `origin/`
+  prefix is dropped for a non-default branch). Never emit a bare `main@<sha>` — the default branch
+  always carries the `origin/` prefix; every other branch never does. This exact string is the resolver's PR base, so eliding the
   branch would break that reuse.
 - `<short-sha>` is a 7-character hex prefix of `facts.grounding.sha` — the read
   workspace's own HEAD, so the plan's "planned at `<sha>`" *is* the ref the docs were read at.
