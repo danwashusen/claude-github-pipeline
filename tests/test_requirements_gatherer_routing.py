@@ -25,9 +25,10 @@ FLOW = "gather.md"
 
 # A new tool — no v1 counterpart, so no ≤half-v1 metric exists (the prd §10 prompt-economy bar is
 # a pipeline-stage bar; tools are measured, never force-trimmed). Growth ceiling only: the loaded
-# set landed at 97 (router) + 79 (flow) = 176; 185 leaves headroom for small fixes without
-# licensing a rewrite-scale regrowth.
-LOADED_SET_CEILING = 185
+# set landed at 102 (router) + 95 (flow) = 197 after the initial code-review fixes (the pre-write
+# `parse.py dod` validation step and the plan-marker mid-flight warning — both load-bearing); 205
+# leaves headroom for small fixes without licensing a rewrite-scale regrowth.
+LOADED_SET_CEILING = 205
 
 
 def _iter_md(dir_path):

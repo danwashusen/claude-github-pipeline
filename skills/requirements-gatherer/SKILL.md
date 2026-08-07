@@ -26,7 +26,8 @@ It returns one JSON **facts block** (`architecture.md §4`): `vector` (`type` ×
 `suggested_playbook`, `target` (number/title/state/labels/`type`, the typed `parent`, open
 `blocked_by`), `dod` (`present`, `bullet_count`, `annotated_count`, `next_req_seq` — the
 append-only id sequence a re-run continues from — and the parsed `bullets` with 1-based indexes
-and any existing `req_id`), `grounding_docs` (the repo's `<!-- doc-catalogue -->` entries —
+and any existing `req_id`), `plan` (`present` — the `<!-- implementation-plan:v1 -->` marker; a
+planned issue is mid-flight even with zero annotations), `grounding_docs` (the repo's `<!-- doc-catalogue -->` entries —
 `path`/`role`/`authority`/`summary`/`present`/`abs_path`), `sections` (spilled body/thread
 paths), `scratch`, and `attention`. Consume each as **data** — never re-derive the type, the
 refusal set, the bullet indexes, or the id sequence.
@@ -65,8 +66,9 @@ upstream human input — but `attention` surfaces it for the operator.
 - **Single write path.** The body edit goes through `${CLAUDE_PLUGIN_ROOT}/scripts/gh_persist.py
   edit-body` via Bash: stage the full revised body to `facts.scratch`
   (`/tmp/gh-requirements-gatherer-<N>/`) and pass the **path**. The script gates empty bodies
-  (`EMPTY_BODY_FILE`) and returns `body_sha256`; a zero exit **is** the confirmation — never
-  re-read the issue to check it landed. No raw `gh` writes, ever.
+  (`EMPTY_BODY_FILE`) and returns `body_sha256`; a zero exit **with `body_sha256`** is the
+  confirmation — never re-read the issue to check it landed (a zero exit carrying a
+  `needs_decision` envelope wrote nothing). No raw `gh` writes, ever.
 - **Append-only DoD.** New bullets go **after** the existing top-level bullets; existing bullets
   are never reworded, reordered, re-ticked, or annotated — their 1-based indexes must not shift
   ([`../_shared/dod-annotations.md`](../_shared/dod-annotations.md) index stability). Everything
@@ -85,8 +87,8 @@ upstream human input — but `attention` surfaces it for the operator.
   filed as an issue (this skill files nothing; the drafter owns question filing).
 - **Gates only for genuine decisions** (per
   [`../_shared/asking-the-user.md`](../_shared/asking-the-user.md)): the grounding selection, the
-  elicitation-loop approval, the annotated-DoD mid-flight warning, and the final DoD diff
-  confirmation.
+  elicitation-loop approval, the mid-flight warning (a plan marker or annotated bullets), and the
+  final DoD diff confirmation.
 
 ## 4. Summary — not a `## Handoff`
 

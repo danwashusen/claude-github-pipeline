@@ -313,6 +313,13 @@ class _DodMalformed(Exception):
         self.raw_line = raw_line
 
 
+# The one heading pattern both DoD entry points feed to `_find_section`. A single constant, not
+# two spelled literals: `has_dod_section` (the create-vs-append fact) and `parse_dod_bullets`
+# (the bullets) must never disagree on what counts as the section — a one-sided tolerance edit
+# would let a caller append a SECOND `## Definition of done` onto a body that already has one.
+_DOD_HEADING_PATTERN = r"Definition of done"
+
+
 def has_dod_section(body_text):
     """Whether the body carries a `## Definition of done` section at all — distinct from
     `parse_dod_bullets` returning `[]`, which conflates "no section" with "a section holding no
@@ -320,7 +327,28 @@ def has_dod_section(body_text):
     requirements-gatherer's DoD write) keys off this; a caller that only projects onto existing
     bullets never needs the distinction (dod-annotations.md's "Skip projection silently").
     """
-    return _find_section(body_text.splitlines(), r"Definition of done") is not None
+    return _find_section(body_text.splitlines(), _DOD_HEADING_PATTERN) is not None
+
+
+def dod_malformed_decision(exc, **context):
+    """Build the `DOD_MALFORMED` needs_decision payload for a `_DodMalformed` raised by
+    `parse_dod_bullets` — the single home for the operator-facing repair guidance and the
+    decision's context schema, which were previously restated per caller (`run_dod` here, plus
+    the DoD-composing preps). `context` carries any caller-specific keys (e.g. `issue=`,
+    `body_file=`) merged alongside the exception's own `line_number`/`raw_line`."""
+    return needs_decision(
+        DOD_MALFORMED,
+        summary=exc.reason,
+        context={
+            "line_number": exc.line_number,
+            "raw_line": exc.raw_line,
+            **context,
+        },
+        options=[
+            "fix the bullet's annotation by hand to match one of the closed-set forms in "
+            "skills/_shared/dod-annotations.md, then re-run"
+        ],
+    )
 
 
 def parse_dod_bullets(body_text):
@@ -333,7 +361,7 @@ def parse_dod_bullets(body_text):
     projection silently").
     """
     lines = body_text.splitlines()
-    section = _find_section(lines, r"Definition of done")
+    section = _find_section(lines, _DOD_HEADING_PATTERN)
     if section is None:
         return []
     start, end = section
@@ -424,20 +452,7 @@ def run_dod(args):
     try:
         bullets = parse_dod_bullets(body_text)
     except _DodMalformed as exc:
-        decision = needs_decision(
-            DOD_MALFORMED,
-            summary=exc.reason,
-            context={
-                "body_file": args.body_file,
-                "line_number": exc.line_number,
-                "raw_line": exc.raw_line,
-            },
-            options=[
-                "fix the bullet's annotation by hand to match one of the closed-set forms in "
-                "skills/_shared/dod-annotations.md, then re-run"
-            ],
-        )
-        emit_needs_decision(decision)
+        emit_needs_decision(dod_malformed_decision(exc, body_file=args.body_file))
         sys.exit(EXIT_OK)
 
     if args.render:

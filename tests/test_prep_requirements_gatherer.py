@@ -292,6 +292,7 @@ class FreshHappyPathTests(PrepGathererSandboxTestCase):
             "vector",
             "suggested_playbook",
             "dod",
+            "plan",
             "grounding_docs",
             "sections",
             "attention",
@@ -299,6 +300,7 @@ class FreshHappyPathTests(PrepGathererSandboxTestCase):
             self.assertIn(key, envelope, key)
         self.assertEqual(envelope["vector"], {"type": "story", "refusals": []})
         self.assertEqual(envelope["suggested_playbook"], "gather.md")
+        self.assertEqual(envelope["plan"], {"present": False})
         self.assertEqual(envelope["attention"], [])
         self.assertEqual(envelope["notices"], [])
 
@@ -347,12 +349,24 @@ class NoDodTests(PrepGathererSandboxTestCase):
         )
 
 
-class AnnotatedDodTests(PrepGathererSandboxTestCase):
+class MidFlightTests(PrepGathererSandboxTestCase):
+    """Both mid-flight signals: annotated bullets AND a bare implementation-plan marker (a
+    planned-but-unstarted issue is mid-flight too — the single-phase fallback would tick
+    appended bullets on the resolver's next push)."""
+
     def test_annotated_count_and_the_mid_flight_attention_line(self):
         envelope = self._envelope(104, "prep_requirements_gatherer_annotated")
         self.assertEqual(envelope["dod"]["annotated_count"], 1)
         self.assertTrue(
             any("index stability" in i for i in envelope["attention"]), envelope["attention"]
+        )
+
+    def test_a_plan_marker_is_a_mid_flight_signal_even_with_zero_annotations(self):
+        envelope = self._envelope(104, "prep_requirements_gatherer_annotated")
+        self.assertEqual(envelope["plan"], {"present": True})
+        self.assertTrue(
+            any("single-phase fallback" in i for i in envelope["attention"]),
+            envelope["attention"],
         )
 
 
@@ -383,6 +397,13 @@ class RefusalFactTests(PrepGathererSandboxTestCase):
     def test_closed_target(self):
         envelope = self._refusal(203, "prep_requirements_gatherer_closed")
         self.assertEqual(envelope["vector"]["refusals"], [prep.REFUSAL_CLOSED_TARGET])
+
+    def test_a_refusal_wins_over_a_malformed_dod(self):
+        """The closed fixture's body carries a malformed annotation on purpose: the refusal must
+        surface (dod: null), never a DOD_MALFORMED repair card for an issue the session refuses
+        to touch anyway."""
+        envelope = self._refusal(203, "prep_requirements_gatherer_closed")
+        self.assertIsNone(envelope["dod"])
 
 
 class DodMalformedTests(PrepGathererSandboxTestCase):

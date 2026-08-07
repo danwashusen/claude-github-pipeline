@@ -18,7 +18,7 @@
    "--paginate",
    "repos/octo/widgets/issues/104/comments"
   ],
-  "stdout_file": "comments_empty.json",
+  "stdout_file": "comments_plan.json",
   "exit_code": 0
  },
  {

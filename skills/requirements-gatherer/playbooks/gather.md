@@ -10,8 +10,8 @@ read it before step 3.
 Read the issue body + full thread from `facts.sections` (spilled paths) and `facts.target`. The
 thread may have moved past the body — the latest accepted direction wins. `facts.dod.bullets` is
 the existing DoD as current state: these are already-recorded requirements; you extend the set,
-never redraft it. `facts.attention` may carry open blockers or the annotated-DoD warning —
-surface both to the operator up front, in one line each.
+never redraft it. `facts.attention` may carry open blockers or the mid-flight warning (an
+implementation plan or annotated bullets) — surface each to the operator up front, one line each.
 
 ## 2. Gate G1 — grounding selection
 
@@ -51,18 +51,32 @@ the operator explicitly approves the set. Silence or a tweak is keep-iterating, 
 
 ## 5. Gate G3 — the DoD write
 
-1. **Mid-flight warning** (only when `facts.dod.annotated_count > 0`): appending changes the
-   top-level bullet count, so the resolver's next projection will block and re-route to the
-   planner ([`../../_shared/dod-annotations.md`](../../_shared/dod-annotations.md) index
-   stability — the correct consequence of adding scope mid-flight). Gate
-   (`header: "DoD in flight"`): **Append anyway** / **Abort** — never proceed silently.
+1. **Mid-flight warning** (when `facts.dod.annotated_count > 0` **or** `facts.plan.present`):
+   annotated bullets mean appending changes the top-level bullet count, so the resolver's next
+   projection will block and re-route to the planner
+   ([`../../_shared/dod-annotations.md`](../../_shared/dod-annotations.md) index stability — the
+   correct consequence of adding scope mid-flight); a bare plan marker means the issue is planned
+   even with zero annotations — and a plan with no `## Phases` section makes the resolver's
+   single-phase fallback tick **every** top-level bullet on its next push, silently claiming the
+   appended requirements as delivered. Gate (`header: "DoD in flight"`): **Append anyway** /
+   **Abort** — never proceed silently.
 2. Build the revised body: the current body **byte-for-byte**, with one new bullet per approved
    requirement appended after the last existing top-level DoD bullet, in approved order, each in
    the reference's grammar. When `facts.dod.present` is false, append a `## Definition of done`
    section at the end of the body.
 3. Show the diff — the added bullets only, "(everything else unchanged)" — and wait for
    **explicit** confirmation (freeform prose gate — a diff, not a fresh draft card).
-4. Stage the full revised body to `<facts.scratch>/dod-body.md` and write:
+4. Stage the full revised body to `<facts.scratch>/dod-body.md`, then **validate the staged body
+   before writing** — a bullet whose cited anchor happens to end the line with an
+   annotation-lookalike parenthetical would land fine and then block every downstream DoD parse:
+
+```bash
+${CLAUDE_PLUGIN_ROOT}/scripts/parse.py dod "<facts.scratch>/dod-body.md"
+```
+
+   A `DOD_MALFORMED` result names the offending bullet — sanitize its `(`/`)` per the reference's
+   anchor rule, re-stage, and re-validate; write only on an `ok` envelope.
+5. Write:
 
 ```bash
 ${CLAUDE_PLUGIN_ROOT}/scripts/gh_persist.py edit-body <owner/repo> <N> "<facts.scratch>/dod-body.md"
@@ -75,8 +89,7 @@ landed.
 
 ## 6. Summary
 
-End with the plain summary SKILL.md §4 specifies: bullets appended (each `REQ-<issue>-<seq>` id +
-criterion — the ids are what a plan phase or slice grounding cites), the
-write outcome, the grounding read (one line per source, or "none — operator declined grounding"),
-the Contested list (each entry with a `/github-pipeline:drafter` breadcrumb), the setup
-breadcrumb when the catalogue was absent, and the `/github-pipeline:planner <N>` pointer.
+End with the plain summary **SKILL.md §4 specifies — that list is the single source; don't
+restate it here**. Two playbook-local renderings: the grounding line is one line per source read
+(or "none — operator declined grounding"), and every landed `REQ-<issue>-<seq>` id is named
+explicitly — the ids are what a plan phase or slice grounding cites.

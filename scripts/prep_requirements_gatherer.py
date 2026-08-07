@@ -17,18 +17,20 @@ Composition (architecture.md §2 "compose the executors in-process"; §1 "the on
 processes any script may spawn are git/gh")::
 
     gh_gather.run(..., stream=)      -- the target's body/thread + native blocked_by/blocking + the
-                                        native parent/sub_issues relation, in ONE round-trip
-    branching.detect_type            -- the shared epic/story/standard core (import-only), with a
-                                        local `question` arm layered on (prep_drafter's precedent)
+                                        native parent/sub_issues relation + the implementation-plan
+                                        marker, in ONE round-trip
+    branching.detect_type_with_question -- the shared epic/story/question/standard core (import-only)
     parse.parse_dod_bullets          -- the existing DoD, parsed with 1-based indexes so the flow
                                         appends after the last top-level bullet, never re-counting
     parse.has_dod_section            -- whether the section exists at all (create-vs-append fact)
+    parse.dod_malformed_decision     -- the shared DOD_MALFORMED decision builder
+    pipelib.spill.read_section       -- the inline|path read-back for the spilled body
     doc_catalogue.read_catalogue     -- the consuming repo's `<!-- doc-catalogue -->` grounding docs
 
-Plus ONE direct `gh issue view <parent> --json state,title,labels` — and only when the target
-actually has a parent — because the sub-issue/parent node shape carries **no labels**
-(`epic-story-hierarchy.md` "The facts"), so the parent cannot be typed from the gather alone.
-Same shape and the same `AUTH_REQUIRED` handling as `prep_slicer._fetch_parent_state`.
+Plus ONE direct `gh issue view <parent> --json state,title,labels` via
+`branching.fetch_parent_state` — and only when the target actually has a parent — because the
+sub-issue/parent node shape carries **no labels** (`epic-story-hierarchy.md` "The facts"), so the
+parent cannot be typed from the gather alone.
 
 Usage::
 
@@ -70,6 +72,16 @@ simply has nothing to suggest and collects operator-named sources instead.
 A malformed DoD annotation IS a blocking `DOD_MALFORMED` decision (forwarded from the parse
 core): appending to a section the parser cannot index risks colliding with whatever the malformed
 line was trying to record — the operator repairs the bullet or aborts before this skill writes.
+**Refusals win over the malformed-DoD decision**: on a refused target the DoD is not parsed at
+all (`dod: null`) — the write-collision rationale only applies when a write can happen, and a
+repair card demanding a hand-fix on an issue the session refuses anyway is noise.
+
+The gather's marker lookup targets the `<!-- implementation-plan:v1 -->` comment, and
+`plan.present` is a first-class fact: an issue with a verified plan is **mid-flight** even before
+any bullet carries an annotation — a plan with no `## Phases` section makes the resolver's
+single-phase fallback tick EVERY top-level DoD bullet on its next push, so appended REQ bullets
+would be silently claimed as delivered. The flow's mid-flight gate keys on `plan.present` OR
+`dod.annotated_count`.
 
 Exit codes (architecture.md §3): 0 with the facts-block envelope present (``status`` is ``"ok"``
 or ``"needs_decision"``); 2 on a usage error (no envelope). Any other non-zero is an unclassified
@@ -77,31 +89,24 @@ hard `gh`/`git` failure surfaced by the composed gather — stderr carries the f
 """
 
 import argparse
-import json
 import re
 import sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
-import branching  # noqa: E402  (import after sys.path setup, by necessity; shared type-detection core)
+import branching  # noqa: E402  (import after sys.path setup, by necessity; shared type-detection + parent-typing cores)
 import doc_catalogue  # noqa: E402  (the consuming repo's declared grounding docs)
 import gh_gather  # noqa: E402
 import parse  # noqa: E402  (the DoD parse: indexes the flow appends after, never re-counting)
-from pipelib import process  # noqa: E402
-from pipelib.decisions import (  # noqa: E402
-    AUTH_REQUIRED,
-    DOC_CATALOGUE_ABSENT,
-    DOD_MALFORMED,
-    needs_decision,
-)
+from pipelib import process, spill  # noqa: E402
+from pipelib.decisions import DOC_CATALOGUE_ABSENT  # noqa: E402
 from pipelib.envelope import emit_needs_decision, emit_ok  # noqa: E402
 
-# The `question` label arm `branching.detect_type` doesn't carry (it returns epic/story/standard
-# only). Layered locally, exactly as `prep_drafter.py` and `prep_slicer.py` do — see
-# `prep_planner.py`'s module docstring for the "no prep-to-prep imports" convention that keeps
-# this a local arm over the shared core rather than another copy of the whole rule.
-_QUESTION_LABEL = "question"
+# The planner's durable plan comment (`skills/_shared/handoff-format.md` names the marker; the
+# planner writes it). Its PRESENCE — not its content — is this prep's fact: a planned issue is
+# mid-flight even with zero annotations (see the module docstring's single-phase-fallback note).
+PLAN_MARKER = "<!-- implementation-plan:v1 -->"
 
 # The stable requirement id this skill writes as a bold bullet prefix: `**REQ-<issue>-<seq>**`
 # (the slicer's `**AC-<n>**` form, issue-qualified like its `<parent#>/S<K>` titles so a citation
@@ -149,53 +154,6 @@ def _root_sha(root):
 
 
 # ---------------------------------------------------------------------------
-# Type detection (shared core + the local `question` arm).
-# ---------------------------------------------------------------------------
-
-
-def _detect_type(labels, title):
-    """`branching.detect_type` widened by one arm. The shared core answers epic/story/standard; a
-    `question` label wins over the `standard` fallback but never over `epic`/`story` (a
-    pathologically double-labelled issue keeps the core's documented precedence)."""
-    core = branching.detect_type(labels, title)
-    if core == "standard" and _QUESTION_LABEL in {
-        (label or "").strip().lower() for label in labels or []
-    }:
-        return "question"
-    return core
-
-
-def _fetch_parent_state(parent_number, repo, cwd=None):
-    """The parent's `state,title,labels` — the ONE extra `gh` call this prep makes, and only when
-    the target has a parent. Needed because the native relation's node shape carries no labels, so
-    the parent cannot be typed from the gather. Returns `(state_dict, decision_or_none)`, the same
-    shape (and the same `AUTH_REQUIRED` handling) as `prep_slicer._fetch_parent_state`."""
-    result = process.run(
-        ["gh", "issue", "view", str(parent_number), "--repo", repo, "--json", "state,title,labels"],
-        cwd=cwd,
-    )
-    if result.auth_required:
-        return None, needs_decision(
-            AUTH_REQUIRED,
-            summary="gh authentication required",
-            context={"stderr": result.stderr, "returncode": result.returncode},
-            options=["run: gh auth login"],
-        )
-    if result.returncode != 0:
-        sys.stderr.write(result.stderr)
-        sys.exit(1)
-    data = json.loads(result.stdout or "{}")
-    labels = [label.get("name") for label in data.get("labels") or []]
-    return {
-        "number": int(parent_number),
-        "state": data.get("state"),
-        "title": data.get("title"),
-        "labels": labels,
-        "type": _detect_type(labels, data.get("title") or ""),
-    }, None
-
-
-# ---------------------------------------------------------------------------
 # DoD facts
 # ---------------------------------------------------------------------------
 
@@ -226,19 +184,7 @@ def _parse_dod(issue_body, issue_number):
     try:
         bullets = parse.parse_dod_bullets(issue_body)
     except parse._DodMalformed as exc:  # noqa: SLF001  (the sanctioned cross-module catch; prep_resolver precedent)
-        return None, needs_decision(
-            DOD_MALFORMED,
-            summary=exc.reason,
-            context={
-                "issue": issue_number,
-                "line_number": exc.line_number,
-                "raw_line": exc.raw_line,
-            },
-            options=[
-                "fix the bullet's annotation by hand to match one of the closed-set forms in "
-                "skills/_shared/dod-annotations.md, then re-run"
-            ],
-        )
+        return None, parse.dod_malformed_decision(exc, issue=issue_number)
     entries = []
     highest_seq = 0
     for b in bullets:
@@ -296,7 +242,7 @@ def _open_blockers(blocked_by):
     ]
 
 
-def _build_attention(target, refusals, dod, grounding_docs, catalogue_absent, open_blockers):
+def _build_attention(target, refusals, dod, plan, grounding_docs, catalogue_absent, open_blockers):
     """Script-detectable conditions worth surfacing with evidence (architecture.md §4)."""
     attention = []
     for token in refusals:
@@ -327,6 +273,14 @@ def _build_attention(target, refusals, dod, grounding_docs, catalogue_absent, op
             "bullet count, so the resolver's next projection will block and re-route to the "
             "planner (dod-annotations.md index stability); warn the operator and require explicit "
             "confirmation" % (dod["annotated_count"], target["number"])
+        )
+    if plan["present"] and not refusals:
+        attention.append(
+            "#%s carries an implementation plan — the issue is mid-flight even with zero "
+            "annotations: a plan with no ## Phases section makes the resolver's single-phase "
+            "fallback tick EVERY top-level DoD bullet on its next push, silently claiming "
+            "appended bullets as delivered; warn the operator and require explicit confirmation"
+            % target["number"]
         )
     if catalogue_absent:
         attention.append(
@@ -374,19 +328,20 @@ def build_facts(issue, repo, root=".", scratch_dir=None, cwd=None):
     Path(scratch_dir).mkdir(parents=True, exist_ok=True)
 
     # Every composed core's non-blocking degradations accumulate here and ride out in the
-    # envelope's own `notices` (architecture.md §3) — including on the `needs_decision` paths
-    # below, since a decision emitted without them would silently drop the fact that this repo
-    # declares no grounding docs at all.
+    # envelope's own `notices` (architecture.md §3) — and each `needs_decision` forward below
+    # carries whatever notices have accumulated by that point, so no already-observed degradation
+    # is silently dropped by a decision.
     notices = []
 
     root_sha = _root_sha(root)
 
-    # 1) The target — one round-trip: body, thread, native deps, the parent/sub-issue relation.
-    #    No marker lookup: this skill reads and writes no durable marker comment.
+    # 1) The target — one round-trip: body, thread, native deps, the parent/sub-issue relation,
+    #    and the implementation-plan marker (presence only — a planned issue is mid-flight even
+    #    with zero annotations; see the module docstring's single-phase-fallback note).
     exit_code, issue_envelope = gh_gather.run(
         str(issue),
         repo,
-        marker_prefix=None,
+        marker_prefix=PLAN_MARKER,
         scratch_dir=scratch_dir,
         env=None,
         stream=_DiscardStream(),
@@ -407,28 +362,39 @@ def build_facts(issue, repo, root=".", scratch_dir=None, cwd=None):
 
     issue_labels = [label.get("name") for label in issue_envelope.get("labels") or []]
     issue_title = issue_envelope["title"]
-    target_type = _detect_type(issue_labels, issue_title)
+    target_type = branching.detect_type_with_question(issue_labels, issue_title)
 
     # 2) The parent, typed — the one extra gh call, made only when a parent exists.
     parent_node = issue_envelope.get("parent")
     parent = None
     if parent_node:
-        parent, parent_decision = _fetch_parent_state(parent_node.get("number"), repo, cwd=cwd)
+        parent, parent_decision = branching.fetch_parent_state(
+            parent_node.get("number"), repo, cwd=cwd
+        )
         if _forward_decision(parent_decision, notices=notices):
             return None
 
-    # 3) The existing DoD, parsed once — the flow appends after `bullet_count`, never re-counting,
-    #    and the annotated-count fact drives the mid-flight warning gate.
-    issue_body = _extract_body(issue_envelope)
-    dod, dod_decision = _parse_dod(issue_body, issue_envelope["number"])
-    if _forward_decision(dod_decision, notices=notices):
-        return None
+    # 3) Refusals — computed BEFORE the DoD parse, because a refusal wins: a `DOD_MALFORMED`
+    #    repair card on an issue the session refuses anyway is noise (the write-collision
+    #    rationale only applies when a write can happen).
+    refusals = _build_refusals(target_type, issue_envelope["state"], parent)
 
-    # 4) Grounding — the consuming repo's declared docs, read at the ambient checkout (the same
+    # 4) The existing DoD, parsed once — the flow appends after `bullet_count`, never re-counting,
+    #    and the annotated-count fact drives the mid-flight warning gate. Skipped (dod: null) on
+    #    any refusal path: the router stops before reading it.
+    dod = None
+    if not refusals:
+        issue_body = spill.read_section(issue_envelope, "issue_body")
+        dod, dod_decision = _parse_dod(issue_body, issue_envelope["number"])
+        if _forward_decision(dod_decision, notices=notices):
+            return None
+
+    # 5) Grounding — the consuming repo's declared docs, read at the ambient checkout (the same
     #    vantage as the docs themselves; see the module docstring).
     grounding_docs, catalogue_notices = doc_catalogue.read_catalogue(root)
     notices.extend(catalogue_notices)
 
+    plan = {"present": bool(issue_envelope.get("marker_comment_present"))}
     open_blockers = _open_blockers(issue_envelope.get("blocked_by"))
 
     target = {
@@ -444,8 +410,6 @@ def build_facts(issue, repo, root=".", scratch_dir=None, cwd=None):
         "subissues_available": issue_envelope.get("subissues_available"),
     }
 
-    refusals = _build_refusals(target_type, issue_envelope["state"], parent)
-
     sections = {
         key: value
         for key, value in issue_envelope.items()
@@ -460,12 +424,14 @@ def build_facts(issue, repo, root=".", scratch_dir=None, cwd=None):
         "vector": {"type": target_type, "refusals": refusals},
         "suggested_playbook": _suggested_playbook(refusals),
         "dod": dod,
+        "plan": plan,
         "grounding_docs": grounding_docs,
         "sections": sections,
         "attention": _build_attention(
             target,
             refusals,
             dod,
+            plan,
             grounding_docs,
             DOC_CATALOGUE_ABSENT in notices,
             open_blockers,
@@ -473,15 +439,6 @@ def build_facts(issue, repo, root=".", scratch_dir=None, cwd=None):
         "notices": notices,
     }
     return facts
-
-
-def _extract_body(envelope):
-    """The issue body, whether the gather kept it inline or spilled it to the scratch dir (spill
-    routing, architecture.md §3). Mirrors `prep_planner._extract_body`."""
-    body = envelope.get("issue_body")
-    if body is None and envelope.get("issue_body_mode") == "path":
-        body = Path(envelope["issue_body_path"]).read_text(encoding="utf-8")
-    return body or ""
 
 
 def main(argv):

@@ -68,6 +68,12 @@ One bullet per requirement, appended after the existing top-level bullets:
   **never wrapped in parentheses**: a trailing parenthetical is the position the annotation
   grammar owns, and the parser treats an attribution-lookalike there as `DOD_MALFORMED`. The
   resolver's later annotation appends after the tail untouched:
+- **Sanitize `(` / `)` inside a cited anchor.** The tail ends the line, so a cited heading whose
+  own text ends in a parenthetical — `§Rollout (phase 3)`, `§Register (see ab12cd3)` — puts an
+  attribution-lookalike in exactly the position the parser polices, and one such landed bullet
+  blocks every downstream DoD parse until hand-repair. Rewrite parentheses in cited anchor text
+  to `[` / `]` (the evaluator-reason precedent): `— docs/plan.md §Rollout [phase 3]`. The flow's
+  pre-write `parse.py dod` validation is the backstop; this rule is what keeps it green.
 
   ```
   - [ ] **REQ-42-1** — Sessions expire after 30 minutes of inactivity, kiosk accounts exempt — docs/prd.md §4.2 (closed by phase 2, commit ab12cd3)

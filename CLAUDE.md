@@ -367,7 +367,8 @@ the *consuming* repo provides — not by plugin config:
   repo's `docs/README.md` ([`skills/_shared/doc-catalogue.md`](skills/_shared/doc-catalogue.md)), one
   line per document carrying its path, `role`, `authority` (`binding` = a conflict is a blocker |
   `informative` = context), and a summary. `setup` writes it (seeding via a context-blind derivation
-  sub-agent, re-ingesting an existing block as the base); `prep_planner.py`/`prep_drafter.py` read it
+  sub-agent, re-ingesting an existing block as the base); the `prep_planner.py` / `prep_drafter.py` /
+  `prep_slicer.py` / `prep_requirements_gatherer.py` readers consume it
   through `scripts/doc_catalogue.py`, at the same vantage as the docs themselves — **not** through
   `refblocks`, since a catalogue names no gate. When it is absent the readers emit the
   `DOC_CATALOGUE_ABSENT` notice and ground on **nothing**: there is no built-in path list and no
