@@ -67,8 +67,8 @@ line that does not parse). It never rewords a summary a human wrote. Hand-edits 
 only ask is that the `<!-- … -->` marker pair stays intact.
 
 It differs from the stack profile in one way: this block **is machine-parsed**, so entries must hold
-the one-line grammar above. `setup` is the sole writer; the planner and drafter preps are the
-readers.
+the one-line grammar above. `setup` is the sole writer; the planner, drafter, slicer, and
+requirements-gatherer preps are the readers.
 
 ## When the catalogue is absent
 

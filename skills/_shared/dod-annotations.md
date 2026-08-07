@@ -23,7 +23,7 @@ All `<short-sha>` values are 7-char (matching the `## Phase tracker` and `_share
 - **1-based indexing.** The first top-level bullet is index 1. Indexes are stable within a single plan run — they only shift if bullets are added or removed from the body.
 - **Case-insensitive on `x`.** `- [x]` and `- [X]` both read as ticked. Authors only write `- [x]`.
 - **Section finder.** Locate the `## Definition of done` heading (case-insensitive on the section title). Read subsequent lines until the next `##` heading or EOF.
-- **Annotation as suffix.** Annotations always appear at the end of the bullet line, inside `( ... )`. Bullet text itself ends immediately before the annotation's opening `(`. When no annotation is present, the bullet text runs to the end of the line.
+- **Annotation as suffix.** Annotations always appear at the end of the bullet line, inside `( ... )`. Bullet text itself ends immediately before the annotation's opening `(`. When no annotation is present, the bullet text runs to the end of the line. A requirements-gatherer-written bullet opens with a bold `**REQ-<issue>-<seq>**` id and ends with a provenance tail (`— <path> §<anchor>` or `— operator elicited <date>`); both are **bullet text, never an annotation** — the tail is deliberately not parenthesized so it stays inside the text this parser reads, and annotations append after it.
 
 ## Recognition regex (informal)
 

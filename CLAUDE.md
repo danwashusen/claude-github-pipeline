@@ -14,7 +14,7 @@ artifact and no package manager. The "source" is:
   `gh_pr_gather.py`, `gh_persist.py`, `config_block.py`), `workspace.py` (worktree mechanics:
   ensure/attach/remove/gc/lint), `refblocks.py` (the origin/main pin + at-ref config reads) and
   `branching.py` (branch naming / type detection / prior-PR rows / linked branches — both
-  import-only), `parse.py` (DoD / open-question-links / phases), the eleven `prep_*.py`
+  import-only), `parse.py` (DoD / open-question-links / phases), the twelve `prep_*.py`
   state-assembly scripts (including `prep_workspace_open.py` / `prep_workspace_close.py`, whose
   prep IS the tool's action), the `oq_tracker.py` and `doc_catalogue.py` helpers the preps compose
   (the open-question tracker search; the consuming repo's declared grounding docs), and
@@ -61,7 +61,7 @@ any prompt edit; they are cheap and they are the only regression net prose has.
 
 ## Architecture
 
-### Twelve skills: six pipeline stages, six standalone tools
+### Thirteen skills: six pipeline stages, seven standalone tools
 
 ```
 draft ──▶ research ──▶ slice ──▶ plan ──▶ resolve ──▶ evaluate
@@ -69,7 +69,7 @@ draft ──▶ research ──▶ slice ──▶ plan ──▶ resolve ──
 
 The **pipeline stages** are `drafter`, `researcher`, `slicer`, `planner`, `resolver`, `evaluator`; the
 **standalone tools** are `setup`, `question-sweep`, `question-resolver`, `doc-reviewer`,
-`workspace-open`, `workspace-close` ([prd.md §2](docs/prd.md)). The two workspace tools are the
+`requirements-gatherer`, `workspace-open`, `workspace-close` ([prd.md §2](docs/prd.md)). The two workspace tools are the
 v3 operator-owned lifecycle: the operator runs `workspace-open <issue>` between planning and
 resolving (linked branch + worktree + setup hooks), **starts the resolver and evaluator sessions
 inside that worktree** (their preps assert the checkout — `WORKSPACE_MISMATCH` on the wrong one —
@@ -398,8 +398,8 @@ the *consuming* repo provides — not by plugin config:
 - **Model/effort are not pinned.** Skill frontmatter carries no `model:` or `effort:` keys — every
   skill inherits the invoking session's model and effort level. The v1 per-skill pins were removed
   2026-08-01; reintroducing one is a deviation through the normal gate.
-- **`disable-model-invocation: true` is exactly five tools** — `doc-reviewer`, `question-sweep`,
-  `question-resolver`, `workspace-open`, `workspace-close`. **`setup` is the deliberate
+- **`disable-model-invocation: true` is exactly six tools** — `doc-reviewer`, `question-sweep`,
+  `question-resolver`, `requirements-gatherer`, `workspace-open`, `workspace-close`. **`setup` is the deliberate
   exception**: it is a standalone tool but stays model-invocable, because v1 never carried the key
   on it and the S17 parity run adjudicated the difference rather than "fixing" it
   (`docs/specs/parity/setup.md`, "ADJUDICATION RECORD"). Don't add the key to `setup` on the

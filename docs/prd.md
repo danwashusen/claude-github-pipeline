@@ -32,7 +32,7 @@ session's loaded instructions contain no other type's flow — a router plus one
   every change lands via PR.
 - **Skills** — fixed names. Pipeline stages: `drafter`, `researcher`, `slicer`, `planner`,
   `resolver`, `evaluator`. Standalone tools: `setup`, `question-sweep`, `question-resolver`, `doc-reviewer`,
-  `workspace-open`, `workspace-close`. Invoked as `/github-pipeline:<name>`.
+  `requirements-gatherer`, `workspace-open`, `workspace-close`. Invoked as `/github-pipeline:<name>`.
 - **Session** — one Claude Code run of one skill. **Handoff** — the summary + copy-pasteable
   next-command block a pipeline session emits on clean exit; the only bridge between sessions.
 - **Gate** — an explicit decision question put to the operator.
@@ -49,7 +49,7 @@ session's loaded instructions contain no other type's flow — a router plus one
 
 ## §3 Scope
 
-**In scope for v2:** all nine skills (v3 adds the two workspace tools, making eleven, and the slicer, making twelve), the bundled scripts, the shared cross-skill contracts, the
+**In scope for v2:** all nine skills (v3 adds the two workspace tools, making eleven, the slicer, making twelve, and the requirements-gatherer, making thirteen), the bundled scripts, the shared cross-skill contracts, the
 plugin manifests, and offline tests for the deterministic layer.
 
 **Out of scope / non-goals:**
@@ -179,11 +179,12 @@ ground these are produced by implementation step S1. Lettered items are individu
 
 ## §6 Standalone tool requirements
 
-All six run only on explicit invocation and end with a plain summary — not a pipeline handoff.
-The four report-then-apply tools change nothing without the operator seeing the proposal;
-tracked-file edits follow §8.2: staged in a workspace, with the landing offered as a final gate.
-The two workspace tools (§6.5/§6.6) edit no tracked files — their action is the workspace
-lifecycle itself, and the explicit invocation is the authorization.
+All seven run only on explicit invocation and end with a plain summary — not a pipeline handoff.
+The five report-then-apply tools change nothing without the operator seeing the proposal;
+tracked-file edits follow §8.2: staged in a workspace, with the landing offered as a final gate
+(the requirements-gatherer, §6.7, edits no tracked files — its one write surface is a gated
+issue-body edit). The two workspace tools (§6.5/§6.6) edit no tracked files either — their
+action is the workspace lifecycle itself, and the explicit invocation is the authorization.
 
 - **§6.1 setup.** Proposes and reconciles the consuming repo's configuration blocks: inventories
   existing blocks, drafts grounded candidates from repo evidence, interviews the operator for
@@ -207,6 +208,16 @@ lifecycle itself, and the explicit invocation is the authorization.
   worktree-teardown hooks, then removes the worktree — gated on dirty/unpushed state (never a
   silent discard; merged-PR-aware so the routine post-merge close isn't false-flagged), and
   refused from inside the target worktree. Removes worktrees, never remote branches.
+- **§6.7 requirements-gatherer.** Interactive requirement elicitation for one filed issue:
+  suggests grounding documents from the repo's doc catalogue (the operator confirms, adds, or
+  drops), elicits an enumerated requirement set in discussion with the operator (iterating on a
+  human-readable draft until approved), and appends the approved requirements to the issue's
+  `## Definition of done` as plain unticked criterion bullets — each citing its source document
+  by durable anchor, or provenanced as operator-elicited when no document records it. Detail is
+  never duplicated from a doc into the issue; downstream stages read the cited sections. It
+  authors no documents, files no issues, and refuses epics, slices, question issues, and closed
+  issues. (Appended after §6.6 rather than inserted at its conceptual position — §6.x numbers are
+  cited individually elsewhere, so renumbering would dangle those references.)
 
 ## §7 Persisted artifacts (the compatibility contract)
 

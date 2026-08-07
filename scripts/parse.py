@@ -313,6 +313,16 @@ class _DodMalformed(Exception):
         self.raw_line = raw_line
 
 
+def has_dod_section(body_text):
+    """Whether the body carries a `## Definition of done` section at all — distinct from
+    `parse_dod_bullets` returning `[]`, which conflates "no section" with "a section holding no
+    top-level checkbox bullets". A caller that must decide whether to *create* the section (the
+    requirements-gatherer's DoD write) keys off this; a caller that only projects onto existing
+    bullets never needs the distinction (dod-annotations.md's "Skip projection silently").
+    """
+    return _find_section(body_text.splitlines(), r"Definition of done") is not None
+
+
 def parse_dod_bullets(body_text):
     """Parse the `## Definition of done` section's top-level checkbox bullets. Returns a list of
     `{"index", "text", "checked", "annotation"}` dicts (1-based `index`, `annotation` a dict or
