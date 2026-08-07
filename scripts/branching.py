@@ -88,6 +88,52 @@ def detect_type(labels, title):
     return "standard"
 
 
+def detect_type_with_question(labels, title):
+    """:func:`detect_type` widened by one arm: a `question` label wins over the `standard`
+    fallback but never over `epic`/`story` (a pathologically double-labelled issue keeps the
+    core's documented precedence). Promoted here from per-prep copies once the arm reached its
+    third consumer (the prep_planner S14-promotion precedent: a literal-same algorithm serving a
+    shared vocabulary lives in a shared module, not restated per prep)."""
+    core = detect_type(labels, title)
+    if core == "standard" and "question" in {
+        (label or "").strip().lower() for label in labels or []
+    }:
+        return "question"
+    return core
+
+
+def fetch_parent_state(parent_number, repo, cwd=None):
+    """The typed parent lookup — `gh issue view <parent> --json state,title,labels` — needed
+    because the native parent/sub-issue node shape carries **no labels**
+    (`epic-story-hierarchy.md` "The facts"), so a parent cannot be typed from a gather alone.
+    The type answers the by-construction slice test (parent-not-epic ⇒ the child is a slice).
+    Returns ``(state_dict, decision_or_none)`` with the standard `AUTH_REQUIRED` handling.
+    Promoted here at its second byte-identical prep consumer (the S14 precedent)."""
+    result = process.run(
+        ["gh", "issue", "view", str(parent_number), "--repo", repo, "--json", "state,title,labels"],
+        cwd=cwd,
+    )
+    if result.auth_required:
+        return None, needs_decision(
+            AUTH_REQUIRED,
+            summary="gh authentication required",
+            context={"stderr": result.stderr, "returncode": result.returncode},
+            options=["run: gh auth login"],
+        )
+    if result.returncode != 0:
+        sys.stderr.write(result.stderr)
+        sys.exit(1)
+    data = json.loads(result.stdout or "{}")
+    labels = [label.get("name") for label in data.get("labels") or []]
+    return {
+        "number": int(parent_number),
+        "state": data.get("state"),
+        "title": data.get("title"),
+        "labels": labels,
+        "type": detect_type_with_question(labels, data.get("title") or ""),
+    }, None
+
+
 # The v1 step-5 prior-PR state table (docs/specs/resolver.md "Fresh/continue mode from the
 # prior-PR state table" — its seven rows), carried as the row name -> mode mapping. See
 # prep_resolver.py's vector assembly for the mode semantics (`continue` / `gated` / `fresh`) and

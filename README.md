@@ -1,7 +1,7 @@
 # github-pipeline
 
 A Claude Code plugin that runs a complete GitHub issue/PR workflow through the `gh` CLI — six
-session-per-stage skills that hand off to one another, plus six standalone tools,
+session-per-stage skills that hand off to one another, plus seven standalone tools,
 backed by stdlib-only Python scripts that do every deterministic step (fetching, parsing, state
 derivation, worktree lifecycle, and every write).
 
@@ -37,6 +37,7 @@ sub-issues so GitHub's rollup tracks delivery, and hands back to the planner.
 | `/github-pipeline:question-sweep` | Reconciles the project's open questions between its docs and the GitHub `question`-issue tracker (the registry of record): files the untracked ones, flags docs left stale by an answered question, and repairs the doc↔issue back-links. Reports first, applies on confirmation. |
 | `/github-pipeline:question-resolver` | Assisted closing of one open `question` issue: evaluates it and its thread against the project docs, records your approved decision as a durable `<!-- question-decision:v1 -->` comment, offers to close the issue, and **proposes** the doc fold-back. It never decides for you and never edits docs. |
 | `/github-pipeline:doc-reviewer` | Reviews one project doc against its bundled authoring guide and offers to apply the findings you accept. |
+| `/github-pipeline:requirements-gatherer` | Interactively gathers the requirements for one issue: suggests grounding docs from your doc catalogue (you confirm or add), elicits an enumerated requirement set with you until approved, then appends them to the issue's `## Definition of done` — each bullet citing its source doc by durable anchor, or recorded as operator-elicited when no doc covers it. Detail stays in the docs; the issue only cites. |
 | `/github-pipeline:workspace-open` | Opens the work workspace for an issue: creates or adopts its GitHub-linked branch ("create a branch for this issue"), creates the worktree under `.worktrees/`, runs your worktree-setup hooks, and prints the path to start the next session in. |
 | `/github-pipeline:workspace-close` | Releases a workspace (branch or issue number): runs your worktree-teardown hooks, then removes the worktree — gated on dirty/unpushed state, never a silent discard. The routine last step after a merge, and the one reclamation path for abandoned workspaces. |
 
