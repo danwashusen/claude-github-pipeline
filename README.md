@@ -1,7 +1,7 @@
 # github-pipeline
 
 A Claude Code plugin that runs a complete GitHub issue/PR workflow through the `gh` CLI — six
-session-per-stage skills that hand off to one another, plus six standalone tools,
+session-per-stage skills that hand off to one another, plus seven standalone tools,
 backed by stdlib-only Python scripts that do every deterministic step (fetching, parsing, state
 derivation, worktree lifecycle, and every write).
 
@@ -22,9 +22,9 @@ sub-issues so GitHub's rollup tracks delivery, and hands back to the planner.
 
 | Skill | What it does |
 |---|---|
-| `/github-pipeline:drafter` | Turns informal feedback into a well-structured issue (or Epic + stories) and files it. Never silently absorbs an unresolved open question — each is matched against the `question`-issue registry, filed if untracked, and recorded on the build issue. |
+| `/github-pipeline:drafter` | Turns informal feedback into **one** well-structured issue — bug, feature, story, Epic or `question` — and files it. Never silently absorbs an unresolved open question: each is matched against the `question`-issue registry, filed if untracked, and recorded on the build issue. Decomposition is the slicer's, so a filed Epic hands off there for its stories. |
 | `/github-pipeline:researcher` | Web-researches version/API/migration questions and posts a dated, cited dossier on the issue — or declines outright when the issue carries no currency risk. |
-| `/github-pipeline:slicer` | Cuts one issue into ordered, operator-approved **deliverable slices** — the smallest increments you could demonstrate on their own — and files them as native sub-issues, so the issue's own progress rollup tracks delivery. Report-then-apply: nothing is written until you confirm the whole cut, and it refuses rather than guessing when your repo declares no grounding docs. |
+| `/github-pipeline:slicer` | Cuts one issue into ordered, operator-approved children and files them as native sub-issues, so the parent's own progress rollup tracks delivery. One operation at two altitudes: a story or standalone issue becomes **deliverable slices** (the smallest increments you could demonstrate on their own), an Epic becomes **stories** (each independently shippable, with its own branch and PR). It can also promote an issue to an Epic before cutting it, and draw an Epic around issues that already exist. Report-then-apply: nothing is written until you confirm the whole cut, and it refuses rather than guessing when your repo declares no grounding docs. |
 | `/github-pipeline:planner` | Designs the implementation approach, grounded in repo precedent + project docs at a recorded commit SHA, and posts a reviewed `<!-- implementation-plan:v1 -->` comment. Epic plans pin cross-story contracts; story plans are authored just-in-time. |
 | `/github-pipeline:resolver` | Implements one issue against its verified plan **in the worktree you opened with `workspace-open`** (the session starts inside it and is verified there), opens/continues a PR, projects Definition-of-done ticks as phases ship, and loops with code review until approved. |
 | `/github-pipeline:evaluator` | Evaluates a PR against its origin issue (in the PR's own worktree, verified at exactly the PR head), gates on branch health (CI plus your declared checks, cached per head SHA), posts a formal approve/soft-reject review, merges per your configured policy, and hands you the `workspace-close` command. |
@@ -37,6 +37,7 @@ sub-issues so GitHub's rollup tracks delivery, and hands back to the planner.
 | `/github-pipeline:question-sweep` | Reconciles the project's open questions between its docs and the GitHub `question`-issue tracker (the registry of record): files the untracked ones, flags docs left stale by an answered question, and repairs the doc↔issue back-links. Reports first, applies on confirmation. |
 | `/github-pipeline:question-resolver` | Assisted closing of one open `question` issue: evaluates it and its thread against the project docs, records your approved decision as a durable `<!-- question-decision:v1 -->` comment, offers to close the issue, and **proposes** the doc fold-back. It never decides for you and never edits docs. |
 | `/github-pipeline:doc-reviewer` | Reviews one project doc against its bundled authoring guide and offers to apply the findings you accept. |
+| `/github-pipeline:requirements-gatherer` | Interactively gathers the requirements for one issue: suggests grounding docs from your doc catalogue (you confirm or add), elicits an enumerated requirement set with you until approved, then appends them to the issue's `## Definition of done` — each bullet citing its source doc by durable anchor, or recorded as operator-elicited when no doc covers it. Detail stays in the docs; the issue only cites. |
 | `/github-pipeline:workspace-open` | Opens the work workspace for an issue: creates or adopts its GitHub-linked branch ("create a branch for this issue"), creates the worktree under `.worktrees/`, runs your worktree-setup hooks, and prints the path to start the next session in. |
 | `/github-pipeline:workspace-close` | Releases a workspace (branch or issue number): runs your worktree-teardown hooks, then removes the worktree — gated on dirty/unpushed state, never a silent discard. The routine last step after a merge, and the one reclamation path for abandoned workspaces. |
 

@@ -21,7 +21,7 @@ Coverage matrix (S12 DoD):
   neither (= the default row fixture).
 - Conformance on every emitting path + the two-sided call-budget test (S6 style).
 - Decision codes: MARKER_AMBIGUOUS (duplicate plan comments; duplicate research comments),
-  AUTH_REQUIRED, ROOT_NOT_ON_MAIN / ROOT_DIRTY, AMBIGUOUS (multiple epic-branch matches, multiple
+  AUTH_REQUIRED, WORKSPACE_MISMATCH, AMBIGUOUS (multiple epic-branch matches, multiple
   parent-epic matches, malformed `## Open questions`).
 """
 

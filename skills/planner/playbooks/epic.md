@@ -38,6 +38,6 @@ posts, route on `facts.epic.stories_filed`:
   `## Story breakdown` — `Epic:` line (`plan: ✓`) + `Stories:` line (the filed, dependency-ordered
   set) + `Grounding:` + `**Open questions:**` when present + `Next: /github-pipeline:planner #<first-
   story>`; `Why:` notes each story is planned just-in-time against epic HEAD.
-- **Stories not filed** (plain bullets, no `#NN`): forward to the **drafter** to file them —
-  `Stories:` line `plain bullets (not yet filed as issues)`; `Next: /github-pipeline:drafter`; `Why:`
-  the planner doesn't file issues, then re-run the planner on the epic once filed.
+- **Stories not filed** (plain bullets, no `#NN`): forward to the **slicer** to file them —
+  `Stories:` line `plain bullets (not yet filed as issues)`; `Next: /github-pipeline:slicer <epic-#>`;
+  `Why:` the planner doesn't file issues, then re-run the planner on the epic once filed.

@@ -109,4 +109,4 @@ Read [`../references/handoff-renderings.md`](../references/handoff-renderings.md
   the resolved OQ) — and, on HARD Start-fresh, that the superseded PR was closed with the supersession
   note.
 - **Epic-shaped, planning aborted** (seam gate chose "Split as epic"): `plan: ✗`, no `Grounding:`;
-  `Next: /github-pipeline:drafter` revising #N as an Epic per the seam-analysis comment.
+  `Next: /github-pipeline:slicer` promoting #N to an Epic per the seam-analysis comment.

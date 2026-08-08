@@ -113,8 +113,8 @@ schema, omission rules, and closed-set state-marker vocabulary are owned by
 the `Grounding:` and `**Open questions:**` lines, the footer rule, and the bug-(b) composite
 epic+story worked example are in [`references/handoff-renderings.md`](references/handoff-renderings.md).
 **Read that reference before composing the handoff** and match the run's outcome to a shape (forward to
-the resolver; epic plan → first story or drafter; just-in-time story → resolver; re-route to researcher
-or answer-the-question; epic-shaped abort → drafter; revise refreshed). Fill the snapshot from data in
+the resolver; epic plan → first story or slicer; just-in-time story → resolver; re-route to researcher
+or answer-the-question; epic-shaped abort → slicer; revise refreshed). Fill the snapshot from data in
 hand; the `Next:` action and `Why:` line are judgment. The `**Open questions:**` line renders in
 **every** shape whose posted plan carries an `## Open questions` section — including a composite
 epic+story session — never dropped because the structural shape matched a different example first.

@@ -1,19 +1,19 @@
 #!/usr/bin/env python3
 """prep_drafter.py — the drafter's complete facts block in one call (architecture.md §4;
 docs/implementation.md S14; docs/specs/drafter.md). Assembles the session's entire starting
-state — the three-way vector (new / revise / epic-revise), repo-context inventory (issue
+state — the two-way vector (new / revise), repo-context inventory (issue
 templates, labels, grounding-doc presence), the `<!-- drafter-open-question-markers -->` config
 block (or the heuristic-cue fallback signal), revise-mode facts (plan-marker presence, open-PR
-list, closed-by-PR/project references), epic-revise facts (`## Stories` entries reconciled against
-live state), and the search-before-file open-question tracker de-dup — as ONE JSON envelope on
-stdout, so the drafter session's startup is one Python process, never a subprocess chain.
+list, closed-by-PR/project references), and the search-before-file open-question tracker de-dup — as
+ONE JSON envelope on stdout, so the drafter session's startup is one Python process, never a
+subprocess chain.
 
 Composition (architecture.md §2 "compose the executors in-process"; §1 "the only external
 processes any script may spawn are git/gh")::
 
     gh_gather.run(..., stream=)                    -- the target issue's body/thread/plan-marker/
                                                        native-deps/open-PR envelope (one round-trip);
-                                                       revise/epic-revise modes ONLY — `new` mode has
+                                                       revise mode ONLY — `new` mode has
                                                        no target issue yet, so this call is skipped
                                                        entirely
     config_block.read_block_anywhere                -- the OQ-marker config block
@@ -45,9 +45,8 @@ Usage::
     prep_drafter.py <owner/repo> --oq-query "<topic>" [--oq-query "<topic>" ...]
 
 ``--root`` defaults to ``.`` (the project root — architecture.md §6's read-only trust vantage).
-``--issue`` selects revise mode (a standalone/story/question target) or epic-revise mode (an Epic
-target) — mechanically, from the target's own labels/title, never from operator intent; omitting it
-selects new mode. ``--scratch-dir`` defaults to ``/tmp/gh-drafter-<issue-or-"new">`` (CLAUDE.md's
+``--issue`` selects revise mode (any already-filed target, epic included — the target's type is read
+mechanically from its own labels/title, never from operator intent); omitting it selects new mode. ``--scratch-dir`` defaults to ``/tmp/gh-drafter-<issue-or-"new">`` (CLAUDE.md's
 ``/tmp/gh-<skill>-<N>/`` convention) when omitted — this IS "staging conventions" from this step's
 Work list: prep establishes and creates the directory every staged draft/revised body gets written
 under at flow time (docs/specs/drafter.md "Artifacts written"); prep itself stages nothing, since no draft exists
@@ -81,34 +80,33 @@ Exit codes (architecture.md §3): 0 with the facts-block envelope present (``sta
 or ``"needs_decision"``); 2 on a usage error (no envelope). Any other non-zero is an unclassified
 hard `gh`/`git` failure surfaced by a composed executor — stderr carries the faithful error.
 
-**``vector.mode`` — the THREE-value closed set ``"new"`` / ``"revise"`` / ``"epic-revise"``**
-(docs/implementation.md S14 DoD's own wording). Derived purely mechanically, never from operator
-intent the script can't see:
+**``vector.mode`` — the TWO-value closed set ``"new"`` / ``"revise"``.** Derived purely mechanically,
+never from operator intent the script can't see:
 
   - no ``--issue`` -> ``"new"`` (``vector.type`` is ``None`` — Step 1's bug/incomplete/feature/
     epic/question classification is judgment over freeform feedback text; a script has no target
     issue to inspect yet, so it cannot and does not predict it — architecture.md §5: the router
     overrides `suggested_playbook` post-classification "on evidence the script cannot see").
-  - ``--issue`` given, target's type (labels/title, same deterministic rule docs/specs/resolver.md
-    names) is ``"epic"`` -> ``"epic-revise"`` (docs/specs/drafter.md's "Special case — revising an
-    Epic" rows:
-    reconcile `## Stories` against live per-story state, re-run ordering/sizing).
-  - ``--issue`` given, any other type (``"standard"`` / ``"story"`` / ``"question"``) -> ``"revise"``
-    (docs/specs/drafter.md's core revise-mode rows; a Story revise additionally verifies its Epic backlink line
-    at flow time — Steps R1-R6 apply uniformly regardless of sub-type, so this prep does not fork a
-    fourth mode for it).
+  - ``--issue`` given -> ``"revise"``, whatever the target's type. An **epic target is an ordinary
+    revise** since #16: the drafter revises one issue's body, and an epic's story set is the native
+    sub-issue relation, so changing *which* stories exist is a slicer run at epic altitude rather than
+    a body edit. A Story revise additionally verifies its Epic backlink line at flow time — the revise
+    steps apply uniformly regardless of sub-type, so this prep forks no further mode for it.
+
+  Before #16 an epic target selected a third mode, ``"epic-revise"``, whose facts carried the epic's
+  story set (reconciled against live per-story state) for the drafter's epic-split playbook to
+  re-order and batch-file into. That playbook is gone; the two-tier story read it needed now lives in
+  ``prep_slicer.py``, where the reconciliation happens.
 
 **``suggested_playbook``** (architecture.md §5 "Prep proposes; the router confirms") maps onto the
-four S15 playbook names (`docs/implementation.md` S15's Work list: `new` / `revise` / `epic-split` /
-`question`) — mirroring `prep_planner.py`'s identical `_suggested_playbook` precedent:
+three playbook names — mirroring `prep_planner.py`'s identical `_suggested_playbook` precedent:
 
-  - ``mode == "new"`` -> ``"new.md"`` (the router may override to ``question.md``/``epic-split.md``
-    post-classification — evidence this script cannot see ahead of reading the feedback text).
-  - ``mode == "epic-revise"`` -> ``"epic-split.md"`` (the one epic playbook, shared by fresh-epic
-    filing and epic-revise, the same way `prep_planner.py`'s ``story-jit.md`` "owns BOTH the fresh
-    and the revise path").
+  - ``mode == "new"`` -> ``"new.md"`` (the router may override to ``question.md``
+    post-classification — evidence this script cannot see ahead of reading the feedback text. An
+    ``Epic`` classification needs no override: an epic is one issue, filed by ``new.md`` like any
+    other, and its stories are cut afterwards by the slicer).
   - ``mode == "revise"``, ``vector.type == "question"`` -> ``"question.md"``.
-  - ``mode == "revise"``, any other type -> ``"revise.md"``.
+  - ``mode == "revise"``, any other type (including ``epic``) -> ``"revise.md"``.
 
 **The shared question-tracker search-before-file mechanism (S14 promotion; see `oq_tracker.py`'s own
 module docstring for the full rationale).** `prep_planner.py`'s `_search_question_tracker` /
@@ -118,7 +116,7 @@ byte-identical mechanism for its own search-before-file companion-question de-du
 (docs/specs/drafter.md Step 3.5/R4). `prep_planner.py` was refactored to call `oq_tracker`
 in-process instead of carrying its own copy; its own test suite (`tests/test_prep_planner.py`) is
 unmodified and green (verified). This module composes `oq_tracker.build_open_question_candidates`
-(revise/epic-revise modes — the target issue body IS the source to scan) and `oq_tracker.build_oq_query`
+(revise mode — the target issue body IS the source to scan) and `oq_tracker.build_oq_query`
 (new mode's ``--oq-query`` one-shot — there is no issue body yet, so the operator names the topic
 directly, mirroring `prep_planner.py`'s identical additive extension for a plan-time-detected OQ).
 
@@ -199,8 +197,6 @@ _PRD_ROLE = "prd"
 # docs/specs/drafter.md "Artifacts written", Epic `## Stories` row) — byte-identical regexes to
 # `prep_planner.py`'s (restated locally; see the
 # module docstring's "no prep-to-prep imports" note).
-_STORY_FILED_RE = re.compile(r"^-\s*\[( |x|X)\]\s*#(\d+)\s*(?:—|-)\s*(.+)$")
-_STORY_PLAIN_RE = re.compile(r"^-\s*\[( |x|X)\]\s*(.+)$")
 _SECTION_HEADING_RE = re.compile(r"^##(?!#)")
 
 
@@ -253,8 +249,6 @@ def _suggested_playbook(mode, issue_type):
     `suggested_playbook` paragraph for the full rationale)."""
     if mode == "new":
         return "new.md"
-    if mode == "epic-revise":
-        return "epic-split.md"
     if issue_type == "question":
         return "question.md"
     return "revise.md"
@@ -367,163 +361,6 @@ def _read_oq_marker_config(root):
 
 
 # ---------------------------------------------------------------------------
-# `## Stories` section parsing + per-story live-state fetch (epic-revise mode only) — byte-identical
-# grammar to `prep_planner.py`'s (restated locally; see module docstring's "no prep-to-prep imports"
-# note). No shared `parse.py` subcommand covers this grammar (only `dod`/`oq-links`/`phases` are
-# named in architecture.md §3's decision-code table) — best-effort, non-raising, matching every
-# other "no dedicated decision code" block-scan in this codebase.
-# ---------------------------------------------------------------------------
-
-
-def _parse_stories_section(issue_body):
-    lines = (issue_body or "").splitlines()
-    start = None
-    for i, line in enumerate(lines):
-        if re.match(r"^##\s+Stories\s*$", line, re.IGNORECASE):
-            start = i + 1
-            break
-    if start is None:
-        return []
-    end = len(lines)
-    for j in range(start, len(lines)):
-        if _SECTION_HEADING_RE.match(lines[j]):
-            end = j
-            break
-
-    entries = []
-    for raw_line in lines[start:end]:
-        stripped = raw_line.strip()
-        filed_match = _STORY_FILED_RE.match(stripped)
-        if filed_match:
-            entries.append(
-                {
-                    "number": int(filed_match.group(2)),
-                    "title": filed_match.group(3).strip(),
-                    "checked": filed_match.group(1) in ("x", "X"),
-                }
-            )
-            continue
-        plain_match = _STORY_PLAIN_RE.match(stripped)
-        if plain_match:
-            entries.append(
-                {"number": None, "title": plain_match.group(2).strip(), "checked": plain_match.group(1) in ("x", "X")}
-            )
-    return entries
-
-
-def _fetch_story_state(repo, story_number, cwd=None):
-    """`gh issue view <NN> --json state,title,labels` — the per-filed-story live-state fetch v1's
-    `GATHER_EPIC` performs so the caller can reconcile body checkboxes against reality
-    (the v1 executor agent's `GATHER_EPIC` description; docs/specs/drafter.md "Epic-revise gather").
-    Returns `(state_dict,
-    decision_or_none)`."""
-    result = process.run(
-        ["gh", "issue", "view", str(story_number), "--repo", repo, "--json", "state,title,labels"],
-        cwd=cwd,
-    )
-    if result.auth_required:
-        return None, needs_decision(
-            AUTH_REQUIRED,
-            summary="gh authentication required",
-            context={"stderr": result.stderr, "returncode": result.returncode},
-            options=["run: gh auth login"],
-        )
-    if result.returncode != 0:
-        sys.stderr.write(result.stderr)
-        sys.exit(1)
-    data = json.loads(result.stdout)
-    return {
-        "state": data.get("state"),
-        "title": data.get("title"),
-        "labels": [label.get("name") for label in data.get("labels") or []],
-    }, None
-
-
-def _build_epic_revise_facts(issue_body, repo, sub_issues=None, cwd=None):
-    """Epic-revise mode's facts: the epic's story set, reconciled against live state.
-
-    The story set resolves through the sources of `skills/_shared/epic-story-hierarchy.md`, and
-    `stories_source` reports which one answered so the router knows whether there are checkboxes
-    to reconcile at all:
-
-    - **`sub-issues`** — `sub_issues` (GitHub's native relation) is non-empty and the body has no
-      `## Stories` section. Every entry is filed by construction, `state`/`live_title` come from the
-      relation itself (**no per-story round-trip** — the gather already carried them), and `checked`
-      mirrors live state, so a checkbox/live-state mismatch is unrepresentable.
-    - **`checklist`** — the legacy `## Stories` fallback for an epic filed before the native
-      relation was written, or on a host that doesn't serve it. A FILED story
-      (`- [ ] #NN — <title>`) gets its live `state`/`live_title` via :func:`_fetch_story_state`; a
-      PLACEHOLDER bullet (not yet filed) rides with both `None` — mirroring `prep_planner.py`'s
-      identical shape. A MISMATCH (checked but still OPEN, or unchecked but already CLOSED) surfaces
-      in `attention` rather than being silently reconciled here (architecture.md §4: "the router
-      reconciles the checkboxes ... surface it with evidence" — reconciling the BODY TEXT is the
-      router's write, not a fact this script computes).
-    - **`mixed`** — both, unioned by issue number with native state winning on overlap. Reachable
-      without anyone erring: epic-revise files a NEW story under a legacy epic with `--parent`, so
-      that story is native while its siblings stay checklist bullets. Returning only one half here
-      would silently drop the other half's stories from the reconciliation.
-
-    Returns `(epic_revise_facts, attention_lines, decision_or_none)`.
-    """
-    stories = []
-    attention = []
-
-    native_stories = []
-    for node in sub_issues or []:
-        live_state = node.get("state")
-        native_stories.append(
-            {
-                "number": node.get("number"),
-                "title": node.get("title"),
-                "checked": (live_state or "").upper() == "CLOSED",
-                "state": live_state,
-                "live_title": node.get("title"),
-            }
-        )
-
-    checklist_entries = _parse_stories_section(issue_body)
-    if native_stories and not checklist_entries:
-        return {"stories": native_stories, "stories_source": "sub-issues"}, attention, None
-
-    native_numbers = {s["number"] for s in native_stories}
-
-    for entry in checklist_entries:
-        if entry["number"] is not None and entry["number"] in native_numbers:
-            # Already carried by the native half of a `mixed` epic, with authoritative live state.
-            continue
-        if entry["number"] is None:
-            stories.append(
-                {"number": None, "title": entry["title"], "checked": entry["checked"], "state": None, "live_title": None}
-            )
-            continue
-        state_fact, decision = _fetch_story_state(repo, entry["number"], cwd=cwd)
-        if decision is not None:
-            return None, None, decision
-        live_state = state_fact["state"]
-        live_closed = (live_state or "").upper() == "CLOSED"
-        if entry["checked"] != live_closed:
-            attention.append(
-                "story #%s checkbox is %s but live state is %s"
-                % (entry["number"], "checked" if entry["checked"] else "unchecked", live_state)
-            )
-        stories.append(
-            {
-                "number": entry["number"],
-                "title": entry["title"],
-                "checked": entry["checked"],
-                "state": live_state,
-                "live_title": state_fact["title"],
-            }
-        )
-    # `mixed` when both halves contributed — the union, native state winning on overlap. Taking one
-    # half and dropping the other would silently lose stories (skills/_shared/epic-story-hierarchy.md).
-    return {
-        "stories": native_stories + stories,
-        "stories_source": "mixed" if native_stories else "checklist",
-    }, attention, None
-
-
-# ---------------------------------------------------------------------------
 # Revise facts (mode == "revise" only).
 # ---------------------------------------------------------------------------
 
@@ -594,7 +431,7 @@ def _build_attention(
             "open question '%s' has %d tracker candidate(s) — do not record it as (not filed)"
             % (group["oq_id"], len(group["candidates"]))
         )
-    if target is not None and mode in ("revise", "epic-revise") and (target.get("state") or "").upper() == "CLOSED":
+    if target is not None and mode == "revise" and (target.get("state") or "").upper() == "CLOSED":
         attention.append(
             "target issue #%s is closed — resolve the 'Closed issue' gate before revising"
             % target["number"]
@@ -649,11 +486,10 @@ def build_facts(repo, issue=None, root=".", scratch_dir=None, cwd=None):
     open_questions = []
     open_question_candidates = []
     revise_facts = None
-    epic_revise_facts = None
     extra_attention = []
     sections = {}
 
-    # 2) Target-issue gather — revise/epic-revise modes ONLY (`--issue` given). `new` mode has no
+    # 2) Target-issue gather — revise mode ONLY (`--issue` given). `new` mode has no
     #    target yet, so this whole block (and its 3-4 gh calls) is skipped entirely.
     if issue:
         exit_code, issue_envelope = gh_gather.run(
@@ -681,7 +517,7 @@ def build_facts(repo, issue=None, root=".", scratch_dir=None, cwd=None):
         issue_labels = [label.get("name") for label in issue_envelope.get("labels") or []]
         issue_title = issue_envelope.get("title") or ""
         vector_type = _detect_type(issue_labels, issue_title)
-        mode = "epic-revise" if vector_type == "epic" else "revise"
+        mode = "revise"
 
         target = {
             "kind": "issue",
@@ -706,19 +542,8 @@ def build_facts(repo, issue=None, root=".", scratch_dir=None, cwd=None):
         if _forward_decision(oq_decision, notices=notices):
             return None
 
-        # 4) Mode-specific facts.
-        if mode == "epic-revise":
-            epic_revise_facts, epic_attention, epic_decision = _build_epic_revise_facts(
-                issue_body,
-                repo,
-                sub_issues=issue_envelope.get("sub_issues") or [],
-                cwd=cwd,
-            )
-            if _forward_decision(epic_decision, notices=notices):
-                return None
-            extra_attention.extend(epic_attention)
-        else:
-            revise_facts = _build_revise_facts(issue_envelope)
+        # 4) Mode-specific facts. Every `--issue` run is a revise, epic targets included (#16).
+        revise_facts = _build_revise_facts(issue_envelope)
 
         sections = {
             key: value
@@ -752,8 +577,6 @@ def build_facts(repo, issue=None, root=".", scratch_dir=None, cwd=None):
     }
     if revise_facts is not None:
         facts["revise"] = revise_facts
-    if epic_revise_facts is not None:
-        facts["epic_revise"] = epic_revise_facts
     if sections:
         facts["sections"] = sections
 
@@ -768,7 +591,7 @@ def main(argv):
     parser.add_argument(
         "--issue",
         default=None,
-        help="target issue number — selects revise/epic-revise mode; omit for new-issue mode",
+        help="target issue number — selects revise mode; omit for new-issue mode",
     )
     parser.add_argument("--root", default=".", help="project root (architecture.md §6 vantage)")
     parser.add_argument(

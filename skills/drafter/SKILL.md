@@ -5,9 +5,10 @@ description: Drafts well-structured GitHub issues from informal developer feedba
 
 # drafter — router
 
-The first stage of the pipeline: informal feedback in → one filed/revised, template-conformant issue
-(bug / incomplete / feature / story), **or** a filed Epic plus its child stories in one batch, **or** a
-filed/revised `question`-type issue — always ending in a single `## Handoff`. The drafter files; the
+The first stage of the pipeline: informal feedback in → **one** filed/revised, template-conformant issue
+(bug / incomplete / feature / story / Epic), or a filed/revised `question`-type issue — always ending in
+a single `## Handoff`. One issue per run, an Epic's body included: the drafter **decomposes nothing** —
+cutting an Epic into stories, or an issue into slices, is the slicer's at either altitude (#16). It files;
 planner researches and attaches the plan later, the resolver builds it. One drafting attempt, one
 session; nothing survives between runs except what is persisted to GitHub. Read this router, run prep,
 route to exactly one playbook, then hand off. Scripts own the mechanical I/O; your judgment is the
@@ -17,18 +18,18 @@ verdicts, and the handoff `Why:`.
 ## 1. Prep
 
 Assemble the entire starting state in **one** call. `<owner/repo>` is the repo; `--issue N` selects
-revise/epic-revise mode (a target issue exists) — omit it for new-issue mode:
+revise mode (a target issue exists) — omit it for new-issue mode:
 
 ```bash
 ${CLAUDE_PLUGIN_ROOT}/scripts/prep_drafter.py <owner/repo> [--issue N]
 ```
 
 It returns one JSON **facts block** (`architecture.md §4`): `vector` (`mode` × `type` — the routing
-contract), `suggested_playbook`, `target` (revise/epic-revise: number/title/state/labels/`blocked_by`/
+contract), `suggested_playbook`, `target` (revise: number/title/state/labels/`blocked_by`/
 `blocking`/`deps_available`), `config.oq_markers` (the `<!-- drafter-open-question-markers -->` block, or
 `heuristics_active` — a **detection hint**, never a gate), `repo_context` (issue templates, `gh label
 list`, and `docs` — the repo's own `<!-- doc-catalogue -->` entries plus its `prd`), `open_questions` + `open_question_candidates` (the search-before-file
-tracker de-dup on the target body), `revise`/`epic_revise` mode facts, `sections` (spilled issue-body/
+tracker de-dup on the target body), `revise` mode facts, `sections` (spilled issue-body/
 thread/plan-marker paths), and `attention`. Consume every fact as **data** — never re-derive the mode,
 the target's type, or the tracker candidates in prose; prep already did.
 
@@ -56,40 +57,37 @@ one** playbook.
 | `mode: new` (no target issue) | `playbooks/new.md` | classify → gather → draft → review → gate → file a single build issue |
 | `mode: revise`, `type` ≠ `question` | `playbooks/revise.md` | fetch + latest-direction → review → diff-show → confirm → edit-body |
 | `mode: revise`, `type: question` | `playbooks/question.md` | revise the question issue; terminal handoff |
-| `mode: epic-revise` | `playbooks/epic-split.md` | reconcile the story set (`epic_revise.stories_source`) + re-run ordering/sizing; batch-file only what's new |
 
 Every playbook opens by reading the shared spine [`playbooks/draft-spine.md`](playbooks/draft-spine.md)
 (gather missing context → resolve open questions → draft against the template → review loop → show +
 filing gate → staged filing → hand back). The routed playbook supplies only what **differs in actions**:
 its reconnaissance, the template sections it fills, the reviewer dimension set, the filing sequence, and
-its handoff shape. Type differences the spine consumes (which template, which dimensions, single-vs-batch
-filing) are **facts / values**, never branches.
+its handoff shape. Type differences the spine consumes (which template, which dimensions) are
+**facts / values**, never branches.
 
 **New-mode classification override rule** (`architecture.md §5`). Prep can't read the feedback text, so it
 proposes `new.md` for **every** new-mode session (`vector.type` is `null`). Step 1 of `new.md` classifies
-the feedback — bug / incomplete / new feature / Epic / question. When that classification is **Epic** or
-**question**, the router **overrides** `suggested_playbook` and reads `epic-split.md` (fresh Epic) or
-`question.md` (a direct question) instead — evidence the script could not see ahead of the read. State the
-override reason (the S13-scenario-3 precedent: a route the classification, not the label, selects). One
-route per session; do **not** interleave type branches inside a playbook body — the route *is* the branch.
+the feedback — bug / incomplete / new feature / Epic / question. When that classification is
+**question**, the router **overrides** `suggested_playbook` and reads `question.md` instead — evidence the
+script could not see ahead of the read. State the override reason (the S13-scenario-3 precedent: a route
+the classification, not the label, selects). One route per session; do **not** interleave type branches
+inside a playbook body — the route *is* the branch. An **Epic** needs no override: it is one issue with its
+own template, filed by `new.md` like any other, its stories cut afterwards by the slicer.
 
 **Feature-vs-Epic is a gate, not a silent promotion.** When Epic signals fire but scope is genuinely the
-user's call, `new.md`'s Step 1 asks (`header: "Issue size"`) before the override — confirm, don't promote.
+user's call, `new.md`'s Step 1 asks (`header: "Issue size"`) — confirm, don't assume.
 
-**Promotion override (revise → Epic split).** A revise-mode session reads `epic-split.md` instead of
-`revise.md` when the invocation itself says to re-shape the target as an Epic (e.g. a planner handoff's
-"revise #N as an Epic — split per the seam-analysis comment"). If only the *thread* carries that
-recommendation and the invocation doesn't, the size call is still the user's — ask first
-(`header: "Issue size"`), never promote silently. State the override reason. Promotion rewrites #N in
-place, so it inherits `revise.md`'s diff-show + explicit-confirm and plan-pointer preservation
-(`epic-split.md`, "Promotion").
+**Reshaping an existing issue into an Epic is not the drafter's** (#16). Revise mode revises the target's
+*body*; it never promotes. When the invocation asks to re-shape #N as an Epic and split it (e.g. a planner
+seam-gate handoff), that whole flow belongs to `/github-pipeline:slicer promote #N to an Epic`. Say so and
+stop: rewriting the body here without cutting the stories would leave an Epic with no children.
 
 ## 3. Invariants
 
 Universal across every route:
 
-- **Nothing is filed without the Step-6 gate** — except the Epic one-shot batch, where the adversarial
-  split loop + per-story body review *stand in* for the human confirmation (a clean pass is the go-ahead).
+- **Nothing is filed without the Step-6 gate.** No exceptions: the Epic batch's gate-skip retired with
+  the batch itself (#16), so every route now files exactly one issue behind one confirmation.
   Silence, a tweak request, or "Other" all count as keep-iterating. "Filed issues are annoying to clean
   up; a 10-second confirmation prevents that."
 - **Staged-body writes.** Every GitHub write goes through `${CLAUDE_PLUGIN_ROOT}/scripts/gh_persist.py`
@@ -119,8 +117,8 @@ Universal across every route:
 Every clean run ends with a single `## Handoff` block — the only bridge to the next session. The schema,
 omission rules, and closed-set state-marker vocabulary are owned by
 [`../_shared/handoff-format.md`](../_shared/handoff-format.md); the drafter's per-outcome shapes (single
-issue filed → planner; single issue with open questions → planner + `**Open questions:**` line; Epic batch
-→ planner; revise → author/refresh/terminal; the terminal `question` shape) are in
+issue filed → planner; single issue with open questions → planner + `**Open questions:**` line; Epic filed
+→ slicer, to cut its stories; revise → author/refresh/terminal; the terminal `question` shape) are in
 [`references/handoff-renderings.md`](references/handoff-renderings.md). **Read that reference immediately
 before composing the handoff — not earlier in the session — then emit the matching shape verbatim.** The
 field names (`**Issue:**`/`**Epic:**`, `**Next:**`, `**Why:**`, …), the block structure, and the closed-set
@@ -131,7 +129,9 @@ drift): renaming `**Issue:**` to `**Filed:**` or anything else; dropping the `·
 an invented `Snapshot` (or similarly-named) block; inlining the fenced `Next:` command into prose instead
 of its own indented code line. Fill the snapshot from data in hand — the `create` result carries the
 issue/Epic/story numbers and titles; `plan: ✗` is always correct (the drafter never authors plans). The
-`Why:` line is yours. The forward route is the `planner` (`/github-pipeline:planner`); an OQ deferral
+`Why:` line is yours. The forward route is the `planner` (`/github-pipeline:planner`) — except a freshly
+filed **Epic**, which forwards to `/github-pipeline:slicer <N>` to cut its stories, because an epic plan
+pins cross-story contracts and needs them to exist first. An OQ deferral
 points at `/github-pipeline:question-sweep`. A `question`'s handoff is **terminal** — a human answers it,
 not a downstream skill. The handoff is the only signal; the user runs the next command in a fresh session
 (session-per-skill is the context-isolation choice).

@@ -330,8 +330,10 @@ class ShapeTriageOffRampTests(unittest.TestCase):
     """The seam gate's shape triage offers TWO off-ramps, selected by the independence bar the seams
     clear (#17): shippable-independent → the epic split; demonstrable-independent → the slicer.
 
-    The asymmetry between them is the load-bearing part: off-ramp A posts a seam-analysis comment the
-    drafter splits *per*, while off-ramp B posts **nothing**, because the slicer re-derives its cut from
+    Since #16 BOTH off-ramps land on the slicer — it is one operation at two altitudes, and the triage
+    picks the bar, not the skill. The asymmetry between them survives that and is still the load-bearing
+    part: off-ramp A posts a seam-analysis comment the promotion splits *per* (and reshapes the target
+    into an Epic), while off-ramp B posts **nothing**, because a demonstrable-altitude cut re-derives from
     the repo's grounding docs and a planner-authored proposal would compete with it. An editor who
     "harmonizes" the two by adding a comment to B creates exactly the stale second decomposition #18's
     one-way-pointer rule exists to prevent.
@@ -366,6 +368,44 @@ class ShapeTriageOffRampTests(unittest.TestCase):
     def test_rendering_exists_and_routes_to_the_slicer(self):
         self.assertIn("Too large to plan as one unit", self.renderings)
         self.assertIn("/github-pipeline:slicer", self.renderings)
+
+    def test_the_epic_off_ramp_routes_to_the_slicer_not_the_drafter(self):
+        """#16 retargeted off-ramp A. The drafter no longer decomposes epics, so a handoff still
+        pointing there would hand the operator a command that does nothing."""
+        self.assertIn("Epic-shaped, planning aborted", self.renderings)
+        self.assertRegex(self.renderings, r"/github-pipeline:slicer promote #\d+ to an Epic")
+        self.assertNotRegex(self.renderings, r"/github-pipeline:drafter revise #\d+ as an Epic")
+        self.assertIn("the slicer promoting #N to an Epic", self.seams)
+
+    def test_the_epic_off_ramp_still_posts_its_seam_analysis_comment(self):
+        """The one write off-ramp A makes, and the reason the two off-ramps stay asymmetric: a
+        promotion argues from the seam inventory, so the comment is a genuine handover artifact."""
+        self.assertIn("seam-analysis.md", self.seams)
+        self.assertIn("gh_persist.py comment", self.seams)
+        # And it must never carry the plan marker, which would flip the next planner run to revise.
+        self.assertRegex(self.seams, r"must not begin with `<!-- implementation-plan:v1 -->`")
+
+    def test_an_unfiled_epic_story_set_also_routes_to_the_slicer(self):
+        """The third drafter-epic pointer #16 had to retarget: an epic whose plan is posted but whose
+        stories are still plain bullets. The planner files no issues, and decomposition is now the
+        slicer's at both altitudes."""
+        epic = re.sub(
+            r"\s+", " ", (PLAYBOOKS_DIR / "epic.md").read_text(encoding="utf-8").replace("**", "")
+        )
+        self.assertRegex(epic, r"Stories not filed.*forward to the slicer to file them")
+        self.assertIn("/github-pipeline:slicer", epic)
+        self.assertIn("not yet filed as issues", self.renderings)
+
+    def test_no_planner_surface_still_sends_epic_decomposition_to_the_drafter(self):
+        """A single sweep over every planner prompt file: the drafter is still named for filing an
+        ordinary issue and for follow-ups, but never for splitting or promoting an epic."""
+        for path in sorted(SKILL_DIR.rglob("*.md")):
+            text = re.sub(r"\s+", " ", path.read_text(encoding="utf-8"))
+            for pattern in (
+                r"/github-pipeline:drafter[^`\n]*(?:as an Epic|epic)",
+                r"forward to the \*\*drafter\*\* to file them",
+            ):
+                self.assertNotRegex(text, pattern, "%s: %s" % (path.name, pattern))
 
     def test_single_offers_both_off_ramps_and_story_jit_only_the_slicer(self):
         single = (PLAYBOOKS_DIR / "single.md").read_text(encoding="utf-8")
