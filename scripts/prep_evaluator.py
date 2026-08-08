@@ -153,7 +153,7 @@ def _forward_decision(decision, notices=None):
     a decision was present, else ``False`` so the caller continues assembling facts.
 
     This is how ``MARKER_AMBIGUOUS`` (gh_pr_gather / gh_gather), ``AUTH_REQUIRED`` (any gh call),
-    ``ROOT_NOT_ON_MAIN``/``ROOT_DIRTY``/``ROOT_DIVERGED``/``BRANCH_IN_USE`` (workspace.py), and
+    ``WORKSPACE_MISMATCH``/``BRANCH_IN_USE`` (workspace.py), and
     ``DOD_MALFORMED`` (parse.py, raised in-process — see :func:`_parse_closing_issue_dod`)
     propagate through prep untouched, per architecture.md §3's closed decision-code set: a composed
     core's decision IS prep's decision, verbatim, never re-derived or reworded.

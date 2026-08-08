@@ -13,7 +13,8 @@ artifact and no package manager. The "source" is:
 - **Stdlib-only Python scripts** — `scripts/*.py`: the four GitHub/git executors (`gh_gather.py`,
   `gh_pr_gather.py`, `gh_persist.py`, `config_block.py`), `workspace.py` (worktree mechanics:
   ensure/attach/remove/gc/lint, plus the derived-default-branch helper) and `branching.py` (branch
-  naming / type detection / prior-PR rows / linked branches — import-only), `parse.py` (DoD / open-question-links / phases), the eleven `prep_*.py`
+  naming / type detection / prior-PR rows / linked branches — import-only), `parse.py` (DoD /
+  open-question-links / phases), the twelve `prep_*.py`
   state-assembly scripts (including `prep_workspace_open.py` / `prep_workspace_close.py`, whose
   prep IS the tool's action), the `oq_tracker.py` and `doc_catalogue.py` helpers the preps compose
   (the open-question tracker search; the consuming repo's declared grounding docs), and
@@ -60,7 +61,7 @@ any prompt edit; they are cheap and they are the only regression net prose has.
 
 ## Architecture
 
-### Twelve skills: six pipeline stages, six standalone tools
+### Thirteen skills: six pipeline stages, seven standalone tools
 
 ```
 draft ──▶ research ──▶ slice ──▶ plan ──▶ resolve ──▶ evaluate
@@ -68,7 +69,7 @@ draft ──▶ research ──▶ slice ──▶ plan ──▶ resolve ──
 
 The **pipeline stages** are `drafter`, `researcher`, `slicer`, `planner`, `resolver`, `evaluator`; the
 **standalone tools** are `setup`, `question-sweep`, `question-resolver`, `doc-reviewer`,
-`workspace-open`, `workspace-close` ([prd.md §2](docs/prd.md)). The two workspace tools are the
+`requirements-gatherer`, `workspace-open`, `workspace-close` ([prd.md §2](docs/prd.md)). The two workspace tools are the
 v3 operator-owned lifecycle: the operator runs `workspace-open <issue>` between planning and
 resolving (linked branch + worktree + setup hooks), **starts the resolver and evaluator sessions
 inside that worktree** (their preps assert the checkout — `WORKSPACE_MISMATCH` on the wrong one —
@@ -81,20 +82,23 @@ automatically).
 researcher only when the issue has no dossier and the plan turns on external truth with genuine
 currency risk, and the researcher hands **back to the planner**, which ingests the dossier (a
 declined research run hands back too, with `research: ✗`). The planner also re-routes **backward to
-the drafter** when its seam gate finds a standard issue epic-shaped (most seams outside the issue's
-DoD): it aborts with a lean seam-analysis comment and the drafter promotes #N into an Epic in place
-(`skills/planner/references/seam-dispositions.md`). v1 behaved identically — the S15 parity
-record's Scenario 4(b) has v1's drafter `Next:` pointing at its own planner — so this is doc truth
-being corrected, not a behavior change.
+the slicer** when its seam gate finds a standard issue epic-shaped (most seams outside the issue's
+DoD): it aborts with a lean seam-analysis comment and the slicer promotes #N into an Epic in place and
+cuts its stories (`skills/planner/references/seam-dispositions.md`). That arm pointed at the drafter
+until #16 moved decomposition to the slicer at both altitudes; before v2 it was the drafter's, and the
+S15 parity record's Scenario 4(b) preserves that older topology.
 
-`slice` is the **second** conditional detour off `plan`, and the planner's seam gate picks between the
-two off-ramps on one criterion — the independence bar the seams clear. Seams *shippable*-independent
-(each wants its own branch and PR) → the drafter promotes to an Epic; seams only
-*demonstrable*-independent (increments sharing one branch) → the **slicer** cuts deliverable slices and
-hands **back** to the planner, whose phases then map onto them via `sub-issue:`. The slicer is also
-operator-invocable directly. Unlike the epic off-ramp it posts **no** analysis comment: it re-derives
-its cut from the repo's declared grounding docs, so a planner-authored proposal would be a competing,
-staler decomposition. The stage/tool split is load-bearing, not cosmetic:
+`slice` is the **second** conditional detour off `plan`, and the planner's seam gate picks between two
+off-ramps on one criterion — the independence bar the seams clear. **Both land on the slicer** (#16):
+it is one operation at two altitudes, so the gate picks the altitude, not the skill. Seams
+*shippable*-independent (each wants its own branch and PR) → the slicer promotes #N to an Epic and cuts
+**stories**; seams only *demonstrable*-independent (increments sharing one branch) → it cuts
+**deliverable slices** in place. Either way it hands **back** to the planner, whose phases then map onto
+the children via `sub-issue:`, and it is also operator-invocable directly. The off-ramps stay
+asymmetric in what the planner posts: the promoting one leaves a lean seam-analysis comment (a promotion
+argues from the seam inventory), the slice-in-place one posts **nothing** — that cut re-derives from the
+repo's declared grounding docs, so a planner-authored proposal would be a competing, staler
+decomposition. The stage/tool split is load-bearing, not cosmetic:
 
 - A pipeline stage runs in **its own Claude Code session** and ends with a `## Handoff` — a
   cold-readable summary plus the copy-pasteable command that starts the next session. There is no
@@ -288,10 +292,11 @@ now the same rule everything else follows rather than an exception.
   responses to the same absent fact — don't "fix" one to match the other). The *read mechanics* belong
   to `scripts/doc_catalogue.py` and the *authoring flow* to `skills/setup/references/block-authoring.md`.
 - `epic-story-hierarchy.md` — the **three-level** hierarchy `epic → story → deliverable slice`, both
-  edges being GitHub's **native parent/sub-issue** relation. The epic↔story edge is written only by the
-  **drafter** at filing time (`gh_persist.py create --parent`) on every path that files a story under an
-  epic (fresh batch, promotion, epic-revise's new stories); the story↔slice edge only by the
-  **slicer**. Read by the **planner**, **resolver**, and **evaluator** through a two-tier read — native
+  edges being GitHub's **native parent/sub-issue** relation. **Both edges are written only by the
+  `slicer`** (#16 — the epic↔story edge was the drafter's until then): `gh_persist.py create --parent` at
+  filing time on every path that files a child (fresh cut, promotion, a resume's new children), plus the
+  one after-the-fact path, `gh_persist.py add-parent`, which adopts an already-filed issue so an epic can
+  be drawn around stories authored upstream. Read by the **planner**, **resolver**, and **evaluator** through a two-tier read — native
   first, the legacy `## Stories` checklist second, `stories_source` reporting which answered. A fresh
   epic body has **no** `## Stories` section (a checklist can't self-tick and can't drive GitHub's panel,
   rollup, or a Project's Sub-issues progress field). The fallback is load-bearing: there is **no
@@ -375,9 +380,11 @@ the *consuming* repo provides — not by plugin config:
   repo's `docs/README.md` ([`skills/_shared/doc-catalogue.md`](skills/_shared/doc-catalogue.md)), one
   line per document carrying its path, `role`, `authority` (`binding` = a conflict is a blocker |
   `informative` = context), and a summary. `setup` writes it (seeding via a context-blind derivation
-  sub-agent, re-ingesting an existing block as the base); `prep_planner.py`/`prep_drafter.py` read it
+  sub-agent, re-ingesting an existing block as the base); the `prep_planner.py` / `prep_drafter.py` /
+  `prep_slicer.py` / `prep_requirements_gatherer.py` readers consume it
   through `scripts/doc_catalogue.py`, at the same vantage as the docs themselves (as every config
-  family now is — this was a deliberate exception while gate config was pinned). When it is absent the readers emit the
+  family now is — this was a deliberate exception while gate config was pinned). When it is absent
+  the readers emit the
   `DOC_CATALOGUE_ABSENT` notice and ground on **nothing**: there is no built-in path list and no
   filesystem walk, because a guessed doc layout is exactly what the block removes. The plugin
   formerly hardcoded `docs/prd.md` / `docs/architecture.md` / `docs/constitution.md` / `CLAUDE.md` in
@@ -406,8 +413,8 @@ the *consuming* repo provides — not by plugin config:
 - **Model/effort are not pinned.** Skill frontmatter carries no `model:` or `effort:` keys — every
   skill inherits the invoking session's model and effort level. The v1 per-skill pins were removed
   2026-08-01; reintroducing one is a deviation through the normal gate.
-- **`disable-model-invocation: true` is exactly five tools** — `doc-reviewer`, `question-sweep`,
-  `question-resolver`, `workspace-open`, `workspace-close`. **`setup` is the deliberate
+- **`disable-model-invocation: true` is exactly six tools** — `doc-reviewer`, `question-sweep`,
+  `question-resolver`, `requirements-gatherer`, `workspace-open`, `workspace-close`. **`setup` is the deliberate
   exception**: it is a standalone tool but stays model-invocable, because v1 never carried the key
   on it and the S17 parity run adjudicated the difference rather than "fixing" it
   (`docs/specs/parity/setup.md`, "ADJUDICATION RECORD"). Don't add the key to `setup` on the

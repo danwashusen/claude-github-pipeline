@@ -12,7 +12,8 @@ origin is a local git sandbox — hermetic per the S9 lesson (no test resolves `
 network-backed clone); `shimenv.intercepted_env`'s `NETWORK_POISON_ENV` guard is never bypassed.
 
 Coverage matrix (S14 DoD):
-- Vector derivation ×3: new (no --issue), revise (standalone/story/question target), epic-revise
+- Vector derivation ×2: new (no --issue) and revise (any already-filed target, epic included —
+  #16 retired the third `epic-revise` mode along with the drafter's epic decomposition)
   (Epic-labeled target).
 - OQ candidate search fixtures: match (a genuinely-filed companion) and no-match (legitimately
   still "(not filed)").
@@ -20,7 +21,7 @@ Coverage matrix (S14 DoD):
   list`, plus grounding-doc presence (PRD's 4-candidate-path search, architecture/constitution/
   CLAUDE.md).
 - Conformance on every emitting path + the two-sided call-budget test (S6/S12 style).
-- Decision codes: AUTH_REQUIRED (the labels call; the epic-revise per-story state fetch),
+- Decision codes: AUTH_REQUIRED (the labels call),
   MARKER_AMBIGUOUS (gh_gather's own duplicate-plan-comment forwarding), AMBIGUOUS (malformed
   `## Open questions` section, forwarded from the S14-promoted `oq_tracker.py`).
 """
@@ -140,7 +141,7 @@ class ScriptExistsTests(unittest.TestCase):
 
 
 # ---------------------------------------------------------------------------
-# DoD box 1: fixtures derive the vector for new, revise, and epic-revise correctly.
+# DoD box 1: fixtures derive the vector for new and revise correctly.
 # ---------------------------------------------------------------------------
 
 
@@ -154,6 +155,7 @@ class NewModeVectorTests(PrepDrafterSandboxTestCase):
         envelope = self._envelope(fixture_case="prep_drafter_new_happy")
         self.assertIsNone(envelope["target"])
         self.assertNotIn("revise", envelope)
+        # #16 retired the epic_revise facts key with the mode; nothing may reintroduce it.
         self.assertNotIn("epic_revise", envelope)
         self.assertNotIn("sections", envelope)
         self.assertEqual(envelope["open_questions"], [])
@@ -171,6 +173,26 @@ class ReviseModeVectorTests(PrepDrafterSandboxTestCase):
         self.assertEqual(envelope["vector"], {"mode": "revise", "type": "question"})
         self.assertEqual(envelope["suggested_playbook"], "question.md")
 
+    def test_an_epic_target_is_an_ordinary_revise(self):
+        """#16: an epic used to select a third mode (`epic-revise`) routing to the drafter's epic-split
+        playbook. The drafter now revises one body and decomposes nothing, so an epic is a plain
+        revise — its story set is the native relation, and changing which stories exist is a slicer
+        run at epic altitude."""
+        envelope = self._envelope(issue=310, fixture_case="prep_drafter_revise_epic")
+        self.assertEqual(envelope["vector"], {"mode": "revise", "type": "epic"})
+        self.assertEqual(envelope["suggested_playbook"], "revise.md")
+        self.assertIn("revise", envelope)
+        self.assertNotIn("epic_revise", envelope)
+
+    def test_an_epic_revise_pays_no_per_story_state_fetch(self):
+        """The read that the retired mode paid for. `prep_drafter_revise_epic`'s manifest carries no
+        per-story entry, so a regression that reinstated the reconciliation gather would fail as a
+        shim MISS rather than passing quietly. The epic's sub-issues still ride the one gather."""
+        envelope = self._envelope(issue=310, fixture_case="prep_drafter_revise_epic")
+        self.assertEqual(
+            [node["number"] for node in envelope["target"]["sub_issues"]], [311, 312]
+        )
+
     def test_revise_mode_target_facts_shape(self):
         envelope = self._envelope(issue=300, fixture_case="prep_drafter_revise_standard")
         target = envelope["target"]
@@ -178,6 +200,7 @@ class ReviseModeVectorTests(PrepDrafterSandboxTestCase):
         self.assertEqual(target["number"], 300)
         self.assertEqual(target["state"], "OPEN")
         self.assertEqual(target["labels"], ["bug"])
+        # #16 retired the epic_revise facts key with the mode; nothing may reintroduce it.
         self.assertNotIn("epic_revise", envelope)
 
     def test_revise_mode_has_revise_key_with_plan_absent_and_no_open_prs(self):
@@ -187,67 +210,6 @@ class ReviseModeVectorTests(PrepDrafterSandboxTestCase):
         self.assertEqual(envelope["revise"]["open_prs"], [])
         self.assertEqual(envelope["revise"]["closed_by_pull_requests_references"], [])
         self.assertEqual(envelope["revise"]["project_items"], [])
-
-
-class EpicReviseModeVectorTests(PrepDrafterSandboxTestCase):
-    def test_epic_revise_vector_and_playbook(self):
-        envelope = self._envelope(issue=100, fixture_case="prep_drafter_epic_revise")
-        self.assertEqual(envelope["vector"], {"mode": "epic-revise", "type": "epic"})
-        self.assertEqual(envelope["suggested_playbook"], "epic-split.md")
-
-    def test_epic_revise_has_no_revise_key(self):
-        envelope = self._envelope(issue=100, fixture_case="prep_drafter_epic_revise")
-        self.assertNotIn("revise", envelope)
-        self.assertIn("epic_revise", envelope)
-
-    def test_epic_revise_stories_reconciled_against_live_state(self):
-        envelope = self._envelope(issue=100, fixture_case="prep_drafter_epic_revise")
-        stories = {s["number"]: s for s in envelope["epic_revise"]["stories"] if s["number"] is not None}
-        self.assertEqual(stories[101]["state"], "CLOSED")
-        self.assertTrue(stories[101]["checked"])
-        self.assertEqual(stories[102]["state"], "OPEN")
-        self.assertFalse(stories[102]["checked"])
-        placeholders = [s for s in envelope["epic_revise"]["stories"] if s["number"] is None]
-        self.assertEqual(len(placeholders), 1)
-        self.assertEqual(placeholders[0]["title"], "Story D placeholder (not filed)")
-
-    def test_epic_revise_legacy_epic_reports_checklist_source(self):
-        """This fixture's epic predates the native relation (empty `sub_issues`, a `## Stories`
-        section), so the read falls to tier 2 and says so — that's what tells the router there are
-        checkboxes to reconcile (skills/_shared/epic-story-hierarchy.md)."""
-        envelope = self._envelope(issue=100, fixture_case="prep_drafter_epic_revise")
-        self.assertEqual(envelope["epic_revise"]["stories_source"], "checklist")
-
-    def test_epic_revise_native_relation_reports_sub_issues_source(self):
-        """An epic carrying the native relation: the story set comes from `sub_issues`, live state
-        rides along with it, and `checked` mirrors that state so a checkbox/live-state mismatch is
-        unrepresentable. The fixture omits the per-story `gh issue view` entries entirely, so a
-        regression into per-story fetching fails as a shim MISS rather than passing quietly."""
-        envelope = self._envelope(issue=100, fixture_case="prep_drafter_epic_revise_native")
-        self.assertEqual(envelope["epic_revise"]["stories_source"], "sub-issues")
-        stories = {s["number"]: s for s in envelope["epic_revise"]["stories"]}
-        self.assertEqual(sorted(stories), [101, 102])
-        self.assertEqual(stories[101]["state"], "CLOSED")
-        self.assertTrue(stories[101]["checked"])
-        self.assertEqual(stories[102]["state"], "OPEN")
-        self.assertFalse(stories[102]["checked"])
-        # Nothing to reconcile, so no mismatch lines.
-        self.assertFalse([line for line in envelope["attention"] if "checkbox" in line])
-
-    def test_epic_revise_checkbox_live_state_mismatch_surfaces_attention(self):
-        envelope = self._envelope(issue=100, fixture_case="prep_drafter_epic_revise")
-        self.assertTrue(
-            any("story #103" in line and "checked" in line and "OPEN" in line for line in envelope["attention"]),
-            envelope["attention"],
-        )
-        # #101/#102 agree with live state — no mismatch line for either.
-        self.assertFalse(any("story #101" in line for line in envelope["attention"]))
-        self.assertFalse(any("story #102" in line for line in envelope["attention"]))
-
-
-# ---------------------------------------------------------------------------
-# Revise facts: plan presence, open-PR wiring, extra-json fold-in, closed-target attention.
-# ---------------------------------------------------------------------------
 
 
 class ReviseFactsTests(PrepDrafterSandboxTestCase):
@@ -512,16 +474,6 @@ class DecisionCodeTests(PrepDrafterSandboxTestCase):
         self.assertEqual(envelope["status"], "needs_decision")
         self.assertEqual(envelope["decision"]["code"], "AUTH_REQUIRED")
 
-    def test_auth_required_on_epic_revise_story_state_fetch(self):
-        result = self._run(
-            ["octo/widgets", "--issue", "200"], fixture_case="prep_drafter_auth_required_story_state"
-        )
-        self.assertEqual(result.returncode, 0, msg=result.stderr)
-        envelope = _parse_one_envelope(result.stdout)
-        envelope_asserts.assert_full_envelope_conformance(envelope)
-        self.assertEqual(envelope["status"], "needs_decision")
-        self.assertEqual(envelope["decision"]["code"], "AUTH_REQUIRED")
-
     def test_duplicate_plan_comments_yields_marker_ambiguous(self):
         result = self._run(
             ["octo/widgets", "--issue", "601"], fixture_case="prep_drafter_marker_ambiguous"
@@ -544,8 +496,8 @@ class DecisionCodeTests(PrepDrafterSandboxTestCase):
 
 
 # ---------------------------------------------------------------------------
-# DoD box 4b: conformance + call budget (two-sided: new mode is a strict lower bound, epic-revise
-# with N filed stories is a strict upper bound relative to the standalone-revise canonical path).
+# DoD box 4b: conformance + call budget (new mode is a strict lower bound relative to the
+# standalone-revise canonical path).
 # ---------------------------------------------------------------------------
 
 
@@ -571,22 +523,8 @@ class SingleInvocationBudgetTests(PrepDrafterSandboxTestCase):
         self.assertEqual(len(manifest), 5)
         self.assertGreater(len(manifest), 1, "revise mode must cost strictly more than new mode")
 
-    def test_epic_revise_with_filed_stories_costs_strictly_more_than_standalone_revise(self):
-        result = self._run(
-            ["octo/widgets", "--issue", "100"], fixture_case="prep_drafter_epic_revise"
-        )
-        self.assertEqual(result.returncode, 0, msg=result.stderr)
-        manifest = json.loads(
-            (shimenv.fixture_case_dir("prep_drafter_epic_revise") / "manifest.json").read_text(
-                encoding="utf-8"
-            )
-        )
-        # 5 (gather + labels) + 3 filed-story state fetches (#101/#102/#103) = 8.
-        self.assertEqual(len(manifest), 8)
-        self.assertGreater(len(manifest), 5)
-
     def test_no_gh_call_is_repeated_within_one_run(self):
-        for case in ("prep_drafter_new_happy", "prep_drafter_revise_standard", "prep_drafter_epic_revise"):
+        for case in ("prep_drafter_new_happy", "prep_drafter_revise_standard"):
             manifest = json.loads(
                 (shimenv.fixture_case_dir(case) / "manifest.json").read_text(encoding="utf-8")
             )
@@ -620,9 +558,6 @@ class PureHelperUnitTests(unittest.TestCase):
     def test_suggested_playbook_new(self):
         self.assertEqual(prep_drafter._suggested_playbook("new", None), "new.md")
 
-    def test_suggested_playbook_epic_revise(self):
-        self.assertEqual(prep_drafter._suggested_playbook("epic-revise", "epic"), "epic-split.md")
-
     def test_suggested_playbook_revise_question(self):
         self.assertEqual(prep_drafter._suggested_playbook("revise", "question"), "question.md")
 
@@ -633,24 +568,6 @@ class PureHelperUnitTests(unittest.TestCase):
         # Story revise shares the standalone revise flow (SKILL.md's "Special case — revising a
         # Story" is a special case WITHIN Revise mode, not its own playbook).
         self.assertEqual(prep_drafter._suggested_playbook("revise", "story"), "revise.md")
-
-    def test_parse_stories_section_filed_and_placeholder(self):
-        body = (
-            "## Stories\n- [x] #1 — Story A\n- [ ] #2 — Story B\n- [ ] Story C placeholder\n"
-        )
-        entries = prep_drafter._parse_stories_section(body)
-        self.assertEqual(len(entries), 3)
-        self.assertEqual(entries[0], {"number": 1, "title": "Story A", "checked": True})
-        self.assertEqual(entries[1], {"number": 2, "title": "Story B", "checked": False})
-        self.assertEqual(entries[2], {"number": None, "title": "Story C placeholder", "checked": False})
-
-    def test_parse_stories_section_absent(self):
-        self.assertEqual(prep_drafter._parse_stories_section("no stories section here"), [])
-
-    def test_parse_stories_section_stops_at_next_heading(self):
-        body = "## Stories\n- [ ] #1 — Story A\n\n## Definition of done\n- [ ] Not a story\n"
-        entries = prep_drafter._parse_stories_section(body)
-        self.assertEqual(len(entries), 1)
 
     def test_prd_presence_absent_when_no_prd_role_is_declared(self):
         result = prep_drafter._prd_presence(
