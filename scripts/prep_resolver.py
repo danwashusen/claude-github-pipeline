@@ -752,10 +752,14 @@ def build_facts(issue_number, repo, root=".", scratch_dir=None, refresh=False, c
 
         # The gate-config vantage: the asserted work workspace when there is one, else the
         # invoking checkout (comment-only and gated rows never assert a workspace).
+        # `invoking_checkout`, not a bare `_toplevel_of(".")`: the process cwd is only the right
+        # answer when it is a checkout of THIS repo, and it may not be a checkout at all — a bare
+        # toplevel call then raises an uncaught RuntimeError and the run emits no envelope, which
+        # is both a §3 violation and a crash on a route that has a perfectly good `root` to use.
         gate_root = (
             work_workspace_envelope["path"]
             if work_workspace_envelope is not None
-            else workspace._toplevel_of(cwd if cwd is not None else ".")
+            else workspace.invoking_checkout(cwd if cwd is not None else root)
         )
         gate_config, config_notices = _read_gate_config(gate_root)
         gate_config["source"] = workspace._hook_source_facts(gate_root, None)
