@@ -18,11 +18,11 @@ processes any script may spawn are git/gh")::
                                                        inside it; prep observes + asserts, never
                                                        creates) and, for Epic/Story, the audit
                                                        read workspace
-    refblocks.fetch_pin / read_block_at_ref        -- the origin/main pin + the three resolver-side
-                                                       gate-config blocks (+ pr-evaluator fallback
-                                                       chain), read from the pinned BLOBS — never
-                                                       from any working tree, so a PR cannot weaken
-                                                       its own gates (architecture.md §6)
+    config_block.read_block_anywhere               -- the three resolver-side gate-config blocks
+                                                       (+ the pr-evaluator fallback chain), read
+                                                       from the asserted work workspace's WORKING
+                                                       TREE — the operator's checkout is the
+                                                       trusted source (architecture.md §6)
     parse.parse_phases / parse.parse_dod_bullets / parse.parse_oq_links
                                                     -- the plan's ## Phases, the issue's
                                                        ## Definition of done, and its
@@ -97,7 +97,6 @@ import config_block  # noqa: E402  (import after sys.path setup, by necessity; i
 import gh_gather  # noqa: E402
 import branching  # noqa: E402  (shared branch/type/prior-PR cores; aliased below)
 import parse  # noqa: E402
-import refblocks  # noqa: E402  (origin/main pin + at-ref gate-config reads)
 import workspace  # noqa: E402
 from pipelib import process  # noqa: E402
 from pipelib.decisions import AMBIGUOUS, PLAN_MISSING, needs_decision  # noqa: E402
@@ -127,8 +126,6 @@ _FALLBACK_TEST_TARGET_MARKER = "pr-evaluator-test-target"
 # `@`-include from either). `config_block.read_block_anywhere` (S12 promotion) defaults to this
 # exact tuple, so this module no longer carries its own copy of the discovery loop — see
 # "Gate-config discovery" below.
-
-ROOT_MAIN_BRANCH = "main"
 
 # ---------------------------------------------------------------------------
 # Branch naming, type detection, epic discovery, prior-PR classification — extracted to
@@ -173,15 +170,16 @@ compute_branch_name = branching.compute_branch_name
 
 
 # ---------------------------------------------------------------------------
-# Gate-config discovery at the origin/main pin (v3: refblocks blob reads — never any working
-# tree, so a PR-branch session cannot weaken the gates that judge it; mirrors prep_evaluator's
-# _read_gate_config shape, resolver-side marker names + fallback chain per docs/specs/resolver.md
-# §P3.1).
+# Gate-config discovery in the ambient workspace's WORKING TREE (v3.x: the origin/main pin is
+# retired — the operator's checkout supplies gate config, uncommitted edits included; mirrors
+# prep_evaluator's _read_gate_config shape, resolver-side marker names + fallback chain per
+# docs/specs/resolver.md §P3.1).
 # ---------------------------------------------------------------------------
 
 
-def _read_gate_config(root, pin_sha):
-    """Read the resolver's three gate-config blocks at the ``origin/main`` pin, applying the
+def _read_gate_config(gate_root):
+    """Read the resolver's three gate-config blocks from ``gate_root``'s working tree (the asserted
+    work workspace, or the invoking checkout when no workspace was asserted), applying the
     spec's fallback chain (docs/specs/resolver.md §P3.1): `issue-resolver-fast-checks` -> (no
     fallback; static checks only); `issue-resolver-test-target` -> `pr-evaluator-test-target`;
     `issue-resolver-canonical-suite` -> `pr-evaluator-test-target`'s full-suite-command
@@ -191,49 +189,36 @@ def _read_gate_config(root, pin_sha):
     for `issue-resolver-test-target`). Absent both `issue-resolver-fast-checks` and
     `pr-evaluator-static-checks`, falls back once more to the legacy `pr-evaluator-health-checks`
     block (docs/specs/resolver.md "Fallback config blocks"'s documented worst-case chain).
-    Returns `(config_dict_without_sha, notices)`; the `*_source` values carry refblocks'
-    `<sha7>:<rel_path>` provenance strings.
+    Returns `(config_dict_without_source, notices)`; each `*_source` is the absolute path of the
+    file the block was read from (until v3.x these were `<sha7>:<rel_path>` at-ref strings —
+    there is no ref to name any more, and the file path is what a reader can go open).
     """
     notices = []
 
-    fast_present, fast_lines, fast_source = refblocks.read_block_at_ref(
-        root, pin_sha, _FAST_CHECKS_MARKER
-    )
+    fast_present, fast_lines, fast_source = config_block.read_block_anywhere(gate_root, _FAST_CHECKS_MARKER)
     if not fast_present:
-        fast_present, fast_lines, fast_source = refblocks.read_block_at_ref(
-            root, pin_sha, _FALLBACK_STATIC_CHECKS_MARKER
-        )
+        fast_present, fast_lines, fast_source = config_block.read_block_anywhere(gate_root, _FALLBACK_STATIC_CHECKS_MARKER)
         if fast_present:
             notices.append("FAST_CHECKS_FALLBACK_STATIC_CHECKS")
     if not fast_present:
-        fast_present, fast_lines, fast_source = refblocks.read_block_at_ref(
-            root, pin_sha, _FALLBACK_HEALTH_CHECKS_MARKER
-        )
+        fast_present, fast_lines, fast_source = config_block.read_block_anywhere(gate_root, _FALLBACK_HEALTH_CHECKS_MARKER)
         if fast_present:
             notices.append("FAST_CHECKS_FALLBACK_LEGACY_HEALTH_CHECKS")
 
-    test_target_present, test_target_lines, test_target_source = refblocks.read_block_at_ref(
-        root, pin_sha, _TEST_TARGET_MARKER
-    )
+    test_target_present, test_target_lines, test_target_source = config_block.read_block_anywhere(gate_root, _TEST_TARGET_MARKER)
     if not test_target_present:
-        test_target_present, test_target_lines, test_target_source = refblocks.read_block_at_ref(
-            root, pin_sha, _FALLBACK_TEST_TARGET_MARKER
-        )
+        test_target_present, test_target_lines, test_target_source = config_block.read_block_anywhere(gate_root, _FALLBACK_TEST_TARGET_MARKER)
         if test_target_present:
             notices.append("TEST_TARGET_FALLBACK_PR_EVALUATOR")
 
-    canonical_present, canonical_lines, canonical_source = refblocks.read_block_at_ref(
-        root, pin_sha, _CANONICAL_SUITE_MARKER
-    )
+    canonical_present, canonical_lines, canonical_source = config_block.read_block_anywhere(gate_root, _CANONICAL_SUITE_MARKER)
     if not canonical_present:
         # Fallback chain per docs/specs/resolver.md "Fallback config blocks":
         # pr-evaluator-test-target's full-suite-command line —
         # prep surfaces the raw fallback block for the playbook to extract the labelled line from
         # (this module does not parse `full-suite-command:` out of free-form prose; see the
         # function docstring).
-        canonical_present, canonical_lines, canonical_source = refblocks.read_block_at_ref(
-            root, pin_sha, _FALLBACK_TEST_TARGET_MARKER
-        )
+        canonical_present, canonical_lines, canonical_source = config_block.read_block_anywhere(gate_root, _FALLBACK_TEST_TARGET_MARKER)
         if canonical_present:
             notices.append("CANONICAL_SUITE_FALLBACK_PR_EVALUATOR_TEST_TARGET")
 
@@ -381,16 +366,17 @@ def _build_open_question_facts(issue_body, repo, blocked_by, scratch_dir, cwd=No
 # ---------------------------------------------------------------------------
 
 
-def _audit_ref(issue_type, epic_branch_name):
+def _audit_ref(issue_type, epic_branch_name, root_branch):
     """docs/specs/resolver.md §4.5's 4-row audit-ref table: bug/feature/refactor/standard ->
-    `main`; Epic-as-target -> the discovered/bootstrap epic branch; Story under an open parent
-    epic -> the parent epic's branch; Story with no parent epic (or a closed one) -> `main`.
-    `epic_branch_name` is `None` for "no epic context" (standard type, or a story with no open
-    parent) — in which case the ref is always `main`, matching the bootstrap-path rule that the
-    zero-match Epic-as-target audit still runs against the main branch (the bootstrap branch would
-    fork from main anyway).
+    the repo's default branch; Epic-as-target -> the discovered/bootstrap epic branch; Story under
+    an open parent epic -> the parent epic's branch; Story with no parent epic (or a closed one) ->
+    the default branch. `epic_branch_name` is `None` for "no epic context" (standard type, or a
+    story with no open parent) — in which case the ref is always the default branch, matching the
+    bootstrap-path rule that the zero-match Epic-as-target audit still runs against it (the
+    bootstrap branch would fork from it anyway). `root_branch` is the derived default branch
+    (`workspace.default_branch`), never a hardcoded `main`.
 
-    Returns a BARE branch name (`"main"` / `"epic/42-journal"`), never an `origin/`-prefixed ref
+    Returns a BARE branch name (the default branch / `"epic/42-journal"`), never an `origin/`-prefixed ref
     — this is the facts-block `audit_ref` value verbatim. `workspace._build_ensure_read` is what
     prepends `origin/` internally (its own `git fetch origin <ref>` / `git worktree add --detach
     ... origin/<ref>` calls); the resulting **origin-prefixed** ref rides separately on
@@ -403,7 +389,7 @@ def _audit_ref(issue_type, epic_branch_name):
     `read_workspaces.audit.ref` instead).
     """
     if issue_type in ("standard",) or epic_branch_name is None:
-        return ROOT_MAIN_BRANCH
+        return root_branch
     return epic_branch_name
 
 
@@ -475,9 +461,10 @@ def build_facts(issue_number, repo, root=".", scratch_dir=None, refresh=False, c
     `EXIT_OK` regardless — `needs_decision` is exit 0 per architecture.md §3).
     """
     # Normalize to the MAIN checkout: under v3 the session — and therefore any relative --root —
-    # sits inside the work worktree; the audit ro-* view, ls-remote queries, and the origin/main
-    # pin all key off the main checkout regardless.
+    # sits inside the work worktree; the audit ro-* view and the ls-remote queries key off the main
+    # checkout regardless.
     root = str(workspace._resolve_main_root(root))
+    root_branch = workspace.default_branch(root)
     if scratch_dir is None:
         scratch_dir = "/tmp/gh-resolver-%s" % issue_number
     Path(scratch_dir).mkdir(parents=True, exist_ok=True)
@@ -655,7 +642,7 @@ def build_facts(issue_number, repo, root=".", scratch_dir=None, refresh=False, c
         else:
             epic_facts = {"parent_epic": None, "branch_facts": None}
 
-    audit_ref = _audit_ref(issue_type, epic_branch_for_audit)
+    audit_ref = _audit_ref(issue_type, epic_branch_for_audit, root_branch)
 
     # A gated row is a flow gate, not an assembly blocker (identical reasoning to comment_only /
     # the open-question hard gate) — prep still completes and reports `status: ok`, it just never
@@ -726,17 +713,17 @@ def build_facts(issue_number, repo, root=".", scratch_dir=None, refresh=False, c
                 accept_branch_pattern = r"^%s-" % issue_number
 
     # 9) Workspace assertion + audit view + config, per mode (skipped on --refresh, same contract
-    #    as prep_evaluator's). One origin/main pin serves the gate-config reads AND the attach's
-    #    hook discovery — pin once, read many (refblocks).
+    #    as prep_evaluator's). Gate config and the attach's hook discovery both read the ambient
+    #    work workspace's working tree — the same checkout the session runs in, so what the
+    #    operator sees is what gates them.
+    config_attention = []
     if not refresh:
-        pin_sha = refblocks.fetch_pin(root)
-
         work_workspace_envelope = None
         work_base = None
         if not skip_work_workspace and expected_branch:
             work_base = (
-                ROOT_MAIN_BRANCH
-                if (issue_type == "epic" or audit_ref == ROOT_MAIN_BRANCH)
+                root_branch
+                if (issue_type == "epic" or audit_ref == root_branch)
                 else audit_ref
             )
             work_workspace_envelope, _ws_notices, ws_decision = workspace._build_attach(
@@ -744,7 +731,6 @@ def build_facts(issue_number, repo, root=".", scratch_dir=None, refresh=False, c
                 expected_branch,
                 base_for_unpushed=work_base,
                 run_hooks=True,
-                pin_sha=pin_sha,
                 accept_branch_pattern=accept_branch_pattern,
                 check_remote_staleness=True,
             )
@@ -752,7 +738,7 @@ def build_facts(issue_number, repo, root=".", scratch_dir=None, refresh=False, c
                 return None
 
         read_workspace_envelope = None
-        if not comment_only and audit_ref != ROOT_MAIN_BRANCH:
+        if not comment_only and audit_ref != root_branch:
             # Epic-as-target / story-under-open-epic: a genuinely second ref from the work
             # workspace's own branch, so a dedicated read workspace is ensured (architecture.md
             # §6: "a skill with no second view omits the key entirely" — the standard/no-epic path
@@ -764,15 +750,26 @@ def build_facts(issue_number, repo, root=".", scratch_dir=None, refresh=False, c
             if _forward_decision(rw_decision):
                 return None
 
-        gate_config, config_notices = _read_gate_config(root, pin_sha)
-        gate_config["sha"] = pin_sha
-        root_sha = pin_sha
+        # The gate-config vantage: the asserted work workspace when there is one, else the
+        # invoking checkout (comment-only and gated rows never assert a workspace).
+        gate_root = (
+            work_workspace_envelope["path"]
+            if work_workspace_envelope is not None
+            else workspace._toplevel_of(cwd if cwd is not None else ".")
+        )
+        gate_config, config_notices = _read_gate_config(gate_root)
+        gate_config["source"] = workspace._hook_source_facts(gate_root, None)
+        gate_config["source"].pop("file", None)  # per-block *_source names the file; this is the tree
+        if gate_config["source"].get("dirty"):
+            config_attention.append(
+                "gate config was read from a checkout with uncommitted changes (%s) — the checks "
+                "that judge this work are the ones in your working tree" % gate_root
+            )
     else:
         work_workspace_envelope = None
         read_workspace_envelope = None
         work_base = None
         gate_config, config_notices = {}, []
-        root_sha = None
 
     # 10) Distiller input bundle — staged PATHS only (never above-threshold inline bytes; this
     #     step's DoD box). Reuses gh_gather's own spill files rather than re-writing copies.
@@ -800,7 +797,7 @@ def build_facts(issue_number, repo, root=".", scratch_dir=None, refresh=False, c
     facts = {
         "repo": repo,
         "scratch": scratch_dir,
-        "root": {"path": root, "sha": root_sha, "source": "origin/main", "fresh": not refresh},
+        "root": {"path": root, "default_branch": root_branch, "fresh": not refresh},
         "target": {
             "kind": "issue",
             "number": issue_envelope["number"],
@@ -830,7 +827,7 @@ def build_facts(issue_number, repo, root=".", scratch_dir=None, refresh=False, c
         "distiller_bundle": distiller_bundle,
         "attention": _build_attention(
             work_workspace_envelope, prior_pr_row, epic_facts, story_epic_matches
-        ),
+        ) + config_attention,
         "notices": list(config_notices) + link_notices,
     }
     if issue_type == "epic":

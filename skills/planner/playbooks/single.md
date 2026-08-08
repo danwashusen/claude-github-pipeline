@@ -44,7 +44,7 @@ Read [`../references/handoff-renderings.md`](../references/handoff-renderings.md
 - **Knowledge-gap re-route** (S3 hit ungroundable external truth): `research: ✗ · plan: ✗`; `Next:
   /github-pipeline:researcher #<N> — <the ungroundable fact>`; `Why:` names it verbatim.
 - **Epic-shaped, planning aborted** (seam gate chose "Split as epic"): `plan: ✗`, no `Grounding:`;
-  `Next: /github-pipeline:slicer` promoting #N to an Epic per the seam-analysis comment.
+  `Next: /github-pipeline:drafter` revising #N as an Epic per the seam-analysis comment.
 - **Too large to plan as one unit** (seam gate chose "Slice first"): `plan: ✗`, no `Grounding:`, nothing
   posted; `Next: /github-pipeline:slicer #<N>`. It hands back — re-run the planner after the cut.
 - **Open-question total block** (every plannable part gated by an unresolved OQ): terminal-style, `plan:

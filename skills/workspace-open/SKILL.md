@@ -26,11 +26,11 @@ Returns one **facts block** (`architecture.md §4`): `target`, `vector` (`type` 
 `prior_pr_row`, plus `gate` on a gated row), `branch` (`name` / `base` /
 `source: computed|linked|pr-head|epic-discovered|epic-bootstrap` / `collided_with`), `link`
 (`attempted` / `created` / `existing`), `plan.present`, `workspace` (the create/reuse receipt:
-`path` / `branch` / `base_ref` / `sha` / `reused` / `dirty` / `unpushed_commits` / `setup`),
+`path` / `branch` / `base_ref` / `sha` / `reused` / `dirty` / `unpushed_commits` / `setup`, whose
+`setup.source` names the checkout/branch/SHA the hook block came from and whether it was dirty),
 `attention`, `notices`. Consume as **data**. A `needs_decision` (`AUTH_REQUIRED`,
-`TARGET_IS_PR`, `MARKER_AMBIGUOUS`, `ROOT_NOT_ON_MAIN` / `ROOT_DIRTY` / `ROOT_DIVERGED`,
-`BRANCH_IN_USE`, `AMBIGUOUS` on multiple linked branches) — render it as one `AskUserQuestion`
-card and stop.
+`TARGET_IS_PR`, `MARKER_AMBIGUOUS`, `BRANCH_IN_USE`, `AMBIGUOUS` on multiple linked branches) —
+render it as one `AskUserQuestion` card and stop.
 
 ## 2. Route — one linear flow
 
@@ -54,7 +54,10 @@ prep created nothing; render the gate card verbatim and stop on "wait"-shaped an
   the worktree exists but is not ready — the summary must lead with that, not bury it.
 - **Faithful reporting.** `reused: true` means the worktree already existed (a re-open is safe
   and idempotent); `collided_with` means the fresh name took a `-vN` suffix — both are stated
-  plainly, never silently.
+  plainly, never silently. So is the hook source: the `<!-- worktree-setup -->` commands come from
+  **the checkout this tool was invoked from** — the branch the operator chose, uncommitted edits
+  included — so when `setup.source.dirty` is true or a `HOOK_SOURCE_DIRTY` notice rides along, say
+  which checkout supplied the commands. Nothing gates on it; the report is the control.
 
 ## 4. Summary — not a `## Handoff`
 

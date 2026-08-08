@@ -201,7 +201,7 @@ def extract_include_tokens(text):
     """Return the `@`-include path tokens found in `text` — matches an `@`-prefixed token that
     looks like a file path (has a slash or a dotted extension), which excludes bare `@mentions`.
     Pure text -> tokens, no filesystem access: `find_includes_one_level` composes it over a file
-    on disk, and `refblocks.py` composes it over a blob read at a pinned ref (`git show`), so the
+    on disk, and `workspace.py` composes it for worktree-hook discovery, so the
     working-tree and at-ref discovery loops share ONE include parser.
     """
     return [

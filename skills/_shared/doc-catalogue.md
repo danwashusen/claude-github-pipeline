@@ -67,8 +67,8 @@ line that does not parse). It never rewords a summary a human wrote. Hand-edits 
 only ask is that the `<!-- … -->` marker pair stays intact.
 
 It differs from the stack profile in one way: this block **is machine-parsed**, so entries must hold
-the one-line grammar above. `setup` is the sole writer; the planner, drafter, slicer, and
-requirements-gatherer preps are the readers.
+the one-line grammar above. `setup` is the sole writer; the planner and drafter preps are the
+readers.
 
 ## When the catalogue is absent
 
@@ -90,8 +90,9 @@ consumer to match a proceeding one.
 ## Where the catalogue is read from
 
 The catalogue is read from **the same vantage as the documents it names** — the planner's asserted
-grounding checkout at its `plan_ref`, the drafter's ambient checkout — never from a pinned ref. It is
-*grounding* config, not *gate* config: the `origin/main` pin exists so a PR cannot weaken the gates
-that judge it ([architecture.md §6](../../docs/architecture.md)), and a catalogue names no gate. Reading
-it at the working vantage is also the coherent choice, since a branch that adds a document *and* its
-catalogue entry must ground on both, and a branch that has not yet merged its entry must not.
+grounding checkout at its `plan_ref`, the drafter's ambient checkout. A branch that adds a document
+*and* its catalogue entry must ground on both, and a branch that has not yet merged its entry must
+not. (Through v3 this was a deliberate exception: gate config was pinned to `origin/main` so a PR
+could not weaken the gates judging it, and the catalogue was called out as *grounding* config that
+names no gate. That pin is retired — every config family now reads at the working vantage
+([architecture.md §6](../../docs/architecture.md)) — so this is the ordinary rule, not an exception.)

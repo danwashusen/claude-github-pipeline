@@ -203,12 +203,13 @@ class HappyPathFactsSchemaTests(PrepPlannerSandboxTestCase):
             self.assertIn(key, envelope, "missing architecture.md §4 facts-block key %r" % key)
 
     def test_root_facts_shape(self):
+        # v3.x: the retired origin/main pin took `sha`/`source` with it; `root` now carries the
+        # main checkout's path and the DERIVED default branch.
         envelope = self._envelope()
         self.assertEqual(envelope["root"]["path"], str(self.root))
-        self.assertEqual(len(envelope["root"]["sha"]), 40)
-        # v3: root.sha IS the origin/main pin — the fetched remote tip.
-        self.assertEqual(envelope["root"]["sha"], _git(["rev-parse", "origin/main"], self.root))
-        self.assertEqual(envelope["root"]["source"], "origin/main")
+        self.assertEqual(envelope["root"]["default_branch"], "main")
+        self.assertNotIn("sha", envelope["root"])
+        self.assertNotIn("source", envelope["root"])
         self.assertTrue(envelope["root"]["fresh"])
 
     def test_target_facts_shape(self):
@@ -802,14 +803,13 @@ class RefreshModeTests(PrepPlannerSandboxTestCase):
     grounding read workspace (mirrors tests/test_prep_resolver.py's / tests/test_prep_evaluator.py's
     identical `--refresh` contract; architecture.md §4)."""
 
-    def test_refresh_never_touches_the_grounding_assertion_or_the_pin(self):
+    def test_refresh_never_touches_the_grounding_assertion(self):
         envelope = self._envelope(fixture_case="prep_planner_row_default", extra_args=["--refresh"])
         self.assertEqual(envelope["status"], "ok")
         self.assertNotIn("grounding", envelope)
         self.assertNotIn("read_workspaces", envelope)
         self.assertEqual(envelope["grounding_docs"], [])
         self.assertFalse(envelope["root"]["fresh"])
-        self.assertIsNone(envelope["root"]["sha"])
         self.assertFalse((self.root / ".worktrees").exists())
 
     def test_refresh_still_reports_vector_and_oq_candidates(self):
@@ -1302,36 +1302,36 @@ class PureHelperUnitTests(unittest.TestCase):
 
     def test_select_plan_ref_default_row(self):
         self.assertEqual(
-            prep_planner._select_plan_ref("standard", None, None),
+            prep_planner._select_plan_ref("standard", None, None, "main"),
             ("main", prep_planner.PLAN_REF_ROW_DEFAULT),
         )
 
     def test_select_plan_ref_epic_branch_row(self):
         self.assertEqual(
-            prep_planner._select_plan_ref("epic", "epic/1-x", None),
+            prep_planner._select_plan_ref("epic", "epic/1-x", None, "main"),
             ("epic/1-x", prep_planner.PLAN_REF_ROW_EPIC_BRANCH),
         )
 
     def test_select_plan_ref_epic_bootstrap_row(self):
         self.assertEqual(
-            prep_planner._select_plan_ref("epic", None, None),
+            prep_planner._select_plan_ref("epic", None, None, "main"),
             ("main", prep_planner.PLAN_REF_ROW_EPIC_BOOTSTRAP),
         )
 
     def test_select_plan_ref_story_parent_branch_row(self):
         self.assertEqual(
-            prep_planner._select_plan_ref("story", "epic/1-x", None),
+            prep_planner._select_plan_ref("story", "epic/1-x", None, "main"),
             ("epic/1-x", prep_planner.PLAN_REF_ROW_STORY_PARENT_BRANCH),
         )
 
     def test_select_plan_ref_story_no_parent_row(self):
         # parent_epic_open defaults False -> the genuinely-parentless/closed-parent row.
         self.assertEqual(
-            prep_planner._select_plan_ref("story", None, None),
+            prep_planner._select_plan_ref("story", None, None, "main"),
             ("main", prep_planner.PLAN_REF_ROW_STORY_NO_PARENT),
         )
         self.assertEqual(
-            prep_planner._select_plan_ref("story", None, None, parent_epic_open=False),
+            prep_planner._select_plan_ref("story", None, None, "main", parent_epic_open=False),
             ("main", prep_planner.PLAN_REF_ROW_STORY_NO_PARENT),
         )
 
@@ -1340,14 +1340,14 @@ class PureHelperUnitTests(unittest.TestCase):
         # truthful row -- same plan_ref (main) as STORY_NO_PARENT, but a label that doesn't
         # contradict a simultaneously-true `story.parent_epic_open` fact.
         self.assertEqual(
-            prep_planner._select_plan_ref("story", None, None, parent_epic_open=True),
+            prep_planner._select_plan_ref("story", None, None, "main", parent_epic_open=True),
             ("main", prep_planner.PLAN_REF_ROW_STORY_PARENT_BOOTSTRAP),
         )
 
     def test_select_plan_ref_story_parent_open_but_no_branch_never_yields_no_parent_row(self):
         # Direct regression guard for D4: parent_epic_open=True must NEVER produce the
         # "no-open-parent-epic" row label, regardless of branch presence.
-        plan_ref, row = prep_planner._select_plan_ref("story", None, None, parent_epic_open=True)
+        plan_ref, row = prep_planner._select_plan_ref("story", None, None, "main", parent_epic_open=True)
         self.assertNotEqual(row, prep_planner.PLAN_REF_ROW_STORY_NO_PARENT)
         self.assertEqual(row, prep_planner.PLAN_REF_ROW_STORY_PARENT_BOOTSTRAP)
         self.assertEqual(plan_ref, "main")
@@ -1355,7 +1355,7 @@ class PureHelperUnitTests(unittest.TestCase):
     def test_select_plan_ref_open_pr_head_wins_over_epic_branch(self):
         # docs/specs/planner.md Step 4.5: "the open-PR-head row wins" when more than one applies.
         self.assertEqual(
-            prep_planner._select_plan_ref("story", "epic/1-x", "44-fix-thing"),
+            prep_planner._select_plan_ref("story", "epic/1-x", "44-fix-thing", "main"),
             ("44-fix-thing", prep_planner.PLAN_REF_ROW_OPEN_PR_HEAD),
         )
 

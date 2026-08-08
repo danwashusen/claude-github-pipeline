@@ -46,7 +46,7 @@ v1 discovers the project's stack and governing docs at runtime from wherever the
 working tree happens to be (``read whatever the repo actually has``), with no requirement that the
 tree be clean or on ``main`` — the manifest inventory is a **currency-check input** for filtering web
 research, never a build/merge gate. Unlike the resolver/evaluator (whose gate config reads from the
-`origin/main` pin via `refblocks`, and whose sessions run inside an asserted worktree —
+ambient checkout's working tree, and whose sessions run inside an asserted worktree —
 architecture.md §6's "Gate config is pinned to trust"), the researcher reads no PR head and gates no
 merge, so architecture.md §6's threat model ("a PR weakening its own gates") cannot apply. ``root``
 therefore carries only ``{path, sha}`` (a plain, non-gating ``git rev-parse HEAD`` — informational,

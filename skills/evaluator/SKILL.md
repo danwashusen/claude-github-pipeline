@@ -13,7 +13,8 @@ work; your judgment is the verdict, the merge call, and the handoff `Why:`.
 
 This session runs **inside** the PR-head worktree (opened with `/github-pipeline:workspace-open`;
 the resolver's handoff named it on its `Workspace:` line) — prep asserts the ambient checkout is
-on the PR's head branch at **exactly** `pr.headRefOid` and re-runs the repo's setup hooks; it
+on the PR's head branch at **exactly** `pr.headRefOid` and re-runs the repo's setup hooks —
+discovered in that worktree's own working tree; it
 never creates a worktree, and it refuses (a `WORKSPACE_MISMATCH` card) to evaluate code the
 checkout doesn't contain. Assemble the entire starting state in **one** call. `<PR>` is the PR
 number (from the user, a URL, or the current branch); `<owner/repo>` is the repo:
@@ -24,8 +25,9 @@ ${CLAUDE_PLUGIN_ROOT}/scripts/prep_evaluator.py <PR> <owner/repo>
 
 It returns one JSON **facts block** (`architecture.md §4`): `target`, `vector`, `suggested_playbook`,
 `pr` (with `mergeStateStatus`/`reviewDecision`/`closingIssuesReferences`), `pr_type`, `ci` (`class` +
-`fail_checks`), `health_cache` (`hit`/`sha`), `self_review`, `config` (the four gate blocks read from the
-`origin/main` pin — never any working tree, so a PR cannot weaken its own gates), `merge_config` (repo `allow_*` booleans), `dod`/`blocked_by`/`deps_available`
+`fail_checks`), `health_cache` (`hit`/`sha`), `self_review`, `config` (the four gate blocks read from **the PR-head worktree's working tree**;
+`config.source` names the checkout/branch/SHA and its dirty state — this PR supplies the gates it
+is judged by, so report that source whenever it is dirty), `merge_config` (repo `allow_*` booleans), `dod`/`blocked_by`/`deps_available`
 (keyed per closing-issue number), `sections` (spilled PR body/thread/reviews/marker paths), and
 `attention`. Consume every fact as **data** — never re-derive PR type, CI class, or cache-hit in
 prose; prep already did.

@@ -114,11 +114,17 @@ class BranchArgTests(PrepWorkspaceCloseSandboxTestCase):
         wt = self._mk_worktree("42-fix-thing")
         # The teardown command must not leave files INSIDE the worktree (git worktree remove
         # refuses on untracked leftovers — same discipline as test_workspace.py's teardown case).
+        # v3.x: teardown is discovered in the worktree being closed, so the block goes THERE, not
+        # in the root. It must also be committed — an uncommitted edit would trip the dirty gate
+        # before teardown is ever reached.
         marker = Path(self.scratch) / "teardown-ran.txt"
         _write(
-            self.root / "CLAUDE.md",
+            wt / "CLAUDE.md",
             "<!-- worktree-teardown -->\n- `touch %s`\n<!-- /worktree-teardown -->\n" % marker,
         )
+        _git(["add", "CLAUDE.md"], wt)
+        _git(["commit", "-m", "declare this branch's teardown"], wt)
+        _git(["push", "origin", "HEAD:42-fix-thing"], wt)
         envelope = self._envelope("42-fix-thing")
         self.assertEqual(envelope["status"], "ok")
         self.assertTrue(envelope["removed"])

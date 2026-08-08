@@ -12,9 +12,8 @@ artifact and no package manager. The "source" is:
   contract renderings).
 - **Stdlib-only Python scripts** — `scripts/*.py`: the four GitHub/git executors (`gh_gather.py`,
   `gh_pr_gather.py`, `gh_persist.py`, `config_block.py`), `workspace.py` (worktree mechanics:
-  ensure/attach/remove/gc/lint), `refblocks.py` (the origin/main pin + at-ref config reads) and
-  `branching.py` (branch naming / type detection / prior-PR rows / linked branches — both
-  import-only), `parse.py` (DoD / open-question-links / phases), the twelve `prep_*.py`
+  ensure/attach/remove/gc/lint, plus the derived-default-branch helper) and `branching.py` (branch
+  naming / type detection / prior-PR rows / linked branches — import-only), `parse.py` (DoD / open-question-links / phases), the eleven `prep_*.py`
   state-assembly scripts (including `prep_workspace_open.py` / `prep_workspace_close.py`, whose
   prep IS the tool's action), the `oq_tracker.py` and `doc_catalogue.py` helpers the preps compose
   (the open-question tracker search; the consuming repo's declared grounding docs), and
@@ -61,7 +60,7 @@ any prompt edit; they are cheap and they are the only regression net prose has.
 
 ## Architecture
 
-### Thirteen skills: six pipeline stages, seven standalone tools
+### Twelve skills: six pipeline stages, six standalone tools
 
 ```
 draft ──▶ research ──▶ slice ──▶ plan ──▶ resolve ──▶ evaluate
@@ -69,7 +68,7 @@ draft ──▶ research ──▶ slice ──▶ plan ──▶ resolve ──
 
 The **pipeline stages** are `drafter`, `researcher`, `slicer`, `planner`, `resolver`, `evaluator`; the
 **standalone tools** are `setup`, `question-sweep`, `question-resolver`, `doc-reviewer`,
-`requirements-gatherer`, `workspace-open`, `workspace-close` ([prd.md §2](docs/prd.md)). The two workspace tools are the
+`workspace-open`, `workspace-close` ([prd.md §2](docs/prd.md)). The two workspace tools are the
 v3 operator-owned lifecycle: the operator runs `workspace-open <issue>` between planning and
 resolving (linked branch + worktree + setup hooks), **starts the resolver and evaluator sessions
 inside that worktree** (their preps assert the checkout — `WORKSPACE_MISMATCH` on the wrong one —
@@ -82,23 +81,20 @@ automatically).
 researcher only when the issue has no dossier and the plan turns on external truth with genuine
 currency risk, and the researcher hands **back to the planner**, which ingests the dossier (a
 declined research run hands back too, with `research: ✗`). The planner also re-routes **backward to
-the slicer** when its seam gate finds a standard issue epic-shaped (most seams outside the issue's
-DoD): it aborts with a lean seam-analysis comment and the slicer promotes #N into an Epic in place and
-cuts its stories (`skills/planner/references/seam-dispositions.md`). That arm pointed at the drafter
-until #16 moved decomposition to the slicer at both altitudes; before v2 it was the drafter's, and the
-S15 parity record's Scenario 4(b) preserves that older topology.
+the drafter** when its seam gate finds a standard issue epic-shaped (most seams outside the issue's
+DoD): it aborts with a lean seam-analysis comment and the drafter promotes #N into an Epic in place
+(`skills/planner/references/seam-dispositions.md`). v1 behaved identically — the S15 parity
+record's Scenario 4(b) has v1's drafter `Next:` pointing at its own planner — so this is doc truth
+being corrected, not a behavior change.
 
-`slice` is the **second** conditional detour off `plan`, and the planner's seam gate picks between two
-off-ramps on one criterion — the independence bar the seams clear. **Both land on the slicer** (#16):
-it is one operation at two altitudes, so the gate picks the altitude, not the skill. Seams
-*shippable*-independent (each wants its own branch and PR) → the slicer promotes #N to an Epic and cuts
-**stories**; seams only *demonstrable*-independent (increments sharing one branch) → it cuts
-**deliverable slices** in place. Either way it hands **back** to the planner, whose phases then map onto
-the children via `sub-issue:`, and it is also operator-invocable directly. The off-ramps stay
-asymmetric in what the planner posts: the promoting one leaves a lean seam-analysis comment (a promotion
-argues from the seam inventory), the slice-in-place one posts **nothing** — that cut re-derives from the
-repo's declared grounding docs, so a planner-authored proposal would be a competing, staler
-decomposition. The stage/tool split is load-bearing, not cosmetic:
+`slice` is the **second** conditional detour off `plan`, and the planner's seam gate picks between the
+two off-ramps on one criterion — the independence bar the seams clear. Seams *shippable*-independent
+(each wants its own branch and PR) → the drafter promotes to an Epic; seams only
+*demonstrable*-independent (increments sharing one branch) → the **slicer** cuts deliverable slices and
+hands **back** to the planner, whose phases then map onto them via `sub-issue:`. The slicer is also
+operator-invocable directly. Unlike the epic off-ramp it posts **no** analysis comment: it re-derives
+its cut from the repo's declared grounding docs, so a planner-authored proposal would be a competing,
+staler decomposition. The stage/tool split is load-bearing, not cosmetic:
 
 - A pipeline stage runs in **its own Claude Code session** and ends with a `## Handoff` — a
   cold-readable summary plus the copy-pasteable command that starts the next session. There is no
@@ -199,10 +195,10 @@ per [architecture.md §7](docs/architecture.md)'s mapping table).
 - `config_block.py` — deterministic marker-block `read`/`list`/`upsert`/`remove`; the single
   execution path for `setup`, and the block reader `workspace.py` composes in-process.
 - `workspace.py` — the worktree mechanics owner: `attach` (the v3 stage-session assertion —
-  expected branch / pattern acceptance / staleness, hook re-run at the caller's origin/main pin;
-  mismatches are `WORKSPACE_MISMATCH` decisions with a closed `reason` set), `ensure --work|--read`
-  (the creating path — root freshness `ROOT_NOT_ON_MAIN` / `ROOT_DIRTY` / `ROOT_DIVERGED` and
-  branch exclusivity `BRANCH_IN_USE` live here; used by workspace-open and the landing tools),
+  expected branch / pattern acceptance / staleness, hook re-run from the worktree's own working
+  tree; mismatches are `WORKSPACE_MISMATCH` decisions with a closed `reason` set),
+  `ensure --work|--read` (the creating path — branch exclusivity `BRANCH_IN_USE` lives here; used
+  by workspace-open and the landing tools),
   `remove --work` (teardown best-effort before removal; dirty/unpushed gated, merged-PR-aware,
   `cwd_inside_target`-refusing; driven by workspace-close), `gc`, `root-status`, `lint`, plus the
   import-only `list_work_branches` core (which branches currently have a work worktree — the local,
@@ -212,11 +208,18 @@ per [architecture.md §7](docs/architecture.md)'s mapping table).
   `<!-- worktree-setup/teardown -->` commands and maintains the `.worktrees/` exclusion in the
   repo's `info/exclude` — **never** a `.gitignore` edit, because `info/exclude` lives outside the
   working tree and so can never surface in `git status` on its own write.
-- `refblocks.py` (import-only) — the v3 gate-config trust rule: `fetch_pin` (one `git fetch` +
-  `rev-parse origin/main`) and `read_block_at_ref` (marker blocks from that commit's **blobs** via
-  `git show`, COMMANDS.md → CLAUDE.md → one-level `@`-includes). Pin once, read many — a PR-branch
-  session can never weaken the gates that judge it, and the v2 TOCTOU (plain `open()` after a
-  freshness check) is closed.
+- **`refblocks.py` is retired** (v3.x, and this is the one deletion to understand before touching
+  this area). It held the v3 gate-config trust rule — pin `origin/main`, read marker blocks from
+  that commit's blobs — so a PR-branch session could not weaken the gates judging it. It is gone by
+  operator decision: pinning also made the *consuming repo's own config* untestable, since a
+  `<!-- worktree-setup -->` or gate-block edit could not run until it merged, and a bad one then
+  broke every workspace-open and every session entry. All block reads now go through
+  `config_block.read_block_anywhere` against the ambient checkout's working tree. Two notes for a
+  future editor: the v2 TOCTOU the pin also closed (a plain `open()` racing a freshness check) does
+  **not** return — there is no freshness check left to race — and the security property genuinely
+  is weaker, traded knowingly for provenance reporting (`config.source` / `setup.source`) instead of
+  a confirmation card that would fire on every session entry. Don't reinstate the pin as a bug fix;
+  see architecture.md §6 rule 1 and the §12 invariant.
 - `branching.py` (import-only) — branch naming (`-vN` collision suffixing), issue-type detection,
   the 7-row prior-PR classification, epic-branch discovery, parent-epic search, GitHub linked
   branches (`gh issue develop`, with the `ISSUE_LINK_UNSUPPORTED` degradation), and two precision
@@ -244,23 +247,24 @@ sessions, released by `workspace-close` (teardown hooks, then removal gated on d
 state, merged-PR-aware, refused from inside the target). Resolver/evaluator sessions start
 **inside** it; their preps observe + assert the ambient checkout (`workspace.py attach` — wrong
 branch / project root / detached / stale are `WORKSPACE_MISMATCH` decisions) and re-run the
-`<!-- worktree-setup -->` hooks on every entry, discovered at the origin/main pin. The planner
-grounds on its asserted ambient checkout (`facts.grounding`; a `main` plan_ref passes from any
-clean current `main` checkout including the project root — plan-before-open). A `read` workspace
+`<!-- worktree-setup -->` hooks on every entry, discovered in that worktree's own working tree. The
+planner grounds on its asserted ambient checkout (`facts.grounding`; a default-branch plan_ref
+passes from any current checkout of it including the project root — plan-before-open). A `read` workspace
 is `.worktrees/ro-<ref-slug>` (detached HEAD at `origin/<ref>`, reset on every ensure, `gc`'d by
 age — and only `ro-*` is ever gc'd): script-internal plumbing for the resolver's audit view.
 
-Two trust rules replace the v2 clean-root vantage (`main` still changes only via PR): gate config
-(test target, checks, merge policy) is read from **`origin/main` blobs via `refblocks`** — pin
-once, read many, never any working tree — so a PR cannot weaken the gates that judge it even
-though the session sits in the PR's own worktree; and pinned-ref grounding stays in the internal
-`ro-*` views. Stage sessions no longer police the main checkout at all — the `ROOT_*` freshness
-gates live only on the workspace-creating paths (the landing tools' staging `ensure --work` and
-workspace-open). The prompt-visible rule is: **your workspace is the ambient checkout, reported
-as `facts.workspace`** — and every Read / Grep / Explore / test / command still names
-`facts.workspace.path` by absolute path, because sub-agents and background commands run in their
-own cwd. The drafter stays root-only and reads its OQ-marker hint from the ambient checkout,
-where the gate-weakening threat model cannot apply.
+Two rules govern config reads (the default branch still changes only via PR, and it is **derived**
+via `workspace.default_branch`, never hardcoded): **every marker block — worktree hooks and gate
+config (test target, checks, merge policy) alike — is read from the working tree of the checkout the
+command runs in**, committed or not, with `setup.source` / `teardown.source` / `config.source`
+reporting which checkout, branch, and SHA answered and whether it was dirty; and pinned-ref grounding
+stays in the internal `ro-*` views. No path inspects or writes the operator's checkout any more —
+the `ROOT_*` freshness gates and the `git merge --ff-only` that fast-forwarded it are retired with
+the pin. The prompt-visible rule is: **your workspace is the ambient checkout, reported as
+`facts.workspace`** — and every Read / Grep / Explore / test / command still names
+`facts.workspace.path` by absolute path, because sub-agents and background commands run in their own
+cwd. The drafter stays root-only and reads its OQ-marker hint from the ambient checkout, which is
+now the same rule everything else follows rather than an exception.
 
 ### Shared contracts in `skills/_shared/`
 
@@ -273,8 +277,9 @@ where the gate-weakening threat model cannot apply.
   annotations.
 - `worktree-lifecycle.md` — the **external** `<!-- worktree-setup -->` / `<!-- worktree-teardown -->`
   block format a consuming repo declares, and what those commands must guarantee (setup idempotent
-  because it runs at workspace-open *and* on every resolver/evaluator session entry, discovered at
-  the origin/main pin; teardown best-effort and before removal, run by workspace-close). The
+  because it runs at workspace-open *and* on every resolver/evaluator session entry, discovered in
+  the working tree of the checkout the command runs in; teardown best-effort and before removal, run
+  by workspace-close from the worktree being closed). The
   *mechanics* belong to `workspace.py` and architecture §6 — this file does not restate them.
 - `doc-catalogue.md` — the **external** `<!-- doc-catalogue -->` block a consuming repo declares in
   its `docs/README.md`: the fixed home, the one-line entry grammar, the closed `binding` /
@@ -283,11 +288,10 @@ where the gate-weakening threat model cannot apply.
   responses to the same absent fact — don't "fix" one to match the other). The *read mechanics* belong
   to `scripts/doc_catalogue.py` and the *authoring flow* to `skills/setup/references/block-authoring.md`.
 - `epic-story-hierarchy.md` — the **three-level** hierarchy `epic → story → deliverable slice`, both
-  edges being GitHub's **native parent/sub-issue** relation. **Both edges are written only by the
-  `slicer`** (#16 — the epic↔story edge was the drafter's until then): `gh_persist.py create --parent` at
-  filing time on every path that files a child (fresh cut, promotion, a resume's new children), plus the
-  one after-the-fact path, `gh_persist.py add-parent`, which adopts an already-filed issue so an epic can
-  be drawn around stories authored upstream. Read by the **planner**, **resolver**, and **evaluator** through a two-tier read — native
+  edges being GitHub's **native parent/sub-issue** relation. The epic↔story edge is written only by the
+  **drafter** at filing time (`gh_persist.py create --parent`) on every path that files a story under an
+  epic (fresh batch, promotion, epic-revise's new stories); the story↔slice edge only by the
+  **slicer**. Read by the **planner**, **resolver**, and **evaluator** through a two-tier read — native
   first, the legacy `## Stories` checklist second, `stories_source` reporting which answered. A fresh
   epic body has **no** `## Stories` section (a checklist can't self-tick and can't drive GitHub's panel,
   rollup, or a Project's Sub-issues progress field). The fallback is load-bearing: there is **no
@@ -371,10 +375,9 @@ the *consuming* repo provides — not by plugin config:
   repo's `docs/README.md` ([`skills/_shared/doc-catalogue.md`](skills/_shared/doc-catalogue.md)), one
   line per document carrying its path, `role`, `authority` (`binding` = a conflict is a blocker |
   `informative` = context), and a summary. `setup` writes it (seeding via a context-blind derivation
-  sub-agent, re-ingesting an existing block as the base); the `prep_planner.py` / `prep_drafter.py` /
-  `prep_slicer.py` / `prep_requirements_gatherer.py` readers consume it
-  through `scripts/doc_catalogue.py`, at the same vantage as the docs themselves — **not** through
-  `refblocks`, since a catalogue names no gate. When it is absent the readers emit the
+  sub-agent, re-ingesting an existing block as the base); `prep_planner.py`/`prep_drafter.py` read it
+  through `scripts/doc_catalogue.py`, at the same vantage as the docs themselves (as every config
+  family now is — this was a deliberate exception while gate config was pinned). When it is absent the readers emit the
   `DOC_CATALOGUE_ABSENT` notice and ground on **nothing**: there is no built-in path list and no
   filesystem walk, because a guessed doc layout is exactly what the block removes. The plugin
   formerly hardcoded `docs/prd.md` / `docs/architecture.md` / `docs/constitution.md` / `CLAUDE.md` in
@@ -403,8 +406,8 @@ the *consuming* repo provides — not by plugin config:
 - **Model/effort are not pinned.** Skill frontmatter carries no `model:` or `effort:` keys — every
   skill inherits the invoking session's model and effort level. The v1 per-skill pins were removed
   2026-08-01; reintroducing one is a deviation through the normal gate.
-- **`disable-model-invocation: true` is exactly six tools** — `doc-reviewer`, `question-sweep`,
-  `question-resolver`, `requirements-gatherer`, `workspace-open`, `workspace-close`. **`setup` is the deliberate
+- **`disable-model-invocation: true` is exactly five tools** — `doc-reviewer`, `question-sweep`,
+  `question-resolver`, `workspace-open`, `workspace-close`. **`setup` is the deliberate
   exception**: it is a standalone tool but stays model-invocable, because v1 never carried the key
   on it and the S17 parity run adjudicated the difference rather than "fixing" it
   (`docs/specs/parity/setup.md`, "ADJUDICATION RECORD"). Don't add the key to `setup` on the
@@ -487,7 +490,7 @@ the *consuming* repo provides — not by plugin config:
       words in running prose.)
     - **Paraphrasing a contract token** — a synonym for a parsed identifier is a contract break,
       not a compression. Preserve verbatim: marker comments (`<!-- … -->`), §3 decision codes
-      (`EMPTY_BODY_FILE`, `ROOT_DIRTY`, `AMBIGUOUS`, …), facts-block key names the playbooks read,
+      (`EMPTY_BODY_FILE`, `BRANCH_IN_USE`, `AMBIGUOUS`, …), facts-block key names the playbooks read,
       script names and subcommands, `/github-pipeline:<skill>` invocation strings, scratch-dir
       conventions (`/tmp/gh-resolver-<N>/`), §-anchors, and the closed-set vocabularies in
       `skills/_shared/handoff-format.md` and `dod-annotations.md` (`open`/`closed`,

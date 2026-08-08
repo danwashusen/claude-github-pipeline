@@ -25,7 +25,7 @@ refuses) and that asymmetry lives in the shared contract, not here.
 Every function is a pure, non-emitting core (architecture.md §2's pure-core pattern, the S8 lock):
 ``(value, notices)`` — never prints, never exits, never raises on malformed input. A prep composes
 these in-process and merges the returned notices into its own envelope. There is no CLI surface (no
-shebang, no ``main()``): the only callers are prep scripts, exactly like ``refblocks.py`` and
+shebang, no ``main()``): the only callers are prep scripts, exactly like ``branching.py`` and
 ``branching.py``.
 """
 
@@ -139,10 +139,10 @@ def read_catalogue(vantage_path):
 
     ``vantage_path`` is the checkout the documents are read at — **the same vantage as the documents
     themselves** (the planner's asserted grounding checkout at its ``plan_ref``; the drafter's
-    ambient root), never a pinned ref. The catalogue is *grounding* config, not *gate* config: the
-    ``origin/main`` pin in ``refblocks.py`` exists so a PR cannot weaken the gates that judge it, and
-    a catalogue names no gate. Reading at the working vantage is also the coherent choice — a branch
-    that adds a document *and* its catalogue entry must ground on both.
+    ambient root). Reading at the working vantage is the coherent choice — a branch that adds a
+    document *and* its catalogue entry must ground on both. (Until v3.x this contrasted with gate
+    config, which was pinned to ``origin/main``; that pin is retired, so every config family now
+    reads at the working vantage and this is no longer a special case.)
 
     Returns ``(entries, notices)``:
 

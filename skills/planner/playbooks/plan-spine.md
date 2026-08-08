@@ -72,7 +72,7 @@ decisions, not lines**: pin every new symbol's signature, every field's shape, e
 assignment, the choice between competing patterns (name the rejected one), each test's assertion intent
 — but leave line-level mechanics to the resolver. The `<!-- implementation-plan:v1 -->` marker is the
 body's first line; the footer (template in the schema) records `<plan-ref>@<short-sha>`, rendered
-`origin/main` for the default branch, the bare branch otherwise (never a bare `main@<sha>`; render-split
+`origin/<default-branch>` (`facts.root.default_branch`, e.g. `origin/main`), the bare branch otherwise (never a bare `main@<sha>`; render-split
 + short-sha rule in [`../references/handoff-renderings.md`](../references/handoff-renderings.md)). The routed playbook names
 which sections you fill (`## Phases`, the epic sections, `## Epic contract`) and its reviewer dimensions.
 

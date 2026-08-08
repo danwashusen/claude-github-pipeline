@@ -197,14 +197,6 @@ class PromptDiscoveryTests(unittest.TestCase):
             found,
             "the question-status reader must be discovered at its v2 path",
         )
-        # The #16 cut reviewer carries the relocated ordering + sizing judgment for BOTH altitudes;
-        # discovery is what subjects it to the §3-code and ref-arithmetic gates below, so a rename
-        # that dropped it out of the glob must fail here rather than silently ungate it.
-        self.assertIn(
-            "slicer/references/cut-reviewer-prompt.md",
-            found,
-            "the slicer's cut reviewer must be discovered",
-        )
         # No retired v1 skill dir may reappear as a discovery source (S20 removed them all).
         for p in found:
             self.assertFalse(

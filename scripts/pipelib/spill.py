@@ -98,20 +98,3 @@ def spill_bytes(data, section_name, scratch_dir, env=None, force_path=False, fil
         fields[section_name] = data.decode("utf-8")
 
     return fields
-
-
-def read_section(envelope, key):
-    """The read-back counterpart of :func:`spill_bytes`: return section ``key``'s text from an
-    envelope (or any dict carrying spill fields), whether the section was kept inline (the bare
-    field) or spilled to disk (``<key>_mode == "path"`` → read ``<key>_path`` as UTF-8). Returns
-    ``""`` when the section is absent entirely.
-
-    This is the single home for the ``inline|path`` read-back that was previously restated per
-    prep (`_extract_body` and inline equivalents) — a change to the spill-mode contract lands
-    here and on :func:`spill_bytes` together, never in per-prep copies that can lag.
-    """
-    value = envelope.get(key)
-    if value is None and envelope.get("%s_mode" % key) == "path":
-        with open(envelope["%s_path" % key], "r", encoding="utf-8") as fh:
-            return fh.read()
-    return value or ""

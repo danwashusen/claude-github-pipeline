@@ -36,9 +36,9 @@ prep already did.
 `AskUserQuestion` card (per [`../_shared/asking-the-user.md`](../_shared/asking-the-user.md)), act on
 the answer, and re-run prep (`--refresh` for volatile facts). This is the single universal handler for
 every closed-set code (`AUTH_REQUIRED`, `MARKER_AMBIGUOUS`, `WORKSPACE_MISMATCH`, `AMBIGUOUS`, …).
-`WORKSPACE_MISMATCH`: the checkout isn't `plan_ref`'s vantage — `main` passes from any clean, current
-`main` checkout **including the project root** (plan-before-open); a non-main `plan_ref` (parent-epic
-branch / plan-PR head / epic branch) needs the matching worktree. The operator fixes it — never you.
+`WORKSPACE_MISMATCH`: the checkout isn't `plan_ref`'s vantage — a default-branch `plan_ref` passes from any
+current checkout of it **including the project root** (plan-before-open; only staleness is checked, never
+uncommitted changes); a non-default one (parent-epic branch / plan-PR head / epic branch) needs its worktree. The operator fixes it — never you.
 
 **Newly-detected OQ lookup.** When grounding surfaces an open question the issue body does **not**
 already record (so prep's body-driven `open_question_candidates` never searched it), run the tracker
@@ -84,7 +84,7 @@ Universal across every route:
   character before it makes the plan invisible. For a story, the `**Epic:**` backlink goes on the line
   *immediately after* the marker, never above it.
 - **Footer/handoff record the branch, never elide it.** `<plan-ref>@<short-sha>` is also the resolver's
-  PR base — `origin/main` for the default branch, the **bare, un-truncated** `epic/<N>-<slug>` or PR
+  PR base — `origin/<default-branch>` (`facts.root.default_branch`), the **bare** `epic/<N>-<slug>` or PR
   `headRefName` otherwise; `@<short-sha>` is `facts.grounding.sha` (rendering rule in
   `plan-spine.md` S5 + [`references/handoff-renderings.md`](references/handoff-renderings.md)).
 - **Staged-body writes.** Every GitHub write goes through
@@ -113,8 +113,8 @@ schema, omission rules, and closed-set state-marker vocabulary are owned by
 the `Grounding:` and `**Open questions:**` lines, the footer rule, and the bug-(b) composite
 epic+story worked example are in [`references/handoff-renderings.md`](references/handoff-renderings.md).
 **Read that reference before composing the handoff** and match the run's outcome to a shape (forward to
-the resolver; epic plan → first story or slicer; just-in-time story → resolver; re-route to researcher
-or answer-the-question; epic-shaped abort → slicer; revise refreshed). Fill the snapshot from data in
+the resolver; epic plan → first story or drafter; just-in-time story → resolver; re-route to researcher
+or answer-the-question; epic-shaped abort → drafter; revise refreshed). Fill the snapshot from data in
 hand; the `Next:` action and `Why:` line are judgment. The `**Open questions:**` line renders in
 **every** shape whose posted plan carries an `## Open questions` section — including a composite
 epic+story session — never dropped because the structural shape matched a different example first.

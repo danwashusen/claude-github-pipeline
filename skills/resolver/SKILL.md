@@ -15,8 +15,9 @@ is the audit call, the plan-gate call, the code, the review verdicts, and the ha
 
 This session runs **inside** the work worktree the operator opened with
 `/github-pipeline:workspace-open` — prep asserts the ambient checkout matches the issue's branch
-(linked-branch first, then the `<N>-…` pattern) and re-runs the repo's setup hooks; it never
-creates a worktree. Assemble the entire starting state in **one** call. `<issue>` is the issue
+(linked-branch first, then the `<N>-…` pattern) and re-runs the repo's setup hooks — discovered in
+this worktree's own working tree, so this branch's hooks are the ones that run; it never creates a
+worktree. Assemble the entire starting state in **one** call. `<issue>` is the issue
 number (from the user, a URL, or the current branch); `<owner/repo>` is the repo:
 
 ```bash
@@ -28,8 +29,8 @@ labels/`blocked_by`/`blocking`), `vector` (`type` × `mode` × `prior_pr_row`, p
 row and `comment_only`), `suggested_playbook`, `prior_pr`, `plan` (present/SHA/comment-id/url),
 `phases` (parsed `## Phases`), `dod` (the issue's `## Definition of done` bullets, each with its
 annotation), `open_questions` + `open_questions_gate` (the hard gate), `audit_ref` (a **bare** branch
-name), `config` (the three gate-config blocks read from the `origin/main` pin — never any working
-tree, so a PR cannot weaken its own gates), `distiller_bundle` (staged paths for the
+name), `config` (the three gate-config blocks read from **this worktree's working tree**, uncommitted
+edits included; `config.source` names the checkout/branch/SHA and its dirty state), `distiller_bundle` (staged paths for the
 state-distiller), `workspace` (the **observed ambient checkout**: path/branch/`base_ref`/sha/dirty/
 unpushed, asserted by prep), `read_workspaces.audit` (the detached read workspace at the audit
 ref, when a second view is needed), `epic`/`story` facts, `sections` (spilled issue-body/thread/

@@ -173,13 +173,14 @@ class HappyPathFactsSchemaTests(PrepResolverSandboxTestCase):
             self.assertIn(key, envelope, "missing architecture.md §4 facts-block key %r" % key)
 
     def test_root_facts_shape(self):
+        # v3.x: root carries the main checkout's path and the DERIVED default branch. It used to
+        # carry `sha`/`source: "origin/main"` — the retired pin; the SHA that matters now is
+        # `config.source.sha`, the checkout the gate blocks were actually read from.
         envelope = self._envelope()
         self.assertEqual(envelope["root"]["path"], str(self.root))
-        self.assertEqual(len(envelope["root"]["sha"]), 40)
-        # v3: root.sha IS the origin/main pin — recorded from the fetched remote tip, never a
-        # local checkout's HEAD.
-        self.assertEqual(envelope["root"]["sha"], _git(["rev-parse", "origin/main"], self.root))
-        self.assertEqual(envelope["root"]["source"], "origin/main")
+        self.assertEqual(envelope["root"]["default_branch"], "main")
+        self.assertNotIn("sha", envelope["root"])
+        self.assertNotIn("source", envelope["root"])
         self.assertTrue(envelope["root"]["fresh"])
 
     def test_target_facts_shape(self):
@@ -213,16 +214,20 @@ class HappyPathFactsSchemaTests(PrepResolverSandboxTestCase):
         self.assertEqual(envelope["audit_ref"], "main")
         self.assertNotIn("read_workspaces", envelope)
 
-    def test_config_pinned_at_origin_main_sha(self):
+    def test_config_source_is_the_ambient_workspace(self):
         envelope = self._envelope()
-        self.assertEqual(envelope["config"]["sha"], envelope["root"]["sha"])
-        self.assertEqual(envelope["config"]["sha"], _git(["rev-parse", "origin/main"], self.root))
+        source = envelope["config"]["source"]
+        self.assertEqual(source["path"], envelope["workspace"]["path"])
+        self.assertEqual(source["branch"], envelope["workspace"]["branch"])
+        self.assertEqual(len(source["sha"]), 40)
+        self.assertFalse(source["dirty"])
 
-    def test_config_reads_the_pinned_blob_never_the_working_tree(self):
-        # The TOCTOU the v2 shape carried: a committed gate block + an UNCOMMITTED working-tree
-        # weakening. v3 reads origin/main blobs, so the weakening is invisible — and prep must
-        # SUCCEED despite the dirty root, because stage sessions no longer police root state
-        # (that gate now lives on the workspace-creating paths only).
+    def test_config_reads_the_ambient_worktree_including_uncommitted_edits(self):
+        # v3.x inversion, and the deliberate security trade the operator chose: a committed gate
+        # block on the default branch + an UNCOMMITTED weakening in the work worktree. Through v3
+        # the pinned blob won and the weakening was invisible ("a PR cannot weaken its own
+        # gates"); now the working tree wins, and the compensating control is that
+        # `config.source.dirty` says so and an attention line surfaces it.
         _write(
             self.root / "COMMANDS.md",
             "<!-- issue-resolver-fast-checks -->\n- `make lint` — hygiene\n<!-- /issue-resolver-fast-checks -->\n",
@@ -230,14 +235,23 @@ class HappyPathFactsSchemaTests(PrepResolverSandboxTestCase):
         _git(["add", "COMMANDS.md"], self.root)
         _git(["commit", "-m", "add committed gate block"], self.root)
         _git(["push", "origin", "HEAD:main"], self.root)
+
+        wt = self._mk_ambient("100-fix-the-widget")
         _write(
-            self.root / "COMMANDS.md",
+            wt / "COMMANDS.md",
             "<!-- issue-resolver-fast-checks -->\n- `true` — weakened\n<!-- /issue-resolver-fast-checks -->\n",
         )
-        envelope = self._envelope()
+        envelope = self._envelope(ambient="100-fix-the-widget")
         self.assertEqual(envelope["status"], "ok")
-        self.assertEqual(envelope["config"]["static_checks"], ["make lint"])
-        self.assertIn(":COMMANDS.md", envelope["config"]["static_checks_source"])
+        self.assertEqual(envelope["config"]["static_checks"], ["true"])
+        self.assertEqual(
+            envelope["config"]["static_checks_source"], str(wt / "COMMANDS.md")
+        )
+        self.assertTrue(envelope["config"]["source"]["dirty"])
+        self.assertTrue(
+            any("uncommitted changes" in line for line in envelope["attention"]),
+            "a dirty gate-config source must be surfaced, never silent: %r" % envelope["attention"],
+        )
 
     def test_config_fallback_chain_reads_pr_evaluator_blocks_when_resolver_blocks_absent(self):
         _write(
@@ -924,13 +938,13 @@ class PureHelperUnitTests(unittest.TestCase):
         self.assertFalse(slug.endswith("-"))
 
     def test_audit_ref_standard_is_main(self):
-        self.assertEqual(prep_resolver._audit_ref("standard", None), "main")
+        self.assertEqual(prep_resolver._audit_ref("standard", None, "main"), "main")
 
     def test_audit_ref_epic_uses_the_epic_branch(self):
-        self.assertEqual(prep_resolver._audit_ref("epic", "epic/1-x"), "epic/1-x")
+        self.assertEqual(prep_resolver._audit_ref("epic", "epic/1-x", "main"), "epic/1-x")
 
     def test_audit_ref_story_with_no_parent_is_main(self):
-        self.assertEqual(prep_resolver._audit_ref("story", None), "main")
+        self.assertEqual(prep_resolver._audit_ref("story", None, "main"), "main")
 
     def test_suggested_playbook_comment_only_wins_over_type(self):
         self.assertEqual(prep_resolver._suggested_playbook("epic", True), "comment-only.md")

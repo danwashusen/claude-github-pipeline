@@ -58,21 +58,20 @@ Each companion `question` filed in the same run emits its own paste-ready snippe
 question rendering below) — they are separate issues, so they appear as their own `#NN`, not folded into
 the build issue's handoff beyond the `Open questions:` line.
 
-**Epic filed (no stories yet).** Forward to the **slicer**, not the planner: an epic plan pins cross-story
-contracts, so the stories have to exist first. The `Stories:` line still renders — an absent child line is
-indistinguishable from one whose stories were dropped.
+**Epic batch filed.** Forward to the planner on the Epic — the planner posts the high-level epic plan
+(cross-story contracts + sequencing); each child story is then planned just-in-time as it's built.
 
 ```
 ## Handoff
 
 **Epic:** #150 — Chat & session UX polish · open · epic · plan: ✗
-**Stories:** none yet — cut into stories next
+**Stories:** #151, #152, #153, #154, #155 (5 filed, dependency-ordered)
 
-**Next:** cut #150 into stories in a fresh session, then plan the Epic.
+**Next:** plan the Epic in a fresh session — the planner posts the epic plan; stories are planned just-in-time.
 
-    /github-pipeline:slicer 150
+    /github-pipeline:planner #150
 
-**Why:** #150 is filed as an Epic and carries no children yet — the drafter drafts one issue and decomposes nothing (#16). The slicer cuts it into independently shippable stories at epic altitude, filing each as a native sub-issue; only then does `/github-pipeline:planner #150` have a story set to pin contracts and sequencing against.
+**Why:** the planner posts the epic-level plan (pinning cross-story contracts and sequencing), then each child story is planned just-in-time against current epic HEAD as it's built. Don't run the resolver on any story until its plan is posted.
 ```
 
 **Revise mode (single issue or Epic).** What's next depends on whether a plan already exists
@@ -99,9 +98,9 @@ contracts the plan was built against (Step R3 already flags this — re-use that
 **Why:** the revise reshaped the acceptance criteria (added bulk-export and removed PDF). The implementation plan from <date> assumed the previous shape; re-running the planner in revise mode rebuilds the plan against the new body before any code work resumes.
 ```
 
-An Epic revise revises the epic's own **body** — its goal, background, or Definition of done. It never
-changes which stories exist (that is a slicer run at epic altitude), so its `Why:` line describes the body
-change, exactly like any other revise.
+For an Epic revise that re-ordered or merged child stories (dimension-5 / dimension-7 surfacing during the
+epic-split reconciliation), the `Why:` line cites the specific bullet change so the planner's re-audit can
+ground in evidence.
 
 **Question filed or revised (terminal).** A `question` is answered by a human in the issue thread, not by a
 downstream skill, so its handoff is **terminal**: drop the fenced command block (per

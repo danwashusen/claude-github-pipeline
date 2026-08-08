@@ -53,8 +53,6 @@ from pipelib.decisions import AMBIGUOUS, needs_decision  # noqa: E402
 from pipelib.envelope import EXIT_OK, EXIT_USAGE_ERROR, emit_needs_decision, emit_ok  # noqa: E402
 
 PLAN_MARKER = "<!-- implementation-plan:v1 -->"
-ROOT_MAIN_BRANCH = "main"
-
 
 class _DiscardStream:
     """Write-sink for `gh_gather.run(stream=...)` — same shape as the other preps' local copies."""
@@ -113,6 +111,10 @@ def _create_linked_branch(repo, issue_number, branch, base, cwd=None):
 def build_facts(issue_number, repo, root=".", scratch_dir=None, cwd=None):
     """Assemble the open receipt and return the envelope dict WITHOUT printing it. Returns
     ``None`` after a ``needs_decision`` envelope has already been emitted."""
+    # Capture the INVOKER's checkout before normalizing: `root` becomes the main checkout on the
+    # next line, and the setup-hook block is discovered in the checkout the operator actually ran
+    # this from (a different worktree whenever they invoke from inside one).
+    invoker_root = workspace.invoking_checkout(cwd if cwd is not None else root)
     root = str(workspace._resolve_main_root(root))
     if scratch_dir is None:
         scratch_dir = "/tmp/gh-workspace-open-%s" % issue_number
@@ -202,7 +204,7 @@ def build_facts(issue_number, repo, root=".", scratch_dir=None, cwd=None):
     branch_source = None
     collided_with = None
     epic_facts = None
-    base = ROOT_MAIN_BRANCH
+    base = workspace.default_branch(root)
 
     if mode == branching.MODE_CONTINUE and prior_pr_fact and prior_pr_fact.get("headRefName"):
         branch = prior_pr_fact["headRefName"]
@@ -288,9 +290,14 @@ def build_facts(issue_number, repo, root=".", scratch_dir=None, cwd=None):
     # 5) The worktree: root freshness (ROOT_*), BRANCH_IN_USE, create/reuse, info/exclude, setup
     #    hooks — all the existing ensure --work contract. A develop-created remote branch is
     #    found by the ensure's own ls-remote probe and checked out at its head.
-    workspace_envelope, _ws_notices, ws_decision = workspace._build_ensure_work(root, branch, base)
+    workspace_envelope, ws_notices, ws_decision = workspace._build_ensure_work(
+        root, branch, base, hook_root=invoker_root
+    )
     if _forward_decision(ws_decision):
         return None
+    # Forward the core's notices (e.g. HOOK_SOURCE_DIRTY — the hook block came from a checkout
+    # with uncommitted changes). Nothing gates on it; dropping it would make the report invisible.
+    notices.extend(ws_notices)
 
     setup = workspace_envelope.get("setup") or {}
     if setup.get("succeeded") is False:

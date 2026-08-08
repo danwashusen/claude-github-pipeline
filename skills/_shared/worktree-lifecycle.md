@@ -12,10 +12,20 @@ classified — belong to `scripts/workspace.py` and
 these blocks (see `skills/setup/references/block-authoring.md`). The setup commands run at three
 trigger points, all "ensures" in this file's sense: **workspace-open** creates or reuses the
 worktree (`workspace.py ensure`), and **every resolver or evaluator session entry** re-runs them
-via the prep's workspace assertion (`workspace.py attach` — hook commands are discovered from the
-`origin/main` pin there, so a block that exists only as an uncommitted local edit is not seen);
-the landing tools' self-created staging workspaces keep the plain ensure wiring. The teardown
-commands run once, by **workspace-close** (`workspace.py remove --work`), before removal.
+via the prep's workspace assertion (`workspace.py attach`); the landing tools' self-created staging
+workspaces keep the plain ensure wiring. The teardown commands run once, by **workspace-close**
+(`workspace.py remove --work`), before removal.
+
+**Which checkout supplies the block.** The working tree of the checkout the command runs in —
+committed or not. workspace-open reads the checkout the operator invoked it from (so the branch
+they chose to stand on is the one that supplies the commands); a resolver or evaluator session
+entry reads its own worktree; workspace-close reads the worktree being closed. Through v3 all of
+these read `origin/main` blobs at a pin, and an uncommitted or unmerged block was invisible; the
+pin is retired, which is what makes a hook change testable before it merges. Two consequences worth
+stating plainly: a branch can supply hook commands that run automatically on session entry, and a
+branch that deletes its `COMMANDS.md`/`CLAUDE.md` block silently runs no hooks. The facts block
+reports the supplying checkout, branch, SHA, and dirty state (`setup.source` / `teardown.source`);
+reporting is the whole of the control — there is deliberately no confirmation gate.
 
 ## The blocks a consuming repo declares
 
@@ -61,7 +71,10 @@ re-validates them at run time.
 - **Teardown runs before the workspace is removed.** The teardown commands live *inside* the
   workspace (e.g. a checked-in `./scripts/worktree-teardown.sh`), so once the workspace is removed
   the commands are gone and any resources they would have released — simulators, containers, ports,
-  scratch databases — leak.
+  scratch databases — leak. The block is discovered there too, so a branch may version its own
+  teardown. One interaction to know: an *uncommitted* teardown edit never runs, because a dirty
+  workspace is refused before teardown is reached — `workspace.py lint --phase teardown --root
+  <workspace>` is the preview for that case.
 
 Setup failure is fail-fast (the workspace exists but is not ready for tests, so proceeding would run
 against a missing resource); teardown failure is logged and never blocks removal. Those policies are

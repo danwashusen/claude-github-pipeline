@@ -10,25 +10,12 @@ not prose to summarize: substitute only numbers, titles, states, and grounding c
 paraphrase a field name, drop a `·` segment, restructure the block, inline the fenced command into
 prose, or add a block the shape does not have.
 
-Three lines are free-form text rather than state markers, so they carry no closed-set vocabulary:
-`Slices:` and `Stories:` (the children + states, or the progress count) and `Grounding:` (the sources
-the cut derived from). Every other marker comes from the shared closed sets.
+Two lines are free-form text rather than state markers, so they carry no closed-set vocabulary:
+`Slices:` (the designators + states, or the progress count) and `Grounding:` (the sources the cut
+derived from). Every other marker comes from the shared closed sets.
 
-**Which child line, and which lead field, follows the altitude.** At story altitude the parent is an
-`Issue:` (or `Story:`) carrying a `Slices:` line; at epic altitude it is an `Epic:` carrying a
-`Stories:` line. Never mix them — a `Slices:` line under an `Epic:` would claim the epic's children are
-phase markers on one branch.
-
-The `Grounding:` line is present on **every exit that filed children**, and omitted on every exit that
-filed nothing — a cut that hides what it was grounded on defeats the grounding gate. When present it
-opens with `read at <ref>@<short-sha>` — `main@<facts.root.sha[:7]>`, the vantage the docs were read at —
-because the same doc section can differ between refs, and a citation without its ref is unverifiable.
-
-**On an epic target, every shape below swaps its lead field and adds a child line.** `closed-target`,
-`blocked` and the declined-write-gate exit are all reachable at epic altitude, and the shared schema
-requires an epic to lead with `Epic:` and carry a `Stories:` line. So: `**Issue:**` → `**Epic:**`, and add
-`**Stories:**` — the live set on a resume, or `none yet — cut into stories next` when the epic has no
-children. The `Why:` wording is unchanged; only the reason text names stories rather than slices.
+The `Grounding:` line is present on **every exit that filed slices**, and omitted on every exit that
+filed nothing — a cut that hides what it was grounded on defeats the grounding gate.
 
 ## Renderings
 
@@ -40,7 +27,7 @@ children. The `Why:` wording is unchanged; only the reason text names stories ra
 
 **Issue:** #103 — Patient: access & set up account · open · story · plan: ✗
 **Slices:** #104 103/S1 (open) · #105 103/S2 (open) · #106 103/S3 (open)
-**Grounding:** read at main@d4e5f6a · docs/prd.md §4 (account lifecycle, binding) · docs/architecture.md §3 (service layer, binding) · docs/ui-design.md §7 (auth screens, informative)
+**Grounding:** docs/prd.md §4 (account lifecycle, binding); docs/architecture.md §3 (service layer, binding); docs/ui-design.md §7 (auth screens, informative)
 
 **Next:** plan #103 — its phases must map onto the three approved slices.
 
@@ -58,7 +45,7 @@ session's delta; the `Why:` names which were added.
 
 **Issue:** #103 — Patient: access & set up account · open · story · plan: ✗
 **Slices:** #104 103/S1 (closed) · #105 103/S2 (open) · #106 103/S3 (open)
-**Grounding:** read at main@d4e5f6a · docs/prd.md §4 (account lifecycle, binding) · docs/architecture.md §3 (service layer, binding)
+**Grounding:** docs/prd.md §4 (account lifecycle, binding); docs/architecture.md §3 (service layer, binding)
 
 **Next:** plan #103 — its phases must map onto the full slice set, including the two just added.
 
@@ -81,76 +68,6 @@ is complete. No writes, so no `Grounding:` line.
     /github-pipeline:planner 103
 
 **Why:** #103's slice set is already complete and approved — nothing was filed this run. Confirmed with the operator rather than re-cutting, since re-cutting an approved set would duplicate live slices.
-```
-
-**Stories filed (epic cut).** Epic altitude: the parent leads with `Epic:` and carries a `Stories:`
-line. `plan: ✗` because the cut precedes planning.
-
-```
-## Handoff
-
-**Epic:** #150 — Epic: onboarding funnel · open · epic · plan: ✗
-**Stories:** #151, #152, #153, #154, #155 (5 filed, dependency-ordered)
-**Grounding:** read at main@d4e5f6a · docs/prd.md §4 (account lifecycle, binding) · docs/architecture.md §3 (service layer, binding)
-
-**Next:** plan the Epic — the planner pins the cross-story contracts and sequencing; each story is planned just-in-time as it is built.
-
-    /github-pipeline:planner 150
-
-**Why:** #150 now carries 5 operator-approved stories as sub-issues, each independently shippable with its own branch and PR, filed in dependency order so the epic's sub-issue panel reads in build order. The planner posts the epic-level plan (contracts + sequencing) rather than per-story plans; don't run the resolver on a story until its own just-in-time plan is posted.
-```
-
-**Stories filed after promotion.** The planner's seam-gate off-ramp: #142 was a standard issue, rewritten
-as an Epic at S0's confirmed gate, then cut. The `Why:` names the rewrite, because a reader coming from
-the planner's aborted run needs to know the target changed shape.
-
-```
-## Handoff
-
-**Epic:** #142 — Epic: patient onboarding · open · epic · plan: ✗
-**Stories:** #143, #144, #145 (3 filed, dependency-ordered)
-**Grounding:** read at main@d4e5f6a · docs/prd.md §4 (account lifecycle, binding) · docs/architecture.md §3 (service layer, binding)
-
-**Next:** re-run the planner on #142 — now at epic altitude, against the approved story set.
-
-    /github-pipeline:planner 142
-
-**Why:** the planner's seam gate found #142 epic-shaped (most seams fell outside its Definition of done, each its own shippable unit), so it aborted and sent it here. #142's body was rewritten as an Epic at a confirmed gate, its `feature` label swapped for `epic`, and its seams cut into 3 stories per the seam-analysis comment. The superseded plan pointer was preserved verbatim; the Epic's own plan replaces it.
-```
-
-**Remainder filed (epic resume), with adoptions.** A re-run over an epic that already has stories,
-including issues adopted rather than created. The `Stories:` line lists the whole live set; the `Why:`
-separates what was created from what was adopted, because adoption moved existing issues rather than
-adding new scope.
-
-```
-## Handoff
-
-**Epic:** #180 — Epic: reporting · open · epic · plan: ✗
-**Stories:** #181 (closed), #301 (open), #302 (open), #182 (open)
-**Grounding:** read at main@d4e5f6a · docs/prd.md §6 (reporting, binding)
-
-**Next:** plan #180 against its full story set, including the two adopted issues.
-
-    /github-pipeline:planner 180
-
-**Why:** #180 already carried #181 (shipped and closed); this run adopted #301 and #302 — already-filed issues, parented via `add-parent` with their bodies untouched — and filed #182 as the finalization bookend. The planner reconciles against all four; a plan covering only #181 is now incomplete.
-```
-
-**Declined at the promotion gate.** The operator rejected the Epic rewrite at S0, so the cut never ran.
-**Zero GitHub writes happened** — the target is still a standard issue, so it leads with `Issue:` and
-carries no child line and no `Grounding:`.
-
-```
-## Handoff
-
-**Issue:** #142 — Patient onboarding · open · feature · plan: ✗
-
-**Next:** plan #142 as a single unit, or re-run the slicer to cut it into deliverable slices instead.
-
-    /github-pipeline:planner 142
-
-**Why:** the operator declined the Epic body rewrite at the promotion gate, so #142 was neither rewritten nor relabelled and no stories were filed. Promotion is the only path that reshapes the target, so declining it leaves #142 exactly as the planner found it; slicing it at story altitude remains available if its seams are demonstrable rather than shippable.
 ```
 
 **Declined at the write gate.** The operator rejected the cut. **Zero GitHub writes happened**, so
@@ -197,17 +114,18 @@ catalogue, not another stage.
 **Why:** #201 is blocked by open question #61 (native `blocked by`), read from live state rather than the body's recorded line. Nothing was filed: slicing against an unanswered question produces slices the answer may invalidate, and they would be filed as real issues before the decision is made.
 ```
 
-**Refused — question target.** Terminal: a `question` issue is answered by a human in its thread, so
-there is no buildable scope to cut and no stage to hand to.
+**Refused — epic target.** Epic altitude belongs to the drafter until the slicer is retargeted.
 
 ```
 ## Handoff
 
-**Issue:** #202 — Which payment provider? · open · question · plan: ✗
+**Epic:** #150 — Epic: onboarding funnel · open · epic · plan: ✗
 
-**Next:** (terminal — no follow-up skill)
+**Next:** split #150 into stories in a fresh drafter session.
 
-**Why:** #202 is a `question` issue — it records a decision to be made, not scope to build, so there is nothing to decompose. Answer it in its thread (or run the question-resolver to record the decision); nothing was filed.
+    /github-pipeline:drafter split epic #150 into stories
+
+**Why:** #150 is an epic, and an epic's children are *stories* — independently shippable, each with its own branch and PR — not deliverable slices, which get no branch of their own. The drafter owns epic decomposition; nothing was filed here.
 ```
 
 **Refused — the target is itself a slice.** Terminal: the pipeline names no follow-up, because the
@@ -216,7 +134,7 @@ right next action is on the parent.
 ```
 ## Handoff
 
-**Issue:** #105 — 103/S2 — password reset · open · story · plan: ✗
+**Issue:** #105 — 103/S2 — password reset · open · plan: ✗
 
 **Next:** (terminal — no follow-up skill)
 

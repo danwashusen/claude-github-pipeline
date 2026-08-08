@@ -32,7 +32,7 @@ session's loaded instructions contain no other type's flow — a router plus one
   every change lands via PR.
 - **Skills** — fixed names. Pipeline stages: `drafter`, `researcher`, `slicer`, `planner`,
   `resolver`, `evaluator`. Standalone tools: `setup`, `question-sweep`, `question-resolver`, `doc-reviewer`,
-  `requirements-gatherer`, `workspace-open`, `workspace-close`. Invoked as `/github-pipeline:<name>`.
+  `workspace-open`, `workspace-close`. Invoked as `/github-pipeline:<name>`.
 - **Session** — one Claude Code run of one skill. **Handoff** — the summary + copy-pasteable
   next-command block a pipeline session emits on clean exit; the only bridge between sessions.
 - **Gate** — an explicit decision question put to the operator.
@@ -49,7 +49,7 @@ session's loaded instructions contain no other type's flow — a router plus one
 
 ## §3 Scope
 
-**In scope for v2:** all nine skills (v3 adds the two workspace tools, making eleven, the slicer, making twelve, and the requirements-gatherer, making thirteen), the bundled scripts, the shared cross-skill contracts, the
+**In scope for v2:** all nine skills (v3 adds the two workspace tools, making eleven, and the slicer, making twelve), the bundled scripts, the shared cross-skill contracts, the
 plugin manifests, and offline tests for the deterministic layer.
 
 **Out of scope / non-goals:**
@@ -91,11 +91,7 @@ ground these are produced by implementation step S1. Lettered items are individu
   - (c) Grounds framing in the consuming repo's PRD, surfacing contradicts / extends / gap
     tensions as a `## PRD impact` note and conflict gate.
   - (d) Runs an adversarial draft review before filing.
-  - (e) *(Retired at #16 — see §5.6.)* The drafter drafts and revises **one** issue's body, an Epic's
-    included, and decomposes nothing: splitting an epic into story issues is the slicer's, at epic
-    altitude. The letter is kept rather than renumbered because §5.x letters are cited individually.
-    (Its original wording — "with the epic body linking them" — was already superseded by the native
-    parent/sub-issue relation at 3.1.0, which retired the `## Stories` checklist on a fresh epic.)
+  - (e) Splits an epic into story issues with the epic body linking them.
   - (f) Never silently absorbs an unresolved open question from a source doc: each is matched
     against the question registry (search before file), filed if untracked, and recorded on the
     build issue per disposition — `scoped-out`, `in-scope (blocked)` (with a native `blocked by`
@@ -157,28 +153,12 @@ ground these are produced by implementation step S1. Lettered items are individu
 - **§5.6 slicer.** Appended after §5.5 rather than inserted at its conceptual position: §5.x numbers
   are cited individually elsewhere (e.g. §5.4(b), §5.5(f)), so renumbering would dangle those
   references. The conceptual order is drafter → researcher → **slicer** → planner.
-  - (a) Cuts ONE filed issue into ordered, operator-approved children and files them as native
-    sub-issues via the single write path, in approved order (creation order is display order —
-    sub-issues append). **One operation at two altitudes** (#16), differing in exactly one parameter —
-    the independence bar, set by whether the child gets its own branch and PR: a story or standalone
-    issue cuts into **deliverable slices** (*demonstrable*), an epic cuts into **stories**
-    (*shippable*). The bar is stated once, in the method reference; the flow reads it as
-    `vector.altitude` rather than forking.
+  - (a) Cuts ONE filed issue into ordered, operator-approved **deliverable slices** and files them as
+    native sub-issues via the single write path, in approved order (creation order is display order —
+    sub-issues append).
   - (b) Reachable two ways: operator invocation, and a planner re-route when the seam gate's shape
-    triage finds the issue too large to plan as one unit — with *demonstrable*-independent seams it
-    cuts slices, and with *shippable*-independent seams it promotes the issue to an Epic and cuts
-    stories (both of the gate's off-ramps land here since #16). It hands back to the planner, whose
-    phases then map onto the slices (`sub-issue:`).
-  - (b2) **Promotion.** On the epic-shaped off-ramp it rewrites the target's body as an Epic and swaps
-    its type label, behind its **own** explicit diff-and-confirm gate ahead of the cut's write gate —
-    a body rewrite is destructive where a `create` is not. Declining leaves the target untouched.
-  - (b3) **Epic over existing issues.** Adopts already-filed issues as an epic's children through the
-    single write path (`gh_persist.py add-parent`, the one after-the-fact parenting write), reporting
-    each candidate's live state — and never silently moving an issue out of another parent.
-  - (b4) **Adversarially reviewed before the operator sees it.** A context-blind cut reviewer (§8)
-    holds the ordering and sizing judgment for both altitudes, including the bookend-slot check at
-    epic altitude; findings resolve under a pass cap and a circular guard. This is the judgment that
-    previously lived as dimensions 5 and 7 of the drafter's issue reviewer.
+    triage finds the issue too large to plan as one unit with only *demonstrable*-independent seams.
+    It hands back to the planner, whose phases then map onto the slices (`sub-issue:`).
   - (c) **Grounding gate.** Refuses to decompose without adequate grounding, and every slice cites
     what it derives from. Grounding sources are the consuming repo's own declaration (the
     `<!-- doc-catalogue -->` block, §7) or sources the operator names at invocation — never
@@ -187,14 +167,11 @@ ground these are produced by implementation step S1. Lettered items are individu
     A partial failure after the gate reports exactly what landed and never claims completion.
   - (e) **Resume, don't duplicate.** Re-running against a partially-sliced issue detects the existing
     slices and cuts only the remainder.
-  - (f) The **cut** never edits the parent issue's body. Child detail lives only in child bodies; no
-    `## Slices` section is written. Exactly two parent-body writes are sanctioned, each behind its own
-    explicit gate and never as a side effect of filing: the promotion rewrite (b2), and reconciling a
-    legacy `## Stories` checklist on an epic that has no native relation for those entries.
-  - (g) Refuses, with a reason, on a target that is itself a slice (**never slice a slice**), is a
-    `question`, is closed, or is blocked by an open native blocker or an `in-scope (blocked)` open
-    question read from live state. An **epic is not refused** since #16 — it is the epic-altitude
-    happy path.
+  - (f) Never edits the parent issue's body. Slice detail lives only in slice bodies; no `## Slices`
+    section is written.
+  - (g) Refuses, with a reason, on a target that is an epic (the drafter owns epic decomposition), is
+    itself a slice (**never slice a slice**), is a `question`, is closed, or is blocked by an open
+    native blocker or an `in-scope (blocked)` open question read from live state.
   - (h) Slices are **phase markers**, not sub-stories: the resolver ships each as a phase on the
     parent's branch and closes it as its last serving phase lands, so the parent's rollup is a live
     progress record ([`skills/_shared/epic-story-hierarchy.md`](../skills/_shared/epic-story-hierarchy.md)).
@@ -202,12 +179,11 @@ ground these are produced by implementation step S1. Lettered items are individu
 
 ## §6 Standalone tool requirements
 
-All seven run only on explicit invocation and end with a plain summary — not a pipeline handoff.
-The five report-then-apply tools change nothing without the operator seeing the proposal;
-tracked-file edits follow §8.2: staged in a workspace, with the landing offered as a final gate
-(the requirements-gatherer, §6.7, edits no tracked files — its one write surface is a gated
-issue-body edit). The two workspace tools (§6.5/§6.6) edit no tracked files either — their
-action is the workspace lifecycle itself, and the explicit invocation is the authorization.
+All six run only on explicit invocation and end with a plain summary — not a pipeline handoff.
+The four report-then-apply tools change nothing without the operator seeing the proposal;
+tracked-file edits follow §8.2: staged in a workspace, with the landing offered as a final gate.
+The two workspace tools (§6.5/§6.6) edit no tracked files — their action is the workspace
+lifecycle itself, and the explicit invocation is the authorization.
 
 - **§6.1 setup.** Proposes and reconciles the consuming repo's configuration blocks: inventories
   existing blocks, drafts grounded candidates from repo evidence, interviews the operator for
@@ -231,16 +207,6 @@ action is the workspace lifecycle itself, and the explicit invocation is the aut
   worktree-teardown hooks, then removes the worktree — gated on dirty/unpushed state (never a
   silent discard; merged-PR-aware so the routine post-merge close isn't false-flagged), and
   refused from inside the target worktree. Removes worktrees, never remote branches.
-- **§6.7 requirements-gatherer.** Interactive requirement elicitation for one filed issue:
-  suggests grounding documents from the repo's doc catalogue (the operator confirms, adds, or
-  drops), elicits an enumerated requirement set in discussion with the operator (iterating on a
-  human-readable draft until approved), and appends the approved requirements to the issue's
-  `## Definition of done` as plain unticked criterion bullets — each citing its source document
-  by durable anchor, or provenanced as operator-elicited when no document records it. Detail is
-  never duplicated from a doc into the issue; downstream stages read the cited sections. It
-  authors no documents, files no issues, and refuses epics, slices, question issues, and closed
-  issues. (Appended after §6.6 rather than inserted at its conceptual position — §6.x numbers are
-  cited individually elsewhere, so renumbering would dangle those references.)
 
 ## §7 Persisted artifacts (the compatibility contract)
 
@@ -280,14 +246,15 @@ an artifact written by a v1 skill is consumed correctly by its v2 counterpart, a
   actions, and the summary reports the workspace path and the ready-to-run landing commands.
 - **§8.3 Workspaces.** A building or evaluating session runs **inside** the work worktree the
   operator opened (`workspace-open`) and starts the session in; its prep asserts that checkout
-  before judgment runs and reports it as the session's workspace. Gate config is read at the
-  `origin/main` pin via git plumbing — checkout-independent — and pinned-ref grounding views are
-  script-internal.
+  before judgment runs and reports it as the session's workspace. Gate config and worktree hooks
+  are read from that checkout's working tree, committed or not, and each read reports its source;
+  pinned-ref grounding views are script-internal.
 - **§8.4 Pinned grounding.** Plans, audits, and evaluations ground on an explicitly recorded
   commit SHA, and their artifacts state it.
-- **§8.5 Checkout state is respected.** A mismatched, stale, diverged, or root-seated session
-  checkout is surfaced as a decision gate (`WORKSPACE_MISMATCH`); a dirty or off-`main` checkout
-  on a workspace-creating path is likewise a gate (`ROOT_*`); neither is ever auto-corrected.
+- **§8.5 Checkout state is respected.** A mismatched, stale, or root-seated session checkout is
+  surfaced as a decision gate (`WORKSPACE_MISMATCH`), never auto-corrected. The operator's own
+  checkout is otherwise left alone: no path gates on its branch or dirty state, and none writes to
+  it.
 
 ## §9 Engineering-quality requirements
 

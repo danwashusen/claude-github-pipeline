@@ -17,9 +17,10 @@ inherited environment) — the end-to-end path a caller (a v2 prep script, S6+) 
 Design notes these tests pin down (see the implementor report's "Notes for the reviewer" for the
 full rationale):
 
-- ``remove --work``'s "never pushed at all" unpushed-count fallback is ``origin/main`` (the
-  subcommand has no ``--base``), not the worktree's original base — this can OVER-count for a
-  story branch off an unmerged epic branch, never UNDER-count.
+- ``remove --work`` counts commits reachable from ``HEAD`` but from no ``origin/*`` ref (the
+  subcommand has no ``--base``, and this needs neither a base branch nor the network) — so
+  reclaiming an abandoned workspace still works offline and on a clone with no recorded
+  ``origin/HEAD``.
 - The dirty/unpushed ``remove --work`` refusal uses the closed-set ``AMBIGUOUS`` code (no bespoke
   code exists for this hazard; prd.md itself groups "a dirty root" under "ambiguous state" as a
   mechanical blocker).
@@ -39,9 +40,10 @@ WORKSPACE_PY = SCRIPTS_DIR / "workspace.py"
 
 sys.path.insert(0, str(SCRIPTS_DIR))
 
-import workspace  # noqa: E402  (import after sys.path setup, by necessity)
+import config_block  # noqa: E402  (import after sys.path setup, by necessity)
+import workspace  # noqa: E402
 from pipelib.envelope import EXIT_OK, EXIT_USAGE_ERROR  # noqa: E402
-from tests.support import envelope_asserts, gitsandbox  # noqa: E402
+from tests.support import envelope_asserts, gitsandbox, shimenv  # noqa: E402
 
 
 def _run_cli(args, cwd=None):
@@ -120,17 +122,20 @@ class WorkspaceHelperUnitTests(unittest.TestCase):
 
     def test_find_includes_matches_path_like_at_tokens_only(self):
         # @anthropic has no slash and no dotted extension, so it must NOT be treated as an
-        # include (v1's find_includes: excludes bare @mentions).
+        # include (v1's find_includes: excludes bare @mentions). workspace.py carried its own
+        # byte-identical copy of this scan until v3.x folded hook discovery onto
+        # config_block.read_block_anywhere; the behavior is unchanged and still exercised here
+        # because it is the hook-discovery candidate walk, which nothing else covers.
         text = "See @docs/COMMANDS.md and @anthropic and also @CONTRIBUTING.md for more."
         import tempfile
         with tempfile.TemporaryDirectory() as tmp:
             f = Path(tmp) / "f.md"
             _write(f, text)
-            includes = workspace._find_includes(f)
+            includes = config_block.find_includes_one_level(f)
         self.assertEqual(includes, ["docs/COMMANDS.md", "CONTRIBUTING.md"])
 
     def test_find_includes_nonexistent_file_returns_empty(self):
-        self.assertEqual(workspace._find_includes(Path("/no/such/file.md")), [])
+        self.assertEqual(config_block.find_includes_one_level(Path("/no/such/file.md")), [])
 
     def test_tail_lines_keeps_only_last_n(self):
         text = "\n".join("line%d" % i for i in range(1, 101))
@@ -303,6 +308,84 @@ class WorkspaceGitSandboxTestCase(unittest.TestCase):
         return envelope
 
 
+class DefaultBranchTests(unittest.TestCase):
+    """``workspace.default_branch`` — the derivation that replaced the hardcoded ``"main"``.
+
+    Order is the contract, not an implementation detail: ``git symbolic-ref
+    refs/remotes/origin/HEAD`` answers first and offline, so no fixtured prep case ever reaches the
+    ``gh`` fallback (the shim matches argv by exact equality and exits 2 on a miss, and
+    ``prep_workspace_close``'s branch resolution is deliberately gh-free)."""
+
+    def setUp(self):
+        workspace._DEFAULT_BRANCH_CACHE.clear()
+        self.addCleanup(workspace._DEFAULT_BRANCH_CACHE.clear)
+
+    def _sandbox(self, initial_branch="main"):
+        origin = gitsandbox.mk_origin(initial_branch=initial_branch)
+        self.addCleanup(origin.cleanup)
+        clone = gitsandbox.mk_clone(origin)
+        self.addCleanup(clone.cleanup)
+        return origin, clone
+
+    def test_derives_main_from_origin_head(self):
+        _origin, clone = self._sandbox()
+        self.assertEqual(workspace.default_branch(str(clone.path)), "main")
+
+    def test_derives_a_non_main_default_branch(self):
+        _origin, clone = self._sandbox(initial_branch="trunk")
+        self.assertEqual(workspace.default_branch(str(clone.path)), "trunk")
+
+    def test_resolves_from_inside_a_linked_worktree(self):
+        _origin, clone = self._sandbox(initial_branch="trunk")
+        envelope = _parse_one_envelope(
+            _run_cli(["ensure", "--work", "f-x", "--base", "trunk", "--root", str(clone.path)])[1]
+        )
+        self.assertEqual(workspace.default_branch(envelope["path"]), "trunk")
+
+    def test_is_cached_per_main_root(self):
+        _origin, clone = self._sandbox()
+        workspace.default_branch(str(clone.path))
+        self.assertEqual(
+            workspace._DEFAULT_BRANCH_CACHE[str(clone.path.resolve())], "main"
+        )
+
+    def test_origin_head_absent_and_no_gh_is_a_hard_fail_naming_the_remedy(self):
+        _origin, clone = self._sandbox()
+        subprocess.run(
+            ["git", "remote", "set-head", "origin", "--delete"],
+            cwd=str(clone.path), stdout=subprocess.PIPE, stderr=subprocess.PIPE, check=True,
+        )
+        # No `gh` on PATH at all (the poison dir would answer with a failure too, but an empty
+        # PATH proves the derivation cannot silently succeed by some other route).
+        completed = subprocess.run(
+            [sys.executable, str(WORKSPACE_PY), "root-status", "--root", str(clone.path)],
+            stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+            env=dict(os.environ, PATH="/usr/bin:/bin"),
+        )
+        self.assertNotEqual(completed.returncode, EXIT_OK)
+        stderr = completed.stderr.decode("utf-8")
+        self.assertIn("default branch", stderr)
+        self.assertIn("git remote set-head origin --auto", stderr)
+
+    def test_gh_answers_when_origin_head_is_absent(self):
+        """The rung-2 fallback: an old clone with no ``origin/HEAD`` still resolves, via `gh`.
+        This is the ONLY test in the suite that lets the derivation reach `gh` — every other path
+        is answered offline by rung 1, which is what keeps the fixtured prep cases gh-free."""
+        _origin, clone = self._sandbox(initial_branch="trunk")
+        subprocess.run(
+            ["git", "remote", "set-head", "origin", "--delete"],
+            cwd=str(clone.path), stdout=subprocess.PIPE, stderr=subprocess.PIPE, check=True,
+        )
+        completed = subprocess.run(
+            [sys.executable, str(WORKSPACE_PY), "root-status", "--root", str(clone.path)],
+            stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+            env=shimenv.intercepted_env(fixture_case="workspace_default_branch_gh_fallback"),
+        )
+        self.assertEqual(completed.returncode, EXIT_OK, completed.stderr.decode("utf-8"))
+        envelope = _parse_one_envelope(completed.stdout.decode("utf-8"))
+        self.assertEqual(envelope["branch"], "trunk")
+
+
 class EnsureWorkTests(WorkspaceGitSandboxTestCase):
     def test_create_reports_facts_and_is_not_reused(self):
         envelope = self._envelope(["ensure", "--work", "feature-x", "--base", "main"])
@@ -435,24 +518,31 @@ class EnsureWorkTests(WorkspaceGitSandboxTestCase):
         self.assertFalse((self.root / ".gitignore").exists())
         self.assertEqual(_git(["status", "--porcelain"], self.root), "", "root must stay clean")
 
-    def test_root_not_on_main_short_circuits_before_any_worktree_op(self):
+    def test_an_off_default_branch_invoker_is_not_gated(self):
+        """v3.x: ROOT_NOT_ON_MAIN is retired — the operator picks the branch they stand on, and
+        that checkout is what supplies hook config, so gating on it would forbid the very workflow
+        this change exists for."""
         _git(["checkout", "-b", "not-main"], self.root)
         self.addCleanup(lambda: _git(["checkout", "main"], self.root))
         envelope = self._envelope(["ensure", "--work", "feature-x", "--base", "main"])
-        self.assertEqual(envelope["status"], "needs_decision")
-        self.assertEqual(envelope["decision"]["code"], "ROOT_NOT_ON_MAIN")
-        self.assertFalse((self.root / ".worktrees").exists())
+        self.assertEqual(envelope["status"], "ok")
+        self.assertTrue((self.root / ".worktrees" / "feature-x").is_dir())
 
-    def test_root_dirty_short_circuits_before_any_worktree_op(self):
+    def test_a_dirty_invoker_is_not_gated_and_is_reported(self):
+        """v3.x: ROOT_DIRTY is retired as a gate. An uncommitted hook edit is the tightest test
+        loop there is, so a dirty tree may supply commands — and says so."""
         _write(self.root / "dirty.txt", "uncommitted\n")
         envelope = self._envelope(["ensure", "--work", "feature-x", "--base", "main"])
-        self.assertEqual(envelope["status"], "needs_decision")
-        self.assertEqual(envelope["decision"]["code"], "ROOT_DIRTY")
-        self.assertFalse((self.root / ".worktrees").exists())
+        self.assertEqual(envelope["status"], "ok")
+        self.assertTrue((self.root / ".worktrees" / "feature-x").is_dir())
+        self.assertIn("HOOK_SOURCE_DIRTY", envelope["notices"])
+        self.assertTrue(envelope["setup"]["source"]["dirty"])
 
-    def test_root_diverged_short_circuits_before_any_worktree_op(self):
-        # Diverge the ORIGIN ahead of root, then commit something local to root too, so a plain
-        # fetch + ff-only cannot reconcile them.
+    def test_a_diverged_invoker_is_not_gated_and_the_worktree_forks_from_origin(self):
+        # Diverge the ORIGIN ahead of root, then commit something local to root too. Through v3
+        # this was ROOT_DIVERGED; now it proceeds, and the load-bearing assertion is that the new
+        # worktree forks from ORIGIN's tip — ensure fetches origin/<base> itself, so the local
+        # branch's divergence never leaks into the workspace.
         other_clone = gitsandbox.mk_clone(self.origin)
         self.addCleanup(other_clone.cleanup)
         _write(other_clone.path / "origin-side.txt", "origin moved\n")
@@ -460,16 +550,19 @@ class EnsureWorkTests(WorkspaceGitSandboxTestCase):
         _git(["commit", "-m", "origin-side commit"], other_clone.path)
         _git(["push", "origin", "HEAD:main"], other_clone.path)
 
+        origin_sha = _git(["rev-parse", "HEAD"], other_clone.path)
         _write(self.root / "root-side.txt", "root moved locally\n")
         _git(["add", "root-side.txt"], self.root)
         _git(["commit", "-m", "root-side local commit"], self.root)
 
         envelope = self._envelope(["ensure", "--work", "feature-x", "--base", "main"])
-        self.assertEqual(envelope["status"], "needs_decision")
-        self.assertEqual(envelope["decision"]["code"], "ROOT_DIVERGED")
-        self.assertFalse((self.root / ".worktrees").exists())
+        self.assertEqual(envelope["status"], "ok")
+        self.assertEqual(envelope["sha"], origin_sha, "worktree must fork from origin's tip")
 
-    def test_root_freshness_happy_path_ff_updates_and_records_sha(self):
+    def test_ensure_never_mutates_the_invokers_checkout(self):
+        """v3.x replaced the freshness protocol's `git merge --ff-only` (which WROTE the operator's
+        checkout) with nothing: ensure fetches origin/<base> and forks the worktree from it, and
+        the invoking checkout's HEAD is left exactly where the operator left it."""
         other_clone = gitsandbox.mk_clone(self.origin)
         self.addCleanup(other_clone.cleanup)
         _write(other_clone.path / "origin-side.txt", "origin moved\n")
@@ -477,11 +570,15 @@ class EnsureWorkTests(WorkspaceGitSandboxTestCase):
         _git(["commit", "-m", "origin-side commit"], other_clone.path)
         _git(["push", "origin", "HEAD:main"], other_clone.path)
         expected_sha = _git(["rev-parse", "HEAD"], other_clone.path)
+        root_sha_before = _git(["rev-parse", "HEAD"], self.root)
 
         envelope = self._envelope(["ensure", "--work", "feature-x", "--base", "main"])
         self.assertEqual(envelope["status"], "ok")
-        self.assertEqual(envelope["sha"], expected_sha, "root must have fast-forwarded to origin's new HEAD")
-        self.assertEqual(_git(["rev-parse", "HEAD"], self.root), expected_sha)
+        self.assertEqual(envelope["sha"], expected_sha, "worktree forks from origin's new HEAD")
+        self.assertEqual(
+            _git(["rev-parse", "HEAD"], self.root), root_sha_before,
+            "the invoker's checkout must be left exactly as the operator left it",
+        )
 
     def test_missing_base_flag_is_a_usage_error(self):
         rc, out, err = self._run(["ensure", "--work", "feature-x"])
@@ -554,15 +651,14 @@ class EnsureReadTests(WorkspaceGitSandboxTestCase):
         root_status = self._envelope(["root-status"])
         self.assertEqual(root_status["status"], "ok")
 
-    def test_root_dirty_guard_keeps_its_teeth_after_info_exclude_write(self):
-        # The D6 fix must not weaken ROOT_DIRTY into a no-op: after a prior ensure --read has
-        # written info/exclude (which must NOT dirty root), a genuine USER-authored uncommitted
-        # working-tree file must still trip ROOT_DIRTY on the next freshness check.
+    def test_info_exclude_write_never_dirties_the_operators_checkout(self):
+        """D6's mechanic outlives D6's gate. ROOT_DIRTY is retired, so nothing trips on a
+        self-inflicted dirty root any more — but a plugin-authored write must still never appear
+        in the operator's `git status`, which is why the exclusion lives in info/exclude (outside
+        the working tree) and not in .gitignore."""
         self._envelope(["ensure", "--read", "main"])
-        _write(self.root / "user-dirty.txt", "a real uncommitted change\n")
-        envelope = self._envelope(["ensure", "--work", "feature-x", "--base", "main"])
-        self.assertEqual(envelope["status"], "needs_decision")
-        self.assertEqual(envelope["decision"]["code"], "ROOT_DIRTY")
+        self.assertEqual(_git(["status", "--porcelain"], self.root), "")
+        self.assertFalse((self.root / ".gitignore").exists())
 
 
 class RemoveWorkTests(WorkspaceGitSandboxTestCase):
@@ -571,6 +667,32 @@ class RemoveWorkTests(WorkspaceGitSandboxTestCase):
         self.assertEqual(envelope["status"], "ok")
         self.assertFalse(envelope["removed"])
         self.assertEqual(envelope["reason"], "not_found")
+
+    def test_teardown_comes_from_the_worktree_being_closed(self):
+        """v3.x: teardown is discovered in the worktree being closed — that branch's teardown runs
+        for that branch's workspace, matching where the commands execute. (An *uncommitted*
+        teardown edit can never run: the dirty gate refuses the removal first. `lint --phase
+        teardown --root <worktree>` is the preview for that case.)"""
+        _seed_repo_with_hooks(
+            self.clone.path, teardown_block=["- `echo default-branch >> %s/.teardown-log`" % self.root],
+        )
+        envelope = self._envelope(["ensure", "--work", "feature-x", "--base", "main"])
+        wt = Path(envelope["path"])
+        _write(
+            wt / "CLAUDE.md",
+            "<!-- worktree-teardown -->\n- `echo branch-version >> %s/.teardown-log`\n"
+            "<!-- /worktree-teardown -->\n" % self.root,
+        )
+        _git(["add", "CLAUDE.md"], wt)
+        _git(["commit", "-m", "this branch versions its own teardown"], wt)
+        _git(["push", "origin", "HEAD:feature-x"], wt)
+
+        removal = self._envelope(["remove", "--work", "feature-x"])
+        self.assertTrue(removal["removed"])
+        log = (self.root / ".teardown-log").read_text(encoding="utf-8")
+        self.assertIn("branch-version", log)
+        self.assertNotIn("default-branch", log)
+        self.assertEqual(removal["teardown"]["source"]["path"], str(wt))
 
     def test_clean_worktree_runs_teardown_then_removes(self):
         _seed_repo_with_hooks(
@@ -639,6 +761,38 @@ class RemoveWorkTests(WorkspaceGitSandboxTestCase):
 
 class SetupHookExecutionTests(WorkspaceGitSandboxTestCase):
     """`ensure --work`'s fail-fast setup-hook execution, via config-block fixtures."""
+
+    def test_an_uncommitted_hook_edit_is_seen_and_run(self):
+        """The workflow the whole v3.x change exists to enable: edit the block, run the tool, see
+        it execute — no commit, no push, no merge to the default branch first."""
+        _write(
+            Path(self.root) / "CLAUDE.md",
+            "<!-- worktree-setup -->\n- `echo uncommitted >> .hook-source`\n<!-- /worktree-setup -->\n",
+        )
+        envelope = self._envelope(["ensure", "--work", "feature-x", "--base", "main"])
+        log = (Path(envelope["path"]) / ".hook-source").read_text(encoding="utf-8")
+        self.assertIn("uncommitted", log)
+        self.assertIn("HOOK_SOURCE_DIRTY", envelope["notices"])
+        self.assertTrue(envelope["setup"]["source"]["dirty"])
+        self.assertEqual(envelope["setup"]["source"]["path"], str(self.root))
+
+    def test_hooks_come_from_the_invokers_branch(self):
+        """"The operator decides which branch they are in before running workspace-open": the
+        invoking checkout's branch supplies the block, not the default branch's version."""
+        _seed_repo_with_hooks(self.clone.path, setup_block=["- `echo default-branch >> .hook-source`"])
+        _git(["checkout", "-b", "hook-experiment"], self.root)
+        self.addCleanup(lambda: _git(["checkout", "main"], self.root))
+        _write(
+            Path(self.root) / "CLAUDE.md",
+            "<!-- worktree-setup -->\n- `echo experiment >> .hook-source`\n<!-- /worktree-setup -->\n",
+        )
+        _git(["add", "CLAUDE.md"], self.root)
+        _git(["commit", "-m", "try a new setup hook on a branch"], self.root)
+
+        envelope = self._envelope(["ensure", "--work", "feature-x", "--base", "main"])
+        log = (Path(envelope["path"]) / ".hook-source").read_text(encoding="utf-8")
+        self.assertIn("experiment", log)
+        self.assertNotIn("default-branch", log)
 
     def test_no_block_present_is_a_clean_noop(self):
         envelope = self._envelope(["ensure", "--work", "feature-x", "--base", "main"])
@@ -776,35 +930,31 @@ class GcTests(WorkspaceGitSandboxTestCase):
 
 
 class RootStatusTests(WorkspaceGitSandboxTestCase):
-    def test_happy_path_reports_branch_and_sha(self):
+    """v3.x: `root-status` is pure reporting. It ran the root-freshness protocol through v3 and
+    could return ROOT_NOT_ON_MAIN / ROOT_DIRTY / ROOT_DIVERGED; all three codes are retired, so
+    every state below is reported, never decided."""
+
+    def test_happy_path_reports_branch_sha_and_default_branch(self):
         envelope = self._envelope(["root-status"])
         self.assertEqual(envelope["op"], "root-status")
         self.assertEqual(envelope["branch"], "main")
+        self.assertEqual(envelope["default_branch"], "main")
         self.assertEqual(envelope["sha"], _git(["rev-parse", "HEAD"], self.root))
+        self.assertFalse(envelope["dirty"])
 
-    def test_root_not_on_main(self):
+    def test_reports_an_off_default_branch_checkout_without_deciding(self):
         _git(["checkout", "-b", "not-main"], self.root)
         self.addCleanup(lambda: _git(["checkout", "main"], self.root))
         envelope = self._envelope(["root-status"])
-        self.assertEqual(envelope["decision"]["code"], "ROOT_NOT_ON_MAIN")
+        self.assertEqual(envelope["status"], "ok")
+        self.assertEqual(envelope["branch"], "not-main")
+        self.assertEqual(envelope["default_branch"], "main")
 
-    def test_root_dirty(self):
+    def test_reports_a_dirty_checkout_without_deciding(self):
         _write(self.root / "dirty.txt", "x\n")
         envelope = self._envelope(["root-status"])
-        self.assertEqual(envelope["decision"]["code"], "ROOT_DIRTY")
-
-    def test_root_diverged(self):
-        other_clone = gitsandbox.mk_clone(self.origin)
-        self.addCleanup(other_clone.cleanup)
-        _write(other_clone.path / "origin-side.txt", "x\n")
-        _git(["add", "origin-side.txt"], other_clone.path)
-        _git(["commit", "-m", "origin moves"], other_clone.path)
-        _git(["push", "origin", "HEAD:main"], other_clone.path)
-        _write(self.root / "root-side.txt", "y\n")
-        _git(["add", "root-side.txt"], self.root)
-        _git(["commit", "-m", "root moves locally"], self.root)
-        envelope = self._envelope(["root-status"])
-        self.assertEqual(envelope["decision"]["code"], "ROOT_DIVERGED")
+        self.assertEqual(envelope["status"], "ok")
+        self.assertTrue(envelope["dirty"])
 
 
 class LintTests(WorkspaceGitSandboxTestCase):
@@ -1041,18 +1191,46 @@ class AttachTests(WorkspaceGitSandboxTestCase):
         log = (wt / ".hook-log").read_text(encoding="utf-8")
         self.assertEqual(log.count("ran"), 3, "ensure once + two attaches must each run the hook")
 
-    def test_attach_hooks_read_the_origin_main_blob_not_the_working_tree(self):
-        _seed_repo_with_hooks(self.root, setup_block=["- `echo blob >> .hook-source`"])
+    def test_attach_hooks_read_the_worktrees_own_working_tree(self):
+        """v3.x inversion. Through v3 attach discovered hooks from origin/main BLOBS at a pin, so
+        an uncommitted edit was invisible and a branch could not supply hook commands. Now the
+        worktree the session runs in is the source — uncommitted edits included — which is what
+        makes a hook change testable before it merges.
+
+        The mutation goes in the WORKTREE, not the root: the root's tree was never attach's source
+        under either regime, so mutating it there would pass without proving anything."""
+        _seed_repo_with_hooks(self.root, setup_block=["- `echo committed >> .hook-source`"])
         wt = self._mk_worktree()
-        # Mutate the ROOT working tree's block without committing — the pinned read must not see it.
         _write(
-            Path(self.root) / "CLAUDE.md",
+            wt / "CLAUDE.md",
             "<!-- worktree-setup -->\n- `echo working-tree >> .hook-source`\n<!-- /worktree-setup -->\n",
         )
-        self._attach_envelope(["--expect-branch", "feature-x", "--path", str(wt)])
+        (wt / ".hook-source").unlink(missing_ok=True)  # drop the ensure-time run; assert on attach's
+        envelope = self._attach_envelope(["--expect-branch", "feature-x", "--path", str(wt)])
         log = (wt / ".hook-source").read_text(encoding="utf-8")
-        self.assertIn("blob", log)
-        self.assertNotIn("working-tree", log)
+        self.assertIn("working-tree", log)
+        self.assertNotIn("committed", log)
+        self.assertEqual(envelope["setup"]["source"]["path"], str(wt))
+        self.assertTrue(envelope["setup"]["source"]["dirty"])
+
+    def test_attach_runs_hooks_committed_on_the_worktrees_own_branch(self):
+        """The committed half of the same rule: a branch may version its own setup hooks, and the
+        session entering that branch's worktree runs that branch's version."""
+        _seed_repo_with_hooks(self.root, setup_block=["- `echo default-branch >> .hook-source`"])
+        wt = self._mk_worktree()
+        _write(
+            wt / "CLAUDE.md",
+            "<!-- worktree-setup -->\n- `echo branch-version >> .hook-source`\n<!-- /worktree-setup -->\n",
+        )
+        _git(["add", "CLAUDE.md"], wt)
+        _git(["commit", "-m", "this branch versions its own setup hook"], wt)
+        (wt / ".hook-source").unlink(missing_ok=True)  # drop the ensure-time run; assert on attach's
+        envelope = self._attach_envelope(["--expect-branch", "feature-x", "--path", str(wt)])
+        log = (wt / ".hook-source").read_text(encoding="utf-8")
+        self.assertIn("branch-version", log)
+        self.assertNotIn("default-branch", log)
+        self.assertEqual(envelope["setup"]["source"]["path"], str(wt))
+        self.assertTrue(envelope["setup"]["source"]["file"].endswith("CLAUDE.md"))
 
     def test_attach_setup_hook_failure_is_partial_but_honest_exit_1(self):
         _seed_repo_with_hooks(self.root, setup_block=["- `false`"])

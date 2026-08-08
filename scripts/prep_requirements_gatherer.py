@@ -38,11 +38,11 @@ Usage::
 
 **No workspace — the gatherer grounds on the CURRENT checkout**, the same root-only vantage
 `prep_drafter.py` and `prep_slicer.py` take, and for the same threat-model reason: it reads no PR
-head and gates no merge, so architecture.md §6's "a PR must not weaken its own gates" cannot
-apply. It runs before any workspace exists (its output is input to planning, which precedes
-`workspace-open`). `root` therefore carries only `{path, sha}` — informational, never enforced —
-and the doc catalogue is read at that same working vantage, deliberately NOT through `refblocks`:
-a catalogue names no gate (`skills/_shared/doc-catalogue.md` "Where the catalogue is read from").
+head and gates no merge. It runs before any workspace exists (its output is input to planning,
+which precedes `workspace-open`). `root` therefore carries only `{path, sha}` — informational,
+never enforced — and the doc catalogue is read at that same working vantage, which since v3.x is
+simply what every config family does (`skills/_shared/doc-catalogue.md` "Where the catalogue is
+read from"; the `origin/main` pin this once contrasted with is retired).
 
 **Refusals are facts, not decision codes** (the `prep_slicer` ruling, applied verbatim):
 `vector.refusals` is a list of reason tokens from a closed set; the router renders the matching
