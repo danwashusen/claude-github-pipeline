@@ -17,9 +17,10 @@ inherited environment) — the end-to-end path a caller (a v2 prep script, S6+) 
 Design notes these tests pin down (see the implementor report's "Notes for the reviewer" for the
 full rationale):
 
-- ``remove --work``'s "never pushed at all" unpushed-count fallback is ``origin/main`` (the
-  subcommand has no ``--base``), not the worktree's original base — this can OVER-count for a
-  story branch off an unmerged epic branch, never UNDER-count.
+- ``remove --work`` counts commits reachable from ``HEAD`` but from no ``origin/*`` ref (the
+  subcommand has no ``--base``, and this needs neither a base branch nor the network) — so
+  reclaiming an abandoned workspace still works offline and on a clone with no recorded
+  ``origin/HEAD``.
 - The dirty/unpushed ``remove --work`` refusal uses the closed-set ``AMBIGUOUS`` code (no bespoke
   code exists for this hazard; prd.md itself groups "a dirty root" under "ambiguous state" as a
   mechanical blocker).

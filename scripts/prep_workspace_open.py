@@ -111,6 +111,10 @@ def _create_linked_branch(repo, issue_number, branch, base, cwd=None):
 def build_facts(issue_number, repo, root=".", scratch_dir=None, cwd=None):
     """Assemble the open receipt and return the envelope dict WITHOUT printing it. Returns
     ``None`` after a ``needs_decision`` envelope has already been emitted."""
+    # Capture the INVOKER's checkout before normalizing: `root` becomes the main checkout on the
+    # next line, and the setup-hook block is discovered in the checkout the operator actually ran
+    # this from (a different worktree whenever they invoke from inside one).
+    invoker_root = workspace.invoking_checkout(cwd if cwd is not None else root)
     root = str(workspace._resolve_main_root(root))
     if scratch_dir is None:
         scratch_dir = "/tmp/gh-workspace-open-%s" % issue_number
@@ -286,7 +290,9 @@ def build_facts(issue_number, repo, root=".", scratch_dir=None, cwd=None):
     # 5) The worktree: root freshness (ROOT_*), BRANCH_IN_USE, create/reuse, info/exclude, setup
     #    hooks — all the existing ensure --work contract. A develop-created remote branch is
     #    found by the ensure's own ls-remote probe and checked out at its head.
-    workspace_envelope, ws_notices, ws_decision = workspace._build_ensure_work(root, branch, base)
+    workspace_envelope, ws_notices, ws_decision = workspace._build_ensure_work(
+        root, branch, base, hook_root=invoker_root
+    )
     if _forward_decision(ws_decision):
         return None
     # Forward the core's notices (e.g. HOOK_SOURCE_DIRTY — the hook block came from a checkout

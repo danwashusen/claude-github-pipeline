@@ -33,6 +33,7 @@ Coverage matrix (S6 DoD):
 
 import json
 import os
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -640,24 +641,30 @@ class RefreshModeTests(unittest.TestCase):
         self.scratch = self._tmp_ctx.name
         self.addCleanup(self._tmp_ctx.cleanup)
 
-    def _run(self, args, fixture_case=None):
+    def _run(self, args, fixture_case=None, cwd=None):
         env = shimenv.intercepted_env(base_env=os.environ, fixture_case=fixture_case)
         return subprocess.run(
             [sys.executable, str(SCRIPT)] + args,
             env=env,
+            cwd=cwd,
             capture_output=True,
             encoding="utf-8",
             check=False,
         )
 
     def test_refresh_never_requires_a_root_at_all(self):
-        # No --root passed, no git sandbox constructed — if --refresh touched workspace.py's
-        # root-freshness or `ensure --work` at all, this would fail (default --root='.' would
-        # resolve to the current process's own cwd, which is not a controlled git sandbox and
-        # would produce unpredictable ROOT_* results, not a clean "ok").
+        # No --root passed, and the subprocess runs in a directory that is NOT a git repo at all.
+        # The explicit non-git cwd is the whole point: this test inherited the runner's cwd until
+        # v3.x, which IS a git repo, so it passed while silently permitting --refresh to spawn
+        # git (`rev-parse --git-common-dir` / `symbolic-ref`) and crash with an uncaught
+        # RuntimeError for any real caller standing outside a repo. The contract is "never
+        # requires a root"; only a non-git cwd actually pins it.
+        outside_any_repo = tempfile.mkdtemp(prefix="gh-pipeline-test-nongit-")
+        self.addCleanup(shutil.rmtree, outside_any_repo, True)
         result = self._run(
             ["88", "octo/widgets", "--refresh", "--scratch-dir", self.scratch],
             fixture_case="prep_evaluator_happy_standard",
+            cwd=outside_any_repo,
         )
         self.assertEqual(result.returncode, 0, msg=result.stderr)
         envelope = _parse_one_envelope(result.stdout)

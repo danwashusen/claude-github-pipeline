@@ -494,11 +494,18 @@ def _auth_decision(result):
 
 def _fetch_repo_merge_config(repo, cwd):
     """``gh api repos/<owner>/<repo>`` — the five merge-capability booleans
-    (docs/specs/evaluator.md "Repo merge config").
-    Returns ``(config_dict_or_none, decision_or_none)``."""
+    (docs/specs/evaluator.md "Repo merge config") plus the repo's ``default_branch``.
+
+    The default branch rides on THIS call, not on ``workspace.default_branch``, because it is
+    needed by ``_detect_pr_type`` on **every** run including ``--refresh`` — whose contract is
+    "never requires a root", so it must not spawn git. GitHub's REST payload is also the
+    authoritative answer, and this call was already unconditional, so it costs nothing extra. It is
+    returned SEPARATELY rather than inside the config dict: ``merge_config`` is a published facts
+    key whose documented shape is the five booleans, and consumers compare it whole.
+    Returns ``(config_dict_or_none, default_branch_or_none, decision_or_none)``."""
     result = process.run(["gh", "api", "repos/%s" % repo], cwd=cwd)
     if result.auth_required:
-        return None, _auth_decision(result)
+        return None, None, _auth_decision(result)
     if result.returncode != 0:
         sys.stderr.write(result.stderr)
         sys.exit(1)
@@ -509,7 +516,7 @@ def _fetch_repo_merge_config(repo, cwd):
         "allow_rebase_merge": data.get("allow_rebase_merge"),
         "delete_branch_on_merge": data.get("delete_branch_on_merge"),
         "allow_auto_merge": data.get("allow_auto_merge"),
-    }, None
+    }, data.get("default_branch"), None
 
 
 def _fetch_current_user(cwd):
@@ -628,7 +635,6 @@ def build_facts(pr_number, repo, root=".", scratch_dir=None, refresh=False, cwd=
     # sits inside the PR-head worktree. NOT on --refresh: that path touches no git at all (its
     # contract is "never requires a root"), so it must not spawn the normalizing rev-parse either.
     root = str(Path(root).resolve()) if refresh else str(workspace._resolve_main_root(root))
-    root_branch = workspace.default_branch(root)
     if scratch_dir is None:
         scratch_dir = "/tmp/gh-evaluator-%s" % pr_number
     Path(scratch_dir).mkdir(parents=True, exist_ok=True)
@@ -735,7 +741,7 @@ def build_facts(pr_number, repo, root=".", scratch_dir=None, refresh=False, cwd=
     epic_facts = None
 
     # 5) Repo merge config + self-review (new prep-owned gh calls).
-    merge_config, merge_decision = _fetch_repo_merge_config(repo, cwd)
+    merge_config, root_branch, merge_decision = _fetch_repo_merge_config(repo, cwd)
     if merge_decision is not None:
         emit_needs_decision(merge_decision)
         return None
@@ -748,6 +754,8 @@ def build_facts(pr_number, repo, root=".", scratch_dir=None, refresh=False, cwd=
 
     # 6) CI rollup classification, PR-type detection, health-cache SHA compare.
     ci_class, ci_fail_checks = _classify_ci_rollup(pr_envelope.get("statusCheckRollup"))
+    # `root_branch` came from the repo API fetched above — never `workspace.default_branch`, which
+    # would spawn git on the --refresh path whose contract is "never requires a root".
     pr_type = _detect_pr_type(
         pr_envelope.get("baseRefName"), pr_envelope.get("headRefName"), root_branch
     )

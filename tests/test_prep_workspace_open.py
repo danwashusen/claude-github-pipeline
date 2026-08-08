@@ -59,20 +59,22 @@ class PrepWorkspaceOpenSandboxTestCase(unittest.TestCase):
         self.scratch = self._tmp_ctx.name
         self.addCleanup(self._tmp_ctx.cleanup)
 
-    def _run(self, args, fixture_case=None):
+    def _run(self, args, fixture_case=None, cwd=None):
         env = shimenv.intercepted_env(base_env=os.environ, fixture_case=fixture_case)
         return subprocess.run(
             [sys.executable, str(SCRIPT)] + args,
             env=env,
+            cwd=cwd,
             capture_output=True,
             encoding="utf-8",
             check=False,
         )
 
-    def _envelope(self, issue="100", fixture_case="prep_workspace_open_fresh", expect_rc=0):
+    def _envelope(self, issue="100", fixture_case="prep_workspace_open_fresh", expect_rc=0, cwd=None):
         result = self._run(
             [issue, "octo/widgets", "--root", str(self.root), "--scratch-dir", self.scratch],
             fixture_case=fixture_case,
+            cwd=cwd,
         )
         self.assertEqual(result.returncode, expect_rc, msg="stderr: %s" % result.stderr)
         envelope = _parse_one_envelope(result.stdout)
@@ -125,6 +127,35 @@ class FreshOpenTests(PrepWorkspaceOpenSandboxTestCase):
         self.assertTrue(envelope["workspace"]["setup"]["succeeded"])
         wt = Path(envelope["workspace"]["path"])
         self.assertIn("ran", (wt / ".hook-log").read_text(encoding="utf-8"))
+
+    def test_hooks_come_from_the_worktree_the_operator_invoked_from(self):
+        """The invoker's checkout supplies the hook block even when that checkout is a DIFFERENT
+        worktree from the main one. `build_facts` normalizes `root` to the main checkout on its
+        first line, so without threading the pre-normalization cwd through to `ensure --work` this
+        silently falls back to the main checkout's version — the opposite of the documented rule
+        that the operator picks the supplying branch by choosing where they stand."""
+        _write(
+            self.root / "CLAUDE.md",
+            "<!-- worktree-setup -->\n- `echo main-checkout >> .hook-log`\n<!-- /worktree-setup -->\n",
+        )
+        _git(["add", "CLAUDE.md"], self.root)
+        _git(["commit", "-m", "default-branch setup hook"], self.root)
+        _git(["push", "origin", "HEAD:main"], self.root)
+
+        other = self.root / ".worktrees" / "hook-experiment"
+        other.parent.mkdir(parents=True, exist_ok=True)
+        _git(["worktree", "add", "-b", "hook-experiment", str(other), "origin/main"], self.root)
+        _write(
+            other / "CLAUDE.md",
+            "<!-- worktree-setup -->\n- `echo other-worktree >> .hook-log`\n<!-- /worktree-setup -->\n",
+        )
+
+        envelope = self._envelope(cwd=str(other))
+        wt = Path(envelope["workspace"]["path"])
+        log = (wt / ".hook-log").read_text(encoding="utf-8")
+        self.assertIn("other-worktree", log)
+        self.assertNotIn("main-checkout", log)
+        self.assertEqual(envelope["workspace"]["setup"]["source"]["branch"], "hook-experiment")
 
 
 class LinkedBranchTests(PrepWorkspaceOpenSandboxTestCase):

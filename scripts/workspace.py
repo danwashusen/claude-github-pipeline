@@ -174,6 +174,14 @@ def _unpushed_commits(cwd, branch, base_ref):
     return int(_git_stdout(["rev-list", "--count", "%s..HEAD" % upstream], cwd))
 
 
+def _unpushed_commits_vs_all_remotes(cwd):
+    """Count commits reachable from ``HEAD`` but from no ``origin/*`` ref — the "is any of this
+    work only local?" question, answered without naming a base branch, without the network, and
+    without a default-branch derivation that could fail. Used by ``remove --work``, whose whole
+    point is that reclaiming a workspace works offline."""
+    return int(_git_stdout(["rev-list", "--count", "HEAD", "--not", "--remotes=origin"], cwd))
+
+
 def _list_worktrees(root):
     """Parse ``git worktree list --porcelain`` into a list of dicts:
     ``{"path": <resolved Path>, "sha": <str>, "branch": <str|None>, "detached": <bool>}``.
@@ -286,6 +294,28 @@ def _toplevel_of(path):
     return str(Path(_git_stdout(["rev-parse", "--show-toplevel"], str(Path(path).resolve()))).resolve())
 
 
+def invoking_checkout(root):
+    """The checkout the operator is standing in — the process cwd's working-tree root — when that
+    is a checkout of the SAME repo as ``root``; otherwise ``root``'s own toplevel.
+
+    This is what "the operator decides which branch they are in before running workspace-open"
+    needs: a caller that normalizes ``--root`` to the main checkout (every prep does) would
+    otherwise lose the invoker's worktree entirely and silently read hook config from the main
+    checkout instead. The same-repo guard keeps a session started in some unrelated directory
+    (a test runner, another project) from supplying this repo's hook commands.
+    """
+    root_top = _toplevel_of(root)
+    try:
+        cwd_top = _toplevel_of(Path.cwd())
+        same_repo = str(_resolve_main_root(cwd_top)) == str(_resolve_main_root(root_top))
+    except (RuntimeError, OSError):
+        # cwd isn't a git checkout — or has been deleted out from under the process, which raises
+        # OSError from Path.cwd() rather than RuntimeError. Either way the root argument is the
+        # only answer, and neither case is worth failing an otherwise-valid open over.
+        return root_top
+    return cwd_top if same_repo else root_top
+
+
 def _resolve_main_root(root):
     """Normalize ``root`` to the MAIN checkout: the parent of ``git rev-parse --git-common-dir``.
     Identity when ``root`` already is the main checkout (common dir = ``<root>/.git``); hops to
@@ -320,7 +350,7 @@ def default_branch(root):
        cutting branches off the wrong base.
 
     Cached per resolved main root: a prep is one process per run, and several call sites
-    (base selection, unpushed-count fallbacks, plan-ref selection) want the same answer.
+    (base selection, attach's unpushed-count fallback, plan-ref selection) want the same answer.
     """
     main_root = str(_resolve_main_root(root))
     if main_root in _DEFAULT_BRANCH_CACHE:
@@ -552,19 +582,22 @@ def _run_teardown_hooks(root, workspace_path):
 # ---------------------------------------------------------------------------
 
 
-def _build_ensure_work(root, branch, base):
+def _build_ensure_work(root, branch, base, hook_root=None):
     """Pure ``ensure --work`` core (architecture.md §2's pure-core pattern, S8 pattern lock):
     create/reuse the work worktree on ``branch`` (checked out at its own head when it exists, else
     forked at ``origin/<base>``), run setup hooks, and return ``(payload, notices, decision)`` —
     **never emits** (no ``print``/``emit_ok``/``emit_needs_decision``). ``prep_evaluator`` calls
     this directly, retiring the S6 ``redirect_stdout`` bridge.
 
-    Hook discovery reads **the invoking checkout's working tree** — ``root`` as given, BEFORE the
-    main-root normalization every other operation here applies. The two differ whenever the
-    operator runs this from inside another worktree, and the invoking checkout is the one whose
-    branch they chose: "the operator decides which branch they are in before opening a workspace"
-    is the whole point of retiring the pin. The freshly created worktree cannot be the source —
-    on a fresh branch it has no content of its own yet.
+    Hook discovery reads **the invoking checkout's working tree**, which is ``hook_root`` when the
+    caller supplies it and otherwise ``root`` as given, resolved BEFORE the main-root normalization
+    every other operation here applies. The explicit parameter exists because a caller that has
+    already normalized ``root`` itself (``prep_workspace_open``) would otherwise lose the invoker's
+    checkout entirely and silently fall back to the main one. The two differ whenever the operator
+    runs this from inside another worktree, and the invoking checkout is the one whose branch they
+    chose: "the operator decides which branch they are in before opening a workspace" is the whole
+    point of retiring the pin. The freshly created worktree cannot be the source — on a fresh
+    branch it has no content of its own yet.
 
     Return contract (the type-level distinction the S8 retro asks for):
       - ``decision is not None`` → a ``needs_decision`` (``ROOT_*`` from freshness, or
@@ -578,7 +611,7 @@ def _build_ensure_work(root, branch, base):
       - a hard `git` failure still ``sys.exit(1)`` with faithful stderr and no envelope (§3
         exit-code contract — unchanged), not a returnable decision.
     """
-    hook_root = _toplevel_of(root)
+    hook_root = _toplevel_of(hook_root if hook_root is not None else root)
     root = str(_resolve_main_root(root))
     # No root-freshness gate and no fast-forward: v3.x never inspects or mutates the operator's
     # checkout. The branch/dirty/diverged state of wherever they are standing is their business —
@@ -1042,13 +1075,15 @@ def _build_remove_work(root, branch, invoker_cwd=None, merged_pr=None):
 
     dirty = _is_dirty(str(target_path))
     # remove --work has no --base (the subcommand signature is `remove --work <branch>` only), so
-    # the fallback reference for "never pushed at all" is the repo's default branch rather than
-    # the worktree's original --base — every work worktree ultimately traces back through the
-    # trust topology's root branch (architecture.md §6), so this never UNDER-counts risk. It can
-    # OVER-count for a story branch created off an unmerged epic branch that is itself ahead of
-    # the default branch (that epic's own commits would be included too) — a known, accepted narrow
-    # edge case, since remove's CLI has no --base to give a tighter answer.
-    unpushed = _unpushed_commits(str(target_path), branch, default_branch(root))
+    # it counts commits reachable from HEAD but from NO origin ref at all — a purely local
+    # rev-list, no default branch and no network. That matters twice over: this is the one path
+    # that must work offline (reclaiming an abandoned workspace), and deriving a default branch
+    # here would hard-fail on a clone whose `refs/remotes/origin/HEAD` was never recorded, killing
+    # the removal over a secondary detail. It is also STRICTER than the old "relative to the
+    # default branch" reference, which over-counted a story branch forked off an unmerged epic
+    # branch by including that epic's own already-pushed commits (a known, accepted edge case that
+    # this form simply does not have).
+    unpushed = _unpushed_commits_vs_all_remotes(str(target_path))
 
     head_sha = _current_sha(str(target_path))
     merged_at_head = (
