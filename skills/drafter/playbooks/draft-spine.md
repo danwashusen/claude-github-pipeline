@@ -1,10 +1,8 @@
 # Draft spine — shared across new / revise / question
 
 The draft-and-verify-and-file backbone every route runs, ending in a hand-back to the routed playbook
-for its handoff. Type differences here are **facts** (which template, which reviewer dimensions, which
-review tier), never branches — the routed playbook reads this spine first, then
-supplies its deltas. All facts come from the prep facts block (SKILL.md §1); all GitHub writes go
-through `${CLAUDE_PLUGIN_ROOT}/scripts/gh_persist.py` with a staged body path in `facts.scratch`.
+for its handoff. Which template, which reviewer dimensions, which review tier are **facts** the routed
+playbook supplies (SKILL.md §2); all facts come from the prep facts block (SKILL.md §1).
 
 ## Gather missing context
 
@@ -25,17 +23,14 @@ Never invent repro steps, error messages, or behavior the user didn't describe �
 
 Runs when the source (feedback, PRD, a design/architecture doc) carries an **unresolved open question**
 (OQ) that gates the scope you're drafting. Detect and match per
-[`../../_shared/open-question-detection.md`](../../_shared/open-question-detection.md) (the
-`config.oq_markers` hint or the heuristic cues + the tracker de-dup search). Scope is **this issue** — only
-the OQs that gate what you're drafting, not a project-wide sweep (that's `/github-pipeline:question-sweep`).
+[`../../_shared/open-question-detection.md`](../../_shared/open-question-detection.md) (the `config.oq_markers`
+hint or the heuristic cues + the tracker de-dup search). Scope is **this issue** — only the OQs that gate
+what you're drafting, not a project-wide sweep (that's `/github-pipeline:question-sweep`).
 
-**Match first.** Before proposing to file a companion, consult the tracker de-dup search: for an OQ the
-issue body already carried, `facts.open_question_candidates`; for one you spotted anew in the feedback or a
-grounding doc, run `prep_drafter.py … --oq-query "<topic>"` (SKILL.md §1). Proposing a file before checking
-is how you offer to duplicate a question that already exists.
+**Match first.** Consult the tracker de-dup search before proposing to file a companion (SKILL.md §1 names
+which source applies) — proposing a file before checking is how you duplicate a question that already exists.
 
-Then get the user's **disposition** per OQ — one `AskUserQuestion` card (`header: "OQ <id>"`), the closed
-set from [`../../_shared/open-question-links.md`](../../_shared/open-question-links.md):
+Then get the user's **disposition** per OQ — one `AskUserQuestion` card (`header: "OQ <id>"`), this closed set:
 
 - **Scope it out** *(default)* — the gated part leaves this issue's scope: a `## Out of scope` line names
   the OQ; nothing undecided lands in the DoD. No native dependency.
@@ -76,12 +71,12 @@ that reference, binding every body): durable anchors only, never an authored `pa
 state criterion + exemption classes, never a frozen hit list; freeze judgment, not re-derivable facts.
 
 **PRD tension → `## PRD impact`.** When the repo declares a PRD (`facts.repo_context.docs.prd` — its
-catalogue's `prd` entry, at whatever path it names), ground language in
-its personas/terminology and watch for tension — the feedback **contradicts** the PRD, **extends** it into
-uncovered territory, or an incomplete-feature report describes a **gap** against a PRD section. On genuine
-tension, add a `## PRD impact` note and gate (`header: "PRD conflict"`): **File to update PRD** / **File
-the feature** / **Flag for discussion** — the user decides whether the PRD or the feedback is stale. No
-tension → omit the section; don't add it just to show you read the PRD.
+catalogue's `prd` entry, at whatever path it names), ground language in its personas/terminology and watch
+for tension — the feedback **contradicts** the PRD, **extends** it into uncovered territory, or an
+incomplete-feature report describes a **gap** against a PRD section. On genuine
+tension, add a `## PRD impact` note and gate (`header: "PRD conflict"`): **File to update PRD** / **File the
+feature** / **Flag for discussion** — the user decides whether the PRD or the feedback is stale. No tension
+→ omit the section; don't add it just to show you read the PRD.
 
 **Related issues → `## Related issues` + native dep.** When the user referenced other issues, read them
 (`gh issue view <N> --json title,state,body,labels`) and classify the relationship, mirroring the user's
@@ -89,6 +84,13 @@ hedging (`May be resolved by #21`, `Related to #12`, `Blocked by #50`, `Duplicat
 `Expected behavior is described in #78`, `Closes #5`). **Never** use an auto-close keyword
 (`closes`/`fixes`/`resolves`) unless the user explicitly said this issue resolves another. A `Blocked by
 #N` line also sets a native `blocked by` (below); the prose line is the always-present fallback.
+
+**The ambient issue.** `facts.ambient` (present only when the branch names one) is the issue this checkout
+is standing in — one the user never had to type. Offer it once (`header: "Ambient issue"`), defaulting to
+**Unrelated**: filing an unrelated bug from inside an epic's branch is normal, so never link silently.
+**Related to #N** / **Blocked by #N** write the forms above; **Child of #N** — offered only when
+`ambient.pattern` is `epic` — writes `Related to #N` and routes the handoff to the slicer, sole writer of
+the parent edge since #16.
 
 **Recording open questions.** For each Step-3.5 disposition write the `## Open questions` section per
 [`../../_shared/open-question-links.md`](../../_shared/open-question-links.md) (marker
@@ -102,12 +104,12 @@ the source didn't mark.
 Before showing the draft, hand it to the isolated review sub-agent
 [`../references/issue-reviewer-prompt.md`](../references/issue-reviewer-prompt.md) — it runs **without
 the conversation history**, so it tests whether the issue stands on its own the way a teammate reading
-it cold would; it runs for both new drafts and revisions — don't skip it. Dispatch an `Explore`
-sub-agent, inlining the draft, the `mode` (`draft` / `revise <N>`), the **review tier**,
-`facts.root.path` (ground every read there **by absolute path** — the sub-agent has its own cwd,
-and the session's checkout IS the intended vantage), `facts.config.oq_markers`, and the **dimension set the routed playbook names**, plus (Epic)
-the sibling drafts. The routed playbook names the tier — default **full** absent a stated tier; a
-**proxy-filed follow-up (lean review)** invocation is always **lean** (the provenance floor).
+it cold would; it runs for both new drafts and revisions — don't skip it. Dispatch an `Explore` sub-agent,
+inlining the draft, the `mode` (`draft` / `revise <N>`), the **review tier**, `facts.root.path` (ground
+every read there **by absolute path** — the sub-agent has its own cwd, and the session's checkout IS the
+intended vantage), `facts.config.oq_markers`, and the **dimension set the routed playbook names**. The
+routed playbook names the tier — default **full** absent a stated tier; a **proxy-filed follow-up (lean
+review)** invocation is always **lean** (the provenance floor).
 
 - **lean** — exactly one pass: drop unevidenced findings, apply blockers; show suggestions and nits
   **unapplied** at the filing gate (auto-applying is the ratchet — it regrows the review surface).
@@ -124,8 +126,7 @@ Present the full draft (title, labels, priority, body between `---` fences), plu
 findings. **Before asking, stage the approved body to disk** — write the exact rendered body to
 `<facts.scratch>/<name>.md`; the staged file *is* the body. Then gate (`header: "File issue?"`): **File
 it** / **Keep iterating**. Treat anything other than an explicit "File it" as keep-iterating — never file
-without that go-ahead. Every route files exactly one issue behind this gate — the Epic batch's
-gate-skip retired with the batch (#16).
+without that go-ahead.
 
 ## Staged filing — the single write path
 

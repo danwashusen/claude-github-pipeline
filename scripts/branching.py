@@ -554,6 +554,79 @@ def branch_belongs_to_issue(branch, issue_number):
     return branch.startswith(prefix) and len(branch) > len(prefix)
 
 
+# Non-blocking notice (open notice vocabulary, architecture.md §3): the current branch parsed as
+# one of the pipeline's two branch grammars, but the issue it names could not be read back — no
+# auth, no network, a number that is a PR, or a branch that only LOOKS like `<N>-<slug>` (a
+# `2024-roadmap-cleanup` scratch branch parses as issue #2024 and 404s). The caller degrades to "no
+# ambient issue" and files exactly as it does today; this never escalates to a decision, because the
+# ambient fact is a convenience the drafter offers, never a gate it depends on.
+AMBIENT_ISSUE_LOOKUP_UNAVAILABLE = "AMBIENT_ISSUE_LOOKUP_UNAVAILABLE"
+
+# The non-epic half of `branch_belongs_to_issue`'s grammar, read in the other direction: that
+# function asks "is this branch issue #N's?", this one asks "which issue is this branch's?".
+# `-vN` collision suffixes need no special handling — the slug arm swallows them.
+ISSUE_BRANCH_NAME_RE = re.compile(r"^(\d+)-(.+)$")
+
+_AMBIENT_ISSUE_FIELDS = "number,title,state,labels"
+
+
+def detect_ambient_issue(root, repo, cwd=None):
+    """Which issue, if any, the checkout at `root` is standing in — the fact that lets a skill
+    notice it was invoked from inside `epic/95-<slug>` or `164-<slug>` instead of filing an orphan.
+    Returns ``(fact, notices)``; `fact` is ``None`` whenever there is nothing to offer.
+
+    Deliberately **non-gating**: an unparseable branch (`main`, a scratch name), a detached HEAD, a
+    non-repo `root`, or a failed issue lookup all yield ``None`` rather than a decision, so adding
+    this fact can never stop a session that files fine today. Only the lookup failure emits a
+    notice — a branch that never parsed had nothing to look up and stays silent.
+
+    The `gh` confirmation is what makes the loose `<N>-<slug>` arm safe: the parse is a candidate,
+    the live issue is the evidence.
+    """
+    result = process.run(["git", "rev-parse", "--abbrev-ref", "HEAD"], cwd=str(root))
+    if result.returncode != 0:
+        return None, []
+    branch = (result.stdout or "").strip()
+    # `--abbrev-ref` prints the literal "HEAD" for a detached checkout — including every `ro-*`
+    # read workspace, which is detached by construction.
+    if not branch or branch == "HEAD":
+        return None, []
+
+    epic_match = EPIC_BRANCH_NAME_RE.match(branch)
+    if epic_match:
+        number, pattern = epic_match.group(1), "epic"
+    else:
+        issue_match = ISSUE_BRANCH_NAME_RE.match(branch)
+        if not issue_match:
+            return None, []
+        number, pattern = issue_match.group(1), "issue"
+
+    view = process.run(
+        ["gh", "issue", "view", number, "--repo", repo, "--json", _AMBIENT_ISSUE_FIELDS],
+        cwd=cwd,
+    )
+    if view.returncode != 0:
+        return None, [AMBIENT_ISSUE_LOOKUP_UNAVAILABLE]
+    try:
+        data = json.loads(view.stdout or "{}")
+    except ValueError:
+        return None, [AMBIENT_ISSUE_LOOKUP_UNAVAILABLE]
+    if not data:
+        return None, [AMBIENT_ISSUE_LOOKUP_UNAVAILABLE]
+
+    labels = [label.get("name") for label in data.get("labels") or []]
+    title = data.get("title") or ""
+    return {
+        "branch": branch,
+        "number": int(number),
+        "pattern": pattern,
+        "title": title,
+        "state": data.get("state"),
+        "labels": labels,
+        "type": detect_type_with_question(labels, title),
+    }, []
+
+
 def compute_branch_name(root, issue_number, slug):
     """`<issue>-<slug>` with collision suffixing (docs/specs/resolver.md "Branch-collision
     suffixing"; the spec's branch-creation convention): inspect

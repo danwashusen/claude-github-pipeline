@@ -1,0 +1,6 @@
+[
+  {"argv": ["label", "list", "--repo", "octo/widgets", "--limit", "100", "--json", "name,description,color"],
+   "stdout_file": "labels.json", "exit_code": 0},
+  {"argv": ["issue", "view", "164", "--repo", "octo/widgets", "--json", "number,title,state,labels"],
+   "stdout_file": "ambient_issue.json", "exit_code": 0}
+]

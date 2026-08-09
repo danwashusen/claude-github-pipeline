@@ -25,7 +25,8 @@ ${CLAUDE_PLUGIN_ROOT}/scripts/prep_drafter.py <owner/repo> [--issue N]
 ```
 
 It returns one JSON **facts block** (`architecture.md §4`): `vector` (`mode` × `type` — the routing
-contract), `suggested_playbook`, `target` (revise: number/title/state/labels/`blocked_by`/
+contract), `suggested_playbook`, `ambient` (the issue this checkout's branch is standing in, or `null` —
+the relationship the spine offers), `target` (revise: number/title/state/labels/`blocked_by`/
 `blocking`/`deps_available`), `config.oq_markers` (the `<!-- drafter-open-question-markers -->` block, or
 `heuristics_active` — a **detection hint**, never a gate), `repo_context` (issue templates, `gh label
 list`, and `docs` — the repo's own `<!-- doc-catalogue -->` entries plus its `prd`), `open_questions` + `open_question_candidates` (the search-before-file
@@ -74,9 +75,6 @@ the classification, not the label, selects). One route per session; do **not** i
 inside a playbook body — the route *is* the branch. An **Epic** needs no override: it is one issue with its
 own template, filed by `new.md` like any other, its stories cut afterwards by the slicer.
 
-**Feature-vs-Epic is a gate, not a silent promotion.** When Epic signals fire but scope is genuinely the
-user's call, `new.md`'s Step 1 asks (`header: "Issue size"`) — confirm, don't assume.
-
 **Reshaping an existing issue into an Epic is not the drafter's** (#16). Revise mode revises the target's
 *body*; it never promotes. When the invocation asks to re-shape #N as an Epic and split it (e.g. a planner
 seam-gate handoff), that whole flow belongs to `/github-pipeline:slicer promote #N to an Epic`. Say so and
@@ -107,7 +105,8 @@ Universal across every route:
   Issue bodies cite durable anchors, never an authored `path:line` (rule + carve-out: the templates reference).
 - **Gates only for genuine decisions** (per [`../_shared/asking-the-user.md`](../_shared/asking-the-user.md)):
   issue size, ambiguous classification/reference, PRD conflict, OQ disposition, companion reuse-vs-file,
-  the filing gate, revise state-summary + diff confirmation, closed-issue handling, review-loop tie-break.
+  the ambient-branch relationship, the filing gate, revise state-summary + diff confirmation, closed-issue
+  handling, review-loop tie-break.
   A judgment sub-agent (the issue reviewer) never calls `AskUserQuestion`; it returns findings to this loop.
 - **Handoff on clean exit** (§4). One `## Handoff` block ends every clean run; it replaces any bullet-list
   summary. Don't add anything after it.
