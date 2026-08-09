@@ -25,6 +25,10 @@ processes any script may spawn are git/gh")::
     oq_tracker.build_oq_query                        -- the one-shot `--oq-query` lookup `new` mode
                                                        uses for an OQ the operator names from the
                                                        feedback/doc text itself (no issue body to scan)
+    branching.detect_ambient_issue                   -- which issue the CURRENT branch is standing
+                                                       in (`facts.ambient`), so a session invoked
+                                                       from inside `epic/<N>-<slug>` can offer a
+                                                       relationship instead of filing an orphan
 
 Every executor composed here exposes a **pure, non-emitting core** — ``build_*(...) -> (payload,
 notices, decision|None)`` (docs/specs/baseline.md §5, the S8 pattern lock). This prep calls those
@@ -75,6 +79,19 @@ describes. `root` therefore carries only `{path, sha}` (a plain,
 non-gating `git rev-parse HEAD` — informational, never enforced) — no `workspace.py` import, no
 `fresh` key (there is no freshness protocol here for that key to describe). Flagged for reviewer
 scrutiny in the implementor report; not a defect if the reviewer weighs the threat model the same way.
+
+**``facts.ambient`` — noticing that branch, not asserting it.** The same "grounds on the current
+checkout" posture is what makes `branching.detect_ambient_issue` belong here: the branch the operator
+is standing in is a *fact about this session* the drafter was previously blind to, so a session run
+from inside `epic/95-<slug>` filed an issue with no link to #95 at all unless the operator typed one.
+This is an offer, not a gate, and the distinction is the whole design — an unparseable branch, a
+detached HEAD, or a failed issue lookup yields no fact (at most a
+``AMBIENT_ISSUE_LOOKUP_UNAVAILABLE`` notice), never a ``needs_decision``, so nothing that files today
+can start failing. It is emitted in BOTH modes, minus the self-referential case (revise mode standing
+in the target's own branch has no relationship to offer). Adding it costs one `git` call always plus
+one `gh` call only when the branch parses. The drafter still writes **no** parent edge: since #16 both
+hierarchy edges are the slicer's (`skills/_shared/epic-story-hierarchy.md`), so the "child of #N"
+answer resolves through the handoff pointing at a slicer adoption run.
 
 Exit codes (architecture.md §3): 0 with the facts-block envelope present (``status`` is ``"ok"``
 or ``"needs_decision"``); 2 on a usage error (no envelope). Any other non-zero is an unclassified
@@ -150,6 +167,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
+import branching  # noqa: E402  (the shared ambient-branch grammar; import-only, like oq_tracker)
 import config_block  # noqa: E402  (import after sys.path setup, by necessity; in-process composition)
 import doc_catalogue  # noqa: E402  (the consuming repo's declared grounding docs)
 import gh_gather  # noqa: E402
@@ -407,9 +425,25 @@ def _build_revise_facts(issue_envelope):
 
 
 def _build_attention(
-    open_question_candidates, target, mode, extra=None, docs=None, catalogue_absent=False
+    open_question_candidates,
+    target,
+    mode,
+    extra=None,
+    docs=None,
+    catalogue_absent=False,
+    ambient=None,
 ):
     attention = []
+    if ambient is not None:
+        attention.append(
+            "invoked from branch '%s' (%s #%s — %s) — raise the ambient-issue gate before filing; "
+            "unrelated is a normal answer" % (
+                ambient["branch"],
+                ambient["type"],
+                ambient["number"],
+                ambient["state"],
+            )
+        )
     if docs is not None:
         entries = docs.get("entries") or []
         if catalogue_absent:
@@ -479,6 +513,12 @@ def build_facts(repo, issue=None, root=".", scratch_dir=None, cwd=None):
     if _forward_decision(labels_decision, notices=notices):
         return None
     repo_context["labels"] = labels
+
+    # 1b) Ambient-branch issue — which issue this checkout is standing in (see the module
+    #     docstring's `facts.ambient` paragraph). Non-gating by construction: `(None, [])` on
+    #     anything unparseable, so this can never turn a working session into a decision.
+    ambient, ambient_notices = branching.detect_ambient_issue(root, repo, cwd=cwd)
+    notices.extend(n for n in ambient_notices if n not in notices)
 
     target = None
     vector_type = None
@@ -551,6 +591,11 @@ def build_facts(repo, issue=None, root=".", scratch_dir=None, cwd=None):
             if key.startswith(("issue_body", "thread", "marker_comment"))
         }
 
+    # The self-referential case: revising #164 while standing in #164's own branch names no
+    # relationship the drafter could offer — the issue cannot be related to itself.
+    if ambient is not None and target is not None and ambient["number"] == target["number"]:
+        ambient = None
+
     suggested_playbook = _suggested_playbook(mode, vector_type)
     vector = {"mode": mode, "type": vector_type}
 
@@ -558,6 +603,7 @@ def build_facts(repo, issue=None, root=".", scratch_dir=None, cwd=None):
         "repo": repo,
         "scratch": scratch_dir,
         "root": {"path": root, "sha": root_sha},
+        "ambient": ambient,
         "target": target,
         "vector": vector,
         "suggested_playbook": suggested_playbook,
@@ -572,6 +618,7 @@ def build_facts(repo, issue=None, root=".", scratch_dir=None, cwd=None):
             extra=extra_attention,
             docs=docs_fact,
             catalogue_absent=DOC_CATALOGUE_ABSENT in notices,
+            ambient=ambient,
         ),
         "notices": notices,
     }

@@ -75,6 +75,24 @@ indistinguishable from one whose stories were dropped.
 **Why:** #150 is filed as an Epic and carries no children yet — the drafter drafts one issue and decomposes nothing (#16). The slicer cuts it into independently shippable stories at epic altitude, filing each as a native sub-issue; only then does `/github-pipeline:planner #150` have a story set to pin contracts and sequencing against.
 ```
 
+**Single issue filed, adopted into the ambient epic.** The spine's ambient-issue gate was answered
+**Child of #N** (`facts.ambient.pattern: epic`). The body carries the ordinary `Related to #N` line; the
+parent edge does **not** exist yet, because the drafter never writes one — the slicer is its sole writer
+(#16), so `Next:` points there instead of at the planner. Use the normal `Issue:` line; do not invent a
+`Parent:`/`Epic:` field for a relation that has not been written.
+
+```
+## Handoff
+
+**Issue:** #164 — Harden the funnel's consent copy · open · feature · plan: ✗
+
+**Next:** adopt #164 into its epic in a fresh session, then plan it.
+
+    /github-pipeline:slicer 95 --adopt 164
+
+**Why:** #164 was drafted from inside `epic/95-public-patient-funnel`'s branch and belongs to that epic, but the drafter writes no parent edge — both hierarchy edges are the slicer's (#16). The slicer's adoption path files it as a native sub-issue of #95 so GitHub's own rollup tracks it; plan it with `/github-pipeline:planner #164` once it is parented.
+```
+
 **Revise mode (single issue or Epic).** What's next depends on whether a plan already exists
 (`facts.revise.plan.present`) and whether the revise materially changed scope, acceptance criteria, or the
 contracts the plan was built against (Step R3 already flags this — re-use that judgment):

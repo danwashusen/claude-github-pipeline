@@ -591,6 +591,63 @@ class HandoffRenderingTests(unittest.TestCase):
             )
 
 
+class AmbientIssueGateTests(unittest.TestCase):
+    """The ambient-branch relationship gate. A drafter session invoked from inside `epic/95-<slug>`
+    used to file an issue with no link to #95 at all; `facts.ambient` is the fact that lets it offer
+    one. Two properties are load-bearing and pinned here: the gate defaults to **Unrelated** (a
+    silent auto-link would be wrong — filing an unrelated bug from an epic's branch is normal), and
+    the drafter still writes NO parent edge, since both hierarchy edges are the slicer's (#16)."""
+
+    def setUp(self):
+        self.spine = (PLAYBOOKS_DIR / SPINE).read_text(encoding="utf-8")
+        self.router = ROUTER.read_text(encoding="utf-8")
+        self.renderings = (REFERENCES_DIR / "handoff-renderings.md").read_text(encoding="utf-8")
+
+    def test_spine_consumes_the_ambient_fact_as_data(self):
+        self.assertIn("facts.ambient", self.spine)
+        self.assertIn('header: "Ambient issue"', self.spine)
+
+    def test_router_names_the_fact_and_the_gate(self):
+        self.assertIn("`ambient`", self.router)
+        self.assertIn("ambient-branch relationship", self.router)
+
+    def test_gate_defaults_to_unrelated(self):
+        self.assertRegex(
+            self.spine,
+            r"defaulting to\s+\*\*Unrelated\*\*",
+            "the ambient gate must default to Unrelated — never link silently",
+        )
+
+    def test_child_arm_is_epic_only_and_routes_to_the_slicer(self):
+        self.assertIn("`ambient.pattern` is `epic`", self.spine)
+        self.assertIn("slicer", self.spine)
+
+    def test_drafter_writes_no_parent_edge(self):
+        """The invariant #16 established: the slicer is the sole writer of both hierarchy edges, so
+        no drafter command may set one. Fence-scoped, per this repo's grep convention — prose that
+        *describes* the relation (issue-templates.md explains why a fresh epic body carries no
+        `## Stories` section) is documentation, while the same token inside a fence is a command."""
+        for path in _iter_md(SKILL_DIR):
+            for lineno, line, in_fence in _fence_stripped_lines(path):
+                if not in_fence:
+                    continue
+                for banned in ("add-parent", "--parent"):
+                    self.assertNotIn(
+                        banned,
+                        line,
+                        "%s:%d runs a parent-edge write (%s): %s"
+                        % (path.name, lineno, banned, line.strip()),
+                    )
+
+    def test_adoption_handoff_shape_exists_and_uses_the_real_slicer_flag(self):
+        self.assertIn("/github-pipeline:slicer", self.renderings)
+        self.assertRegex(
+            self.renderings,
+            r"/github-pipeline:slicer \d+ --adopt \d+",
+            "the adoption handoff must hand the slicer's real `--adopt <N>` invocation",
+        )
+
+
 class HandoffBindingLanguageTests(unittest.TestCase):
     """Post-Scenario-2 fix: docs/specs/parity/drafter.md recorded a 2/2 live-parity handoff-rendering
     drift (Scenario-1 Div-2 / Scenario-2 Div-4) — v2 renamed `**Issue:**`/`**Epic:**` to `**Filed:**`,
@@ -759,6 +816,7 @@ class OperatorGateCoverageTests(unittest.TestCase):
         text = self._skill_text()
         for header in (
             "Issue size",      # feature vs Epic
+            "Ambient issue",   # relationship to the issue this branch is standing in
             "PRD conflict",
             "File issue?",
             "OQ <id>",         # OQ disposition

@@ -61,6 +61,9 @@ rename a field or restructure it:
 - **Single issue filed with open questions**: same shape + the `**Open questions:**` line (companion
   `question` issues + a disposition tally covering every OQ); `Why:` notes the planner plans only the
   decided scope.
+- **Adopted into the ambient epic** (the spine's ambient-issue gate answered **Child of #N**): the default
+  `Issue:` shape, but `Next: /github-pipeline:slicer <epic> --adopt <N>`; `Why:` names that the slicer owns
+  the parent edge and the planner runs once it is parented.
 - **Epic filed** (`type: epic`): `Epic:` line (`plan: ✗`) + a `Stories:` line reading `none yet — cut into
   stories next` + `Next: /github-pipeline:slicer <N>`; `Why:` the epic has no children yet, and an epic
   plan pins cross-story contracts, so the stories must exist before the planner runs.

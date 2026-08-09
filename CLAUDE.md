@@ -233,7 +233,15 @@ per [architecture.md §7](docs/architecture.md)'s mapping table).
   issue — the guard that stops a sibling story's PR resolving as this issue's branch). Shared by
   `prep_workspace_open.py` (which mints branches) and `prep_resolver.py` (which only asserts —
   its ladder adopts linked/ambient branches and never re-runs collision naming against a branch
-  workspace-open already pushed; recomputing would yield `-v2`, a guaranteed self-mismatch).
+  workspace-open already pushed; recomputing would yield `-v2`, a guaranteed self-mismatch). Also
+  `detect_ambient_issue` — the same two grammars read in the other direction ("which issue is *this
+  branch's*?"), so a skill can notice it was invoked from inside `epic/<N>-<slug>` instead of filing an
+  orphan. Deliberately **non-gating**: an unparseable branch, a detached HEAD, or a failed lookup yields
+  no fact and at most an `AMBIENT_ISSUE_LOOKUP_UNAVAILABLE` notice, never a decision — a convenience
+  fact must never break a session that files fine today. `prep_drafter.py` is its only consumer,
+  surfacing it as `facts.ambient` for the drafter's ambient-issue relationship gate; the drafter still
+  writes **no** parent edge (that stays the slicer's, per `_shared/epic-story-hierarchy.md`) — the
+  "child of #N" answer routes the handoff to a slicer adoption run.
 - `parse.py` — `dod` / `oq-links` / `phases`: the three contract parsers, each with a malformed
   decision code (`DOD_MALFORMED`, `PHASES_MALFORMED`).
 

@@ -461,6 +461,97 @@ class RootFactsTests(PrepDrafterSandboxTestCase):
 
 
 # ---------------------------------------------------------------------------
+# `facts.ambient` — which issue this checkout's branch is standing in.
+# ---------------------------------------------------------------------------
+
+
+class AmbientIssueTests(PrepDrafterSandboxTestCase):
+    """The fact that lets the drafter notice it was invoked from inside `epic/95-<slug>` instead of
+    filing an orphan. Non-gating by construction: every "no ambient issue" arm must stay an ordinary
+    `status: ok` envelope, because a fact that could block filing would be a regression, not a
+    feature (see prep_drafter.py's `facts.ambient` docstring paragraph)."""
+
+    def _checkout(self, branch):
+        _git(["checkout", "-b", branch], self.root)
+
+    def test_epic_branch_yields_the_epic_as_the_ambient_issue(self):
+        self._checkout("epic/95-public-patient-funnel")
+        envelope = self._envelope(fixture_case="prep_drafter_new_ambient_epic")
+        ambient = envelope["ambient"]
+        self.assertEqual(ambient["number"], 95)
+        self.assertEqual(ambient["pattern"], "epic")
+        self.assertEqual(ambient["branch"], "epic/95-public-patient-funnel")
+        self.assertEqual(ambient["type"], "epic")
+        self.assertEqual(ambient["state"], "OPEN")
+
+    def test_story_branch_yields_the_issue_with_the_issue_pattern(self):
+        # `-vN` collision suffixes need no special handling — the slug arm swallows them, exactly as
+        # `branching.branch_belongs_to_issue` already treats `<N>-<slug>-vN` as issue N's branch.
+        self._checkout("164-harden-consent-copy-v2")
+        envelope = self._envelope(fixture_case="prep_drafter_new_ambient_story")
+        self.assertEqual(envelope["ambient"]["number"], 164)
+        self.assertEqual(envelope["ambient"]["pattern"], "issue")
+
+    def test_default_branch_yields_no_ambient_fact_and_pays_no_gh_call(self):
+        # `prep_drafter_new_happy`'s manifest has exactly one entry (the labels call) and a shim
+        # miss exits 2, so an unconditional issue lookup would surface here as a notice rather than
+        # passing quietly.
+        envelope = self._envelope(fixture_case="prep_drafter_new_happy")
+        self.assertIsNone(envelope["ambient"])
+        self.assertEqual(envelope["notices"], [])
+
+    def test_unparseable_branch_yields_no_fact_and_no_notice(self):
+        self._checkout("feature/no-leading-number")
+        envelope = self._envelope(fixture_case="prep_drafter_new_happy")
+        self.assertIsNone(envelope["ambient"])
+        self.assertEqual(envelope["notices"], [])
+
+    def test_detached_head_yields_no_fact(self):
+        # `--abbrev-ref` prints the literal "HEAD" when detached — every `ro-*` read workspace is.
+        _git(["checkout", "--detach", "HEAD"], self.root)
+        envelope = self._envelope(fixture_case="prep_drafter_new_happy")
+        self.assertIsNone(envelope["ambient"])
+
+    def test_failed_lookup_degrades_to_a_notice_not_a_decision(self):
+        # A branch that only LOOKS like `<N>-<slug>`: `2024-roadmap-cleanup` parses as issue #2024
+        # and the lookup 404s (here, a shim miss). Filing must still work.
+        self._checkout("2024-roadmap-cleanup")
+        envelope = self._envelope(fixture_case="prep_drafter_new_happy")
+        self.assertEqual(envelope["status"], "ok")
+        self.assertIsNone(envelope["ambient"])
+        self.assertIn("AMBIENT_ISSUE_LOOKUP_UNAVAILABLE", envelope["notices"])
+
+    def test_ambient_issue_raises_an_attention_line(self):
+        self._checkout("epic/95-public-patient-funnel")
+        envelope = self._envelope(fixture_case="prep_drafter_new_ambient_epic")
+        self.assertTrue(
+            any("epic/95-public-patient-funnel" in line for line in envelope["attention"]),
+            msg="ambient issue missing from attention: %r" % (envelope["attention"],),
+        )
+
+    def test_revising_the_issue_whose_branch_we_stand_in_suppresses_the_fact(self):
+        # #300 cannot be related to itself, so there is no relationship to offer.
+        self._checkout("300-the-target-issues-own-branch")
+        envelope = self._envelope(issue=300, fixture_case="prep_drafter_revise_ambient_self")
+        self.assertEqual(envelope["target"]["number"], 300)
+        self.assertIsNone(envelope["ambient"])
+
+    def test_ambient_lookup_costs_exactly_one_extra_call(self):
+        # The run below succeeds AND produces the fact, so both fixtured calls were made; the
+        # manifest length is then the whole budget (any third call would MISS).
+        self._checkout("epic/95-public-patient-funnel")
+        envelope = self._envelope(fixture_case="prep_drafter_new_ambient_epic")
+        self.assertIsNotNone(envelope["ambient"])
+        manifest = json.loads(
+            (shimenv.fixture_case_dir("prep_drafter_new_ambient_epic") / "manifest.json").read_text(
+                encoding="utf-8"
+            )
+        )
+        # One over `prep_drafter_new_happy`'s single labels call.
+        self.assertEqual(len(manifest), 2)
+
+
+# ---------------------------------------------------------------------------
 # DoD box 4a: decision codes.
 # ---------------------------------------------------------------------------
 
