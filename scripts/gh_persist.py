@@ -11,6 +11,7 @@ Subcommands (unchanged surface from v1 — same names, same flags, same position
     gh_persist.py create-pr   <repo> <body_path> --title <title> --base <ref> --head <ref>
                                [--draft]                                        [--dry-run]
     gh_persist.py edit-body   <repo> <issue>     <body_path>                      [--dry-run]
+    gh_persist.py edit-pr-body <repo> <pr>       <body_path>                      [--dry-run]
     gh_persist.py edit-labels <repo> <issue>     [--add L]... [--remove L]...     [--dry-run]
     gh_persist.py link        <repo> <issue>
                                [--add-blocked-by N]... [--remove-blocked-by N]...
@@ -91,6 +92,17 @@ envelope are byte-identical, and no existing test changed.
   exact phrase, byte-faithful, before calling this op — this script does not itself construct or
   validate the phrase (it is a generic bodyless-optional-comment PR close), the same way ``comment``
   does not validate marker-prefix conventions on the bodies it posts.
+
+``edit-pr-body`` (additive-only, same precedent) is ``gh pr edit <pr> --body-file``. It exists
+because ``edit-body`` is ``gh issue edit``, which **rejects a PR number** — so until now there was
+no script-backed way to edit a PR body at all, and every caller that needed one (the resolver's
+``## Phase tracker`` refresh; the epic integration PR's story-progress refresh, which is written on
+every epic run while the PR is a draft) had no executor to reach for. It mirrors ``edit-body``
+exactly: the same staged-file-path convention, the same leading ``_verify_body_file`` empty-body
+gate, the same unconditional ``body_bytes``/``body_sha256`` receipt, the same ``--dry-run`` preview,
+and the same ``AUTH_REQUIRED`` classification. The op name says ``pr`` because the ``gh`` noun
+differs — a caller that passes a PR number to ``edit-body`` gets a ``gh`` error, not a silent
+mis-write.
 
 ``create --blocked-by/--blocking`` and ``link`` set GitHub's NATIVE issue dependencies (gh >= 2.95
 + the repo feature enabled). They are capability-gated by ATTEMPTING the real write and classifying
@@ -463,6 +475,37 @@ def _cmd_edit_body(args):
         return 1
 
     payload = {"op": "edit-body", "dry_run": False, "url": result.stdout.strip()}
+    payload.update(_write_receipt_fields(args.body_path))
+    emit_ok(payload=payload)
+    return EXIT_OK
+
+
+# ---- edit-pr-body ----
+
+
+def _cmd_edit_pr_body(args):
+    gate = _verify_body_file(args.body_path)
+    if gate is not None:
+        emit_needs_decision(gate)
+        return EXIT_OK
+
+    cmd = ["gh", "pr", "edit", args.pr, "--repo", args.repo, "--body-file", args.body_path]
+
+    if args.dry_run:
+        payload = {"op": "edit-pr-body", "dry_run": True, "would_run": _quote_cmd(cmd)}
+        payload.update(_write_receipt_fields(args.body_path))
+        emit_ok(payload=payload)
+        return EXIT_OK
+
+    result = process.run(cmd, cwd=args.cwd)
+    if result.auth_required:
+        emit_needs_decision(_auth_decision(result))
+        return EXIT_OK
+    if result.returncode != 0:
+        sys.stderr.write(result.stderr)
+        return 1
+
+    payload = {"op": "edit-pr-body", "dry_run": False, "url": result.stdout.strip()}
     payload.update(_write_receipt_fields(args.body_path))
     emit_ok(payload=payload)
     return EXIT_OK
@@ -856,6 +899,12 @@ def _build_parser():
     p_edit.add_argument("body_path")
     p_edit.add_argument("--dry-run", action="store_true")
 
+    p_edit_pr_body = sub.add_parser("edit-pr-body")
+    p_edit_pr_body.add_argument("repo")
+    p_edit_pr_body.add_argument("pr")
+    p_edit_pr_body.add_argument("body_path")
+    p_edit_pr_body.add_argument("--dry-run", action="store_true")
+
     p_edit_labels = sub.add_parser("edit-labels")
     p_edit_labels.add_argument("repo")
     p_edit_labels.add_argument("issue")
@@ -911,6 +960,7 @@ def _build_parser():
             "create": p_create,
             "create-pr": p_create_pr,
             "edit-body": p_edit,
+            "edit-pr-body": p_edit_pr_body,
             "edit-labels": p_edit_labels,
             "link": p_link,
             "add-parent": p_add_parent,
@@ -933,6 +983,8 @@ def main(argv):
         return _cmd_create_pr(args)
     if args.subcommand == "edit-body":
         return _cmd_edit_body(args)
+    if args.subcommand == "edit-pr-body":
+        return _cmd_edit_pr_body(args)
     if args.subcommand == "edit-labels":
         # Pass edit-labels' own sub-parser for its .error() call, same rationale as link below.
         return _cmd_edit_labels(args, subparsers_by_name["edit-labels"])

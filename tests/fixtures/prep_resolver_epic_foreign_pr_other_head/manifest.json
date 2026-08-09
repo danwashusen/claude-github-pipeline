@@ -32,7 +32,7 @@
             "--json",
             "number,title,author,isDraft,headRefName,url,updatedAt,body,closingIssuesReferences"
         ],
-        "stdout_file": "open_prs_empty.json"
+        "stdout_file": "open_prs.json"
     },
     {
         "argv": [
@@ -40,21 +40,6 @@
             "user"
         ],
         "stdout_file": "current_user.json"
-    },
-    {
-        "argv": [
-            "pr",
-            "list",
-            "--repo",
-            "octo/widgets",
-            "--state",
-            "closed",
-            "--search",
-            "100 in:body",
-            "--json",
-            "number,title,author,state,mergedAt,headRefName,headRefOid,url,updatedAt,body,closingIssuesReferences"
-        ],
-        "stdout_file": "closed_prs_empty.json"
     },
     {
         "argv": [

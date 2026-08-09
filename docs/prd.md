@@ -139,6 +139,13 @@ ground these are produced by implementation step S1. Lettered items are individu
   - (g) Comment-only outcomes are supported without code changes.
   - (h) When the plan does not survive contact with the code, re-routes to the planner or
     drafter with the evidence.
+  - (i) On an epic target it ships no code — it carries the integration branch's lifecycle, and
+    opens the integration PR **early, as a draft**, as soon as that branch is ahead of the default
+    branch: the operator gets a reviewable view of overall epic progress from the first landed
+    story rather than only after the last one closes. The PR's body is refreshed on each epic run;
+    the review loop and the draft→ready flip happen once, when the story set closes and the epic's
+    Definition of done is verifiable. Draft state is what keeps a mid-flight epic out of the
+    evaluator (§5.5, which refuses a draft PR).
 - **§5.5 evaluator.**
   - (a) The verdict-and-merge authority.
   - (b) Runs the health gate (CI plus the consuming repo's configured checks), caching the

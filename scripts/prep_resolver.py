@@ -166,6 +166,9 @@ _classify_open_other_activity = branching.classify_open_other_activity
 compute_fresh_slug = branching.compute_fresh_slug
 _discover_epic_branch = branching.discover_epic_branch
 _search_parent_epic = branching.search_parent_epic
+_find_open_pr_for_head = branching.find_open_pr_for_head
+_count_commits_ahead = branching.count_commits_ahead
+_branch_belongs_to_issue = branching.branch_belongs_to_issue
 compute_branch_name = branching.compute_branch_name
 
 
@@ -436,6 +439,25 @@ def _build_attention(work_workspace_envelope, prior_pr_row, epic_facts, story_ep
         attention.append("a closed/merged PR references this issue but did not resolve it")
     if epic_facts and epic_facts.get("match_count", 0) == 0 and "bootstrap_slug" in epic_facts:
         attention.append("no epic integration branch exists yet on origin — bootstrap required")
+    # Epic-only (a story's `facts.story` shape carries neither key).
+    if epic_facts and epic_facts.get("match_count") == 1:
+        integration_pr = epic_facts.get("integration_pr")
+        if integration_pr:
+            attention.append(
+                "epic integration PR #%s is already open%s — this run refreshes its body, it "
+                "never opens a second one"
+                % (integration_pr.get("number"), " as a draft" if integration_pr.get("is_draft") else "")
+            )
+            if not integration_pr.get("is_yours"):
+                attention.append(
+                    "the open epic integration PR #%s is authored by %s"
+                    % (integration_pr.get("number"), integration_pr.get("author"))
+                )
+        elif epic_facts.get("commits_ahead") == 0:
+            attention.append(
+                "epic branch has no commits ahead of %s — the integration PR cannot be opened yet"
+                % epic_facts.get("commits_ahead_base")
+            )
     return attention
 
 
@@ -614,11 +636,56 @@ def build_facts(issue_number, repo, root=".", scratch_dir=None, refresh=False, c
     epic_facts = None
     story_epic_matches = None
     epic_branch_for_audit = None
+    epic_notices = []
     if issue_type == "epic":
         epic_facts, epic_decision = _discover_epic_branch(root, issue_number, issue_title)
         if _forward_decision(epic_decision):
             return None
         epic_branch_for_audit = epic_facts.get("branch")
+
+        # The integration PR opens EARLY — as a draft, as soon as the epic branch carries commits
+        # `main` does not — so a human can review overall epic progress instead of waiting for the
+        # last story to close. Both facts below exist so the playbook consumes the trigger and the
+        # idempotency guard as DATA rather than re-deriving either in prose.
+        epic_facts["commits_ahead_base"] = root_branch
+        if epic_branch_for_audit:
+            commits_ahead, ahead_notice = _count_commits_ahead(
+                root, epic_branch_for_audit, root_branch
+            )
+            epic_facts["commits_ahead"] = commits_ahead
+            if ahead_notice:
+                epic_notices.append(ahead_notice)
+            integration_pr, open_pr_notice = _find_open_pr_for_head(
+                repo, epic_branch_for_audit, cwd=cwd
+            )
+            if integration_pr is not None:
+                integration_pr["is_yours"] = (
+                    integration_pr.get("author") is not None
+                    and integration_pr.get("author") == current_user_login
+                )
+            epic_facts["integration_pr"] = integration_pr
+            if open_pr_notice:
+                epic_notices.append(open_pr_notice)
+        else:
+            # No branch on origin yet (bootstrap): 0 commits ahead by construction and no PR can
+            # exist, so neither lookup runs — a branch that does not exist cannot carry either.
+            epic_facts["commits_ahead"] = 0
+            epic_facts["integration_pr"] = None
+
+        # An epic integration PR carries `Fixes #<epic>`, so the generic `#<N> in:body` open-PR
+        # search finds it too — and when a TEAMMATE opened it, that classifies as a gated row,
+        # which suppresses the work-workspace assertion and offers a "start fresh" card whose
+        # answer on an epic is a SECOND integration PR. Opening the PR early makes that state
+        # routine rather than rare, so downgrade it: the `epic/<N>-<slug>` branch is shared
+        # infrastructure (created by workspace-open, advanced by every story merge), not one
+        # author's claimed work — the takeover gate exists to stop two people racing on a feature
+        # branch and misfires on a container branch. Head-scoped via `branch_belongs_to_issue`, so
+        # a foreign PR on any OTHER head still gates exactly as before.
+        if mode == MODE_GATED and _branch_belongs_to_issue(
+            (prior_pr_fact or {}).get("headRefName"), issue_number
+        ):
+            mode = MODE_CONTINUE
+            gate = None
     elif issue_type == "story":
         # Native `parent` first (exact, no round-trip); the full-text search is the fallback for a
         # story filed before the relation was written (skills/_shared/epic-story-hierarchy.md).
@@ -832,7 +899,7 @@ def build_facts(issue_number, repo, root=".", scratch_dir=None, refresh=False, c
         "attention": _build_attention(
             work_workspace_envelope, prior_pr_row, epic_facts, story_epic_matches
         ) + config_attention,
-        "notices": list(config_notices) + link_notices,
+        "notices": list(config_notices) + link_notices + epic_notices,
     }
     if issue_type == "epic":
         facts["epic"] = epic_facts

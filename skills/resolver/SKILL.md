@@ -68,7 +68,7 @@ first, then `type`). Read **exactly one** playbook.
 | `comment_only: true` (OQ-blocked, native-blocked, or answer-only) | `playbooks/comment-only.md` | stage + post one comment; terminal handoff |
 | `type: standard` | `playbooks/standard.md` | reads the shared spine; forward handoff to the evaluator |
 | `type: story` | `playbooks/story.md` | reads the shared spine (base = epic branch, `audit_ref` = parent epic); `Story:`/`Epic:` handoff |
-| `type: epic` | `playbooks/epic.md` | epic-as-target: branch bootstrap / drift rectification / canonical baseline / integration PR |
+| `type: epic` | `playbooks/epic.md` | epic-as-target: branch bootstrap / drift rectification / canonical baseline / early draft integration PR + ready flip |
 
 `standard.md` and `story.md` open by reading the shared spine `playbooks/resolve-spine.md` (audit →
 plan-gate → doc grounding → code in the workspace → §review loop → per-phase push + DoD projection →
@@ -105,10 +105,13 @@ Universal across every route:
   `${CLAUDE_PLUGIN_ROOT}/scripts/gh_persist.py` via Bash: stage the verbatim body to the run scratch
   dir (`facts.scratch`, i.e. `/tmp/gh-resolver-<issue>/…`) and pass the **path**. The script verifies
   the round-trip hash, returns `body_sha256`, and gates empty bodies (`EMPTY_BODY_FILE`) — the
-  #626/#627 race fix. This covers every write the resolver makes (issue-body DoD projection, PR
-  create/edit, `## Phase tracker`, comment-only answers, epic baseline comments, epic body-tick).
-  Never re-serialize a body across the prompt boundary; never hand-roll a persist/gather `gh` call.
-  The resolver has **no** scriptless raw-`gh` executor (merge is the evaluator's, not the resolver's).
+  #626/#627 race fix. This covers every write the resolver makes (issue-body DoD projection via
+  `edit-body`, PR open via `create-pr` and PR-body writes via `edit-pr-body` — `edit-body` is
+  `gh issue edit` and rejects a PR number — `## Phase tracker`, comment-only answers, epic baseline
+  comments, epic body-tick). Never re-serialize a body across the prompt boundary; never hand-roll a
+  persist/gather `gh` call. The resolver's **only** scriptless raw-`gh` executor is `gh pr ready <N>`,
+  the draft → ready flip (multi-phase last phase; epic integration PR at completion); merge is the
+  evaluator's, not the resolver's.
 - **Successful write is self-confirming.** A zero exit with a URL *is* the confirmation; never re-read
   the comment/PR to check it landed (re-reads reintroduce races and burn context).
 - **Gates only for genuine decisions** (per [`../_shared/asking-the-user.md`](../_shared/asking-the-user.md)):
@@ -127,10 +130,10 @@ Universal across every route:
 Every clean run ends with a single `## Handoff` block — the only bridge to the next session. The
 schema, omission rules, and closed-set state-marker vocabulary are owned by
 [`../_shared/handoff-format.md`](../_shared/handoff-format.md); the resolver's per-outcome rubric and
-nine worked shapes are in [`references/handoff-renderings.md`](references/handoff-renderings.md).
+ten worked shapes are in [`references/handoff-renderings.md`](references/handoff-renderings.md).
 **Read that reference before composing the handoff** and match the run's outcome to its rubric
 (forward to the evaluator; multi-phase non-final / operator-phase / last-phase; epic-integration
-forward; re-route to planner / drafter; terminal non-PR). Fill the snapshot from data in hand (the
+draft-in-progress / epic-integration forward; re-route to planner / drafter; terminal non-PR). Fill the snapshot from data in hand (the
 prep facts + this run's PR/review/push results); the `Next:` action and `Why:` line are judgment. A
 re-route points `Next:` at a **prior** skill but does **not** invoke it via the `Skill` tool — the
 handoff is the only signal; the user runs the command in a fresh session (session-per-skill is the

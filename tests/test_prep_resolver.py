@@ -523,6 +523,126 @@ class EpicBranchDiscoveryTests(PrepResolverSandboxTestCase):
         self.assertFalse((self.root / ".worktrees").exists())
 
 
+class EpicIntegrationPrFactsTests(PrepResolverSandboxTestCase):
+    """The integration PR opens EARLY (a draft, as soon as the epic branch is ahead of main), so
+    the epic route consumes its trigger and its idempotency guard as facts: `commits_ahead` /
+    `commits_ahead_base` / `integration_pr`.
+    """
+
+    def _push_epic_branch(self, extra_commit=False):
+        _git(["fetch", "origin"], self.root)
+        _git(["branch", "epic/100-sandbox-fixture", "origin/main"], self.root)
+        if extra_commit:
+            _git(["checkout", "epic/100-sandbox-fixture"], self.root)
+            (self.root / "landed-story.txt").write_text("a story landed\n", encoding="utf-8")
+            _git(["add", "landed-story.txt"], self.root)
+            _git(["commit", "-m", "story #101"], self.root)
+            _git(["checkout", "main"], self.root)
+        _git(["push", "origin", "epic/100-sandbox-fixture"], self.root)
+
+    def test_branch_ahead_of_main_reports_commits_ahead_and_base(self):
+        self._push_epic_branch(extra_commit=True)
+        envelope = self._envelope(
+            issue="100", fixture_case="prep_resolver_epic_one",
+            ambient="epic/100-sandbox-fixture",
+        )
+        self.assertEqual(envelope["epic"]["commits_ahead"], 1)
+        self.assertEqual(envelope["epic"]["commits_ahead_base"], "main")
+        self.assertIsNone(envelope["epic"]["integration_pr"])
+
+    def test_branch_level_with_main_reports_zero_and_says_so_in_attention(self):
+        self._push_epic_branch()
+        envelope = self._envelope(
+            issue="100", fixture_case="prep_resolver_epic_one",
+            ambient="epic/100-sandbox-fixture",
+        )
+        self.assertEqual(envelope["epic"]["commits_ahead"], 0)
+        self.assertTrue(
+            any("no commits ahead of main" in item for item in envelope["attention"]),
+            envelope["attention"],
+        )
+
+    def test_zero_matches_makes_no_pr_or_count_lookup_at_all(self):
+        # A branch that does not exist on origin is 0 ahead by construction and cannot carry a PR:
+        # neither lookup runs, so the bootstrap fixture's manifest stays untouched (an unlisted
+        # argv MISSes in the shim and would fail this test loudly).
+        envelope = self._envelope(
+            issue="100", fixture_case="prep_resolver_epic_zero",
+            ambient="epic/100-sandbox-fixture",
+        )
+        self.assertEqual(envelope["epic"]["match_count"], 0)
+        self.assertEqual(envelope["epic"]["commits_ahead"], 0)
+        self.assertIsNone(envelope["epic"]["integration_pr"])
+
+    def test_open_draft_integration_pr_lands_on_facts_epic(self):
+        self._push_epic_branch(extra_commit=True)
+        envelope = self._envelope(
+            issue="100", fixture_case="prep_resolver_epic_integration_pr_draft",
+            ambient="epic/100-sandbox-fixture",
+        )
+        integration_pr = envelope["epic"]["integration_pr"]
+        self.assertEqual(integration_pr["number"], 300)
+        self.assertTrue(integration_pr["is_draft"])
+        self.assertTrue(integration_pr["is_yours"])
+        self.assertEqual(integration_pr["base_ref"], "main")
+        self.assertTrue(
+            any("refreshes its body" in item for item in envelope["attention"]),
+            envelope["attention"],
+        )
+
+    def test_open_pr_lookup_failure_is_a_notice_never_a_decision(self):
+        # The dangerous degradation: a null integration_pr carried by this notice means UNKNOWN,
+        # not ABSENT — the playbook gates its create-pr on the notice's absence so an unavailable
+        # lookup can never drive a duplicate integration PR.
+        self._push_epic_branch(extra_commit=True)
+        envelope = self._envelope(
+            issue="100", fixture_case="prep_resolver_epic_open_pr_lookup_unavailable",
+            ambient="epic/100-sandbox-fixture",
+        )
+        self.assertEqual(envelope["status"], "ok")
+        self.assertIn("OPEN_PR_LOOKUP_UNAVAILABLE", envelope["notices"])
+        self.assertIsNone(envelope["epic"]["integration_pr"])
+
+
+class EpicIntegrationPrGateDowngradeTests(PrepResolverSandboxTestCase):
+    """An epic integration PR carries `Fixes #<epic>`, so the generic `#<N> in:body` search finds
+    it — and a teammate-authored one classifies as a gated row, which suppresses the work-workspace
+    assertion and offers a "start fresh" card whose answer on an epic is a SECOND integration PR.
+    The epic branch is shared infrastructure, so that gate is downgraded — head-scoped, so a
+    foreign PR on any other head still gates exactly as before.
+    """
+
+    def _push_epic_branch(self):
+        _git(["fetch", "origin"], self.root)
+        _git(["branch", "epic/100-sandbox-fixture", "origin/main"], self.root)
+        _git(["push", "origin", "epic/100-sandbox-fixture"], self.root)
+
+    def test_foreign_pr_on_the_epic_head_is_downgraded_to_continue(self):
+        self._push_epic_branch()
+        envelope = self._envelope(
+            issue="100", fixture_case="prep_resolver_epic_foreign_pr_on_epic_head",
+            ambient="epic/100-sandbox-fixture",
+        )
+        self.assertEqual(envelope["vector"]["mode"], "continue")
+        self.assertNotIn("gate", envelope["vector"])
+        # The workspace assertion is the thing the gate would have suppressed — S1-S3 need it.
+        self.assertIn("workspace", envelope)
+        self.assertFalse(envelope["epic"]["integration_pr"]["is_yours"])
+        self.assertTrue(
+            any("someone-else" in item for item in envelope["attention"]),
+            envelope["attention"],
+        )
+
+    def test_foreign_pr_on_another_head_still_gates(self):
+        self._push_epic_branch()
+        envelope = self._envelope(
+            issue="100", fixture_case="prep_resolver_epic_foreign_pr_other_head",
+            ambient="epic/100-sandbox-fixture",
+        )
+        self.assertEqual(envelope["vector"]["mode"], "gated")
+        self.assertIn("gate", envelope["vector"])
+
+
 class BranchCollisionSuffixTests(unittest.TestCase):
     """Collision fixture: existing -v2 branch yields -v3 (S9 DoD's third box) — exercised directly
     against `compute_branch_name` + a real git sandbox (the row fixtures' canonical path already

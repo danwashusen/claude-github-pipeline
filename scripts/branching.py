@@ -365,6 +365,44 @@ def discover_epic_branch(root, epic_number, epic_title):
     )
 
 
+# Non-blocking notice (open notice vocabulary, architecture.md §3): the commits-ahead count could
+# not be read — no network on a fresh clone, a remote-tracking ref that does not exist locally.
+# The caller degrades to "unknown" and declines to open a PR rather than attempting a `create-pr`
+# that `gh` would reject.
+COMMITS_AHEAD_UNAVAILABLE = "COMMITS_AHEAD_UNAVAILABLE"
+
+
+def count_commits_ahead(root, branch, base_ref):
+    """How many commits `origin/<branch>` carries that `origin/<base_ref>` does not, as
+    `(count, notice_or_none)` — `(None, COMMITS_AHEAD_UNAVAILABLE)` when the count could not be
+    read even after one fetch attempt.
+
+    Counted **remote-vs-remote**, never `origin/<base>..HEAD`: `gh pr create` compares the
+    published refs and refuses a PR with no commits between base and head, so a count that
+    included the local worktree's unpushed commits would green-light exactly the create that
+    fails. Remote-vs-remote is also what keeps this fact available under `--refresh`, where no
+    workspace is asserted.
+    """
+    def _count():
+        return process.run(
+            ["git", "rev-list", "--count", "origin/%s..origin/%s" % (base_ref, branch)],
+            cwd=str(root),
+        )
+
+    result = _count()
+    if result.returncode != 0:
+        # One fetch, then retry: a fresh clone or a worktree that has never fetched the epic
+        # branch has no remote-tracking ref to count against yet.
+        process.run(["git", "fetch", "--quiet", "origin", branch, base_ref], cwd=str(root))
+        result = _count()
+    if result.returncode != 0:
+        return None, COMMITS_AHEAD_UNAVAILABLE
+    try:
+        return int(result.stdout.strip()), None
+    except ValueError:
+        return None, COMMITS_AHEAD_UNAVAILABLE
+
+
 def search_parent_epic(repo, story_number, native_parent=None, cwd=None):
     """Story parent-epic lookup. Returns `(matches, decision_or_none)` where `matches` is a
     `gh issue list`-shaped result list (empty on zero genuine matches).
@@ -532,6 +570,64 @@ def find_merged_pr_for_head(repo, branch, cwd=None):
         return None, None
     newest = sorted(merged, key=lambda pr: pr.get("mergedAt") or "")[-1]
     return {"number": newest.get("number"), "head_oid": newest.get("headRefOid")}, None
+
+
+# Non-blocking notice (open notice vocabulary, architecture.md §3): the head-scoped OPEN-PR lookup
+# could not run — no auth, no network, an older `gh`. Same never-a-decision rationale as
+# MERGED_PR_LOOKUP_UNAVAILABLE above (prep already fetched the issue, so auth demonstrably worked;
+# a failure here is a capability problem, not AUTH_REQUIRED). The caller must treat a `None` PR
+# carried by this notice as **unknown**, not **absent** — the resolver's epic route gates its
+# `create-pr` on the notice's absence precisely so an unavailable lookup can never drive a
+# duplicate integration PR.
+OPEN_PR_LOOKUP_UNAVAILABLE = "OPEN_PR_LOOKUP_UNAVAILABLE"
+
+_OPEN_PR_HEAD_FIELDS = "number,title,author,isDraft,headRefName,baseRefName,url,updatedAt"
+
+
+def find_open_pr_for_head(repo, branch, cwd=None):
+    """The most recently updated OPEN PR whose head is `branch`, as
+    ``({"number", "title", "author", "is_draft", "base_ref", "url", "updated_at"}, notice_or_none)``
+    — ``(None, None)`` when the branch carries no open PR, ``(None, OPEN_PR_LOOKUP_UNAVAILABLE)``
+    when the lookup itself could not run.
+
+    The exact `--head` match is the point: it answers "does THIS branch already have an open PR",
+    which the loose `#<N> in:body` search cannot — that search also returns a sibling story's PR
+    that merely mentions the issue. The resolver's epic route uses this as the single source of
+    truth for "is the integration PR already open", so a false positive there would suppress the
+    open and a false negative would file a duplicate.
+
+    No `head_oid` counterpart to :func:`find_merged_pr_for_head`: the caller needs identity and
+    draft state, never a worktree-HEAD comparison.
+    """
+    result = process.run(
+        [
+            "gh", "pr", "list",
+            "--repo", repo,
+            "--head", branch,
+            "--state", "open",
+            "--json", _OPEN_PR_HEAD_FIELDS,
+        ],
+        cwd=cwd,
+    )
+    if result.returncode != 0:
+        return None, OPEN_PR_LOOKUP_UNAVAILABLE
+    try:
+        prs = json.loads(result.stdout)
+    except ValueError:
+        return None, OPEN_PR_LOOKUP_UNAVAILABLE
+    if not prs:
+        return None, None
+    newest = sorted(prs, key=lambda pr: pr.get("updatedAt") or "")[-1]
+    author = newest.get("author") or {}
+    return {
+        "number": newest.get("number"),
+        "title": newest.get("title"),
+        "author": author.get("login") if isinstance(author, dict) else author,
+        "is_draft": bool(newest.get("isDraft")),
+        "base_ref": newest.get("baseRefName"),
+        "url": newest.get("url"),
+        "updated_at": newest.get("updatedAt"),
+    }, None
 
 
 # ---------------------------------------------------------------------------

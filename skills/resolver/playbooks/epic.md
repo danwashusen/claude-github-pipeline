@@ -4,12 +4,14 @@ Route for `vector.type == epic` (the issue is the epic itself, not a story). An 
 no code lands here — child stories are where code lands, and opening a monolithic feature PR for an epic
 conflates resolution with implementation. This flow's distinct **actions** are the epic-branch
 lifecycle: discover-or-bootstrap the `epic/<N>-<slug>` integration branch, keep it from drifting off
-`main`, hold a trusted green baseline, and — when every story is closed and the DoD is verifiable — open
-the integration PR that lands the accumulated diff on `main`. It does **not** read the code-shipping
-spine.
+`main`, hold a trusted green baseline, and carry the integration PR that lands the accumulated diff on
+`main`. That PR opens **early, as a draft** — as soon as the branch carries commits `main` does not —
+so a human can review overall epic progress mid-flight; it is refreshed on every epic run and flips to
+ready only when the story set completes. It does **not** read the code-shipping spine.
 
 All facts come from the prep facts block (SKILL.md §1); `facts.epic` carries the branch discovery
-(`match_count` / `branch` / `bootstrap_slug`); `facts.workspace` is the ambient epic-branch worktree
+(`match_count` / `branch` / `bootstrap_slug`) plus the integration-PR facts (`commits_ahead` /
+`commits_ahead_base` / `integration_pr`); `facts.workspace` is the ambient epic-branch worktree
 prep asserted — the one the operator opened with `/github-pipeline:workspace-open <epic>` (its
 `base_ref` is `main`); the audit read workspace (`facts.read_workspaces.audit`) is at the
 epic branch. All GitHub writes go through `${CLAUDE_PLUGIN_ROOT}/scripts/gh_persist.py` with a staged
@@ -69,26 +71,77 @@ only when `main` merged into the epic since the last `Baseline established`, or 
 fix or an explicit operator override recorded as a `Baseline override` comment (same reference) before
 proceeding.
 
-## S4 — Integration PR (all stories closed + DoD verifiable)
+## S4 — Integration PR (open early as a draft; ready when the epic is done)
 
-When every story in the epic's story set is closed (`facts.target.sub_issues_summary` —
-`completed == total` — or the legacy `## Stories` checklist, per
-[`../../_shared/epic-story-hierarchy.md`](../../_shared/epic-story-hierarchy.md)) and its `## Definition of done` is verifiable against the
-accumulated diff, open the integration PR — `epic/<N>-<slug>` → `main`, title `Epic #<N>: <title>`, body
-citing the epic's `## Goal` + DoD checklist + `Fixes #<epic-number>`. Then run the review loop against it
-(the integration PR lands the whole epic on `main` at once — higher risk, so apply the same review-loop
-discipline as any story PR, per [`resolve-spine.md`](resolve-spine.md) §S5.1). Stage the PR body to
-`<facts.scratch>/epic-integration-pr.md` and open the PR through the single write path — the same
-`create-pr` call the spine's S5 uses for a story/standard PR (base/head differ; the values are
-facts, not a branch):
+Four steps, in order. Each one's precondition is a **fact value**, and a step whose precondition is
+unmet is skipped — they are stages of one pipeline, not alternatives to each other. The PR is the
+human-readable view of overall epic progress from the first landed story onward, so it exists for most
+of the epic's life as a draft and becomes a merge request only at S4.4.
+
+### S4.1 — Open the draft integration PR
+
+Runs when `facts.epic.integration_pr` is null, `COMMITS_AHEAD_UNAVAILABLE` and
+`OPEN_PR_LOOKUP_UNAVAILABLE` are both absent from `facts.notices`, and
+`facts.epic.commits_ahead >= 1`.
+
+A null `integration_pr` **carried by `OPEN_PR_LOOKUP_UNAVAILABLE` means unknown, not absent** — opening
+on an unknown would file a second integration PR against the same branch, so decline and say so in the
+handoff. Zero `commits_ahead` means there is nothing to review yet and `gh` would reject the create
+outright ("No commits between …"); a null one means the count couldn't be read.
+
+Stage the body to `<facts.scratch>/epic-integration-pr.md` — the epic's `## Goal` + its DoD checklist +
+the story-set progress + `Fixes #<epic-number>` — and open through the single write path (the same
+`create-pr` call the spine's S5 uses for a story/standard PR; base/head/draft are facts, not a branch):
 
 ```bash
 ${CLAUDE_PLUGIN_ROOT}/scripts/gh_persist.py create-pr <owner/repo> "<facts.scratch>/epic-integration-pr.md" \
-  --title "Epic #<N>: <title>" --base main --head "epic/<N>-<slug>"
+  --title "Epic #<N>: <title>" --base "<facts.epic.commits_ahead_base>" \
+  --head "<facts.epic.branch>" --draft
 ```
 
-If stories remain open, do **not** open the integration PR — the epic isn't ready; emit the handoff
-naming what's left.
+`--draft` is unconditional here: the PR opens for review-by-a-human, and draft is what keeps it out of
+the evaluator's reach (the evaluator refuses a DRAFT PR) until S4.4 says the epic is actually done.
+
+### S4.2 — Refresh the PR body
+
+Runs whenever the integration PR exists — S4.1 just opened it, or `facts.epic.integration_pr` was
+already non-null. Re-render the same body against current state: story-set progress from
+`facts.target.sub_issues_summary`, the DoD checklist's current ticks, and the SHA pair from the latest
+`Baseline established` comment. Stage to `<facts.scratch>/epic-integration-pr.md` and apply:
+
+```bash
+${CLAUDE_PLUGIN_ROOT}/scripts/gh_persist.py edit-pr-body <owner/repo> <PR> \
+  "<facts.scratch>/epic-integration-pr.md"
+```
+
+The refresh runs even when `facts.epic.integration_pr.is_yours` is false — the epic branch is shared
+infrastructure, so its PR body tracks the branch, not its author. Name that author in the handoff when
+it isn't you.
+
+### S4.3 — Review loop
+
+Runs only when the story set is complete (`facts.target.sub_issues_summary` — `completed == total` — or
+the legacy `## Stories` checklist, per
+[`../../_shared/epic-story-hierarchy.md`](../../_shared/epic-story-hierarchy.md)) **and** the epic's
+`## Definition of done` is verifiable against the accumulated diff.
+
+The integration PR lands the whole epic on `main` at once — higher risk, so apply the same review-loop
+discipline as any story PR, per [`resolve-spine.md`](resolve-spine.md) §S5.1 and
+[`../references/review-loop-sub-agent.md`](../references/review-loop-sub-agent.md). It runs **here, at
+the ready flip — never on a draft refresh**: a review per landed story would re-review the same
+accumulated diff on every epic run, and the stories already carried their own.
+
+### S4.4 — Draft → ready flip
+
+Runs immediately after S4.3 passes, immediately before the handoff:
+
+```bash
+gh pr ready <PR> --repo <owner/repo>
+```
+
+Without the flip the evaluator's draft-PR guard deadlocks the handoff — the same contract the spine's
+last-planned-phase flip carries. While any story is still open the PR **stays draft**, and the handoff
+names what's left.
 
 ## S5 — Epic body-tick close-out (after the integration PR merges)
 
@@ -110,11 +163,16 @@ ${CLAUDE_PLUGIN_ROOT}/scripts/gh_persist.py edit-body <owner/repo> <epic> \
 Read [`../references/handoff-renderings.md`](../references/handoff-renderings.md) and emit the matching
 shape:
 
-- **Forward — Epic integration PR** (S4 opened the integration PR): `Epic:` + `Stories:` (`M of M
-  closed`) + `PR:` (`base main · review: not run · …`), `Next: /github-pipeline:evaluator #<PR>`; the
-  `Why:` calls out the higher merge risk and the evaluator's full-canonical-suite escalation on
+- **Forward — Epic integration PR** (S4.4 flipped it ready): `Epic:` + `Stories:` (`M of M
+  closed`) + `PR:` (`open · base main · review: not run · …`), `Next: /github-pipeline:evaluator #<PR>`;
+  the `Why:` calls out the higher merge risk and the evaluator's full-canonical-suite escalation on
   `pr_type: epic-integration`.
-- **Bootstrap / rectification only** (branch created or drift rectified, no integration PR yet — stories
-  still open): the `Epic:` + `Stories:` progress lines and a `Next:` pointing at the planner for the next
-  story (`/github-pipeline:planner #<next-story>`) or the resolver for a story run, per the epic cadence;
-  the `Why:` names the branch action taken and what unblocks next.
+- **In progress — Epic integration draft PR open** (S4.1 opened or S4.2 refreshed it; stories remain):
+  `Epic:` + `Stories:` progress + `PR:` (`draft · …`), `Next:` pointing at the planner for the next story
+  (`/github-pipeline:planner #<next-story>`) or the resolver for a story run, per the epic cadence; the
+  `Why:` says the PR is a progress view, not a merge request, and names what has to close before the
+  ready flip. Name the other author here when `integration_pr.is_yours` is false.
+- **Bootstrap / rectification only** (branch created or drift rectified, no integration PR — the branch
+  carries no commits `main` doesn't, or the lookups were unavailable): the `Epic:` + `Stories:` progress
+  lines and the same next-story `Next:`; the `Why:` names the branch action taken, why no PR exists yet,
+  and what unblocks next.

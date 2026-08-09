@@ -1481,6 +1481,60 @@ class EditBodyTests(unittest.TestCase):
             self.assertEqual(env["body_sha256"], hashing.sha256_hex(body_bytes))
 
 
+class EditPrBodyTests(unittest.TestCase):
+    """gh_persist.py edit-pr-body — `gh pr edit --body-file`, the PR-side counterpart to edit-body
+    (which is `gh issue edit` and rejects a PR number). Mirrors EditBodyTests exactly; the noun
+    assertion below is the whole point of the op existing separately.
+    """
+
+    def test_edit_pr_body_happy_path_emits_write_receipt(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            body_path = Path(tmp) / "body.md"
+            body_bytes = b"refreshed epic integration PR body\n"
+            body_path.write_bytes(body_bytes)
+            cmd = ["pr", "edit", "300", "--repo", "o/r", "--body-file", str(body_path)]
+            _write_stdout_file(tmp, "url.txt", b"https://github.com/o/r/pull/300\n")
+            _write_manifest(tmp, [{"argv": cmd, "stdout_file": "url.txt"}])
+            result = _run_script(["edit-pr-body", "o/r", "300", str(body_path)], fixtures_dir=tmp)
+            self.assertEqual(result.returncode, 0, msg=result.stderr)
+            env = _parse_envelope(result)
+            envelope_asserts.assert_full_envelope_conformance(env)
+            envelope_asserts.assert_write_receipt_shape(env)
+            self.assertEqual(env["op"], "edit-pr-body")
+            self.assertEqual(env["body_sha256"], hashing.sha256_hex(body_bytes))
+
+    def test_edit_pr_body_dry_run_previews_gh_pr_edit_not_gh_issue_edit(self):
+        # The regression guard for the reason this op exists: `gh issue edit <pr>` errors on a PR
+        # number, so a PR-body write routed through edit-body never lands.
+        with tempfile.TemporaryDirectory() as tmp:
+            body_path = Path(tmp) / "body.md"
+            body_bytes = b"content"
+            body_path.write_bytes(body_bytes)
+            result = _run_script(["edit-pr-body", "o/r", "300", str(body_path), "--dry-run"])
+            self.assertEqual(result.returncode, 0, msg=result.stderr)
+            env = _parse_envelope(result)
+            self.assertTrue(env["dry_run"])
+            self.assertIn("pr edit", env["would_run"])
+            self.assertNotIn("issue edit", env["would_run"])
+            self.assertNotIn("url", env)
+            self.assertEqual(env["body_bytes"], len(body_bytes))
+            self.assertEqual(env["body_sha256"], hashing.sha256_hex(body_bytes))
+
+    def test_edit_pr_body_with_empty_file_returns_empty_body_file_decision_before_any_gh_call(self):
+        # No manifest.json in this tempdir: a gh call before the gate would MISS (shim exit 2, no
+        # envelope), so a clean decision envelope proves the gate runs first — same proof shape as
+        # EmptyBodyGateTests.
+        with tempfile.TemporaryDirectory() as tmp:
+            empty_path = Path(tmp) / "empty.md"
+            empty_path.write_bytes(b"")
+            result = _run_script(["edit-pr-body", "o/r", "300", str(empty_path)], fixtures_dir=tmp)
+            self.assertEqual(result.returncode, 0, msg=result.stderr)
+            env = _parse_envelope(result)
+            envelope_asserts.assert_full_envelope_conformance(env)
+            self.assertEqual(env["status"], "needs_decision")
+            self.assertEqual(env["decision"]["code"], "EMPTY_BODY_FILE")
+
+
 class DryRunNeverInvokesGhTests(unittest.TestCase):
     """--dry-run must perform no live write for every body-bearing subcommand -- proven the same
     way as the empty-body gate: no manifest.json exists, so any real gh call would MISS.
@@ -1790,6 +1844,17 @@ class AuthRequiredClassificationTests(unittest.TestCase):
             env = _parse_envelope(result)
             envelope_asserts.assert_full_envelope_conformance(env)
             self.assertEqual(env["status"], "needs_decision")
+            self.assertEqual(env["decision"]["code"], "AUTH_REQUIRED")
+
+    def test_edit_pr_body_surfaces_auth_required_as_needs_decision(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            body_path = Path(tmp) / "body.md"
+            body_path.write_bytes(b"content")
+            cmd = ["pr", "edit", "300", "--repo", "o/r", "--body-file", str(body_path)]
+            _write_manifest(tmp, [{"argv": cmd, "exit_code": 4}])
+            result = _run_script(["edit-pr-body", "o/r", "300", str(body_path)], fixtures_dir=tmp)
+            self.assertEqual(result.returncode, 0, msg=result.stderr)
+            env = _parse_envelope(result)
             self.assertEqual(env["decision"]["code"], "AUTH_REQUIRED")
 
     def test_close_surfaces_auth_required_as_needs_decision(self):

@@ -80,6 +80,6 @@
             "--json",
             "number,title,author,isDraft,headRefName,baseRefName,url,updatedAt"
         ],
-        "stdout_file": "open_head_prs_empty.json"
+        "exit_code": 1
     }
 ]
