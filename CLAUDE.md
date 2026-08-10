@@ -184,8 +184,9 @@ per [architecture.md §7](docs/architecture.md)'s mapping table).
   dependencies, the legacy `## Stories` checklist for epic hierarchy.
 - `gh_pr_gather.py` — the PR-fetch envelope, with optional `--with-diff` / `--with-line-comments`
   (always spilled to disk) and the PR's own `labels`.
-- `gh_persist.py` — the single write path (`create` / `edit-body` / `edit-labels` / `link` /
-  `comment` / `close` / `reopen` / `create-pr` / `close-pr`). Its leading size check is the
+- `gh_persist.py` — the single write path (`create` / `edit-body` / `edit-pr-body` / `edit-labels` /
+  `link` / `comment` / `close` / `reopen` / `create-pr` / `close-pr`; `edit-body` is `gh issue edit`
+  and rejects a PR number, which is why the PR-body write is its own op). Its leading size check is the
   **empty-body gate**: the caller stages the verbatim body to its scratch dir and passes the
   *path*, so nothing re-serializes a body across the prompt boundary; an empty or missing file is
   an `EMPTY_BODY_FILE` decision **before** any `gh` write (the #626/#627 empty-body race). Returns
@@ -372,8 +373,10 @@ the *consuming* repo provides — not by plugin config:
   heuristic cues when the block is absent.
 - **Worktree hooks** — `<!-- worktree-setup -->` / `<!-- worktree-teardown -->`, run by
   `workspace.py` inside the workspace.
-- **Epic integration branches** named `epic/<N>-<slug>` — the resolver creates them; the
-  resolver/evaluator classify Epic vs story PRs by this pattern.
+- **Epic integration branches** named `epic/<N>-<slug>` — `workspace-open` creates them (v3 moved
+  creation off the resolver, which now only adopts the branch its prep discovered — never
+  recomputing the slug, per the #102 orphaned-commits incident); the resolver/evaluator classify
+  Epic vs story PRs by this pattern.
 - **Durable marker comments** the skills post and read: `<!-- implementation-plan:v1 -->`
   (planner), `<!-- issue-research:v1 -->` (researcher), `<!-- epic-delivery-log:v1 -->`
   (evaluator-written, planner-read), `<!-- pr-evaluator-health-cache:v1 -->` (evaluator, keyed on
@@ -553,8 +556,9 @@ grep -rnE 'git +show +[^ ]+:|git +grep +[^-]' skills/
 # 4. Raw `gh` writes / fetch-envelopes in prompts — every op that HAS a bundled script must go
 #    through it (architecture.md §7 rule 7). Three sanctioned scriptless executors are the only
 #    exceptions, all spec'd: `gh pr merge` (evaluator, merge execution), `gh pr ready --undo`
-#    (evaluator, the soft-reject draft flip), `gh pr ready <N>` (resolver, the last-phase
-#    draft→ready flip, without which the evaluator's draft guard deadlocks). Label creation
+#    (evaluator, the soft-reject draft flip), `gh pr ready <N>` (resolver, the draft→ready flip —
+#    on the last phase of a multi-phase issue, and on the epic integration PR once its story set
+#    closes — without which the evaluator's draft guard deadlocks). Label creation
 #    (`gh label create`) is likewise scriptless by design and stays inline. `gh issue develop`
 #    (the branch↔issue link write) is deliberately OUTSIDE this grep's alternation AND
 #    script-internal (prep_workspace_open/branching.py) — keep it out of skill fences

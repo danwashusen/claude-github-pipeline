@@ -1,6 +1,6 @@
 # Handoff renderings
 
-The nine rendering shapes the resolver emits as the run's final `## Handoff` block. Pick the one that
+The ten rendering shapes the resolver emits as the run's final `## Handoff` block. Pick the one that
 matches the run's outcome, copy the shape, and substitute the issue/PR/epic/SHA placeholders from the
 prep facts + this run's PR/review/push results. Schema, omission rules, and the closed-set state-marker
 vocabulary live in [`../../_shared/handoff-format.md`](../../_shared/handoff-format.md) — this file
@@ -112,10 +112,34 @@ post-flip state.
 **Why:** every phase in the plan's `## Phases` has been ticked on the PR's `## Phase tracker`, and each ticked phase's `closes-dod` bullets have been projected onto the issue body's `## Definition of done` as the phases shipped. The evaluator verifies each projected DoD tick against its attributed phase's diff (per-phase commit ranges from the Phase tracker), runs its branch-health gate and review against the plan's locked decisions, un-ticks any bullet whose attributed diff doesn't actually satisfy it (sticky soft-reject), and — on a clean APPROVE — merges. On a COMMENT (soft-reject) verdict, the evaluator flips the PR back to draft so this resolver can re-enter in continue mode and address the gaps without re-deadlocking on the draft guard.
 ```
 
+## In progress — Epic integration draft PR open (stories remain)
+
+The integration PR opens as a **draft** as soon as the epic branch is ahead of `main`, and is refreshed
+on every epic run — it is the human-readable view of overall epic progress, not a merge request. So its
+`Next:` is the epic cadence's next step (the planner for the next story, or a story resolver run),
+**never the evaluator**: the evaluator refuses a DRAFT PR, so pointing there would deadlock. Add the
+open PR's author to the `Why:` when it isn't yours.
+
+```
+## Handoff
+
+**Epic:** #150 — Chat & session UX polish · open · epic · plan: ✓
+**Stories:** 3 of 5 closed
+**PR:** #300 — Chat & session UX polish (epic #150) · draft · base main · review: not run · health: not run · merge: not run
+**Workspace:** <workspace-path> — the next story's plan grounds here
+
+**Next:** plan the next story in a fresh session.
+
+    /github-pipeline:planner #153
+
+**Why:** the epic branch is ahead of `main` by 3 landed stories, so the integration PR is open as a draft carrying the accumulated diff — review overall epic progress there at any time; this run refreshed its body rather than opening a second PR. It stays draft (and out of the evaluator's reach) until #153 and #154 close and the epic's `## Definition of done` is verifiable against that diff; only then does the resolver run the review loop and flip it ready.
+```
+
 ## Forward — Epic integration PR
 
-Same forward direction (→ evaluator), but the `Why:` line calls out the higher merge risk and the
-canonical-suite escalation so the user knows what the evaluator will do differently.
+Same forward direction (→ evaluator). The PR already existed as a draft — this run flipped it ready —
+and the `Why:` line calls out the higher merge risk and the canonical-suite escalation so the user knows
+what the evaluator will do differently.
 
 ```
 ## Handoff

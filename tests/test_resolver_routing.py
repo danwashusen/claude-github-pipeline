@@ -525,17 +525,48 @@ class PrCreateContractTests(unittest.TestCase):
         self.assertEqual(proc.returncode, 0, msg=proc.stderr)
         self.assertIn("--draft", env["would_run"])
 
-    def test_epic_integration_pr_open_dry_run(self):
-        # epic.md S4: base main, head the epic integration branch.
+    def test_epic_integration_pr_open_dry_run_carries_draft_flag(self):
+        # epic.md S4.1: base main, head the epic integration branch, and ALWAYS --draft. The PR
+        # opens early (as soon as the branch is ahead of main) so a human can review overall epic
+        # progress; draft is what keeps it out of the evaluator's reach until S4.4's ready flip.
         proc, env = _run_persist(
             [
                 "create-pr", "octo/widgets", "@BODY@", "--title", "Epic #150: Chat & session UX polish",
-                "--base", "main", "--head", "epic/150-chat-session-ux-polish", "--dry-run",
+                "--base", "main", "--head", "epic/150-chat-session-ux-polish", "--draft", "--dry-run",
             ],
             body_text="## Goal\n…\nFixes #150\n",
         )
         self.assertEqual(proc.returncode, 0, msg=proc.stderr)
         self.assertEqual(env.get("op"), "create-pr")
+        self.assertIn("--draft", env["would_run"])
+
+    def test_epic_integration_pr_body_refresh_routes_through_edit_pr_body(self):
+        # epic.md S4.2: the draft PR's body is refreshed on every epic run. `edit-body` is
+        # `gh issue edit` and rejects a PR number, so this is a distinct op, not a reuse.
+        proc, env = _run_persist(
+            ["edit-pr-body", "octo/widgets", "300", "@BODY@", "--dry-run"],
+            body_text="## Goal\n…\n3 of 5 stories closed\nFixes #150\n",
+        )
+        self.assertEqual(proc.returncode, 0, msg=proc.stderr)
+        self.assertEqual(env.get("op"), "edit-pr-body")
+        self.assertIn("pr edit", env["would_run"])
+        self.assertNotIn("issue edit", env["would_run"])
+
+    def test_epic_playbook_parameterises_the_pr_steps_on_prep_facts(self):
+        # facts-by-script: the early-open trigger and the idempotency guard are prep facts the
+        # playbook consumes as data. A rewrite that drops these names has re-derived one of them
+        # in prose (a hand-counted "is it ahead of main" or a hand-searched "is a PR already
+        # open" is exactly the duplicate-PR hazard these facts exist to remove).
+        text = (PLAYBOOKS_DIR / "epic.md").read_text(encoding="utf-8")
+        for fact in ("commits_ahead", "commits_ahead_base", "integration_pr", "edit-pr-body"):
+            self.assertIn(fact, text, "epic.md must name %s" % fact)
+        self.assertIn(
+            "OPEN_PR_LOOKUP_UNAVAILABLE",
+            text,
+            "epic.md must gate its PR-open on the lookup notice's absence — a null "
+            "integration_pr carried by that notice is UNKNOWN, not ABSENT, and opening on an "
+            "unknown files a second integration PR",
+        )
 
     def test_playbooks_route_pr_open_through_create_pr_not_a_fabricated_flag_set(self):
         # The resolve-spine.md / epic.md prose must name the real op (create-pr), not the
@@ -745,6 +776,38 @@ class ReRouteHandoffMarkerTests(unittest.TestCase):
             if inb:
                 cur.append(line)
         return blocks
+
+    def test_epic_draft_pr_handoff_never_points_at_the_evaluator(self):
+        # The load-bearing guard for the early-open change: the evaluator refuses a DRAFT PR
+        # (skills/evaluator/SKILL.md's draft-PR guard), so a handoff that points there while the
+        # integration PR is still a draft deadlocks the operator. The in-progress shape's Next: is
+        # the epic cadence's next step instead.
+        text = self.RENDERINGS.read_text(encoding="utf-8")
+        self.assertIn(
+            "## In progress — Epic integration draft PR open",
+            text,
+            "handoff-renderings.md must carry the draft-integration-PR in-progress shape",
+        )
+        draft_rendering = next(
+            (
+                block
+                for block in self._fenced_blocks(self.RENDERINGS)
+                if "## Handoff" in block and "**PR:**" in block and "· draft ·" in block
+                and "**Epic:**" in block
+            ),
+            None,
+        )
+        self.assertIsNotNone(
+            draft_rendering,
+            "the in-progress section must contain a rendered ## Handoff example whose PR: line "
+            "carries the closed-set `draft` state marker",
+        )
+        self.assertNotIn(
+            "github-pipeline:evaluator",
+            draft_rendering,
+            "a draft epic integration PR must never hand off to the evaluator — its draft guard "
+            "would stop the session with nothing to do",
+        )
 
     def test_no_pr_line_carries_an_off_closed_set_review_or_health_glyph(self):
         # The closed set has no bare-checkmark value for either field (handoff-format.md:52-53) --

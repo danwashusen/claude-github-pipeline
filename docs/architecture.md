@@ -458,10 +458,13 @@ census greps.
     execution) and `gh pr ready --undo` (the soft-reject draft-flip on Needs Revision / Reject), both
     the evaluator's and both cited to [docs/specs/evaluator.md](specs/evaluator.md) ("Merge execution"
     and its merge-approval decision-gate row, "flips PR to draft"); and `gh pr ready <N>` (the
-    resolver's last-planned-phase-shipped draft→ready flip), cited to
-    [docs/specs/resolver.md](specs/resolver.md) (its invariant: the flip runs immediately before the
-    handoff, or the evaluator's draft-PR guard deadlocks it — carried from v1 SKILL.md:896). §7 rule 7
-    is the source of truth for which ops are script-backed.
+    resolver's draft→ready flip), cited to [docs/specs/resolver.md](specs/resolver.md) (its
+    invariant: the flip runs immediately before the handoff, or the evaluator's draft-PR guard
+    deadlocks it — carried from v1 SKILL.md:896). That third executor has **two** triggers, one
+    v1-spec'd and one v3.x: the last-planned-phase-shipped flip on a multi-phase issue, and the
+    epic integration PR's flip once its story set closes (the integration PR now opens early as a
+    draft — see §6's epic lifecycle — so it spends most of the epic's life in the state the guard
+    protects). §7 rule 7 is the source of truth for which ops are script-backed.
   - **`git`-ref rule (ref-arithmetic-scoped).** Zero `git show <ref>:<path>` / `git grep <ref>` in
     `skills/` — a bare `git show <commit>` single-commit diff view is permitted; only the
     `<ref>:<path>` extraction (and `git grep <ref>`) is the banned ref-arithmetic form.
