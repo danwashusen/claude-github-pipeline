@@ -12,7 +12,9 @@ the cold read is only meaningful uncontaminated. The sub-agent is context-blind,
 
 Its output is written to `<facts.scratch>/review-verdict.md` and handed to one review-loop sub-agent
 iteration (`review-loop-sub-agent.md`), so findings must be itemized the way that rubric classifies:
-severity-labelled, concretely named, one item per defect.
+severity-labelled, concretely named, one item per defect. Checks 1–3 below are the audit-side rendering
+of the fix disciplines whose canonical statement lives in `common-pitfalls.md` — an edit there
+propagates here.
 
 ---
 
@@ -60,7 +62,8 @@ Return a markdown verdict, nothing else:
 
 - `## Cold-read verdict` — two or three sentences: does the final state hold together, and where is it
   weakest?
-- `## Findings` — one bullet per defect: `**<High | Medium | Low>** — <file>:<line> — <what is wrong>`,
+- `## Findings` — one bullet per defect: `**<severity>** — <file>:<line> — <what is wrong>`, severity
+  drawn from the review loop's ordered scale (Blocker > High > Medium > Low > Nitpick),
   followed by the evidence (the invariant or sibling site it conflicts with, cited by path and line).
   Name each finding concretely enough that a fixer can act without re-deriving your analysis. No finding
   is "the history was messy" — only defects present in the final state count. An empty section means the

@@ -125,7 +125,8 @@ open). Then run the **review loop** (S5.1).
 
 ### S5.1 — Review loop
 
-Loop until `review` approves with zero Addressable / Cheap-fix-override items:
+Record HEAD as the **loop-entry SHA** (the step-2 sub-agent's provenance-boundary input), then loop
+until `review` approves with zero Addressable / Cheap-fix-override items:
 
 1. Run `Skill(skill="review")` **in this main conversation** (the built-in command is unreachable from
    inside an `Agent`-dispatched sub-agent — that design consistently failed on PR #607, forcing prose
@@ -144,16 +145,22 @@ Loop until `review` approves with zero Addressable / Cheap-fix-override items:
 4. After `review`'s verdict text lands, your next emissions are **operational tool calls**, not more
    prose — stopping at the verdict text is the PR #416/#653 missing-handoff failure mode. Cap the outer
    loop, and run the **convergence check** each iteration: track the JSON's `finding_provenance` and
-   `max_severity`; when `prior_fix` findings dominate a round (more than half) or max severity has not
-   decayed across two consecutive iterations, the delta loop has become the wrong instrument — fire the
-   cap card early. On the cap or the convergence trigger, ask (`header: "Iter cap"`): **Continue**
-   (free-text count) / **Cold-read audit** / **Accept current** / **Abort**. On **Cold-read audit**:
-   stage the cumulative diff to `<facts.scratch>/cold-read-diff.patch` (`git diff` from
+   `max_severity` (normalized by the sub-agent onto the ordered scale Blocker > High > Medium > Low >
+   Nitpick); when `prior_fix` findings dominate a round (more than half) or max severity has not decayed
+   across two consecutive iterations, the delta loop has become the wrong instrument — fire the cap card
+   early. The trigger is one-shot per answer: on **Continue (N)** suppress it for the next N iterations
+   (the cap still applies); after a cold-read round, re-fire only if a later iteration's max severity
+   rises. On the cap or the convergence trigger, ask (`header: "Iter cap"`): **Continue** (free-text
+   count) / **Cold-read audit** / **Accept current** / **Abort**. On **Cold-read audit**: stage the
+   cumulative diff to `<facts.scratch>/cold-read-diff.patch` (`git diff` from
    `facts.workspace.base_ref` to HEAD, run in the workspace), dispatch the cold-read `Explore` sub-agent
    per [`../references/cold-read-audit-prompt.md`](../references/cold-read-audit-prompt.md) — it reviews
-   the touched modules' **final state** against their invariants, not correction-by-correction — write
-   its findings to `<facts.scratch>/review-verdict.md`, run one step-2 sub-agent iteration on that
-   verdict (the existing fix machinery, unchanged), then re-enter the exit check at step 3.
+   the touched modules' **final state** against their invariants, not correction-by-correction. If it
+   returns `code: AMBIGUOUS` (missing/empty staged diff), do not dispatch a fix iteration — repair the
+   staging and re-dispatch, or surface the failure to the operator. Otherwise write its findings to
+   `<facts.scratch>/review-verdict.md`, run one step-2 sub-agent iteration on that verdict (the existing
+   fix machinery, unchanged), then **re-run step 1** — the loop still exits only through `review`'s
+   approval of the final pushed state; the cold read supplements the reviewer, never substitutes for it.
 
 ## S6 — DoD projection on the push that shipped the phase
 
