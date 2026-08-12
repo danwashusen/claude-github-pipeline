@@ -179,3 +179,8 @@ how many times the model may re-run tests within one of those iterations.
 
 It **isn't** a license to give up after one failure. Run 1 failing is normal — that's why the gate exists.
 The ladder activates when the model is about to enter a small-fix spiral, not on every red run.
+
+It also doesn't count defect-injection runs. An injection run (inject → red → revert, per the review-loop
+sub-agent's injection step) verifies the *test*, not the diff — it is *supposed* to go red. Only runs
+asserting the diff is green count toward the 3-run cap; without this exemption a routine injection cycle
+would spuriously trip the escalation.
