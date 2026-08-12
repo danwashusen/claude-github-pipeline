@@ -83,6 +83,27 @@ its §review-loop, its S6 DoD projection) that carry the same numbering v1 used,
   attempt with no information gain, and the same loop bounded by the **Don't let the build subagent become
   a coder** pitfall applies one layer up: the *parent* model running tweak → re-run → tweak → re-run is the
   same anti-pattern, just at a different layer.
+- **Don't fix the instance when the finding names a class.** Before writing a fix — your own or a
+  review finding's — enumerate every site sharing the defect's concept (grep the module/concept, list
+  the sites), then fix them all together or record why the siblings differ. A finding names an instance;
+  the unit of fix is the class — partial application is how the same defect ships round after round,
+  sometimes re-introduced by the very commit fixing it elsewhere.
+- **Don't conform code to a stated invariant a finding contradicts.** An invariant the code states (a
+  comment, doc line, or assertion message) that a review finding contradicts is a hypothesis, not a
+  target — re-derive whether it is right before routing code through it. Narrowing the statement ("the
+  comment is too broad") is a valid and common resolution; forcing a path through an over-broad "one
+  doorway" claim makes the sentence true and the behavior wrong. Record which way it was resolved and why.
+- **Don't split an atomic call without naming its implicit properties.** A single call often carries
+  properties for free — lock+existence, write+state coherence, check+use adjacency. When a fix
+  decomposes it, name each property and show where it lands in the decomposition; an unplaced property
+  silently disappears (the classic result is a time-of-check/time-of-use gap). If you can't name them,
+  don't split.
+- **Don't trust an assertion that has never failed.** The vacuous shapes: the "bad" state constructed
+  *after* the code under test already read the good state (a record destroyed after context capture, a
+  value poisoned after the fixture resolved), and an absence-assertion with no positive control proving
+  it can ever fail. In review-loop fix rounds, defect injection (inject → red → revert) is mandatory per
+  the review-loop sub-agent's steps; for initial-implementation tests, construct the bad state before
+  the code under test runs and give every absence-assertion a positive control.
 - **Don't `rm` snapshot/golden files to force regeneration.** A failing snapshot test means recorded
   output changed in a way that needs human eyes — a pixel-level visual diff, a serialized-output change, an
   approved-file mismatch — and surfacing that is the whole point of the test category. Surface the diff to

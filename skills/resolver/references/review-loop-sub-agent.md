@@ -1,8 +1,10 @@
 # Review-loop sub-agent (carried from v1, file pointers → v2 structure)
 
 Carried from the v1 resolver's `references/review-loop-sub-agent.md` per the S10 cutover
-— a judgment sub-agent prompt (architecture.md §9). The exception protocol (the JSON return schema and
-the four guard rails) is unchanged. The only adaptations: the file-read pointers name the v2 skill's
+— a judgment sub-agent prompt (architecture.md §9). The four guard rails are unchanged from v1; the
+fix disciplines (step 5), the defect-injection step (step 7), and the `finding_provenance` /
+`max_severity` return fields are later additions (fix-round hardening — a retro found fixes carrying
+several times the defect density of the code they corrected). The only adaptations: the file-read pointers name the v2 skill's
 files (the spine's review-loop section = the v1 §10 outer loop; `retry-ladder.md` /
 `follow-up-tracking.md` in this `references/` dir) instead of the retired `<RESOLVER_DIR>` +
 v1-§-anchor forced-read scheme, and the classification rubric lives in this file plus
@@ -42,6 +44,9 @@ Inputs:
 - Integration target branch: <facts.audit_ref, bare>
 - Iteration number: <int> — the 1-based index in the outer loop's run, for
   your `iteration` echo in the JSON return.
+- Loop-entry SHA: <sha> — HEAD as recorded at S5.1 loop entry, before the
+  loop's first `review` invocation. Commits after it are this loop's fix
+  commits; step 2's provenance tagging diffs against it.
 - Review verdict path: <absolute path to facts.scratch/review-verdict.md>.
   This file holds the body text of the `review` skill's most recent PR
   comment on PR #<N>. Read it; classify it; act on it.
@@ -99,7 +104,17 @@ Steps (one pass — no inner loop):
 2. Classify every issue and suggestion per the rubric above. The reviewer's
    own "approved" verdict line is NOT the exit condition — re-classify each
    listed item. The cheap-fix override applies to <= ~20-line fixes on
-   already-modified files even when the reviewer offered to defer.
+   already-modified files even when the reviewer offered to defer. Also tag
+   each item's provenance against the Loop-entry SHA input: one
+   `git diff <loop-entry SHA>..HEAD --unified=0` in the worktree gives the
+   line ranges this loop's fix commits introduced; an item whose lines fall
+   inside them is `prior_fix`, anything else `original_code`. On iteration 1
+   skip the diff — no fix commits exist yet, so `prior_fix` is 0 by
+   definition. Tally the two counts, and normalize the verdict's highest
+   severity onto the ordered scale Blocker > High > Medium > Low > Nitpick
+   for the `finding_provenance` / `max_severity` return fields — the outer
+   loop compares them across iterations to notice when the fixes themselves
+   have become the dominant defect source.
 3. If a Decision-required item is present, trip the `architectural` guard
    rail immediately — return without making changes; the main loop asks
    the user and re-dispatches you with the answer in `prior_decisions`.
@@ -114,27 +129,61 @@ Steps (one pass — no inner loop):
    in the `prior_addressed_items` input (same file, same surface, same
    suggested change with no acknowledgement of your prior fix), trip the
    `deadlock` guard rail. Return without further edits.
-5. Address every Addressable and Cheap-fix-override item. File every
-   Explicitly-deferred item via the "Follow-up issue tracking" sub-agent
-   protocol (urgency `file-now`, type per the reviewer's framing) and
-   capture the returned URLs for the return summary. Never file a
+5. Address every Addressable and Cheap-fix-override item. Apply the fix
+   disciplines to each fix before writing it (canonical statement:
+   `common-pitfalls.md`'s three fix-discipline bullets — this inline copy
+   exists because no pitfalls file is in your inputs; edits keep the two
+   in sync):
+   - Sibling sites: a finding names an instance; the unit of fix is the
+     class. Enumerate every site sharing the finding's concept (grep the
+     module/concept, list the sites), then fix them all in this commit or
+     state in the commit message why the siblings differ.
+   - Invariant as hypothesis: when the finding contradicts a stated
+     invariant (a comment, doc line, or assertion message), re-derive
+     whether the invariant is right before conforming code to it —
+     narrowing the statement ("the comment is too broad") is a valid and
+     common resolution. The commit message says which way it was resolved
+     and why.
+   - Atomic decomposition: when a fix splits a single call into several,
+     name the properties the original carried implicitly (lock+existence,
+     write+state coherence, check+use adjacency) and show where each lands
+     in the decomposition. If you can't name them, don't split.
+   File every Explicitly-deferred item via the "Follow-up issue tracking"
+   sub-agent protocol (urgency `file-now`, type per the reviewer's framing)
+   and capture the returned URLs for the return summary. Never file a
    Grounding-violation item — by step 3 it is either reclassified
    Addressable (fixed here) or already returned via the
    `grounding_violation` guard rail.
 6. If step 5 produced no edits (zero Addressable items, zero
-   Cheap-fix-override items), skip steps 7–9 and return immediately with
+   Cheap-fix-override items), skip steps 7–10 and return immediately with
    `status: "iteration_complete"` and empty `items_addressed`. The main
    loop interprets this combined with `review`'s prior verdict.
-7. Run the pre-push verification gate (static checks →
+7. Defect-inject every new or changed assertion step 5 added. An assertion
+   written to catch a finding's defect does not count as coverage until an
+   injection has made it fail: stage the fix first (the injection revert
+   restores the staged state; committing waits for step 9, after the gate),
+   inject the defect the assertion targets, run the assertion red, revert
+   the injection. Run injections with the wrapper's targeted single-test
+   invocation (the run-2 syntax in `retry-ladder.md`), batching
+   distinct-site injections into one run — never the full selected suite
+   per assertion. Green-against-the-defect means the test is vacuous — the
+   usual shapes are "bad" state constructed after the code under test
+   already read the good state, and an absence-assertion with no positive
+   control proving it can ever fail. Rewrite and re-inject, at most twice
+   per assertion; still green after that, file the assertion as a
+   `deferred-test` follow-up (step 5's filing protocol) instead of looping.
+   Injection runs verify the test, not the diff, and do not count against
+   the retry ladder's 3-run cap (`retry-ladder.md`).
+8. Run the pre-push verification gate (static checks →
    test-selection sub-agent → test execution). The retry ladder per
    `retry-ladder.md` caps a single visit at 3 runs with a forced research
    breakpoint between cheap and deep fixes. On retry-ladder escalation,
    trip the `verification_failure` guard rail.
-8. Commit. Push. Reply on the PR briefly describing what changed in
+9. Commit. Push. Reply on the PR briefly describing what changed in
    response to which points of feedback. This per-iteration comment is
    how the user follows the loop on GitHub even though the parent
    conversation isn't streaming your tool calls.
-9. Return `status: "iteration_complete"` with the post-push SHA and the
+10. Return `status: "iteration_complete"` with the post-push SHA and the
    `items_addressed` list populated.
 
 Guard rails — when any of these fire, do NOT ask the user yourself
@@ -198,6 +247,8 @@ Return ONLY this JSON (no prose around it):
     | "skipped (no tests selected — <rationale>)"
     | "skipped (no edits this iteration)"
     | "red — <list of failing tests>",
+  "finding_provenance": {"original_code": <int>, "prior_fix": <int>},
+  "max_severity": "Blocker" | "High" | "Medium" | "Low" | "Nitpick" | null,
   "items_addressed": [
     {"severity": "Medium" | "Low" | "Nitpick" | "...",
      "summary": "one-line description of what was changed"}

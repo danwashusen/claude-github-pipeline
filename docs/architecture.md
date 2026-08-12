@@ -400,6 +400,7 @@ result or a typed §3 decision code, cannot call `AskUserQuestion`, and never wr
 | research validator | researcher | dossier draft | findings by dimension |
 | test-selection | resolver, evaluator | diff scope + the ambient checkout's test config | `COMMAND:` + `RATIONALE:` |
 | review-loop | resolver | PR + review verdict file | items-addressed JSON |
+| cold-read audit | resolver | staged cumulative diff (path) + workspace | whole-diff findings verdict |
 | question-status reader | question-sweep, question-resolver | question thread (path) | status or `AMBIGUOUS` |
 
 Skill frontmatter carries no `model:` or `effort:` keys — every skill inherits the invoking

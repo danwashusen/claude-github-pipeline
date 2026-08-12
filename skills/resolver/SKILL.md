@@ -117,7 +117,8 @@ Universal across every route:
 - **Gates only for genuine decisions** (per [`../_shared/asking-the-user.md`](../_shared/asking-the-user.md)):
   the audit-blocker gate, the missing-plan gate, a doc conflict, an existing-PR contest, retry-ladder
   escalation, review-loop guard rails, the iteration cap — never to confirm a fact prep derived. A
-  judgment sub-agent (state-distiller, fitness audit, test-selection, review-loop) never calls
+  judgment sub-agent (state-distiller, fitness audit, test-selection, review-loop, cold-read audit)
+  never calls
   `AskUserQuestion`; it returns its typed result (a §3 decision code or its JSON) to this loop, which
   asks.
 - **Faithful reporting.** Lead with the outcome; report failures verbatim with evidence; declare
