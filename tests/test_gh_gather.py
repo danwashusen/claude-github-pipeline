@@ -969,7 +969,7 @@ class OpenPrFalsePositiveFilterIntegrationTests(unittest.TestCase):
         numbers = [pr["number"] for pr in envelope["open_prs"]]
         self.assertEqual(numbers, [46])  # only the genuine "Fixes #2" PR, never the stranger
 
-    def test_filtered_out_fields_are_stripped_from_the_returned_shape(self):
+    def test_filtered_out_fields_are_stripped_and_closes_issue_is_kept(self):
         env = shimenv.intercepted_env(base_env=os.environ, fixture_case="gh_gather_open_pr_false_positive")
         result = _run_script(["2", "o/r"], env=env)
         envelope = _parse_envelope(result)
@@ -977,8 +977,29 @@ class OpenPrFalsePositiveFilterIntegrationTests(unittest.TestCase):
         self.assertNotIn("body", pr)
         self.assertNotIn("closingIssuesReferences", pr)
         self.assertEqual(
-            sorted(pr.keys()), sorted(["number", "title", "author", "isDraft", "headRefName", "url", "updatedAt"])
+            sorted(pr.keys()),
+            sorted(["number", "title", "author", "isDraft", "headRefName", "url", "updatedAt",
+                    "closes_issue"]),
         )
+        # The one derived field that survives the strip: PR #46 carries
+        # `closingIssuesReferences: [{"number": 2}]`, so it CLOSES the issue, not merely mentions
+        # it — the distinction `branching.pr_belongs_to_issue` keys on.
+        self.assertIs(pr["closes_issue"], True)
+
+
+class ClosesIssueDerivationTests(unittest.TestCase):
+    """`closes_issue` is derived from GitHub's resolved link set, never from `Fixes #<N>` body
+    prose — the layer below `branching.pr_belongs_to_issue`."""
+
+    def test_a_mentioning_pr_survives_the_filter_with_closes_issue_false(self):
+        env = shimenv.intercepted_env(base_env=os.environ, fixture_case="gh_gather_epic_pr_mention")
+        result = _run_script(["2", "o/r"], env=env)
+        envelope = _parse_envelope(result)
+        # The epic integration PR genuinely mentions `#2` (it lists its stories), so it MUST still
+        # survive `references_issue` — this filter's job is false-positive removal, not ownership.
+        self.assertEqual([pr["number"] for pr in envelope["open_prs"]], [245])
+        # Ownership is the separate question, and the answer is no: it closes the EPIC, not #2.
+        self.assertIs(envelope["open_prs"][0]["closes_issue"], False)
 
 
 if __name__ == "__main__":

@@ -343,6 +343,28 @@ Every explicit `AskUserQuestion` decision point, exhaustively:
   parity divergence**: a parity run against a repo state with an incidental digit collision will
   legitimately see v2 route differently (correctly) from v1 (which inherits the false positive) —
   not a v2 regression.
+- **A PR that only *mentions* `#<N>` is taken as `#<N>`'s prior PR (newly discovered, not captured
+  at S1 freeze).** Requirement: the step-5 prior-PR row must be driven by the issue's **own** PRs.
+  The client-side filter above answers "is there a genuine `#<N>` autolink here" — a *mention*
+  question — and a genuine mention by a sibling's PR is still not evidence about this issue.
+  Falsifiable test: given an epic integration PR carrying `Fixes #<epic>` whose body lists story
+  `#<N>` (as an epic PR's tracking checklist does by construction), `#<N>` must not classify as
+  `continue`, and must not adopt that PR's `epic/<epic>-<slug>` head as its own work branch. Real
+  occurrence (live, 2026-08-19, `HigeiaTechnologies/higeia`): `workspace-open #194` (a story under
+  open epic #181) returned `mode: continue`, `prior_pr_row: draft`, `prior_pr: #245` — the epic's
+  integration PR, whose `closingIssuesReferences` is `[181]` and nothing else — and handed the story
+  `epic/181-…` as its branch, silently demoting it to a deliverable slice
+  (`skills/_shared/epic-story-hierarchy.md`: own-branch-and-PR is the one parameter separating the
+  two). Structural, not incidental: every story listed in that PR's body classifies identically, so
+  the better an epic PR tracks its stories the more of them it breaks. It failed silently because
+  the resolver's own continue short-circuit agreed — the operator was already inside the epic
+  worktree, so the `workspace.py attach` assertion passed. Scope: v1 carries the identical exposure
+  (its prior-PR table reads the same mention-scoped search), so this is an **expected, explained
+  parity divergence**, not a v2 regression. v2 fixes it via `branching.pr_belongs_to_issue`, applied
+  to both candidate lists by `classify_prior_pr_row`: a PR is the issue's own iff its head is one
+  this pipeline would have minted for it (`branch_belongs_to_issue`) **or** it closes the issue
+  (`closes_issue`, derived from `closingIssuesReferences`). The same narrowing lands on
+  `prep_planner.py`'s `plan_ref` open-PR-head row and its revise-facts `## Phase tracker` read.
 - **Predecessor-PR detection reads the wrong field — a latent v1 bug (source-derived, not observed as
   a live incident; discovered while authoring the planner cutover, S13).** Requirement: the fresh-PR
   branch-detection step (SKILL.md:871-880) must find a closed PR carrying the HARD-revise supersession

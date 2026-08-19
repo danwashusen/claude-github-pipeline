@@ -234,6 +234,46 @@ class StoryBaseTests(PrepWorkspaceOpenSandboxTestCase):
         self.assertEqual(envelope["workspace"]["base_ref"], "epic/100-sandbox-fixture")
 
 
+class EpicPrMentionTests(PrepWorkspaceOpenSandboxTestCase):
+    """Issue #29: an epic integration PR lists every one of its stories by number, so the loose
+    `#<N> in:body` open-PR search surfaces it once per story. Adopting it as the story's prior PR
+    handed the story the EPIC's integration branch — silently demoting the story to a deliverable
+    slice (`skills/_shared/epic-story-hierarchy.md`: own-branch-and-PR is the one parameter that
+    separates them), with its work landing on the epic branch behind no story PR and no review."""
+
+    def test_an_epic_pr_listing_its_stories_does_not_make_a_story_continue(self):
+        _git(["fetch", "origin"], self.root)
+        _git(["branch", "epic/100-sandbox-fixture", "origin/main"], self.root)
+        _git(["push", "origin", "epic/100-sandbox-fixture"], self.root)
+        envelope = self._envelope(
+            issue="101", fixture_case="prep_workspace_open_story_epic_pr_mention"
+        )
+        self.assertEqual(envelope["vector"]["type"], "story")
+        self.assertEqual(envelope["vector"]["mode"], "fresh")
+        self.assertEqual(envelope["vector"]["prior_pr_row"], "no-prior-pr")
+        self.assertIsNone(envelope["prior_pr"])
+        # The story gets its OWN branch, forked from the epic's integration branch — never the
+        # epic's branch itself.
+        self.assertEqual(envelope["branch"]["name"], "101-story-a-first-slice")
+        self.assertEqual(envelope["branch"]["source"], "computed")
+        self.assertEqual(envelope["branch"]["base"], "epic/100-sandbox-fixture")
+        # Linking is skipped on a continue row on the premise that the prior PR already binds
+        # branch to issue — false here, since PR #245 binds to the EPIC.
+        self.assertTrue(envelope["link"]["attempted"])
+        self.assertTrue(envelope["link"]["created"])
+        # The drop is silent in the operator-facing channels (an epic listing 11 stories would
+        # otherwise put an unactionable line in 11 sessions) but debuggable in the envelope.
+        self.assertEqual(envelope["attention"], [])
+        self.assertEqual(
+            envelope["prior_pr_rejected"],
+            [{"number": 245, "headRefName": "epic/100-sandbox-fixture"}],
+        )
+
+    def test_the_diagnostic_fact_is_absent_when_nothing_was_dropped(self):
+        envelope = self._envelope()
+        self.assertNotIn("prior_pr_rejected", envelope)
+
+
 class EnsureGatePropagationTests(PrepWorkspaceOpenSandboxTestCase):
     def test_a_dirty_invoker_opens_and_the_notice_is_forwarded(self):
         """v3.x: ROOT_DIRTY is retired, and the ensure core's HOOK_SOURCE_DIRTY notice must reach

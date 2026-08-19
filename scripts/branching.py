@@ -188,6 +188,11 @@ def search_closed_prs(repo, issue_number, cwd=None):
     `_filter_and_strip_reference_fields`) — `--search "<N> in:body"` is a GitHub full-text search,
     not a literal-string containment check; see `gh_gather.py`'s module docstring "Open-PR search
     false-positive fix" for the evidence.
+
+    The returned list is **mention-scoped, not ownership-scoped** — a sibling's PR that genuinely
+    references `#<N>` survives on purpose, because `prep_workspace_close.py`'s issue-to-branch
+    ladder needs to *report* the heads it rejected. Narrowing to the issue's own PRs is
+    :func:`prior_prs_for_issue`'s job, applied by :func:`classify_prior_pr_row`.
     """
     result = process.run(
         [
@@ -218,7 +223,69 @@ def search_closed_prs(repo, issue_number, cwd=None):
     return gh_gather._filter_and_strip_reference_fields(json.loads(result.stdout), issue_number), None
 
 
-def classify_prior_pr_row(open_prs, current_user, closed_prs, issue_state):
+def pr_belongs_to_issue(pr, issue_number):
+    """True iff `pr` is one of issue `issue_number`'s OWN prior/competing PRs, rather than a PR
+    that merely *mentions* it. Two independent pieces of evidence, either sufficient:
+
+    1. its head branch is one this pipeline would have minted for the issue
+       (:func:`branch_belongs_to_issue` — `<N>-<slug>`, `-vN`-suffixed, or `epic/<N>-<slug>`), or
+    2. it CLOSES the issue — `closes_issue`, derived by
+       `gh_gather._filter_and_strip_reference_fields` from GitHub's own `closingIssuesReferences`
+       link set.
+
+    Both arms are required. Head-name alone would regress every branch this pipeline ADOPTED but
+    did not name — a `gh issue develop` linked branch taken verbatim (`prep_workspace_open.py`
+    adopts "whatever this run would have named"), a hand-named branch, a fork branch — from
+    `continue` to `fresh`, minting a duplicate branch and a duplicate PR over live work.
+    Closes-link alone would miss a PR opened before its closing keyword was written, and degrades
+    to nothing on a `gh` build that returns no `closingIssuesReferences`. Neither arm scans body
+    text: a `#<N>` in a body is exactly the mention signal this function exists to reject.
+
+    The rejected case is the one it was written for: an epic integration PR carries `Fixes #<epic>`
+    and lists every story by number, so the `#<N> in:body` search surfaces it once per story — and
+    adopting it made a story classify `continue` onto the shared `epic/<N>-<slug>` branch, silently
+    demoting the story to a deliverable slice (`skills/_shared/epic-story-hierarchy.md`:
+    own-branch-and-PR is the ONE parameter separating the two). Its head belongs to the epic and
+    its close link names the epic, so both arms reject it for the story while both still accept it
+    for the epic itself — this is issue-scoped, not a blanket exclusion of epic PRs.
+
+    Known residual, accepted: a PR that genuinely IS this issue's but sits on a branch neither
+    pipeline-named nor close-linked (an external contributor's fork branch with no closing keyword)
+    now reads as `fresh`. Every PR this pipeline opens carries `Fixes #<N>`, and workspace-open's
+    linked-branch rung adopts before minting, so pipeline-created PRs always satisfy an arm; the
+    residual is strictly narrower than the epic-story breakage this closes.
+    """
+    if branch_belongs_to_issue(pr.get("headRefName"), issue_number):
+        return True
+    return bool(pr.get("closes_issue"))
+
+
+def partition_prs_for_issue(prs, issue_number):
+    """Split `prs` into ``(own, mentions_only)`` by :func:`pr_belongs_to_issue`, order preserved
+    within each half; `None` splits to ``([], [])``. `mentions_only` exists ONLY as a diagnostic
+    (the preps' `prior_pr_rejected` fact) — it is never an `attention` entry and nothing gates on
+    it, because an epic listing 11 stories would otherwise put an unactionable line in 11 sessions.
+    """
+    own, mentions_only = [], []
+    for pr in prs or []:
+        (own if pr_belongs_to_issue(pr, issue_number) else mentions_only).append(pr)
+    return own, mentions_only
+
+
+def prior_prs_for_issue(prs, issue_number):
+    """`prs` narrowed to the issue's own PRs (:func:`partition_prs_for_issue`'s first half).
+
+    Callers must narrow with THIS function *before* their `if not open_prs:` test, not rely on
+    :func:`classify_prior_pr_row` narrowing internally: the closed-PR search is gated on that
+    emptiness test, so an issue whose only open PR is a mention would otherwise skip the closed
+    search entirely and report `no-prior-pr` over a real closed PR. Idempotent — the predicate is
+    per-item and reads only fields the filter keeps — so the classifier re-applying it is a no-op,
+    which is what lets the invariant live at the classifier regardless of caller discipline.
+    """
+    return partition_prs_for_issue(prs, issue_number)[0]
+
+
+def classify_prior_pr_row(open_prs, current_user, closed_prs, issue_state, issue_number):
     """Classify the issue's prior-PR state into exactly one of the 7 named rows, returning
     ``(row_name, prior_pr_fact_or_none)``. ``open_prs`` is `gh_gather`'s `open_prs` list (from the
     `gh pr list ... "<N> in:body"` search); ``closed_prs`` is :func:`search_closed_prs`'s result
@@ -227,11 +294,21 @@ def classify_prior_pr_row(open_prs, current_user, closed_prs, issue_state):
     the issue" implies the issue itself is closed; a merged PR against a still-open issue is the
     partial-fix/abandoned case).
 
+    BOTH candidate lists are first narrowed by :func:`prior_prs_for_issue` — the two searches
+    behind them are `#<N> in:body` MENTION searches, and a genuine mention by a sibling's PR is
+    still not evidence about this issue. The open arm is where an epic integration PR (which lists
+    all its stories by number) made every one of its stories classify `continue` onto the epic's
+    own branch; the closed arm is the same defect one merge later, where a merged epic PR yields a
+    spurious `closed-not-resolved` row and its "did not resolve it" attention line on every story.
+    Dropped mentions are SILENT here — the callers surface them as a `prior_pr_rejected` diagnostic
+    fact, never as `attention` or a notice.
+
     Authorship is decided BEFORE draft state: the prior-PR table's "Draft PR" row explicitly
     scopes to "the same author" — it is not a draft-vs-ready split independent of who owns the PR.
     So an open PR by someone else classifies via :func:`classify_open_other_activity` regardless
     of its draft state; only YOUR own open PR can ever land on `open-pr-yours` or `draft`.
     """
+    open_prs = prior_prs_for_issue(open_prs, issue_number)
     if open_prs:
         # Prefer a PR by the current user (matches v1's per-row priority: "yours" outranks
         # "other's" when the caller happens to own more than one referencing PR).
@@ -255,6 +332,7 @@ def classify_prior_pr_row(open_prs, current_user, closed_prs, issue_state):
         }
         return row, fact
 
+    closed_prs = prior_prs_for_issue(closed_prs, issue_number)
     if closed_prs:
         chosen = closed_prs[0]
         merged = (chosen.get("state") or "").upper() == "MERGED" or bool(chosen.get("mergedAt"))

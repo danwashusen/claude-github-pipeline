@@ -155,15 +155,26 @@ def build_facts(issue_number, repo, root=".", scratch_dir=None, cwd=None):
     current_user, user_decision = _fetch_current_user(cwd)
     if _forward_decision(user_decision):
         return None
-    open_prs = issue_envelope.get("open_prs") or []
+    # This issue's OWN open PRs, not every PR that mentions it (an epic integration PR lists every
+    # story by number). The narrowing must precede the `if not open_prs` gate below, because that
+    # gate is what decides whether the closed search runs at all.
+    open_prs, mention_only_prs = branching.partition_prs_for_issue(
+        issue_envelope.get("open_prs"), issue_number
+    )
     closed_prs = None
     if not open_prs:
         closed_prs, closed_decision = branching.search_closed_prs(repo, issue_number, cwd=cwd)
         if _forward_decision(closed_decision):
             return None
     prior_pr_row, prior_pr_fact = branching.classify_prior_pr_row(
-        open_prs, current_user, closed_prs, issue_envelope.get("state")
+        open_prs, current_user, closed_prs, issue_envelope.get("state"), issue_number
     )
+    # Diagnostic only — omitted when empty, never `attention`, nothing gates on it. It exists so a
+    # surprising route ("why did it ignore the epic's PR?") is answerable from the envelope.
+    prior_pr_rejected = [
+        {"number": pr.get("number"), "headRefName": pr.get("headRefName")}
+        for pr in mention_only_prs
+    ]
     if prior_pr_row in branching.CONTINUE_ROWS:
         mode = branching.MODE_CONTINUE
     elif prior_pr_row in branching.GATED_ROWS:
@@ -189,7 +200,7 @@ def build_facts(issue_number, repo, root=".", scratch_dir=None, cwd=None):
             "prior_pr": prior_pr_fact,
         }
         # Zero side effects on a gated row — the skill renders the card; nothing was created.
-        return {
+        gated_envelope = {
             "repo": repo,
             "scratch": scratch_dir,
             "root": {"path": root},
@@ -199,6 +210,9 @@ def build_facts(issue_number, repo, root=".", scratch_dir=None, cwd=None):
             "attention": attention,
             "notices": notices,
         }
+        if prior_pr_rejected:
+            gated_envelope["prior_pr_rejected"] = prior_pr_rejected
+        return gated_envelope
 
     # 3) Branch/base selection (the resolver's retired ensure-side table).
     branch_source = None
@@ -307,7 +321,7 @@ def build_facts(issue_number, repo, root=".", scratch_dir=None, cwd=None):
             % (first_failure.get("step"), first_failure.get("command"))
         )
 
-    return {
+    envelope = {
         "repo": repo,
         "scratch": scratch_dir,
         "root": {"path": root},
@@ -328,6 +342,9 @@ def build_facts(issue_number, repo, root=".", scratch_dir=None, cwd=None):
         "attention": attention,
         "notices": notices,
     }
+    if prior_pr_rejected:
+        envelope["prior_pr_rejected"] = prior_pr_rejected
+    return envelope
 
 
 def main(argv):

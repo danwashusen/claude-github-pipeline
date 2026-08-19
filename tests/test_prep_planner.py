@@ -313,6 +313,21 @@ class PlanRefRowTests(PrepPlannerSandboxTestCase):
         self.assertTrue(envelope["story"]["epic_delivery_log"]["present"])
         self.assertEqual(envelope["suggested_playbook"], "story-jit.md")
 
+    def test_an_epic_pr_mentioning_the_story_does_not_supply_the_plan_ref(self):
+        # Issue #29's planner half: `_select_plan_ref` checks the open-PR head FIRST and
+        # unconditionally, and `_build_revise_facts` parses THAT PR's `## Phase tracker`. Fed the
+        # parent epic's integration PR (which lists every story by number), a story would be
+        # planned against the epic's ref by the wrong row, carrying the EPIC's phase tracker.
+        self._push_branch("epic/100-sandbox-fixture")
+        envelope = self._envelope(
+            issue="202", fixture_case="prep_planner_story_epic_pr_mention",
+            ambient="epic/100-sandbox-fixture",
+        )
+        self.assertEqual(
+            envelope["vector"]["plan_ref_row"], prep_planner.PLAN_REF_ROW_STORY_PARENT_BRANCH
+        )
+        self.assertEqual(envelope["plan_ref"], "epic/100-sandbox-fixture")
+
     def test_row_story_under_open_epic_bootstrap(self):
         # D4 regression fixture: story under an OPEN parent epic, but zero `git ls-remote` matches
         # for that epic's integration branch (the epic itself hasn't bootstrapped a branch yet --

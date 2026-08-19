@@ -1,0 +1,96 @@
+[
+  {
+    "argv": [
+      "issue",
+      "view",
+      "202",
+      "--repo",
+      "octo/widgets",
+      "--json",
+      "number,title,body,state,labels,author,createdAt,updatedAt,assignees,milestone,url,blockedBy,blocking,parent,subIssues,subIssuesSummary"
+    ],
+    "stdout_file": "issue_view_story.json",
+    "exit_code": 0
+  },
+  {
+    "argv": [
+      "api",
+      "--paginate",
+      "repos/octo/widgets/issues/202/comments"
+    ],
+    "stdout_file": "comments_story_empty.json",
+    "exit_code": 0
+  },
+  {
+    "argv": [
+      "pr",
+      "list",
+      "--repo",
+      "octo/widgets",
+      "--state",
+      "open",
+      "--search",
+      "202 in:body",
+      "--json",
+      "number,title,author,isDraft,headRefName,url,updatedAt,body,closingIssuesReferences"
+    ],
+    "stdout_file": "open_prs_story_epic_mention.json",
+    "exit_code": 0
+  },
+  {
+    "argv": [
+      "issue",
+      "list",
+      "--repo",
+      "octo/widgets",
+      "--label",
+      "epic",
+      "--state",
+      "all",
+      "--search",
+      "#202 in:body",
+      "--json",
+      "number,title,state,body"
+    ],
+    "stdout_file": "parent_epic_search.json",
+    "exit_code": 0
+  },
+  {
+    "argv": [
+      "issue",
+      "view",
+      "100",
+      "--repo",
+      "octo/widgets",
+      "--json",
+      "number,title,body,state,labels,author,createdAt,updatedAt,assignees,milestone,url,blockedBy,blocking,parent,subIssues,subIssuesSummary"
+    ],
+    "stdout_file": "issue_view_epic.json",
+    "exit_code": 0
+  },
+  {
+    "argv": [
+      "api",
+      "--paginate",
+      "repos/octo/widgets/issues/100/comments"
+    ],
+    "stdout_file": "comments_epic.json",
+    "exit_code": 0
+  },
+  {
+    "argv": [
+      "pr",
+      "list",
+      "--repo",
+      "octo/widgets",
+      "--state",
+      "open",
+      "--search",
+      "100 in:body",
+      "--json",
+      "number,title,author,isDraft,headRefName,url,updatedAt,body,closingIssuesReferences"
+    ],
+    "stdout_file": "open_prs_epic_empty.json",
+    "exit_code": 0
+  }
+]
