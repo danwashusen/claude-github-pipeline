@@ -55,10 +55,10 @@ one** playbook.
 
 | `vector` | Playbook | Flow |
 |---|---|---|
-| `type: story` + open parent epic (any `mode`) | `playbooks/story-jit.md` | just-in-time story plan against epic HEAD; bootstraps the epic plan inline when absent |
+| open parent epic — `story.parent_epic_open`, whatever the `type` (any `mode`) | `playbooks/story-jit.md` | just-in-time story plan against epic HEAD; bootstraps the epic plan inline when absent |
 | `mode: revise` (standalone issue or epic) | `playbooks/revise.md` | reconcile old-vs-new plan + projected DoD; SOFT/HARD gate; `## Predecessor` |
 | `type: epic` (fresh) | `playbooks/epic.md` | epic-level plan (`## Story breakdown`/`## Story contracts`/`## Integration strategy`); stop before per-story fan-out |
-| everything else fresh (`type: standard`, or a story with no open parent epic) | `playbooks/single.md` | single-issue plan; `## Phases` when multi-phase |
+| everything else fresh (no open parent epic, whatever the `type`) | `playbooks/single.md` | single-issue plan; `## Phases` when multi-phase |
 
 Every playbook opens by reading the shared spine `playbooks/plan-spine.md` (S1–S8, classify through
 persist). The routed playbook supplies only what **differs in actions**: the schema sections it fills,

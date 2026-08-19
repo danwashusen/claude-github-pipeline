@@ -1017,7 +1017,9 @@ def _select_plan_ref(issue_type, epic_branch_name, open_pr_headref, root_branch,
         if epic_branch_name:
             return epic_branch_name, PLAN_REF_ROW_EPIC_BRANCH
         return root_branch, PLAN_REF_ROW_EPIC_BOOTSTRAP
-    if issue_type == "story":
+    # Keyed on the epic-context facts, not the `story` label (#31): an untyped sub-issue of an open
+    # epic reaches here with the same two facts set, and rows 4-6 describe its grounding exactly.
+    if issue_type == "story" or epic_branch_name or parent_epic_open:
         if epic_branch_name:
             return epic_branch_name, PLAN_REF_ROW_STORY_PARENT_BRANCH
         if parent_epic_open:
@@ -1117,7 +1119,10 @@ def _suggested_playbook(issue_type, mode, parent_epic_open=False):
     ordering encodes the precedence: the story-under-open-epic short-circuit runs before the
     revise check, matching v1's Step-2 exception.
     """
-    if issue_type == "story" and parent_epic_open:
+    # `parent_epic_open` alone (#31): it is set only by the parent-lookup arm, which now admits an
+    # untyped sub-issue of an open epic — and that target wants the same just-in-time plan against
+    # current epic HEAD as its `story`-labelled siblings.
+    if parent_epic_open:
         return "story-jit.md"
     if mode == "revise":
         return "revise.md"
@@ -1358,9 +1363,14 @@ def build_facts(issue_number, repo, root=".", scratch_dir=None, refresh=False, c
             "delivery_log": delivery_log_facts,
         }
 
-    elif issue_type == "story":
-        # Native `parent` first (exact, no round-trip); the full-text search is the fallback for a
-        # story filed before the relation was written (skills/_shared/epic-story-hierarchy.md).
+    elif issue_type == "story" or issue_envelope.get("parent"):
+        # Gated on HAVING a parent, not on the lexical type (#31) — the same gate move as
+        # prep_workspace_open's and prep_resolver's. Grounding a plan on the default branch while
+        # the resolver builds it on `epic/<N>-<slug>` plans against a tree missing every predecessor
+        # story's merged work. Tier rule identical to the other two preps: native `parent` first
+        # (exact, no round-trip), and the legacy `#<N> in:body` full-text search ONLY for a `story`
+        # filed before the relation was written (skills/_shared/epic-story-hierarchy.md) — an
+        # untyped target gets the exact native answer or no lookup at all.
         matches, decision = _search_parent_epic(
             repo, issue_number, native_parent=issue_envelope.get("parent"), cwd=cwd
         )
@@ -1368,7 +1378,6 @@ def build_facts(issue_number, repo, root=".", scratch_dir=None, refresh=False, c
             return None
         parent_epic = matches[0] if len(matches) == 1 else None
         parent_open = parent_epic is not None and (parent_epic.get("state") or "").upper() == "OPEN"
-        parent_epic_open = parent_open
 
         epic_branch_facts = None
         jit_epic_plan = None
@@ -1379,55 +1388,73 @@ def build_facts(issue_number, repo, root=".", scratch_dir=None, refresh=False, c
                 return None
             epic_branch_name = epic_branch_facts.get("branch")
 
-            epic_exit, epic_envelope = gh_gather.run(
-                str(parent_epic["number"]),
-                repo,
-                marker_prefix=PLAN_MARKER,
-                scratch_dir=scratch_dir,
-                env=None,
-                stream=_DiscardStream(),
-            )
-            if epic_envelope is not None and epic_envelope.get("status") == "needs_decision":
-                _merge_notices(notices, epic_envelope.get("notices"))
-                if _forward_decision(epic_envelope["decision"], notices=notices):
-                    return None
-            if epic_exit != 0:
-                sys.stderr.write(
-                    "prep_planner: gh_gather on parent epic #%s failed (exit %d)\n"
-                    % (parent_epic["number"], epic_exit)
+        # An UNTYPED target enters the story-JIT machinery only on the branch-existence oracle: an
+        # `epic/<parent>-*` branch on origin is the evidence that the parent really is an epic with
+        # work in flight. The `parent` node carries no labels, so without that branch a parent epic
+        # whose workspace is not open yet is indistinguishable from a STORY parent — which would
+        # make this target a deliverable slice, and slices are planned as their parent's phases, not
+        # as just-in-time stories (skills/_shared/epic-story-hierarchy.md). Unproven, it grounds on
+        # the default branch exactly as before, and says so.
+        if issue_type != "story" and not epic_branch_name:
+            if parent_epic is not None:
+                notices.append(
+                    branching.PARENT_CLOSED
+                    if not parent_open
+                    else branching.PARENT_HAS_NO_INTEGRATION_BRANCH
                 )
-                sys.exit(1)
-            _merge_notices(notices, epic_envelope.get("notices"))
-
-            jit_epic_plan = {"present": bool(epic_envelope.get("marker_comment_present"))}
-            if jit_epic_plan["present"]:
-                jit_epic_plan["body_mode"] = epic_envelope.get("marker_comment_mode")
-                if epic_envelope.get("marker_comment_mode") == "path":
-                    jit_epic_plan["body_path"] = epic_envelope.get("marker_comment_path")
-                else:
-                    jit_epic_plan["body"] = epic_envelope.get("marker_comment_body")
-
-            epic_thread = _load_thread(epic_envelope)
-            dl_comment, dl_decision = _find_one_marker(epic_thread, DELIVERY_LOG_MARKER, "epic-delivery-log")
-            if _forward_decision(dl_decision, notices=notices):
-                return None
-            jit_delivery_log = {"present": dl_comment is not None}
-            if dl_comment is not None:
-                jit_delivery_log["comment_id"] = dl_comment.get("id")
-                jit_delivery_log["comment_url"] = dl_comment.get("url")
-                jit_delivery_log.update(
-                    _stage_comment_body(
-                        dl_comment, scratch_dir, "epic-%s-delivery-log.md" % parent_epic["number"]
+            epic_branch_facts = None
+        else:
+            parent_epic_open = parent_open
+            if parent_open:
+                epic_exit, epic_envelope = gh_gather.run(
+                    str(parent_epic["number"]),
+                    repo,
+                    marker_prefix=PLAN_MARKER,
+                    scratch_dir=scratch_dir,
+                    env=None,
+                    stream=_DiscardStream(),
+                )
+                if epic_envelope is not None and epic_envelope.get("status") == "needs_decision":
+                    _merge_notices(notices, epic_envelope.get("notices"))
+                    if _forward_decision(epic_envelope["decision"], notices=notices):
+                        return None
+                if epic_exit != 0:
+                    sys.stderr.write(
+                        "prep_planner: gh_gather on parent epic #%s failed (exit %d)\n"
+                        % (parent_epic["number"], epic_exit)
                     )
-                )
+                    sys.exit(1)
+                _merge_notices(notices, epic_envelope.get("notices"))
 
-        story_facts = {
-            "parent_epic": parent_epic,
-            "parent_epic_open": parent_open,
-            "epic_branch": epic_branch_facts,
-            "epic_plan": jit_epic_plan,
-            "epic_delivery_log": jit_delivery_log,
-        }
+                jit_epic_plan = {"present": bool(epic_envelope.get("marker_comment_present"))}
+                if jit_epic_plan["present"]:
+                    jit_epic_plan["body_mode"] = epic_envelope.get("marker_comment_mode")
+                    if epic_envelope.get("marker_comment_mode") == "path":
+                        jit_epic_plan["body_path"] = epic_envelope.get("marker_comment_path")
+                    else:
+                        jit_epic_plan["body"] = epic_envelope.get("marker_comment_body")
+
+                epic_thread = _load_thread(epic_envelope)
+                dl_comment, dl_decision = _find_one_marker(epic_thread, DELIVERY_LOG_MARKER, "epic-delivery-log")
+                if _forward_decision(dl_decision, notices=notices):
+                    return None
+                jit_delivery_log = {"present": dl_comment is not None}
+                if dl_comment is not None:
+                    jit_delivery_log["comment_id"] = dl_comment.get("id")
+                    jit_delivery_log["comment_url"] = dl_comment.get("url")
+                    jit_delivery_log.update(
+                        _stage_comment_body(
+                            dl_comment, scratch_dir, "epic-%s-delivery-log.md" % parent_epic["number"]
+                        )
+                    )
+
+            story_facts = {
+                "parent_epic": parent_epic,
+                "parent_epic_open": parent_open,
+                "epic_branch": epic_branch_facts,
+                "epic_plan": jit_epic_plan,
+                "epic_delivery_log": jit_delivery_log,
+            }
 
     # 4.5) Deliverable sub-issues (#18) — a NON-EPIC target's sub-issues are its slices by
     #      construction, so the gate is the target's type plus a non-empty node list already in

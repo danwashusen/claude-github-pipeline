@@ -66,14 +66,17 @@ first, then `type`). Read **exactly one** playbook.
 | `vector` | Playbook | Flow |
 |---|---|---|
 | `comment_only: true` (OQ-blocked, native-blocked, or answer-only) | `playbooks/comment-only.md` | stage + post one comment; terminal handoff |
-| `type: standard` | `playbooks/standard.md` | reads the shared spine; forward handoff to the evaluator |
-| `type: story` | `playbooks/story.md` | reads the shared spine (base = epic branch, `audit_ref` = parent epic); `Story:`/`Epic:` handoff |
+| `type: standard`, no `story` fact | `playbooks/standard.md` | reads the shared spine; forward handoff to the evaluator |
+| `type: story`, **or** any type with `story.branch_facts.branch` set | `playbooks/story.md` | reads the shared spine (base = epic branch, `audit_ref` = parent epic); `Story:`/`Epic:` handoff |
 | `type: epic` | `playbooks/epic.md` | epic-as-target: branch bootstrap / drift rectification / canonical baseline / early draft integration PR + ready flip |
 
 `standard.md` and `story.md` open by reading the shared spine `playbooks/resolve-spine.md` (audit →
 plan-gate → doc grounding → code in the workspace → §review loop → per-phase push + DoD projection →
 handoff); the type differences (base ref, audit ref, handoff shape) are **facts**, never branches.
-`comment-only.md` and `epic.md` are distinct action flows and do **not** read the spine. `continue`
+`comment-only.md` and `epic.md` are distinct action flows and do **not** read the spine. The story row is keyed on
+the **branch fact, not the label** (#31): a sub-issue labelled by kind of work (`bug`, `tech-debt`)
+reads as `type: standard` while carrying its siblings' native parent edge, and once its PR bases on
+`epic/<N>-<slug>` the story flow is the one that describes its run. `continue`
 mode is parameterization *inside* whichever playbook the type selects (`vector.mode` + `prior_pr`
 drive it — the ambient worktree already carries the in-flight work), not a fifth flow.
 

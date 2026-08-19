@@ -1,9 +1,12 @@
 # Story under an open epic
 
-Route for `vector.type == story` (a child story whose parent epic is open). The story's PR bases on the
-parent's `epic/<N>-<slug>` integration branch, not `main`, so `main` stays stable while the epic is in
-flight. `facts.story` carries the parent epic + its branch facts; `facts.audit_ref` is the parent
-epic's branch (bare); the asserted workspace's `base_ref` is that branch; prep ensured
+Route for any target under an open parent epic — `vector.type == story`, and equally a target whose
+type is `standard` but whose native parent resolved to an open epic with an integration branch
+(`facts.story.branch_facts.branch` set; #31). The label classifies the *kind of work*; what selects
+this route is the base the PR will carry. The PR bases on the parent's `epic/<N>-<slug>` integration
+branch, not `main`, so `main` stays stable while the epic is in flight. `facts.story` carries the
+parent epic + its branch facts; `facts.audit_ref` is the parent epic's branch (bare); the asserted
+workspace's `base_ref` is that branch; prep ensured
 `facts.read_workspaces.audit` at that branch for the audit's code reads (script-internal plumbing).
 
 **Run the spine first.** Read [`resolve-spine.md`](resolve-spine.md) and execute it end to end. The

@@ -234,6 +234,61 @@ class StoryBaseTests(PrepWorkspaceOpenSandboxTestCase):
         self.assertEqual(envelope["workspace"]["base_ref"], "epic/100-sandbox-fixture")
 
 
+class UntypedSubIssueBaseTests(PrepWorkspaceOpenSandboxTestCase):
+    """Issue #31: the hierarchy lookup sat behind `issue_type == "story"`, a lexical label gate, so
+    a sub-issue labelled by KIND of work (`bug` / `tech-debt` / `follow-up`) read as `standard` and
+    based on the default branch — even though its native `parent` was already in the gather
+    envelope, and is the routing's own preferred tier. The parent was fetched, then never
+    consulted; `epic: null` reported "no parent" where the truth was "never asked"."""
+
+    def _open_epic_branch(self):
+        _git(["fetch", "origin"], self.root)
+        _git(["branch", "epic/100-sandbox-fixture", "origin/main"], self.root)
+        _git(["push", "origin", "epic/100-sandbox-fixture"], self.root)
+
+    def test_untyped_sub_issue_bases_on_its_parents_integration_branch(self):
+        self._open_epic_branch()
+        envelope = self._envelope(
+            issue="264", fixture_case="prep_workspace_open_untyped_subissue"
+        )
+        # Type is untouched — the fix moved the gate, it did not widen `detect_type`.
+        self.assertEqual(envelope["vector"]["type"], "standard")
+        self.assertEqual(envelope["branch"]["base"], "epic/100-sandbox-fixture")
+        self.assertEqual(envelope["workspace"]["base_ref"], "epic/100-sandbox-fixture")
+        # It still gets its OWN branch — basing on the epic never means adopting it (#29/#30).
+        self.assertEqual(envelope["branch"]["name"], "264-stale-cache-key-survives-a-profile-rename")
+        self.assertEqual(envelope["branch"]["source"], "computed")
+        # The receipt now names the parent it based on, instead of `epic: null`.
+        self.assertEqual(envelope["epic"]["parent_epic"]["number"], 100)
+        self.assertEqual(envelope["epic"]["branch_facts"]["branch"], "epic/100-sandbox-fixture")
+
+    def test_untyped_sub_issue_whose_parent_has_no_integration_branch_notices(self):
+        # No `epic/100-*` pushed: the parent may be an epic whose workspace is not open yet, or a
+        # STORY (which would make this target a deliverable slice). The `parent` node carries no
+        # labels, so the two are indistinguishable here — the notice asserts only what was
+        # established, and the base falls back to the default branch as before.
+        envelope = self._envelope(
+            issue="264", fixture_case="prep_workspace_open_untyped_subissue"
+        )
+        self.assertEqual(envelope["branch"]["base"], "main")
+        self.assertIn("PARENT_HAS_NO_INTEGRATION_BRANCH", envelope["notices"])
+        self.assertEqual(envelope["epic"]["parent_epic"]["number"], 100)
+        self.assertIsNone(envelope["epic"]["branch_facts"]["branch"])
+        # The story-only attention line must NOT fire here — it calls the parent an epic, which is
+        # true by construction for a story and unknown for an untyped target.
+        self.assertFalse(
+            [line for line in envelope["attention"] if "parent epic" in line], envelope["attention"]
+        )
+
+    def test_an_untyped_issue_with_no_parent_runs_no_lookup_at_all(self):
+        # The legacy `#<N> in:body` full-text tier stays story-only: a round-trip per standard
+        # issue, matching loosely, to guess at a hierarchy the target probably has no place in.
+        # The fixture manifest omits that search entirely, so the shim would fail on the call.
+        envelope = self._envelope(issue="100", fixture_case="prep_workspace_open_fresh")
+        self.assertEqual(envelope["branch"]["base"], "main")
+        self.assertIsNone(envelope["epic"])
+
+
 class EpicPrMentionTests(PrepWorkspaceOpenSandboxTestCase):
     """Issue #29: an epic integration PR lists every one of its stories by number, so the loose
     `#<N> in:body` open-PR search surfaces it once per story. Adopting it as the story's prior PR

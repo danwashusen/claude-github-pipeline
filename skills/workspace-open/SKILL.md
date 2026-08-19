@@ -25,7 +25,9 @@ ${CLAUDE_PLUGIN_ROOT}/scripts/prep_workspace_open.py <issue> <owner/repo> [--roo
 Returns one **facts block** (`architecture.md §4`): `target`, `vector` (`type` / `mode` /
 `prior_pr_row`, plus `gate` on a gated row), `branch` (`name` / `base` /
 `source: computed|linked|pr-head|epic-discovered|epic-bootstrap` / `collided_with`), `link`
-(`attempted` / `created` / `existing`), `plan.present`, `workspace` (the create/reuse receipt:
+(`attempted` / `created` / `existing`), `plan.present`, `epic` (the hierarchy receipt — the native
+parent that set `branch.base` plus its `branch_facts`; `null` only when no lookup ran, so
+present-but-empty means "asked, no parent" — #31), `workspace` (the create/reuse receipt:
 `path` / `branch` / `base_ref` / `sha` / `reused` / `dirty` / `unpushed_commits` / `setup`, whose
 `setup.source` names the checkout/branch/SHA the hook block came from and whether it was dirty),
 `attention`, `notices`. Consume as **data**. A `needs_decision` (`AUTH_REQUIRED`,

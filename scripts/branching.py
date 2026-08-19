@@ -549,6 +549,74 @@ def search_parent_epic(repo, story_number, native_parent=None, cwd=None):
     )
 
 
+# Non-blocking notice (open notice vocabulary, architecture.md §3): the target's native parent was
+# consulted and found, but no `epic/<parent>-*` integration branch exists on origin, so the caller
+# based on the default branch instead. Named for what the lookup actually established — a parent
+# with no integration branch — NOT "parent epic": the `parent` node carries no labels, so at this
+# point an epic whose branch is not yet open and a *story* parent (which makes the target a
+# deliverable slice, `skills/_shared/epic-story-hierarchy.md`) are indistinguishable. A notice that
+# named the parent an epic would be the same silent misreport as the `epic: null` this replaces.
+PARENT_HAS_NO_INTEGRATION_BRANCH = "PARENT_HAS_NO_INTEGRATION_BRANCH"
+
+# Non-blocking notice (open notice vocabulary, architecture.md §3): the native parent was found but
+# is CLOSED, so its branch is not a base — the caller uses the default branch. Distinct from the
+# notice above because the receipts differ: nothing to open, versus a branch that may yet be opened.
+PARENT_CLOSED = "PARENT_CLOSED"
+
+
+def resolve_parent_epic_branch(root, repo, issue_number, issue_type, native_parent, cwd=None):
+    """The hierarchy lookup every base/ref selection keys off. Returns
+    ``(facts_or_none, notices, decision_or_none)``; `facts` is
+    ``{"parent_epic": <node|None>, "branch_facts": <discover_epic_branch facts|None>}``, and
+    ``facts["branch_facts"]["branch"]`` — when present — is the integration branch to base on.
+
+    **The lookup is gated on having a parent, never on the target's lexical type** (#31).
+    `detect_type` matches an `epic`/`story` label or an `Epic:` title prefix, so a sub-issue
+    labelled by *kind of work* (`bug`, `tech-debt`, `follow-up`) reads as `standard` — while
+    carrying the very same native parent edge as its `story`-labelled siblings. Gating the lookup
+    on the label used a proxy for a fact the gather envelope already carries exactly, and failed
+    silently: the parent was fetched, then never consulted, and the receipt said `epic: null`
+    ("no parent") where the truth was "never asked".
+
+    ``issue_type`` still selects the **tier set**, which is the one thing it legitimately answers:
+
+    - `native_parent` present -> tier 1 only. Exact, single-valued, already in hand, no round-trip.
+    - absent + `issue_type == "story"` -> the legacy `#<N> in:body` full-text search, for a story
+      filed before the relation was written (`skills/_shared/epic-story-hierarchy.md`).
+    - absent + any other type -> **no lookup**. The legacy tier costs a `gh` round-trip on every
+      standard issue and matches loosely, so an untyped target gets the exact native answer or
+      nothing — never a full-text guess at a hierarchy it probably has no place in.
+
+    Returns ``(None, notices, decision)`` on a forwarded decision, matching the executor-core
+    contract (architecture.md §3).
+    """
+    notices = []
+    if not native_parent and issue_type != "story":
+        return None, notices, None
+
+    matches, decision = search_parent_epic(
+        repo, issue_number, native_parent=native_parent, cwd=cwd
+    )
+    if decision is not None:
+        return None, notices, decision
+    if len(matches) != 1:
+        return {"parent_epic": None, "branch_facts": None}, notices, None
+
+    parent = matches[0]
+    if (parent.get("state") or "").upper() != "OPEN":
+        notices.append(PARENT_CLOSED)
+        return {"parent_epic": parent, "branch_facts": None}, notices, None
+
+    branch_facts, branch_decision = discover_epic_branch(
+        root, parent["number"], parent.get("title") or ""
+    )
+    if branch_decision is not None:
+        return None, notices, branch_decision
+    if not branch_facts.get("branch"):
+        notices.append(PARENT_HAS_NO_INTEGRATION_BRANCH)
+    return {"parent_epic": parent, "branch_facts": branch_facts}, notices, None
+
+
 # ---------------------------------------------------------------------------
 # GitHub-linked branches (`gh issue develop`) — the native "create a branch for this issue"
 # association. prep_workspace_open creates/adopts them; prep_resolver's expected-branch ladder

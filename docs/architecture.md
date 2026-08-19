@@ -152,7 +152,16 @@ Every script emits exactly one JSON envelope on stdout.
   lookup) does not know it. It is deliberately NOT `SUBISSUES_UNSUPPORTED`, which consumers read as a
   WRITE outcome — a filed child left unparented — and abort on; a failed read has written nothing, so
   reusing that token would abort a cut and report a child that does not exist. On this notice a reader
-  treats the parent as UNKNOWN, never as absent. The notice set is
+  treats the parent as UNKNOWN, never as absent.
+  `PARENT_HAS_NO_INTEGRATION_BRANCH` and `PARENT_CLOSED` are a sixth and seventh, both from
+  `branching.resolve_parent_epic_branch` (and, inline, `prep_planner.py`): the target's native
+  parent was consulted and found, but yielded no base — no `epic/<parent>-*` branch on origin, or a
+  closed parent — so the caller used the default branch. They exist because the alternative is the
+  #31 silence: a receipt reading `epic: null` cannot distinguish **"no parent"** from **"parent not consulted"** from
+  **"parent consulted, did not qualify"**. `PARENT_HAS_NO_INTEGRATION_BRANCH` deliberately does not
+  call the parent an epic — the `parent` node carries no labels, so an epic whose workspace is not
+  open yet and a *story* parent (which makes the target a deliverable slice) are indistinguishable
+  at that point. The notice set is
   deliberately **open** — unlike decision codes, a script may add one without a contract change
   ([`scripts/pipelib/decisions.py`](../scripts/pipelib/decisions.py)).
 - **Spill routing.** Any verbatim section (body, thread, diff, marker comment) is inline when
