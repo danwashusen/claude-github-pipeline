@@ -291,8 +291,10 @@ def _normalize_comment(raw):
     }
 
 
-# The false-positive fix (see module docstring): fetched ONLY to filter, then stripped back off so
-# the returned PR objects' field set is unchanged from before this fix.
+# The false-positive fix (see module docstring): fetched ONLY to filter, then stripped back off.
+# The returned PR objects' field set gains exactly one derived boolean in their place —
+# `closes_issue` (see `_filter_and_strip_reference_fields`) — because the raw link list is gone by
+# the time any caller sees the item, and `branching.pr_belongs_to_issue` needs the close linkage.
 _OPEN_PR_SEARCH_FIELDS = "number,title,author,isDraft,headRefName,url,updatedAt,body,closingIssuesReferences"
 _REFERENCE_FILTER_ONLY_FIELDS = ("body", "closingIssuesReferences")
 
@@ -328,14 +330,29 @@ def references_issue(body_text, issue_number, closing_issue_numbers=None):
 
 def _filter_and_strip_reference_fields(items, issue_number):
     """Apply :func:`references_issue` to each item's `body`/`closingIssuesReferences`, keep only
-    the genuine matches, then strip those two filter-only fields back off — the returned shape is
-    exactly what callers already assert against (this fix changes WHICH items are returned, not
-    the shape of each returned item)."""
+    the genuine matches, strip those two filter-only fields back off, and add ONE derived boolean
+    in their place: ``closes_issue`` — whether `issue_number` is a member of the item's
+    `closingIssuesReferences` link set.
+
+    `closes_issue` survives the strip because the distinction those raw fields carry is not only
+    "does this PR reference the issue" but "is this the issue's OWN PR":
+    :func:`branching.pr_belongs_to_issue` needs the close linkage to accept a PR on a branch this
+    pipeline did not name, and the raw list is gone by the time any caller sees the item. It is
+    derived from GitHub's own resolved link set ONLY, never re-parsed from `Fixes #<N>` prose —
+    body text is exactly the loose signal this whole filter exists to distrust, and GitHub has
+    already resolved the keyword into the link set. A `gh` build or repo returning no
+    `closingIssuesReferences` yields `closes_issue: false` for every item, degrading ownership to
+    the head-name arm alone — the same capability-gated degradation shape as the native-relation
+    ladders, never an error."""
+    issue_number = int(issue_number)
     filtered = []
     for item in items:
         closing_numbers = [c.get("number") for c in (item.get("closingIssuesReferences") or [])]
-        if references_issue(item.get("body"), issue_number, closing_issue_numbers=closing_numbers):
-            filtered.append({k: v for k, v in item.items() if k not in _REFERENCE_FILTER_ONLY_FIELDS})
+        if not references_issue(item.get("body"), issue_number, closing_issue_numbers=closing_numbers):
+            continue
+        kept = {k: v for k, v in item.items() if k not in _REFERENCE_FILTER_ONLY_FIELDS}
+        kept["closes_issue"] = issue_number in {int(n) for n in closing_numbers if n is not None}
+        filtered.append(kept)
     return filtered
 
 

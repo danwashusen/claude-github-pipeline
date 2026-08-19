@@ -1,0 +1,1 @@
+[{"number": 245, "title": "Epic #1: the container", "author": {"login": "alice"}, "isDraft": true, "headRefName": "epic/1-the-container", "url": "https://github.com/o/r/pull/245", "updatedAt": "2026-01-06T00:00:00Z", "body": "Fixes #1\n\n## Stories\n- [ ] #2 \u2014 Story A\n- [ ] #3 \u2014 Story B\n", "closingIssuesReferences": [{"number": 1}]}]

@@ -193,6 +193,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
+import branching  # noqa: E402  (import-only: the issue's-own-PR narrowing)
 import config_block  # noqa: E402  (import after sys.path setup, by necessity; in-process composition)
 import doc_catalogue  # noqa: E402  (the consuming repo's declared grounding docs)
 import gh_gather  # noqa: E402
@@ -1267,7 +1268,11 @@ def build_facts(issue_number, repo, root=".", scratch_dir=None, refresh=False, c
         )
 
     # 4) Epic / story facts + epic-branch discovery (feeds plan_ref selection).
-    open_prs = issue_envelope.get("open_prs") or []
+    # This issue's OWN open PRs (branching.prior_prs_for_issue), not every PR that mentions it: an
+    # epic integration PR lists every story by number, and taking its head here would ground a
+    # story's plan on the epic's ref AND feed the epic's `## Phase tracker` into that story's
+    # revise facts via `_build_revise_facts` below.
+    open_prs = branching.prior_prs_for_issue(issue_envelope.get("open_prs"), issue_number)
     open_pr_headref = open_prs[0]["headRefName"] if open_prs else None
 
     epic_branch_name = None

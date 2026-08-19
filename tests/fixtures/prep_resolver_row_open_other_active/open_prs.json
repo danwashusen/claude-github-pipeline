@@ -1,1 +1,1 @@
-[{"number": 56, "title": "Fix the widget (attempt)", "author": {"login": "carol"}, "isDraft": false, "headRefName": "carol-fix-widget", "url": "https://github.com/octo/widgets/pull/56", "updatedAt": "2026-07-08T00:00:00Z", "body": "Fixes #100\n\nWork in progress."}]
+[{"number": 56, "title": "Fix the widget (attempt)", "author": {"login": "carol"}, "isDraft": false, "headRefName": "carol-fix-widget", "url": "https://github.com/octo/widgets/pull/56", "updatedAt": "2026-07-08T00:00:00Z", "body": "Fixes #100\n\nWork in progress.", "closingIssuesReferences": [{"number": 100}]}]

@@ -696,6 +696,47 @@ class StoryParentEpicSearchTests(PrepResolverSandboxTestCase):
         self.assertIn("read_workspaces", envelope)
 
 
+class EpicPrMentionTests(PrepResolverSandboxTestCase):
+    """Issue #29's resolver half. The resolver shares the prior-PR classifier, and its own
+    continue short-circuit (`expected_branch = prior_pr_fact["headRefName"]`) agreed with
+    workspace-open's — so the operator was already standing in the epic worktree and the
+    `workspace.py attach` assertion PASSED. Nothing downstream caught it."""
+
+    def _push_epic_branch(self):
+        _git(["fetch", "origin"], self.root)
+        _git(["branch", "epic/100-sandbox-fixture", "origin/main"], self.root)
+        _git(["push", "origin", "epic/100-sandbox-fixture"], self.root)
+
+    def test_an_epic_pr_listing_this_story_is_not_this_storys_prior_pr(self):
+        self._push_epic_branch()
+        envelope = self._envelope(
+            issue="101", fixture_case="prep_resolver_story_epic_pr_mention",
+            ambient="101-story-a-first-slice",
+        )
+        self.assertEqual(envelope["vector"]["mode"], "fresh")
+        self.assertEqual(envelope["vector"]["prior_pr_row"], "no-prior-pr")
+        self.assertIsNone(envelope["prior_pr"])
+        self.assertEqual(
+            envelope["prior_pr_rejected"],
+            [{"number": 245, "headRefName": "epic/100-sandbox-fixture"}],
+        )
+        # The story is expected on its OWN branch, not the epic's integration branch.
+        self.assertEqual(envelope["workspace"]["branch"], "101-story-a-first-slice")
+
+    def test_a_merged_epic_pr_is_not_this_storys_closed_prior_pr(self):
+        self._push_epic_branch()
+        envelope = self._envelope(
+            issue="101", fixture_case="prep_resolver_story_merged_epic_pr_mention",
+            ambient="101-story-a-first-slice",
+        )
+        self.assertEqual(envelope["vector"]["prior_pr_row"], "no-prior-pr")
+        self.assertIsNone(envelope["prior_pr"])
+        # Not the `closed-not-resolved` row, so no "did not resolve it" attention line either.
+        self.assertFalse(
+            [line for line in envelope["attention"] if "did not resolve it" in line]
+        )
+
+
 class OpenQuestionHardGateTests(PrepResolverSandboxTestCase):
     """Blocked-OQ fixtures both ways (S9 DoD's fourth box): open tracker + in-scope (blocked)
     sets the hard-gate fact; a question-decision:v1 comment (Tier 1) clears it."""
@@ -1114,9 +1155,12 @@ class PureHelperUnitTests(unittest.TestCase):
     def test_stale_cutoff_days_fact_is_surfaced_on_the_prior_pr_fact(self):
         # docs/specs/resolver.md advisory: the operator/router must be able to see the exact
         # driver, not trust an opaque classification.
+        # `closes_issue` (not the head name) is what makes this hand-named branch the issue's own
+        # PR — the OR arm of `branching.pr_belongs_to_issue`.
         open_prs = [{"number": 1, "author": {"login": "carol"}, "isDraft": False,
-                     "headRefName": "carol-x", "url": "u", "updatedAt": "2026-01-01T00:00:00Z"}]
-        _row, fact = prep_resolver._classify_prior_pr_row(open_prs, "reviewer-bot", None, "OPEN")
+                     "headRefName": "carol-x", "url": "u", "updatedAt": "2026-01-01T00:00:00Z",
+                     "closes_issue": True}]
+        _row, fact = prep_resolver._classify_prior_pr_row(open_prs, "reviewer-bot", None, "OPEN", 100)
         self.assertEqual(fact["stale_cutoff_days"], prep_resolver._STALE_ACTIVITY_DAYS)
 
     def test_draft_authorship_ordering_foreign_draft_is_not_the_draft_row(self):
@@ -1124,17 +1168,101 @@ class PureHelperUnitTests(unittest.TestCase):
         # someone else must classify via _classify_open_other_activity (gated), never
         # PRIOR_PR_ROW_DRAFT (continue) — authorship is checked BEFORE draft state.
         foreign_draft = [{"number": 58, "author": {"login": "carol"}, "isDraft": True,
-                           "headRefName": "carol-wip", "url": "u", "updatedAt": "2026-07-08T00:00:00Z"}]
-        row, _fact = prep_resolver._classify_prior_pr_row(foreign_draft, "reviewer-bot", None, "OPEN")
+                           "headRefName": "carol-wip", "url": "u", "updatedAt": "2026-07-08T00:00:00Z",
+                           "closes_issue": True}]
+        row, _fact = prep_resolver._classify_prior_pr_row(foreign_draft, "reviewer-bot", None, "OPEN", 100)
         self.assertNotEqual(row, prep_resolver.PRIOR_PR_ROW_DRAFT)
         self.assertIn(row, prep_resolver._GATED_ROWS)
 
     def test_own_draft_is_still_the_draft_row(self):
         own_draft = [{"number": 58, "author": {"login": "reviewer-bot"}, "isDraft": True,
                       "headRefName": "100-x", "url": "u", "updatedAt": "2026-07-08T00:00:00Z"}]
-        row, _fact = prep_resolver._classify_prior_pr_row(own_draft, "reviewer-bot", None, "OPEN")
+        row, _fact = prep_resolver._classify_prior_pr_row(own_draft, "reviewer-bot", None, "OPEN", 100)
         self.assertEqual(row, prep_resolver.PRIOR_PR_ROW_DRAFT)
         self.assertIn(row, prep_resolver._CONTINUE_ROWS)
+
+
+class PriorPrOwnershipUnitTests(unittest.TestCase):
+    """The issue-#29 guard, isolated to the pure classifier: the `#<N> in:body` searches behind
+    both candidate lists are MENTION searches, so a row must only ever be driven by the issue's
+    OWN PRs (`branching.pr_belongs_to_issue`)."""
+
+    EPIC_PR = {"number": 245, "author": {"login": "reviewer-bot"}, "isDraft": True,
+               "headRefName": "epic/100-the-container", "url": "u",
+               "updatedAt": "2026-08-01T00:00:00Z", "closes_issue": False}
+
+    def test_an_epic_pr_mentioning_a_story_is_not_that_storys_prior_pr(self):
+        # An epic integration PR lists every story by number, so it surfaces once per story. For
+        # the STORY it is a mention (no row); for the EPIC itself it is genuinely the prior PR.
+        # Asserting the pair proves the guard is issue-scoped, not a blanket epic exclusion.
+        story_row, story_fact = prep_resolver._classify_prior_pr_row(
+            [dict(self.EPIC_PR)], "reviewer-bot", None, "OPEN", 101
+        )
+        self.assertEqual(story_row, prep_resolver.PRIOR_PR_ROW_NONE)
+        self.assertIsNone(story_fact)
+
+        epic_pr = dict(self.EPIC_PR, closes_issue=True)
+        epic_row, _fact = prep_resolver._classify_prior_pr_row(
+            [epic_pr], "reviewer-bot", None, "OPEN", 100
+        )
+        self.assertEqual(epic_row, prep_resolver.PRIOR_PR_ROW_DRAFT)
+
+    def test_a_hand_named_branch_that_closes_the_issue_is_still_the_prior_pr(self):
+        # Guards the OR arm against a future head-name-only simplification: dropping this PR would
+        # mint a duplicate branch and a duplicate PR over live work.
+        hand_named = [{"number": 70, "author": {"login": "reviewer-bot"}, "isDraft": False,
+                       "headRefName": "reviewer-bot/quick-fix", "url": "u",
+                       "updatedAt": "2026-08-01T00:00:00Z", "closes_issue": True}]
+        row, _fact = prep_resolver._classify_prior_pr_row(hand_named, "reviewer-bot", None, "OPEN", 101)
+        self.assertEqual(row, prep_resolver.PRIOR_PR_ROW_OPEN_YOURS)
+
+    def test_a_vn_suffixed_head_still_belongs_without_a_close_link(self):
+        collided = [{"number": 71, "author": {"login": "reviewer-bot"}, "isDraft": False,
+                     "headRefName": "101-story-a-first-slice-v2", "url": "u",
+                     "updatedAt": "2026-08-01T00:00:00Z", "closes_issue": False}]
+        row, _fact = prep_resolver._classify_prior_pr_row(collided, "reviewer-bot", None, "OPEN", 101)
+        self.assertEqual(row, prep_resolver.PRIOR_PR_ROW_OPEN_YOURS)
+
+    def test_a_mention_only_open_pr_does_not_mask_a_real_closed_pr(self):
+        # Why callers must narrow BEFORE their `if not open_prs` gate: that gate decides whether
+        # the closed search runs at all, so a mention would otherwise hide a real closed PR.
+        closed = [{"number": 60, "author": {"login": "alice"}, "state": "MERGED",
+                   "mergedAt": "2026-05-01T00:00:00Z", "headRefName": "101-story-a", "url": "u",
+                   "closes_issue": True}]
+        row, fact = prep_resolver._classify_prior_pr_row(
+            [dict(self.EPIC_PR)], "reviewer-bot", closed, "OPEN", 101
+        )
+        self.assertEqual(row, prep_resolver.PRIOR_PR_ROW_CLOSED_NOT_RESOLVED)
+        self.assertEqual(fact["number"], 60)
+
+    def test_a_merged_epic_pr_is_not_this_storys_closed_prior_pr(self):
+        # The same defect one merge later — it would otherwise raise a spurious
+        # `closed-not-resolved` row (and its "did not resolve it" attention line) on every story.
+        merged_epic = [{"number": 245, "author": {"login": "reviewer-bot"}, "state": "MERGED",
+                        "mergedAt": "2026-08-10T00:00:00Z",
+                        "headRefName": "epic/100-the-container", "url": "u",
+                        "closes_issue": False}]
+        row, fact = prep_resolver._classify_prior_pr_row([], "reviewer-bot", merged_epic, "OPEN", 101)
+        self.assertEqual(row, prep_resolver.PRIOR_PR_ROW_NONE)
+        self.assertIsNone(fact)
+
+    def test_prior_prs_for_issue_is_idempotent(self):
+        # The property the caller-then-classifier double application rests on.
+        prs = [dict(self.EPIC_PR),
+               {"number": 71, "headRefName": "101-story-a", "closes_issue": False}]
+        once = prep_resolver._prior_prs_for_issue(prs, 101)
+        self.assertEqual(prep_resolver._prior_prs_for_issue(once, 101), once)
+        self.assertEqual([pr["number"] for pr in once], [71])
+
+    def test_partition_reports_the_dropped_prs_for_the_diagnostic_fact(self):
+        own, mentions_only = prep_resolver._partition_prs_for_issue(
+            [dict(self.EPIC_PR), {"number": 71, "headRefName": "101-story-a"}], 101
+        )
+        self.assertEqual([pr["number"] for pr in own], [71])
+        self.assertEqual([pr["number"] for pr in mentions_only], [245])
+
+    def test_none_partitions_to_two_empty_halves(self):
+        self.assertEqual(prep_resolver._partition_prs_for_issue(None, 101), ([], []))
 
 
 class UsageErrorTests(unittest.TestCase):

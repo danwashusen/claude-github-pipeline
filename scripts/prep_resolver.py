@@ -169,6 +169,8 @@ _search_parent_epic = branching.search_parent_epic
 _find_open_pr_for_head = branching.find_open_pr_for_head
 _count_commits_ahead = branching.count_commits_ahead
 _branch_belongs_to_issue = branching.branch_belongs_to_issue
+_prior_prs_for_issue = branching.prior_prs_for_issue
+_partition_prs_for_issue = branching.partition_prs_for_issue
 compute_branch_name = branching.compute_branch_name
 
 
@@ -524,7 +526,12 @@ def build_facts(issue_number, repo, root=".", scratch_dir=None, refresh=False, c
     if user_decision is not None:
         emit_needs_decision(user_decision)
         return None
-    open_prs = issue_envelope.get("open_prs") or []
+    # This issue's OWN open PRs, not every PR that mentions it (an epic integration PR lists every
+    # story by number). Narrowed BEFORE the emptiness gate below, which is what decides whether
+    # the closed search runs.
+    open_prs, mention_only_prs = _partition_prs_for_issue(
+        issue_envelope.get("open_prs"), issue_number
+    )
     closed_prs = None
     if not open_prs:
         # Only searched when no open PR exists (docs/specs/resolver.md step-5 table's rows are
@@ -534,8 +541,14 @@ def build_facts(issue_number, repo, root=".", scratch_dir=None, refresh=False, c
         if _forward_decision(closed_pr_decision):
             return None
     prior_pr_row, prior_pr_fact = _classify_prior_pr_row(
-        open_prs, current_user_login, closed_prs, issue_envelope.get("state")
+        open_prs, current_user_login, closed_prs, issue_envelope.get("state"), issue_number
     )
+    # Diagnostic only — omitted when empty, never `attention`, nothing gates on it. It exists so a
+    # surprising route ("why did it ignore the epic's PR?") is answerable from the envelope.
+    prior_pr_rejected = [
+        {"number": pr.get("number"), "headRefName": pr.get("headRefName")}
+        for pr in mention_only_prs
+    ]
     if prior_pr_row in _CONTINUE_ROWS:
         mode = MODE_CONTINUE
     elif prior_pr_row in _GATED_ROWS:
@@ -901,6 +914,8 @@ def build_facts(issue_number, repo, root=".", scratch_dir=None, refresh=False, c
         ) + config_attention,
         "notices": list(config_notices) + link_notices + epic_notices,
     }
+    if prior_pr_rejected:
+        facts["prior_pr_rejected"] = prior_pr_rejected
     if issue_type == "epic":
         facts["epic"] = epic_facts
     elif issue_type == "story":
