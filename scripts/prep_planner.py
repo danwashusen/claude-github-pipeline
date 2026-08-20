@@ -930,6 +930,22 @@ def _load_thread(envelope):
     return json.loads(text)
 
 
+def _marker_comment_id(comment):
+    """A thread-located marker comment's REST **numeric** id (``databaseId``).
+
+    A comment found by scanning the normalized thread carries the GraphQL node id as its ``id``
+    (`gh_gather._normalize_comment` mirrors the `gh issue view` shape), and the one thing a caller
+    ever does with a marker id is delete it on replacement — over REST, where a node id is always a
+    404 (#34). `gh_gather`'s own `marker_prefix` lookup reads the numeric id off the raw objects for
+    exactly this reason; a thread scan has to reach for `databaseId` to land in the same id space.
+    Falls back to `id` so a caller reading a thread from some other source still gets an id rather
+    than `None`.
+    """
+    if comment is None:
+        return None
+    return comment.get("databaseId", comment.get("id"))
+
+
 def _find_one_marker(thread_list, prefix, context_label):
     """Locate the (at most one) comment in `thread_list` whose body starts with `prefix`. Returns
     `(comment_or_none, decision_or_none)` — more than one match is `MARKER_AMBIGUOUS`
@@ -947,7 +963,8 @@ def _find_one_marker(thread_list, prefix, context_label):
             % (len(matches), context_label, prefix),
             context={
                 "marker_prefix": prefix,
-                "comment_ids": [m.get("id") for m in matches],
+                # `databaseId`, never the thread's `id` — see `_marker_comment_id`.
+                "comment_ids": [_marker_comment_id(m) for m in matches],
                 "comment_urls": [m.get("url") for m in matches],
             },
             options=[
@@ -1267,7 +1284,7 @@ def build_facts(issue_number, repo, root=".", scratch_dir=None, refresh=False, c
         return None
     research_facts = {"present": research_comment is not None}
     if research_comment is not None:
-        research_facts["comment_id"] = research_comment.get("id")
+        research_facts["comment_id"] = _marker_comment_id(research_comment)
         research_facts["comment_url"] = research_comment.get("url")
         research_facts.update(
             _stage_comment_body(research_comment, scratch_dir, "issue-%s-research.md" % issue_number)
@@ -1348,7 +1365,7 @@ def build_facts(issue_number, repo, root=".", scratch_dir=None, refresh=False, c
             return None
         delivery_log_facts = {"present": delivery_log_comment is not None}
         if delivery_log_comment is not None:
-            delivery_log_facts["comment_id"] = delivery_log_comment.get("id")
+            delivery_log_facts["comment_id"] = _marker_comment_id(delivery_log_comment)
             delivery_log_facts["comment_url"] = delivery_log_comment.get("url")
             delivery_log_facts.update(
                 _stage_comment_body(
@@ -1489,7 +1506,7 @@ def build_facts(issue_number, repo, root=".", scratch_dir=None, refresh=False, c
                     return None
                 jit_delivery_log = {"present": dl_comment is not None}
                 if dl_comment is not None:
-                    jit_delivery_log["comment_id"] = dl_comment.get("id")
+                    jit_delivery_log["comment_id"] = _marker_comment_id(dl_comment)
                     jit_delivery_log["comment_url"] = dl_comment.get("url")
                     jit_delivery_log.update(
                         _stage_comment_body(

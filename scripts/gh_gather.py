@@ -279,10 +279,19 @@ def _fetch_paginated_comments(issue, repo, env):
 def _normalize_comment(raw):
     """REST comment shape -> the ``gh issue view`` comment shape callers expect (v1's jq
     transform, restated in Python): ``{id, author: {login}, authorAssociation, body, createdAt,
-    url}``.
+    url}``, plus ``databaseId``.
+
+    ``databaseId`` is additive — the v1 shape above is preserved key-for-key, so an existing reader
+    of ``id`` is untouched. It carries the REST **numeric** id the raw payload already holds, under
+    GraphQL's own name for it, because ``id`` here is the GraphQL node id and
+    ``gh_persist.py comment --delete-marker-id`` deletes over REST
+    (``repos/{owner}/{repo}/issues/comments/{id}``), where a node id is always a 404 (#34). A
+    consumer that locates a marker by scanning this thread — rather than through the
+    ``marker_prefix`` lookup below, which reads the raw objects directly — takes its id from here.
     """
     return {
         "id": raw.get("node_id"),
+        "databaseId": raw.get("id"),
         "author": {"login": (raw.get("user") or {}).get("login")},
         "authorAssociation": raw.get("author_association"),
         "body": raw.get("body"),

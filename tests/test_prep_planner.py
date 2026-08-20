@@ -311,6 +311,9 @@ class PlanRefRowTests(PrepPlannerSandboxTestCase):
         self.assertEqual(envelope["story"]["epic_branch"]["branch"], "epic/100-sandbox-fixture")
         self.assertTrue(envelope["story"]["epic_plan"]["present"])
         self.assertTrue(envelope["story"]["epic_delivery_log"]["present"])
+        # #34: located by a thread scan, so the id must be the REST numeric one (fixture node id
+        # "IC_epic_log"), never the node id the REST delete endpoint 404s on.
+        self.assertEqual(envelope["story"]["epic_delivery_log"]["comment_id"], 9102)
         self.assertEqual(envelope["suggested_playbook"], "story-jit.md")
 
     def test_untyped_sub_issue_of_an_open_epic_grounds_on_the_epic_branch(self):
@@ -686,6 +689,24 @@ class MarkerDetectionVariantTests(PrepPlannerSandboxTestCase):
         self.assertTrue(envelope["research"]["present"])
         self.assertEqual(envelope["vector"]["mode"], "fresh")
         self.assertIn("comment_url", envelope["research"])
+
+    def test_research_comment_id_is_the_rest_numeric_id_not_the_node_id(self):
+        """#34: this module locates the dossier by scanning the normalized thread, whose `id` is
+        the GraphQL node id. Any id a caller could hand to `--delete-marker-id` must be the REST
+        numeric one (`databaseId`) -- a node id there is a guaranteed 404.
+        """
+        envelope = self._envelope(issue="500", fixture_case="prep_planner_marker_research_only")
+        self.assertEqual(envelope["research"]["comment_id"], 9501)
+
+    def test_ambiguous_marker_context_reports_numeric_ids(self):
+        result = self._run(
+            ["602", "octo/widgets", "--root", str(self.root), "--scratch-dir", self.scratch],
+            fixture_case="prep_planner_research_marker_ambiguous",
+        )
+        envelope = _parse_one_envelope(result.stdout)
+        self.assertEqual(envelope["decision"]["code"], "MARKER_AMBIGUOUS")
+        # The fixture's node ids are "IC_res1"/"IC_res2" and must never appear here.
+        self.assertEqual(sorted(envelope["decision"]["context"]["comment_ids"]), [9801, 9802])
 
     def test_both_markers_present(self):
         envelope = self._envelope(issue="501", fixture_case="prep_planner_marker_both")
