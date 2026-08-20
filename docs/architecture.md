@@ -129,6 +129,15 @@ Every script emits exactly one JSON envelope on stdout.
     sub-agents.
   - `BLOCKED_ON_USER` — progress requires operator input beyond a listable option set;
     sub-agents.
+  - `TARGET_IS_SLICE` — the requested issue is a **deliverable slice**: its native parent
+    classifies as a non-epic, and a non-epic's sub-issues are slices by construction
+    ([`skills/_shared/epic-story-hierarchy.md`](../skills/_shared/epic-story-hierarchy.md)). A
+    slice has no branch and no PR of its own — it ships as a phase on its parent's branch — so
+    opening a workspace for it, or planning it standalone, would silently promote it to a story
+    and author a plan competing with its parent's. Emitted by `prep_workspace_open.py` (before any
+    link or worktree side effect) and `prep_planner.py`. The card always offers proceeding, because
+    classification reads the parent's labels/title and an epic carrying neither the `epic` label
+    nor an `Epic:` title prefix reads as a non-epic; the operator, not the script, settles that.
 
   Adding a code is a contract change: update this section and the router rule together.
 - **Notices** (non-blocking degradations) ride in `notices: []` — e.g. `DEPS_UNSUPPORTED` when

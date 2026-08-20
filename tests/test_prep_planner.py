@@ -335,6 +335,22 @@ class PlanRefRowTests(PrepPlannerSandboxTestCase):
         # it plans just-in-time against current epic HEAD like its `story`-labelled siblings.
         self.assertEqual(envelope["suggested_playbook"], "story-jit.md")
 
+    def test_a_slice_is_refused_rather_than_planned_standalone(self):
+        # #266's parent #103 is a STORY, so #266 is a deliverable slice by construction. A slice is
+        # planned as a PHASE of its parent's plan (the phase's `sub-issue:` key names it), so a
+        # standalone plan here would be a second, competing decomposition of the same work.
+        result = self._run(
+            ["266", "octo/widgets", "--root", str(self.root), "--scratch-dir", self.scratch],
+            fixture_case="prep_planner_slice",
+        )
+        self.assertEqual(result.returncode, 0, msg="stderr: %s" % result.stderr)
+        envelope = _parse_one_envelope(result.stdout)
+        self.assertEqual(envelope["status"], "needs_decision")
+        self.assertEqual(envelope["decision"]["code"], "TARGET_IS_SLICE")
+        self.assertEqual(envelope["decision"]["context"]["parent"]["number"], 103)
+        # The parent's own gather must NOT have run — the refusal precedes it, and the fixture
+        # manifest carries no entry for it, so the shim would have failed the run otherwise.
+
     def test_untyped_sub_issue_without_a_parent_epic_branch_grounds_on_main(self):
         # No `epic/100-*` pushed. The parent may be an epic not yet opened, or a STORY — which
         # would make this target a deliverable slice, planned as its parent's phases, never as a
@@ -344,6 +360,9 @@ class PlanRefRowTests(PrepPlannerSandboxTestCase):
         self.assertEqual(envelope["plan_ref"], "main")
         self.assertIsNone(envelope.get("story"))
         self.assertIn("PARENT_HAS_NO_INTEGRATION_BRANCH", envelope["notices"])
+        # The parent read answered "epic" (unbootstrapped), so this is the not-yet-opened case and
+        # not a degraded one — a missing manifest entry would show up as this notice instead.
+        self.assertNotIn("PARENT_KIND_UNAVAILABLE", envelope["notices"])
         self.assertNotEqual(envelope["suggested_playbook"], "story-jit.md")
 
     def test_an_epic_pr_mentioning_the_story_does_not_supply_the_plan_ref(self):

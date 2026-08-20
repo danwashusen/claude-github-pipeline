@@ -3,7 +3,7 @@
     "argv": [
       "issue",
       "view",
-      "264",
+      "266",
       "--repo",
       "octo/widgets",
       "--json",
@@ -15,7 +15,7 @@
     "argv": [
       "api",
       "--paginate",
-      "repos/octo/widgets/issues/264/comments"
+      "repos/octo/widgets/issues/266/comments"
     ],
     "stdout_file": "comments_empty.json"
   },
@@ -28,7 +28,7 @@
       "--state",
       "open",
       "--search",
-      "264 in:body",
+      "266 in:body",
       "--json",
       "number,title,author,isDraft,headRefName,url,updatedAt,body,closingIssuesReferences"
     ],
@@ -50,7 +50,7 @@
       "--state",
       "closed",
       "--search",
-      "264 in:body",
+      "266 in:body",
       "--json",
       "number,title,author,state,mergedAt,headRefName,headRefOid,url,updatedAt,body,closingIssuesReferences"
     ],
@@ -59,20 +59,8 @@
   {
     "argv": [
       "issue",
-      "develop",
-      "--list",
-      "264",
-      "--repo",
-      "octo/widgets"
-    ],
-    "exit_code": 0,
-    "stdout_file": "linked_branches_empty.txt"
-  },
-  {
-    "argv": [
-      "issue",
       "view",
-      "100",
+      "103",
       "--repo",
       "octo/widgets",
       "--json",

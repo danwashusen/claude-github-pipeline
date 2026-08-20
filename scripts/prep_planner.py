@@ -210,6 +210,7 @@ from pipelib.decisions import (  # noqa: E402
     AUTH_REQUIRED,
     DOC_CATALOGUE_ABSENT,
     MARKER_AMBIGUOUS,
+    TARGET_IS_SLICE,
     needs_decision,
 )
 from pipelib.envelope import EXIT_OK, EXIT_USAGE_ERROR, emit_needs_decision, emit_ok  # noqa: E402
@@ -1388,13 +1389,48 @@ def build_facts(issue_number, repo, root=".", scratch_dir=None, refresh=False, c
                 return None
             epic_branch_name = epic_branch_facts.get("branch")
 
-        # An UNTYPED target enters the story-JIT machinery only on the branch-existence oracle: an
-        # `epic/<parent>-*` branch on origin is the evidence that the parent really is an epic with
-        # work in flight. The `parent` node carries no labels, so without that branch a parent epic
-        # whose workspace is not open yet is indistinguishable from a STORY parent — which would
-        # make this target a deliverable slice, and slices are planned as their parent's phases, not
-        # as just-in-time stories (skills/_shared/epic-story-hierarchy.md). Unproven, it grounds on
-        # the default branch exactly as before, and says so.
+        # Which hierarchy edge is this? An `epic/<parent>-*` branch on origin answers it for free —
+        # the parent is an epic and this is a story. Without one, the `parent` node's number/title/
+        # state cannot tell an epic whose workspace is not open yet from a STORY parent, and the two
+        # mean opposite things: the second makes this target a deliverable slice.
+        if not epic_branch_name and parent_epic is not None:
+            # No `epic/<parent>-*` branch proved epic-ness for free, so ask the parent directly:
+            # its own type IS the answer to which hierarchy edge this is
+            # (skills/_shared/epic-story-hierarchy.md's "by construction").
+            parent_kind, kind_notice = branching.classify_parent(
+                repo, parent_epic["number"], cwd=cwd
+            )
+            if kind_notice:
+                notices.append(kind_notice)
+            if parent_kind == branching.PARENT_KIND_NON_EPIC:
+                # This target is a deliverable slice. A slice is planned as a PHASE of its parent's
+                # plan — the phase's `sub-issue:` key names it — so authoring a standalone plan here
+                # would put a second, competing decomposition against the same work.
+                emit_needs_decision(
+                    needs_decision(
+                        TARGET_IS_SLICE,
+                        summary="#%s is a deliverable slice of #%s — a slice is planned as a phase "
+                        "of its parent's plan, not as a plan of its own"
+                        % (issue_number, parent_epic["number"]),
+                        context={
+                            "issue": issue_number,
+                            "parent": parent_epic,
+                            "parent_kind": parent_kind,
+                        },
+                        options=[
+                            "plan the parent instead: /github-pipeline:planner %s"
+                            % parent_epic["number"],
+                            "plan #%s anyway — it is not a slice (its parent carries neither an "
+                            "`epic` label nor an `Epic:` title prefix)" % issue_number,
+                        ],
+                    ),
+                    notices=notices,
+                )
+                return None
+
+        # Not a slice (or unknown). An UNTYPED target still enters the story-JIT machinery only on
+        # the branch-existence oracle — an unbootstrapped epic and an unreadable parent both leave
+        # epic-ness unproven, so it grounds on the default branch exactly as before, and says so.
         if issue_type != "story" and not epic_branch_name:
             if parent_epic is not None:
                 notices.append(

@@ -67,5 +67,17 @@
     ],
     "exit_code": 0,
     "stdout_file": "linked_branches_empty.txt"
+  },
+  {
+    "argv": [
+      "issue",
+      "view",
+      "100",
+      "--repo",
+      "octo/widgets",
+      "--json",
+      "labels,title"
+    ],
+    "stdout_file": "parent_classify.json"
   }
 ]

@@ -564,7 +564,59 @@ PARENT_HAS_NO_INTEGRATION_BRANCH = "PARENT_HAS_NO_INTEGRATION_BRANCH"
 PARENT_CLOSED = "PARENT_CLOSED"
 
 
-def resolve_parent_epic_branch(root, repo, issue_number, issue_type, native_parent, cwd=None):
+# Non-blocking notice (open notice vocabulary, architecture.md §3): the parent's own labels/title
+# could not be read, so whether it is an epic (this target is a story) or a non-epic (this target is
+# a deliverable slice) is UNKNOWN. Deliberately non-fatal and deliberately not a `TARGET_IS_SLICE`
+# decision: a convenience classification must never block a session that files fine today, and
+# refusing on an unread parent would refuse on every offline run.
+PARENT_KIND_UNAVAILABLE = "PARENT_KIND_UNAVAILABLE"
+
+PARENT_KIND_EPIC = "epic"
+PARENT_KIND_NON_EPIC = "non-epic"
+PARENT_KIND_UNKNOWN = "unknown"
+
+
+def classify_parent(repo, parent_number, cwd=None):
+    """Is this issue's parent an epic? Returns ``(kind, notice_or_none)`` where `kind` is
+    `PARENT_KIND_EPIC` / `PARENT_KIND_NON_EPIC` / `PARENT_KIND_UNKNOWN`.
+
+    The `parent` node in a gather envelope carries `number`/`title`/`state`/`url` and **no labels**,
+    so the relation alone cannot say which of the hierarchy's two edges it is. That matters because
+    the two edges mean opposite things for the child: an epic's sub-issue is a **story** (own branch
+    and PR), a non-epic's sub-issue is a **deliverable slice** (neither — it ships as a phase on its
+    parent's branch). `skills/_shared/epic-story-hierarchy.md` calls this identification "by
+    construction": the parent's own type IS the answer, and one `--json labels,title` read gets it.
+
+    Costs one `gh` round-trip, so callers ask only when the cheap oracle already failed — an
+    `epic/<parent>-*` branch on origin proves epic-ness for free, and `resolve_parent_epic_branch`
+    calls this only when there is no such branch.
+
+    Any failure degrades to `(PARENT_KIND_UNKNOWN, PARENT_KIND_UNAVAILABLE)` — including auth,
+    which is NOT escalated to a decision here (`find_merged_pr_for_head`'s precedent): every caller
+    has already completed an authenticated gather by this point, so a failure here is a lookup
+    problem, not a session-blocking one.
+    """
+    result = process.run(
+        [
+            "gh", "issue", "view", str(parent_number),
+            "--repo", repo, "--json", "labels,title",
+        ],
+        cwd=cwd,
+    )
+    if result.returncode != 0:
+        return PARENT_KIND_UNKNOWN, PARENT_KIND_UNAVAILABLE
+    try:
+        parent_obj = json.loads(result.stdout)
+    except ValueError:
+        return PARENT_KIND_UNKNOWN, PARENT_KIND_UNAVAILABLE
+    labels = [label.get("name") for label in parent_obj.get("labels") or []]
+    kind = detect_type(labels, parent_obj.get("title") or "")
+    return (PARENT_KIND_EPIC if kind == "epic" else PARENT_KIND_NON_EPIC), None
+
+
+def resolve_parent_epic_branch(
+    root, repo, issue_number, issue_type, native_parent, cwd=None, classify=False
+):
     """The hierarchy lookup every base/ref selection keys off. Returns
     ``(facts_or_none, notices, decision_or_none)``; `facts` is
     ``{"parent_epic": <node|None>, "branch_facts": <discover_epic_branch facts|None>}``, and
@@ -587,6 +639,14 @@ def resolve_parent_epic_branch(root, repo, issue_number, issue_type, native_pare
       standard issue and matches loosely, so an untyped target gets the exact native answer or
       nothing — never a full-text guess at a hierarchy it probably has no place in.
 
+    ``classify`` opts into the extra `--json labels,title` read of the parent (`classify_parent`)
+    that distinguishes an epic from a *story* parent — i.e. a story target from a deliverable slice.
+    It costs a `gh` round-trip and only ever runs when the free oracle came up short (no
+    `epic/<parent>-*` branch on origin), so it is **off by default**: a caller that has no refusal
+    to make from the answer should not pay for it. `prep_workspace_open.py` passes `True` because
+    it can refuse (`TARGET_IS_SLICE`); the resolver does not, and does not need to — a slice with no
+    workspace opened for it fails the resolver's own attach assertion first.
+
     Returns ``(None, notices, decision)`` on a forwarded decision, matching the executor-core
     contract (architecture.md §3).
     """
@@ -600,21 +660,48 @@ def resolve_parent_epic_branch(root, repo, issue_number, issue_type, native_pare
     if decision is not None:
         return None, notices, decision
     if len(matches) != 1:
-        return {"parent_epic": None, "branch_facts": None}, notices, None
+        return (
+            {"parent_epic": None, "branch_facts": None, "parent_kind": None},
+            notices,
+            None,
+        )
 
     parent = matches[0]
     if (parent.get("state") or "").upper() != "OPEN":
         notices.append(PARENT_CLOSED)
-        return {"parent_epic": parent, "branch_facts": None}, notices, None
+        # A closed parent has no branch to prove epic-ness with, and its KIND is still load-bearing:
+        # a closed story's sub-issue is a slice just as much as an open one's.
+        parent_kind = None
+        if classify:
+            parent_kind, kind_notice = classify_parent(repo, parent["number"], cwd=cwd)
+            if kind_notice:
+                notices.append(kind_notice)
+        return (
+            {"parent_epic": parent, "branch_facts": None, "parent_kind": parent_kind},
+            notices,
+            None,
+        )
 
     branch_facts, branch_decision = discover_epic_branch(
         root, parent["number"], parent.get("title") or ""
     )
     if branch_decision is not None:
         return None, notices, branch_decision
-    if not branch_facts.get("branch"):
+    if branch_facts.get("branch"):
+        # An `epic/<parent>-*` branch on origin proves the parent is an epic — no fetch needed.
+        parent_kind = PARENT_KIND_EPIC
+    else:
         notices.append(PARENT_HAS_NO_INTEGRATION_BRANCH)
-    return {"parent_epic": parent, "branch_facts": branch_facts}, notices, None
+        parent_kind = None
+        if classify:
+            parent_kind, kind_notice = classify_parent(repo, parent["number"], cwd=cwd)
+            if kind_notice:
+                notices.append(kind_notice)
+    return (
+        {"parent_epic": parent, "branch_facts": branch_facts, "parent_kind": parent_kind},
+        notices,
+        None,
+    )
 
 
 # ---------------------------------------------------------------------------
