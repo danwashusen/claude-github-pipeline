@@ -696,6 +696,29 @@ class StoryParentEpicSearchTests(PrepResolverSandboxTestCase):
         self.assertIn("read_workspaces", envelope)
 
 
+class UntypedSubIssueTests(PrepResolverSandboxTestCase):
+    """Issue #31's resolver half. `base_ref` is what the create-pr step's `--base` slot consumes,
+    so an untyped sub-issue did not merely get a mis-based worktree — absent operator intervention
+    it opened a PR targeting the default branch, taking its parent epic's unmerged work with it."""
+
+    def test_untyped_sub_issue_audits_and_bases_on_the_parent_epic_branch(self):
+        _git(["fetch", "origin"], self.root)
+        _git(["branch", "epic/100-sandbox-fixture", "origin/main"], self.root)
+        _git(["push", "origin", "epic/100-sandbox-fixture"], self.root)
+
+        envelope = self._envelope(
+            issue="264", fixture_case="prep_resolver_untyped_subissue",
+            ambient="264-stale-cache-key-survives-a-profile-rename",
+        )
+        self.assertEqual(envelope["vector"]["type"], "standard")
+        self.assertEqual(envelope["story"]["parent_epic"]["number"], 100)
+        self.assertEqual(envelope["audit_ref"], "epic/100-sandbox-fixture")
+        self.assertEqual(envelope["workspace"]["base_ref"], "epic/100-sandbox-fixture")
+        # `standard.md` hardcodes the default branch as the base and omits the integration-branch
+        # caveat the PR body owes its reviewer, so it is the wrong instruction set here.
+        self.assertEqual(envelope["suggested_playbook"], "story.md")
+
+
 class EpicPrMentionTests(PrepResolverSandboxTestCase):
     """Issue #29's resolver half. The resolver shares the prior-PR classifier, and its own
     continue short-circuit (`expected_branch = prior_pr_fact["headRefName"]`) agreed with
@@ -1098,17 +1121,28 @@ class PureHelperUnitTests(unittest.TestCase):
         self.assertLessEqual(len(slug), 50)
         self.assertFalse(slug.endswith("-"))
 
-    def test_audit_ref_standard_is_main(self):
-        self.assertEqual(prep_resolver._audit_ref("standard", None, "main"), "main")
+    def test_audit_ref_no_epic_context_is_the_default_branch(self):
+        self.assertEqual(prep_resolver._audit_ref(None, "main"), "main")
 
-    def test_audit_ref_epic_uses_the_epic_branch(self):
-        self.assertEqual(prep_resolver._audit_ref("epic", "epic/1-x", "main"), "epic/1-x")
-
-    def test_audit_ref_story_with_no_parent_is_main(self):
-        self.assertEqual(prep_resolver._audit_ref("story", None, "main"), "main")
+    def test_audit_ref_uses_the_epic_branch_whenever_one_is_in_play(self):
+        # #31: the branch fact alone decides. The retired `issue_type` parameter discarded this
+        # branch whenever the target lacked a `story` label, even though the caller had just
+        # discovered it from the target's own native parent.
+        self.assertEqual(prep_resolver._audit_ref("epic/1-x", "main"), "epic/1-x")
 
     def test_suggested_playbook_comment_only_wins_over_type(self):
         self.assertEqual(prep_resolver._suggested_playbook("epic", True), "comment-only.md")
+
+    def test_suggested_playbook_untyped_under_an_open_epic_routes_to_story(self):
+        # #31: `standard.md` states the base is the default branch and omits the
+        # integration-branch caveat, so it is the wrong instruction set once the PR bases on
+        # `epic/<N>-<slug>`.
+        self.assertEqual(
+            prep_resolver._suggested_playbook("standard", False, "epic/181-x"), "story.md"
+        )
+
+    def test_suggested_playbook_untyped_with_no_epic_branch_stays_standard(self):
+        self.assertEqual(prep_resolver._suggested_playbook("standard", False, None), "standard.md")
 
     def test_suggested_playbook_by_type(self):
         self.assertEqual(prep_resolver._suggested_playbook("epic", False), "epic.md")

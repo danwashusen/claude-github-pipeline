@@ -313,6 +313,39 @@ class PlanRefRowTests(PrepPlannerSandboxTestCase):
         self.assertTrue(envelope["story"]["epic_delivery_log"]["present"])
         self.assertEqual(envelope["suggested_playbook"], "story-jit.md")
 
+    def test_untyped_sub_issue_of_an_open_epic_grounds_on_the_epic_branch(self):
+        # #31's planner half: an untyped sub-issue grounded on the default branch while the
+        # resolver built it on `epic/<N>-<slug>` — planning against a tree missing every
+        # predecessor story's merged work.
+        self._push_branch("epic/100-sandbox-fixture")
+        envelope = self._envelope(
+            issue="264", fixture_case="prep_planner_untyped_subissue",
+            ambient="epic/100-sandbox-fixture",
+        )
+        self.assertEqual(envelope["vector"]["type"], "standard")
+        self.assertEqual(
+            envelope["vector"]["plan_ref_row"], prep_planner.PLAN_REF_ROW_STORY_PARENT_BRANCH
+        )
+        self.assertEqual(envelope["plan_ref"], "epic/100-sandbox-fixture")
+        self.assertEqual(envelope["grounding"]["ref"], "epic/100-sandbox-fixture")
+        self.assertEqual(envelope["story"]["parent_epic"]["number"], 100)
+        self.assertTrue(envelope["story"]["epic_plan"]["present"])
+        self.assertTrue(envelope["story"]["epic_delivery_log"]["present"])
+        # The epic's `## Story contracts` and delivery log are exactly what this target needs, so
+        # it plans just-in-time against current epic HEAD like its `story`-labelled siblings.
+        self.assertEqual(envelope["suggested_playbook"], "story-jit.md")
+
+    def test_untyped_sub_issue_without_a_parent_epic_branch_grounds_on_main(self):
+        # No `epic/100-*` pushed. The parent may be an epic not yet opened, or a STORY — which
+        # would make this target a deliverable slice, planned as its parent's phases, never as a
+        # just-in-time story. Unproven, it grounds exactly as it did before.
+        envelope = self._envelope(issue="264", fixture_case="prep_planner_untyped_subissue")
+        self.assertEqual(envelope["vector"]["plan_ref_row"], prep_planner.PLAN_REF_ROW_DEFAULT)
+        self.assertEqual(envelope["plan_ref"], "main")
+        self.assertIsNone(envelope.get("story"))
+        self.assertIn("PARENT_HAS_NO_INTEGRATION_BRANCH", envelope["notices"])
+        self.assertNotEqual(envelope["suggested_playbook"], "story-jit.md")
+
     def test_an_epic_pr_mentioning_the_story_does_not_supply_the_plan_ref(self):
         # Issue #29's planner half: `_select_plan_ref` checks the open-PR head FIRST and
         # unconditionally, and `_build_revise_facts` parses THAT PR's `## Phase tracker`. Fed the

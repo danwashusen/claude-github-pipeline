@@ -234,30 +234,37 @@ def build_facts(issue_number, repo, root=".", scratch_dir=None, cwd=None):
             branch = "epic/%s-%s" % (issue_number, epic_facts["bootstrap_slug"])
             branch_source = "epic-bootstrap"
     else:
-        if issue_type == "story":
-            # Native `parent` first (exact, no round-trip); the full-text search is the fallback for
-            # a story filed before the relation was written
-            # (skills/_shared/epic-story-hierarchy.md).
-            matches, parent_decision = branching.search_parent_epic(
-                repo, issue_number, native_parent=issue_envelope.get("parent"), cwd=cwd
-            )
-            if _forward_decision(parent_decision):
-                return None
-            if len(matches) == 1 and (matches[0].get("state") or "").upper() == "OPEN":
-                branch_facts, branch_decision = branching.discover_epic_branch(
-                    root, matches[0]["number"], matches[0].get("title") or ""
+        # Hierarchy lookup gated on HAVING a parent, not on the lexical type (#31) — a sub-issue
+        # labelled by kind of work (`bug`, `tech-debt`) reads as `standard` and carries the same
+        # native parent edge as its `story`-labelled siblings. Basing it on the default branch
+        # takes the epic's unmerged work with it at PR time.
+        epic_facts, parent_notices, parent_decision = branching.resolve_parent_epic_branch(
+            root, repo, issue_number, issue_type, issue_envelope.get("parent"), cwd=cwd
+        )
+        notices.extend(parent_notices)
+        if _forward_decision(parent_decision):
+            return None
+        if epic_facts is not None:
+            branch_facts = epic_facts.get("branch_facts") or {}
+            if branch_facts.get("branch"):
+                base = branch_facts["branch"]
+            elif (
+                issue_type == "story"
+                and epic_facts.get("parent_epic")
+                and branching.PARENT_CLOSED not in parent_notices
+            ):
+                # A story's parent IS an epic by construction, so naming it one is safe here and
+                # the operator can act on it (open the epic's workspace first). The untyped case
+                # cannot say that much — it rides the notice instead.
+                #
+                # A CLOSED parent is excluded because the advice would be wrong, not merely
+                # unhelpful: forking from main is the correct and FINAL outcome there, and there is
+                # no workspace left to open. That case rides `PARENT_CLOSED` alone.
+                attention.append(
+                    "parent epic #%s has no integration branch yet — this story forks from "
+                    "main; open the epic's workspace first if it should stack on the epic"
+                    % epic_facts["parent_epic"]["number"]
                 )
-                if _forward_decision(branch_decision):
-                    return None
-                if branch_facts.get("branch"):
-                    base = branch_facts["branch"]
-                else:
-                    attention.append(
-                        "parent epic #%s has no integration branch yet — this story forks from "
-                        "main; open the epic's workspace first if it should stack on the epic"
-                        % matches[0]["number"]
-                    )
-                epic_facts = {"parent_epic": matches[0], "branch_facts": branch_facts}
         branch, collided_with = branching.compute_branch_name(
             root, issue_number, branching.compute_fresh_slug(issue_title)
         )

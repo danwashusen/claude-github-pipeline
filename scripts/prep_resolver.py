@@ -166,6 +166,7 @@ _classify_open_other_activity = branching.classify_open_other_activity
 compute_fresh_slug = branching.compute_fresh_slug
 _discover_epic_branch = branching.discover_epic_branch
 _search_parent_epic = branching.search_parent_epic
+_resolve_parent_epic_branch = branching.resolve_parent_epic_branch
 _find_open_pr_for_head = branching.find_open_pr_for_head
 _count_commits_ahead = branching.count_commits_ahead
 _branch_belongs_to_issue = branching.branch_belongs_to_issue
@@ -371,15 +372,20 @@ def _build_open_question_facts(issue_body, repo, blocked_by, scratch_dir, cwd=No
 # ---------------------------------------------------------------------------
 
 
-def _audit_ref(issue_type, epic_branch_name, root_branch):
-    """docs/specs/resolver.md §4.5's 4-row audit-ref table: bug/feature/refactor/standard ->
-    the repo's default branch; Epic-as-target -> the discovered/bootstrap epic branch; Story under
-    an open parent epic -> the parent epic's branch; Story with no parent epic (or a closed one) ->
-    the default branch. `epic_branch_name` is `None` for "no epic context" (standard type, or a
-    story with no open parent) — in which case the ref is always the default branch, matching the
-    bootstrap-path rule that the zero-match Epic-as-target audit still runs against it (the
-    bootstrap branch would fork from it anyway). `root_branch` is the derived default branch
-    (`workspace.default_branch`), never a hardcoded `main`.
+def _audit_ref(epic_branch_name, root_branch):
+    """docs/specs/resolver.md §4.5's audit-ref table, reduced to its one real question: is there an
+    epic branch in play? `epic_branch_name` is the discovered/bootstrap branch for an Epic-as-target
+    run and the parent's integration branch for any target under an open epic; it is `None` for "no
+    epic context" — in which case the ref is the derived default branch, matching the bootstrap-path
+    rule that the zero-match Epic-as-target audit still runs against it (the bootstrap branch would
+    fork from it anyway).
+
+    The parameter used to be `(issue_type, epic_branch_name, root_branch)` with a
+    `issue_type in ("standard",)` short-circuit in front. That short-circuit was the third of the
+    three lexical-type gates #31 retired: it discarded a parent epic branch that the caller had
+    already discovered, purely because the target lacked a `story` label. The branch fact answers
+    the question on its own — a target with no epic context has no branch to pass. `root_branch` is
+    the derived default branch (`workspace.default_branch`), never a hardcoded `main`.
 
     Returns a BARE branch name (the default branch / `"epic/42-journal"`), never an `origin/`-prefixed ref
     — this is the facts-block `audit_ref` value verbatim. `workspace._build_ensure_read` is what
@@ -393,22 +399,28 @@ def _audit_ref(issue_type, epic_branch_name, root_branch):
     convention on THIS field; consumers needing the prefixed form read
     `read_workspaces.audit.ref` instead).
     """
-    if issue_type in ("standard",) or epic_branch_name is None:
-        return root_branch
-    return epic_branch_name
+    return epic_branch_name if epic_branch_name is not None else root_branch
 
 
-def _suggested_playbook(issue_type, comment_only):
+def _suggested_playbook(issue_type, comment_only, epic_branch_name=None):
     """Map `(type, comment_only)` to the suggested playbook filename (architecture.md §5: "Prep
     proposes; the router confirms"). `comment_only` per the spec's routing signal: a `blocked`
     hard-gate state, or (should a future fact source detect it) any other no-code-work
     classification — named `comment-only.md` per this step's Work list.
+
+    `epic_branch_name` adds one arm and subtracts none (#31): an untyped target that IS under an
+    open epic routes to `story.md` too. That is a correctness requirement, not a tidiness one —
+    once the PR bases on `epic/<N>-<slug>`, `standard.md` is the wrong instruction set. It states
+    the base is the default branch, renders `base main` in its handoff, and omits the
+    integration-branch caveat sentence the PR body owes a reviewer who would otherwise see a PR
+    into an epic branch with no explanation. Type still decides everything it legitimately
+    decides; the branch fact decides which base the flow is written for.
     """
     if comment_only:
         return "comment-only.md"
     if issue_type == "epic":
         return "epic.md"
-    if issue_type == "story":
+    if issue_type == "story" or epic_branch_name:
         return "story.md"
     return "standard.md"
 
@@ -699,30 +711,25 @@ def build_facts(issue_number, repo, root=".", scratch_dir=None, refresh=False, c
         ):
             mode = MODE_CONTINUE
             gate = None
-    elif issue_type == "story":
-        # Native `parent` first (exact, no round-trip); the full-text search is the fallback for a
-        # story filed before the relation was written (skills/_shared/epic-story-hierarchy.md).
-        story_epic_matches, epic_decision = _search_parent_epic(
-            repo, issue_number, native_parent=issue_envelope.get("parent"), cwd=cwd
+    else:
+        # Hierarchy lookup gated on HAVING a parent, not on the lexical type (#31) — the same gate
+        # move as prep_workspace_open's, and it has to happen HERE too or the asserted worktree and
+        # the PR base disagree: `base_ref` below is what the create-pr step's `--base` slot
+        # consumes, so an untyped sub-issue would open a PR targeting the default branch and take
+        # its parent epic's unmerged work with it.
+        epic_facts, parent_notices, epic_decision = _resolve_parent_epic_branch(
+            root, repo, issue_number, issue_type, issue_envelope.get("parent"), cwd=cwd
         )
+        epic_notices.extend(parent_notices)
         if _forward_decision(epic_decision):
             return None
-        if len(story_epic_matches) == 1:
-            parent_epic = story_epic_matches[0]
-            if (parent_epic.get("state") or "").upper() == "OPEN":
-                branch_facts, branch_decision = _discover_epic_branch(
-                    root, parent_epic["number"], parent_epic.get("title") or ""
-                )
-                if _forward_decision(branch_decision):
-                    return None
-                epic_branch_for_audit = branch_facts.get("branch")
-                epic_facts = {"parent_epic": parent_epic, "branch_facts": branch_facts}
-            else:
-                epic_facts = {"parent_epic": parent_epic, "branch_facts": None}
-        else:
-            epic_facts = {"parent_epic": None, "branch_facts": None}
+        if epic_facts is not None:
+            story_epic_matches = (
+                [epic_facts["parent_epic"]] if epic_facts.get("parent_epic") else []
+            )
+            epic_branch_for_audit = (epic_facts.get("branch_facts") or {}).get("branch")
 
-    audit_ref = _audit_ref(issue_type, epic_branch_for_audit, root_branch)
+    audit_ref = _audit_ref(epic_branch_for_audit, root_branch)
 
     # A gated row is a flow gate, not an assembly blocker (identical reasoning to comment_only /
     # the open-question hard gate) — prep still completes and reports `status: ok`, it just never
@@ -859,7 +866,7 @@ def build_facts(issue_number, repo, root=".", scratch_dir=None, refresh=False, c
     #     step's DoD box). Reuses gh_gather's own spill files rather than re-writing copies.
     distiller_bundle = _build_distiller_bundle(issue_envelope, scratch_dir, issue_number)
 
-    suggested_playbook = _suggested_playbook(issue_type, comment_only)
+    suggested_playbook = _suggested_playbook(issue_type, comment_only, epic_branch_for_audit)
 
     vector = {
         "type": issue_type,
@@ -918,7 +925,11 @@ def build_facts(issue_number, repo, root=".", scratch_dir=None, refresh=False, c
         facts["prior_pr_rejected"] = prior_pr_rejected
     if issue_type == "epic":
         facts["epic"] = epic_facts
-    elif issue_type == "story":
+    elif epic_facts is not None:
+        # `story` is the key `story.md` reads for the parent + its branch facts, and an untyped
+        # target under an open epic runs that same playbook — so it publishes under the same key.
+        # Present-but-null-inside now means "asked, no parent"; the key is absent only when no
+        # lookup ran, which is the "never asked" the #31 receipt could not distinguish.
         facts["story"] = epic_facts
 
     if work_workspace_envelope is not None:

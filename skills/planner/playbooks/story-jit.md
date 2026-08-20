@@ -1,7 +1,9 @@
 # Just-in-time story plan
 
-Route for a story under an **open** parent epic (`facts.story.parent_epic_open`). Owns **both** the
-fresh and the revise path for such a story (a prior story plan just refreshes in place). Planning the
+Route for any target under an **open** parent epic (`facts.story.parent_epic_open`) — the fact, not a
+`story` label: a sub-issue labelled by kind of work (`bug`, `tech-debt`) reaches here too when its
+native parent resolved to an open epic with an integration branch (#31). Owns **both** the fresh and
+the revise path for such a target (a prior plan just refreshes in place). Planning the
 story now — not up front with its siblings — is what keeps it current: it grounds against the epic
 branch HEAD *after* every predecessor has landed. `facts.plan_ref` is the parent epic's
 `epic/<N>-<slug>` branch (row `story-under-open-epic`), or the story's own open PR head when one exists
