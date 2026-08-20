@@ -289,6 +289,25 @@ class UntypedSubIssueBaseTests(PrepWorkspaceOpenSandboxTestCase):
         self.assertIsNone(envelope["epic"])
 
 
+class ClosedParentEpicTests(PrepWorkspaceOpenSandboxTestCase):
+    def test_a_closed_parent_epic_does_not_advise_opening_its_workspace(self):
+        # Review finding on #31: lifting the attention line out from under the parent-is-OPEN
+        # guard made it fire for a CLOSED parent too. Forking from main is the correct and FINAL
+        # outcome there and there is no workspace left to open, so the advice would be wrong —
+        # not merely unhelpful — and it contradicts the PARENT_CLOSED notice beside it.
+        envelope = self._envelope(
+            issue="265", fixture_case="prep_workspace_open_story_closed_parent"
+        )
+        self.assertEqual(envelope["vector"]["type"], "story")
+        self.assertEqual(envelope["branch"]["base"], "main")
+        self.assertIn("PARENT_CLOSED", envelope["notices"])
+        self.assertEqual(
+            [line for line in envelope["attention"] if "integration branch" in line], []
+        )
+        # The parent is still reported — "asked, closed" stays distinguishable from "never asked".
+        self.assertEqual(envelope["epic"]["parent_epic"]["number"], 100)
+
+
 class EpicPrMentionTests(PrepWorkspaceOpenSandboxTestCase):
     """Issue #29: an epic integration PR lists every one of its stories by number, so the loose
     `#<N> in:body` open-PR search surfaces it once per story. Adopting it as the story's prior PR

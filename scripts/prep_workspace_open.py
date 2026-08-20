@@ -248,10 +248,18 @@ def build_facts(issue_number, repo, root=".", scratch_dir=None, cwd=None):
             branch_facts = epic_facts.get("branch_facts") or {}
             if branch_facts.get("branch"):
                 base = branch_facts["branch"]
-            elif issue_type == "story" and epic_facts.get("parent_epic"):
+            elif (
+                issue_type == "story"
+                and epic_facts.get("parent_epic")
+                and branching.PARENT_CLOSED not in parent_notices
+            ):
                 # A story's parent IS an epic by construction, so naming it one is safe here and
                 # the operator can act on it (open the epic's workspace first). The untyped case
                 # cannot say that much — it rides the notice instead.
+                #
+                # A CLOSED parent is excluded because the advice would be wrong, not merely
+                # unhelpful: forking from main is the correct and FINAL outcome there, and there is
+                # no workspace left to open. That case rides `PARENT_CLOSED` alone.
                 attention.append(
                     "parent epic #%s has no integration branch yet — this story forks from "
                     "main; open the epic's workspace first if it should stack on the epic"
