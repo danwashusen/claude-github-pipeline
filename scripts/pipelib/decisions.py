@@ -33,9 +33,11 @@ Meaning + canonical emitter per code (architecture.md §3):
 - ``TARGET_IS_SLICE`` — the requested issue is a deliverable slice (its native parent classifies as
   a non-epic, and a non-epic's sub-issues are slices by construction); ``prep_workspace_open.py``
   and ``prep_planner.py``. A slice has no branch and no PR of its own, so opening a workspace for it
-  promotes it to a story and planning it standalone authors a plan competing with its parent's. The
-  card always offers proceeding — classification reads the parent's labels/title, so an epic
-  carrying neither the ``epic`` label nor an ``Epic:`` title prefix reads as a non-epic.
+  promotes it to a story and planning it standalone authors a plan competing with its parent's.
+  Classification is lexical on the parent, so an epic carrying neither the ``epic`` label nor an
+  ``Epic:`` title prefix reads as a non-epic — the card's options include relabelling it and
+  re-running, external remedies like every other card's rather than a proceed-anyway override
+  neither prep implements.
 """
 
 # Contract tokens — exact strings, order matches architecture.md §3's enumeration.

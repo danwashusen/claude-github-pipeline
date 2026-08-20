@@ -1393,7 +1393,15 @@ def build_facts(issue_number, repo, root=".", scratch_dir=None, refresh=False, c
         # the parent is an epic and this is a story. Without one, the `parent` node's number/title/
         # state cannot tell an epic whose workspace is not open yet from a STORY parent, and the two
         # mean opposite things: the second makes this target a deliverable slice.
-        if not epic_branch_name and parent_epic is not None:
+        if not epic_branch_name and parent_epic is not None and not open_pr_headref:
+            # `open_pr_headref` suppresses the whole check: the target already has a PR of its OWN,
+            # so if it is a slice it was promoted to a story some sessions ago, and that promotion
+            # is a fact on GitHub that a card here cannot unwind. Refusing would put a blocking
+            # gate on every planner session for work already in flight — and would contradict both
+            # `_select_plan_ref`'s "open-PR-head wins when more than one row applies" precedence
+            # (docs/specs/planner.md Step 4.5) and `prep_workspace_open`, whose continue row
+            # short-circuits ahead of its own copy of this refusal.
+            #
             # No `epic/<parent>-*` branch proved epic-ness for free, so ask the parent directly:
             # its own type IS the answer to which hierarchy edge this is
             # (skills/_shared/epic-story-hierarchy.md's "by construction").
@@ -1417,11 +1425,16 @@ def build_facts(issue_number, repo, root=".", scratch_dir=None, refresh=False, c
                             "parent": parent_epic,
                             "parent_kind": parent_kind,
                         },
+                        # External remedies, then re-run — the house pattern for every card. A
+                        # "plan anyway" option would be unactionable: this prep has no override
+                        # flag, so re-running after it would raise the identical card.
                         options=[
                             "plan the parent instead: /github-pipeline:planner %s"
                             % parent_epic["number"],
-                            "plan #%s anyway — it is not a slice (its parent carries neither an "
-                            "`epic` label nor an `Epic:` title prefix)" % issue_number,
+                            "if #%s IS an epic, label it `epic` (or retitle it `Epic: …`), "
+                            "then re-run" % parent_epic["number"],
+                            "if #%s should be planned on its own, re-parent it to the epic (or "
+                            "clear its parent edge), then re-run" % issue_number,
                         ],
                     ),
                     notices=notices,

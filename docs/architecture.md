@@ -135,9 +135,12 @@ Every script emits exactly one JSON envelope on stdout.
     slice has no branch and no PR of its own — it ships as a phase on its parent's branch — so
     opening a workspace for it, or planning it standalone, would silently promote it to a story
     and author a plan competing with its parent's. Emitted by `prep_workspace_open.py` (before any
-    link or worktree side effect) and `prep_planner.py`. The card always offers proceeding, because
-    classification reads the parent's labels/title and an epic carrying neither the `epic` label
-    nor an `Epic:` title prefix reads as a non-epic; the operator, not the script, settles that.
+    link or worktree side effect) and `prep_planner.py`, which suppresses it once the target has an
+    open PR of its own (the promotion already happened; a card cannot unwind it). Classification is
+    lexical on the parent, so an epic carrying neither the `epic` label nor an `Epic:` title prefix
+    reads as a non-epic — hence options that relabel that parent, or re-parent the target, and
+    re-run. Like every other card's, those are actions taken OUTSIDE: neither prep carries a
+    proceed-anyway override, so an option offering one would raise the identical card next time.
 
   Adding a code is a contract change: update this section and the router rule together.
 - **Notices** (non-blocking degradations) ride in `notices: []` — e.g. `DEPS_UNSUPPORTED` when

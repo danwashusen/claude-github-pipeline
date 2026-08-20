@@ -269,13 +269,20 @@ def build_facts(issue_number, repo, root=".", scratch_dir=None, cwd=None):
                             "parent": epic_facts["parent_epic"],
                             "parent_kind": epic_facts.get("parent_kind"),
                         },
+                        # Every option is an action the operator takes OUTSIDE and then re-runs,
+                        # matching every other card in the pipeline. A "proceed anyway" option
+                        # would be unactionable: this prep has no override flag, so re-running
+                        # after it would raise the identical card. Both remedies below fix the
+                        # cause instead of this one session — the classification is lexical, so a
+                        # labelled parent classifies correctly for every future session too.
                         options=[
                             "open the parent's workspace instead: "
                             "/github-pipeline:workspace-open %s"
                             % epic_facts["parent_epic"]["number"],
-                            "open a workspace for #%s anyway — it is not a slice (its parent "
-                            "carries neither an `epic` label nor an `Epic:` title prefix)"
-                            % issue_number,
+                            "if #%s IS an epic, label it `epic` (or retitle it `Epic: …`), "
+                            "then re-run" % epic_facts["parent_epic"]["number"],
+                            "if #%s should ship on its own branch, re-parent it to the epic (or "
+                            "clear its parent edge), then re-run" % issue_number,
                         ],
                     ),
                     notices=notices,

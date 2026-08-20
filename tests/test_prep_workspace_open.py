@@ -306,10 +306,15 @@ class SliceRefusalTests(PrepWorkspaceOpenSandboxTestCase):
         self.assertEqual(envelope["decision"]["code"], "TARGET_IS_SLICE")
         self.assertEqual(envelope["decision"]["context"]["parent"]["number"], 103)
         self.assertEqual(envelope["decision"]["context"]["parent_kind"], "non-epic")
-        # The card always offers proceeding — an epic carrying neither an `epic` label nor an
-        # `Epic:` title prefix classifies as non-epic, and the operator settles that, not the script.
-        self.assertEqual(len(envelope["decision"]["options"]), 2)
-        self.assertIn("103", envelope["decision"]["options"][0])
+        options = envelope["decision"]["options"]
+        self.assertEqual(len(options), 3)
+        self.assertIn("103", options[0])
+        # Every option must be an action taken OUTSIDE and then re-run. A "proceed anyway" option
+        # would be unactionable: this prep has no override flag, so re-running after picking it
+        # raises the identical card — the operator would be offered a choice nothing can execute.
+        self.assertNotIn("anyway", " ".join(options))
+        for option in options[1:]:
+            self.assertIn("re-run", option)
         # Zero side effects: no worktree, and the fixture manifest carries no `issue develop` entry
         # at all, so the shim would have failed the run if linking had been attempted.
         self.assertFalse((self.root / ".worktrees").exists())
