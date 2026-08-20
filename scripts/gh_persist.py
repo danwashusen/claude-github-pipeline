@@ -697,6 +697,20 @@ def _cmd_comment(args, parser):
         parser.error("--review-action is forbidden when target is '%s'" % args.target)
     if args.target == "pr-review" and not args.review_action:
         parser.error("--review-action is required when target is 'pr-review'")
+    if args.delete_marker_id is not None and not args.delete_marker_id.isdigit():
+        # The delete below is REST (`repos/{owner}/{repo}/issues/comments/{id}`), which takes the
+        # NUMERIC comment id only — a GraphQL node id (`IC_kwDO…`, what gh_gather's normalized
+        # thread carries as `id`) can never resolve there, so this is a guaranteed 404, not a
+        # transient failure the best-effort WARN below is for (#34). Rejected UP FRONT, before the
+        # post: a caller passing the wrong id space gets an actionable usage error with nothing
+        # written, instead of a posted comment plus an undeleted stale duplicate. Marker ids come
+        # from a gather's marker-comment lookup (`marker_comment_id`, read off the raw REST
+        # objects), never from a thread comment's `id`.
+        parser.error(
+            "--delete-marker-id expects a numeric REST comment id, got %r — a GraphQL node id "
+            "always 404s on the REST delete endpoint; pass the gather's marker_comment_id"
+            % args.delete_marker_id
+        )
 
     gate = _verify_body_file(args.body_path)
     if gate is not None:

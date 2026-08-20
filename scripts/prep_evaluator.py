@@ -67,12 +67,21 @@ import gh_pr_gather  # noqa: E402
 import parse  # noqa: E402
 import workspace  # noqa: E402
 from pipelib import process  # noqa: E402
-from pipelib.decisions import AMBIGUOUS, needs_decision  # noqa: E402
+from pipelib.decisions import AMBIGUOUS, MARKER_AMBIGUOUS, needs_decision  # noqa: E402
 from pipelib.envelope import EXIT_OK, EXIT_USAGE_ERROR, emit_needs_decision, emit_ok  # noqa: E402
 
 # Health-cache marker comment prefix (docs/specs/evaluator.md "Artifacts written") — self-read by
 # gh_pr_gather's marker-comment lookup so the health check needs no second fetch.
 HEALTH_CACHE_MARKER = "<!-- pr-evaluator-health-cache:v1 -->"
+
+# The epic delivery log (skills/_shared/epic-delivery-log.md) — the evaluator is its SOLE writer and
+# updates it in place at every story merge, so the story route needs the prior comment's REST id to
+# delete-and-repost through `gh_persist.py comment --delete-marker-id`. That id comes from
+# gh_gather's marker-comment lookup, which reads the RAW REST objects (numeric `id`) — never from
+# the normalized thread, whose `id` is the GraphQL node id the REST delete endpoint 404s on (#34:
+# the playbook used to tell the model to fetch the comment itself, which landed in node-id space,
+# so the delete silently failed and the log accumulated duplicates).
+DELIVERY_LOG_MARKER = "<!-- epic-delivery-log:v1 -->"
 
 # The four gate-config marker names (docs/specs/evaluator.md), read at the root `main` SHA
 # (architecture.md §6/§12: "gate config is pinned to trust ... never from a PR head").
@@ -379,6 +388,12 @@ def _build_epic_facts(base_ref_name, repo, scratch_dir):
     A ``mixed`` epic is unioned, never halved — dropping either half would under-count siblings and
     could route a merge to "last sibling closed" while stories remain open.
 
+    The same gather carries the epic's ``<!-- epic-delivery-log:v1 -->`` comment as ``delivery_log``
+    — present/absent, the prior comment's **numeric REST id** (the only id space
+    ``gh_persist.py comment --delete-marker-id`` can delete), its url, and its staged body — so the
+    story route's Action 3 builds on the fetched body and replaces the comment instead of fetching
+    it itself and passing a node id that always 404s (#34).
+
     Returns ``(epic_facts_or_None, notices)``. A gather failure here is **non-fatal**: this is
     display/routing context for a merge that has already been judged on its own gates, so it must
     never take down the session (the hierarchy is deliberately never a gate).
@@ -388,18 +403,52 @@ def _build_epic_facts(base_ref_name, repo, scratch_dir):
         return None, []
     epic_number = int(match.group(1))
 
+    notices = []
+    delivery_log = None
     exit_code, envelope = gh_gather.run(
-        str(epic_number), repo, scratch_dir=scratch_dir, stream=_DiscardStream()
+        str(epic_number),
+        repo,
+        DELIVERY_LOG_MARKER,
+        scratch_dir=scratch_dir,
+        stream=_DiscardStream(),
     )
+    if (
+        envelope is not None
+        and envelope.get("status") == "needs_decision"
+        and (envelope.get("decision") or {}).get("code") == MARKER_AMBIGUOUS
+    ):
+        # Duplicate log comments — the #34 wreckage itself, or a hand-posted second copy. NOT
+        # forwarded as a decision: the hierarchy is never a gate, and a merge already judged on its
+        # own gates must not stall on its log. Keep the duplicate ids (numeric, from the marker
+        # lookup) for the story route to report, and re-gather WITHOUT the prefix so the story set
+        # — the part the route actually routes on — still arrives.
+        context = envelope["decision"].get("context") or {}
+        delivery_log = {
+            "present": True,
+            "ambiguous": True,
+            "comment_ids": context.get("marker_comment_ids") or [],
+            "comment_urls": context.get("marker_comment_urls") or [],
+        }
+        notices.append(
+            "%d epic-delivery-log comments on #%s — expected one; this story's line was not "
+            "recorded (skills/_shared/epic-delivery-log.md)" % (len(delivery_log["comment_ids"]), epic_number)
+        )
+        exit_code, envelope = gh_gather.run(
+            str(epic_number), repo, scratch_dir=scratch_dir, stream=_DiscardStream()
+        )
+
     if exit_code != 0 or envelope is None or envelope.get("status") != "ok":
-        return {
+        stub = {
             "number": epic_number,
             "stories_source": "unavailable",
             "stories": [],
             "sub_issues": [],
             "sub_issues_summary": {},
             "subissues_available": None,
-        }, []
+        }
+        if delivery_log is not None:
+            stub["delivery_log"] = delivery_log
+        return stub, notices
 
     sub_issues = envelope.get("sub_issues") or []
     stories = [
@@ -437,6 +486,21 @@ def _build_epic_facts(base_ref_name, repo, scratch_dir):
     else:
         stories_source = "checklist"
 
+    if delivery_log is None:
+        delivery_log = {"present": bool(envelope.get("marker_comment_present")), "ambiguous": False}
+        if delivery_log["present"]:
+            # `marker_comment_id` is the RAW REST numeric id (gh_gather.py's marker lookup reads
+            # `c["id"]` off the raw objects, deliberately NOT the normalized thread's node id) —
+            # exactly what --delete-marker-id needs.
+            delivery_log["comment_id"] = envelope.get("marker_comment_id")
+            delivery_log["comment_url"] = envelope.get("marker_comment_url")
+            delivery_log["body_bytes"] = envelope.get("marker_comment_bytes")
+            delivery_log["body_mode"] = envelope.get("marker_comment_mode")
+            if envelope.get("marker_comment_mode") == "path":
+                delivery_log["body_path"] = envelope.get("marker_comment_path")
+            else:
+                delivery_log["body"] = envelope.get("marker_comment_body")
+
     return {
         "number": epic_number,
         "title": envelope.get("title"),
@@ -446,7 +510,8 @@ def _build_epic_facts(base_ref_name, repo, scratch_dir):
         "sub_issues": sub_issues,
         "sub_issues_summary": envelope.get("sub_issues_summary") or {},
         "subissues_available": envelope.get("subissues_available"),
-    }, list(envelope.get("notices") or [])
+        "delivery_log": delivery_log,
+    }, notices + list(envelope.get("notices") or [])
 
 
 # ---------------------------------------------------------------------------

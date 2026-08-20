@@ -1,0 +1,26 @@
+[
+  {
+    "id": 5350498958,
+    "node_id": "IC_kwDOexample5350498958",
+    "user": {
+      "login": "octocat"
+    },
+    "author_association": "OWNER",
+    "body": "<!-- epic-delivery-log:v1 -->\n**Epic delivery log** \u2014 #42 Journal\n- #90 \u2014 delivered: `JournalStore` @ `abc1234` (PR #85, merged 2026-08-01)\n",
+    "created_at": "2026-08-01T00:00:00Z",
+    "updated_at": "2026-08-01T00:00:00Z",
+    "html_url": "https://github.com/octo/widgets/issues/42#issuecomment-5350498958"
+  },
+  {
+    "id": 5361313482,
+    "node_id": "IC_kwDOexample5361313482",
+    "user": {
+      "login": "octocat"
+    },
+    "author_association": "OWNER",
+    "body": "<!-- epic-delivery-log:v1 -->\n**Epic delivery log** \u2014 #42 Journal\n- #90 \u2014 delivered: `JournalStore` @ `abc1234` (PR #85, merged 2026-08-01)\n",
+    "created_at": "2026-08-01T00:00:00Z",
+    "updated_at": "2026-08-01T00:00:00Z",
+    "html_url": "https://github.com/octo/widgets/issues/42#issuecomment-5361313482"
+  }
+]

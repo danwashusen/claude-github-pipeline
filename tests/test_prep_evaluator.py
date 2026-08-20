@@ -501,6 +501,50 @@ class ParentEpicStorySetTests(PrepEvaluatorSandboxTestCase):
         self.assertEqual([s["closed"] for s in epic["stories"]], [True, True, False])
         self.assertEqual([s["state"] for s in epic["stories"]], [None, None, None])
 
+    def test_delivery_log_carries_the_numeric_rest_comment_id_and_body(self):
+        """#34: the story route replaces this comment via `gh_persist.py comment
+        --delete-marker-id`, whose REST endpoint takes the NUMERIC comment id only. Prep sources it
+        from gh_gather's marker lookup (raw REST objects) — never from the normalized thread, whose
+        `id` is the GraphQL node id the delete always 404s on, leaving a duplicate log.
+        """
+        envelope = self._story_pr_envelope("prep_evaluator_story_type_delivery_log")
+        log = envelope["epic"]["delivery_log"]
+        self.assertTrue(log["present"])
+        self.assertFalse(log["ambiguous"])
+        self.assertEqual(log["comment_id"], 5350498958)
+        self.assertNotIn("IC_", str(log["comment_id"]))
+        body = log.get("body")
+        if body is None:
+            body = Path(log["body_path"]).read_text(encoding="utf-8")
+        self.assertTrue(body.startswith("<!-- epic-delivery-log:v1 -->"))
+        self.assertIn("#90 \u2014 delivered:", body)
+
+    def test_absent_delivery_log_reports_present_false_without_an_id(self):
+        envelope = self._story_pr_envelope("prep_evaluator_story_type")
+        log = envelope["epic"]["delivery_log"]
+        self.assertEqual(log, {"present": False, "ambiguous": False})
+
+    def test_duplicate_delivery_logs_degrade_without_gating_the_story_set(self):
+        """More than one log comment is MARKER_AMBIGUOUS at the gather. It must NOT become prep's
+        own decision: the hierarchy is never a gate, and a merge already judged on its own gates
+        can't stall on its log. The story set still arrives; the duplicate ids ride along so the
+        route reports them instead of posting a third copy.
+        """
+        envelope = self._story_pr_envelope("prep_evaluator_story_type_duplicate_delivery_log")
+        self.assertEqual(envelope["status"], "ok")
+        epic = envelope["epic"]
+        self.assertEqual(epic["stories_source"], "sub-issues")
+        self.assertEqual([s["number"] for s in epic["stories"]], [90, 91, 92])
+        log = epic["delivery_log"]
+        self.assertTrue(log["present"])
+        self.assertTrue(log["ambiguous"])
+        self.assertNotIn("comment_id", log)
+        self.assertEqual(log["comment_ids"], [5350498958, 5361313482])
+        self.assertTrue(
+            any("epic-delivery-log comments on #42" in n for n in envelope["notices"]),
+            "expected a duplicate-log notice, got %r" % (envelope["notices"],),
+        )
+
     def test_mixed_epic_unions_both_halves_without_double_counting(self):
         """A legacy epic that later gained a native child — epic-revise files new stories with
         `--parent`, so this arises without anyone erring. Both halves must be reported: halving the
