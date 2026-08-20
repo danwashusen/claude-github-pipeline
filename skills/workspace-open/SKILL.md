@@ -31,8 +31,10 @@ present-but-empty means "asked, no parent" — #31), `workspace` (the create/reu
 `path` / `branch` / `base_ref` / `sha` / `reused` / `dirty` / `unpushed_commits` / `setup`, whose
 `setup.source` names the checkout/branch/SHA the hook block came from and whether it was dirty),
 `attention`, `notices`. Consume as **data**. A `needs_decision` (`AUTH_REQUIRED`,
-`TARGET_IS_PR`, `MARKER_AMBIGUOUS`, `BRANCH_IN_USE`, `AMBIGUOUS` on multiple linked branches) —
-render it as one `AskUserQuestion` card and stop.
+`TARGET_IS_PR`, `MARKER_AMBIGUOUS`, `BRANCH_IN_USE`, `AMBIGUOUS` on multiple linked branches,
+`TARGET_IS_SLICE` when the target's parent classifies as a non-epic) — render it as one
+`AskUserQuestion` card and stop. Every one of these is raised before any link or worktree side
+effect, so a declined card leaves nothing behind.
 
 ## 2. Route — one linear flow
 

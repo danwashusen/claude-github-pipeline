@@ -289,6 +289,47 @@ class UntypedSubIssueBaseTests(PrepWorkspaceOpenSandboxTestCase):
         self.assertIsNone(envelope["epic"])
 
 
+class SliceRefusalTests(PrepWorkspaceOpenSandboxTestCase):
+    """A NON-EPIC's sub-issues are deliverable slices by construction
+    (skills/_shared/epic-story-hierarchy.md), and a slice has no branch and no PR of its own — it
+    ships as a phase on its parent's branch. Minting one here would silently promote it to a
+    story: the same demotion-in-reverse #30 fixed one level up."""
+
+    def test_a_slice_is_refused_before_any_side_effect(self):
+        result = self._run(
+            ["266", "octo/widgets", "--root", str(self.root), "--scratch-dir", self.scratch],
+            fixture_case="prep_workspace_open_slice",
+        )
+        self.assertEqual(result.returncode, 0, msg="stderr: %s" % result.stderr)
+        envelope = _parse_one_envelope(result.stdout)
+        self.assertEqual(envelope["status"], "needs_decision")
+        self.assertEqual(envelope["decision"]["code"], "TARGET_IS_SLICE")
+        self.assertEqual(envelope["decision"]["context"]["parent"]["number"], 103)
+        self.assertEqual(envelope["decision"]["context"]["parent_kind"], "non-epic")
+        options = envelope["decision"]["options"]
+        self.assertEqual(len(options), 3)
+        self.assertIn("103", options[0])
+        # Every option must be an action taken OUTSIDE and then re-run. A "proceed anyway" option
+        # would be unactionable: this prep has no override flag, so re-running after picking it
+        # raises the identical card — the operator would be offered a choice nothing can execute.
+        self.assertNotIn("anyway", " ".join(options))
+        for option in options[1:]:
+            self.assertIn("re-run", option)
+        # Zero side effects: no worktree, and the fixture manifest carries no `issue develop` entry
+        # at all, so the shim would have failed the run if linking had been attempted.
+        self.assertFalse((self.root / ".worktrees").exists())
+
+    def test_the_classification_is_not_silently_degraded(self):
+        # The parent read must actually answer. If its manifest entry were missing the shim would
+        # exit 2, `classify_parent` would degrade to PARENT_KIND_UNAVAILABLE, and the refusal would
+        # never fire — a fixture that passes while proving nothing.
+        envelope = self._envelope(
+            issue="264", fixture_case="prep_workspace_open_untyped_subissue"
+        )
+        self.assertNotIn("PARENT_KIND_UNAVAILABLE", envelope["notices"])
+        self.assertEqual(envelope["epic"]["parent_kind"], "epic")
+
+
 class ClosedParentEpicTests(PrepWorkspaceOpenSandboxTestCase):
     def test_a_closed_parent_epic_does_not_advise_opening_its_workspace(self):
         # Review finding on #31: lifting the attention line out from under the parent-is-OPEN

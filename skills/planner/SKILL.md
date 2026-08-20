@@ -35,7 +35,7 @@ prep already did.
 **Decision card rule.** If prep exits with `status: needs_decision`, render its `decision` as one
 `AskUserQuestion` card (per [`../_shared/asking-the-user.md`](../_shared/asking-the-user.md)), act on
 the answer, and re-run prep (`--refresh` for volatile facts). This is the single universal handler for
-every closed-set code (`AUTH_REQUIRED`, `MARKER_AMBIGUOUS`, `WORKSPACE_MISMATCH`, `AMBIGUOUS`, …).
+every closed-set code (`AUTH_REQUIRED`, `MARKER_AMBIGUOUS`, `WORKSPACE_MISMATCH`, `AMBIGUOUS`, `TARGET_IS_SLICE` on a slice of a non-epic parent, …).
 `WORKSPACE_MISMATCH`: the checkout isn't `plan_ref`'s vantage — a default-branch `plan_ref` passes from any
 current checkout of it **including the project root** (plan-before-open; only staleness is checked, never
 uncommitted changes); a non-default one (parent-epic branch / plan-PR head / epic branch) needs its worktree. The operator fixes it — never you.

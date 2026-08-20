@@ -210,6 +210,7 @@ from pipelib.decisions import (  # noqa: E402
     AUTH_REQUIRED,
     DOC_CATALOGUE_ABSENT,
     MARKER_AMBIGUOUS,
+    TARGET_IS_SLICE,
     needs_decision,
 )
 from pipelib.envelope import EXIT_OK, EXIT_USAGE_ERROR, emit_needs_decision, emit_ok  # noqa: E402
@@ -1388,13 +1389,61 @@ def build_facts(issue_number, repo, root=".", scratch_dir=None, refresh=False, c
                 return None
             epic_branch_name = epic_branch_facts.get("branch")
 
-        # An UNTYPED target enters the story-JIT machinery only on the branch-existence oracle: an
-        # `epic/<parent>-*` branch on origin is the evidence that the parent really is an epic with
-        # work in flight. The `parent` node carries no labels, so without that branch a parent epic
-        # whose workspace is not open yet is indistinguishable from a STORY parent — which would
-        # make this target a deliverable slice, and slices are planned as their parent's phases, not
-        # as just-in-time stories (skills/_shared/epic-story-hierarchy.md). Unproven, it grounds on
-        # the default branch exactly as before, and says so.
+        # Which hierarchy edge is this? An `epic/<parent>-*` branch on origin answers it for free —
+        # the parent is an epic and this is a story. Without one, the `parent` node's number/title/
+        # state cannot tell an epic whose workspace is not open yet from a STORY parent, and the two
+        # mean opposite things: the second makes this target a deliverable slice.
+        if not epic_branch_name and parent_epic is not None and not open_pr_headref:
+            # `open_pr_headref` suppresses the whole check: the target already has a PR of its OWN,
+            # so if it is a slice it was promoted to a story some sessions ago, and that promotion
+            # is a fact on GitHub that a card here cannot unwind. Refusing would put a blocking
+            # gate on every planner session for work already in flight — and would contradict both
+            # `_select_plan_ref`'s "open-PR-head wins when more than one row applies" precedence
+            # (docs/specs/planner.md Step 4.5) and `prep_workspace_open`, whose continue row
+            # short-circuits ahead of its own copy of this refusal.
+            #
+            # No `epic/<parent>-*` branch proved epic-ness for free, so ask the parent directly:
+            # its own type IS the answer to which hierarchy edge this is
+            # (skills/_shared/epic-story-hierarchy.md's "by construction").
+            parent_kind, kind_notice = branching.classify_parent(
+                repo, parent_epic["number"], cwd=cwd
+            )
+            if kind_notice:
+                notices.append(kind_notice)
+            if parent_kind == branching.PARENT_KIND_NON_EPIC:
+                # This target is a deliverable slice. A slice is planned as a PHASE of its parent's
+                # plan — the phase's `sub-issue:` key names it — so authoring a standalone plan here
+                # would put a second, competing decomposition against the same work.
+                emit_needs_decision(
+                    needs_decision(
+                        TARGET_IS_SLICE,
+                        summary="#%s is a deliverable slice of #%s — a slice is planned as a phase "
+                        "of its parent's plan, not as a plan of its own"
+                        % (issue_number, parent_epic["number"]),
+                        context={
+                            "issue": issue_number,
+                            "parent": parent_epic,
+                            "parent_kind": parent_kind,
+                        },
+                        # External remedies, then re-run — the house pattern for every card. A
+                        # "plan anyway" option would be unactionable: this prep has no override
+                        # flag, so re-running after it would raise the identical card.
+                        options=[
+                            "plan the parent instead: /github-pipeline:planner %s"
+                            % parent_epic["number"],
+                            "if #%s IS an epic, label it `epic` (or retitle it `Epic: …`), "
+                            "then re-run" % parent_epic["number"],
+                            "if #%s should be planned on its own, re-parent it to the epic (or "
+                            "clear its parent edge), then re-run" % issue_number,
+                        ],
+                    ),
+                    notices=notices,
+                )
+                return None
+
+        # Not a slice (or unknown). An UNTYPED target still enters the story-JIT machinery only on
+        # the branch-existence oracle — an unbootstrapped epic and an unreadable parent both leave
+        # epic-ness unproven, so it grounds on the default branch exactly as before, and says so.
         if issue_type != "story" and not epic_branch_name:
             if parent_epic is not None:
                 notices.append(

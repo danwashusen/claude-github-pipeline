@@ -49,7 +49,7 @@ import branching  # noqa: E402
 import gh_gather  # noqa: E402
 import workspace  # noqa: E402
 from pipelib import process  # noqa: E402
-from pipelib.decisions import AMBIGUOUS, needs_decision  # noqa: E402
+from pipelib.decisions import AMBIGUOUS, TARGET_IS_SLICE, needs_decision  # noqa: E402
 from pipelib.envelope import EXIT_OK, EXIT_USAGE_ERROR, emit_needs_decision, emit_ok  # noqa: E402
 
 PLAN_MARKER = "<!-- implementation-plan:v1 -->"
@@ -239,12 +239,55 @@ def build_facts(issue_number, repo, root=".", scratch_dir=None, cwd=None):
         # native parent edge as its `story`-labelled siblings. Basing it on the default branch
         # takes the epic's unmerged work with it at PR time.
         epic_facts, parent_notices, parent_decision = branching.resolve_parent_epic_branch(
-            root, repo, issue_number, issue_type, issue_envelope.get("parent"), cwd=cwd
+            root,
+            repo,
+            issue_number,
+            issue_type,
+            issue_envelope.get("parent"),
+            cwd=cwd,
+            classify=True,
         )
         notices.extend(parent_notices)
         if _forward_decision(parent_decision):
             return None
         if epic_facts is not None:
+            if epic_facts.get("parent_kind") == branching.PARENT_KIND_NON_EPIC:
+                # A non-epic's sub-issue is a deliverable slice by construction
+                # (skills/_shared/epic-story-hierarchy.md), and a slice has NO branch and no PR of
+                # its own — it ships as a phase on its parent's branch. Minting one here would
+                # silently promote it to a story, the same demotion-in-reverse #30 fixed. Emitted
+                # from step 3, BEFORE the link create and the worktree ensure, so a declined card
+                # leaves zero side effects.
+                emit_needs_decision(
+                    needs_decision(
+                        TARGET_IS_SLICE,
+                        summary="#%s is a deliverable slice of #%s — a slice ships as a phase on "
+                        "its parent's branch and has no branch or PR of its own"
+                        % (issue_number, epic_facts["parent_epic"]["number"]),
+                        context={
+                            "issue": issue_number,
+                            "parent": epic_facts["parent_epic"],
+                            "parent_kind": epic_facts.get("parent_kind"),
+                        },
+                        # Every option is an action the operator takes OUTSIDE and then re-runs,
+                        # matching every other card in the pipeline. A "proceed anyway" option
+                        # would be unactionable: this prep has no override flag, so re-running
+                        # after it would raise the identical card. Both remedies below fix the
+                        # cause instead of this one session — the classification is lexical, so a
+                        # labelled parent classifies correctly for every future session too.
+                        options=[
+                            "open the parent's workspace instead: "
+                            "/github-pipeline:workspace-open %s"
+                            % epic_facts["parent_epic"]["number"],
+                            "if #%s IS an epic, label it `epic` (or retitle it `Epic: …`), "
+                            "then re-run" % epic_facts["parent_epic"]["number"],
+                            "if #%s should ship on its own branch, re-parent it to the epic (or "
+                            "clear its parent edge), then re-run" % issue_number,
+                        ],
+                    ),
+                    notices=notices,
+                )
+                return None
             branch_facts = epic_facts.get("branch_facts") or {}
             if branch_facts.get("branch"):
                 base = branch_facts["branch"]

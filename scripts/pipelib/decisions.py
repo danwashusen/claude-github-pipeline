@@ -2,7 +2,7 @@
 builder.
 
 Every script and judgment sub-agent in v2 signals an operator-only choice with one of exactly
-these 15 codes — contract tokens, exact strings, never paraphrased or extended ad hoc. Adding a
+these 13 codes — contract tokens, exact strings, never paraphrased or extended ad hoc. Adding a
 code is a contract change: update architecture.md §3 and this module together, in the same
 change, or ``tests/test_pipelib.py``'s drift-check test (which parses the code list back out of
 the doc and asserts it equals :data:`DECISION_CODES`) fails.
@@ -30,6 +30,14 @@ Meaning + canonical emitter per code (architecture.md §3):
 - ``AMBIGUOUS`` — residual non-marker ambiguity (e.g. multiple epic-branch matches); scripts +
   sub-agents.
 - ``BLOCKED_ON_USER`` — progress requires operator input beyond a listable option set; sub-agents.
+- ``TARGET_IS_SLICE`` — the requested issue is a deliverable slice (its native parent classifies as
+  a non-epic, and a non-epic's sub-issues are slices by construction); ``prep_workspace_open.py``
+  and ``prep_planner.py``. A slice has no branch and no PR of its own, so opening a workspace for it
+  promotes it to a story and planning it standalone authors a plan competing with its parent's.
+  Classification is lexical on the parent, so an epic carrying neither the ``epic`` label nor an
+  ``Epic:`` title prefix reads as a non-epic — the card's options include relabelling it and
+  re-running, external remedies like every other card's rather than a proceed-anyway override
+  neither prep implements.
 """
 
 # Contract tokens — exact strings, order matches architecture.md §3's enumeration.
@@ -45,6 +53,7 @@ PLAN_MISSING = "PLAN_MISSING"
 THREAD_SUPERSEDED_PLAN = "THREAD_SUPERSEDED_PLAN"
 AMBIGUOUS = "AMBIGUOUS"
 BLOCKED_ON_USER = "BLOCKED_ON_USER"
+TARGET_IS_SLICE = "TARGET_IS_SLICE"
 
 # The closed set, as a frozenset for O(1) membership tests. This is the single object the
 # drift-check test compares against the doc-parsed set, and the object other pipelib code
@@ -57,12 +66,13 @@ DECISION_CODES = frozenset(
         TARGET_IS_PR,
         DOD_MALFORMED,
         PHASES_MALFORMED,
-                    BRANCH_IN_USE,
+        BRANCH_IN_USE,
         WORKSPACE_MISMATCH,
         PLAN_MISSING,
         THREAD_SUPERSEDED_PLAN,
         AMBIGUOUS,
         BLOCKED_ON_USER,
+        TARGET_IS_SLICE,
     }
 )
 
