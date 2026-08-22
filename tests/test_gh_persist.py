@@ -1199,6 +1199,28 @@ class CommentPostThenDeleteOrderingTests(unittest.TestCase):
             self.assertEqual(env["url"], "https://github.com/o/r/issues/42#comment-1")
             self.assertEqual(env["notices"], [])
 
+    def test_a_node_id_delete_marker_is_rejected_up_front_before_any_post(self):
+        # #34: the delete path is REST (`repos/{owner}/{repo}/issues/comments/{id}`), so a GraphQL
+        # node id is a GUARANTEED 404, not the transient failure the best-effort WARN exists for.
+        # Rejecting before the post means the caller gets an actionable usage error with nothing
+        # written -- rather than a posted comment plus an undeletable stale duplicate. The manifest
+        # holds no entry for the post at all: if validation moved after it, the shim would fail on
+        # an unmatched command instead of returning the usage error asserted here.
+        with tempfile.TemporaryDirectory() as tmp:
+            body_path = Path(tmp) / "body.md"
+            body_path.write_bytes(b"new marker comment body")
+            _write_manifest(tmp, [])
+            result = _run_script(
+                [
+                    "comment", "o/r", "issue", "42", str(body_path),
+                    "--delete-marker-id", "IC_kwDOS85sFs8AAAABPuoijg",
+                ],
+                fixtures_dir=tmp,
+            )
+            self.assertEqual(result.returncode, 2)
+            self.assertEqual(result.stdout, "")
+            self.assertIn("numeric REST comment id", result.stderr)
+
     def test_a_failed_post_never_attempts_the_delete_call(self):
         # No manifest entry exists for the DELETE call at all. If the script's ordering were
         # reversed (delete before post, or delete attempted regardless of post outcome), the

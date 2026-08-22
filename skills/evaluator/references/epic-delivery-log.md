@@ -24,6 +24,8 @@ Rules (from the frozen contract):
   visible here.
 - **Idempotent.** If a `#<story>` line already exists (a re-run), update it in place rather than
   duplicating. There is no in-place edit op — re-stage the full body and repost (plain create when the
-  comment is absent; delete-and-repost via `--delete-marker-id` when it exists).
+  comment is absent; delete-and-repost via `--delete-marker-id` when it exists). The prior comment's
+  body and its numeric id both come from `facts.epic.delivery_log` — the id `--delete-marker-id` takes
+  is the REST comment id, never a thread comment's GraphQL node id (#34).
 - The evaluator is the **sole writer**; the planner is the sole reader. Recording every story here —
   including the last — is what keeps the log complete for the planner's just-in-time story planning.

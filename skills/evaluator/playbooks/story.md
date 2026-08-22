@@ -71,17 +71,26 @@ contract; a divergence is deliberately visible and is the planner's feedback edg
 the plan's `## Epic contract` `Delivers:` line (in hand from the facts). Under a `Plan override` (no
 plan), record the shape from the diff alone.
 
-Fetch the existing log comment (it may not exist yet — `startswith("<!-- epic-delivery-log:v1 -->")`),
-stage the full updated body (marker line first, then the header, then one line per shipped story) to
-`<facts.scratch>/delivery-log.md` — starting from the fetched body when it exists, from scratch
-(marker + header + this story's line) when absent. Idempotent: update an existing `#<story>` line in
-place rather than duplicating. Post through the single write path (plain create when absent;
-delete-and-repost via `--delete-marker-id` when it existed):
+The prior log comment is a **fact**: `facts.epic.delivery_log` — `present`, its `comment_id` (the
+numeric REST id `--delete-marker-id` requires), `comment_url`, and its staged `body` / `body_path`.
+Never re-fetch it: an id read off an issue thread is a GraphQL node id, which the REST delete path
+404s on, leaving a duplicate log the planner can then ground a later story on (#34).
+
+Stage the full updated body (marker line first, then the header, then one line per shipped story) to
+`<facts.scratch>/delivery-log.md` — starting from `delivery_log`'s staged body when `present`, from
+scratch (marker + header + this story's line) when absent. Idempotent: update an existing `#<story>`
+line in place rather than duplicating. Post through the single write path (plain create when absent;
+delete-and-repost via `--delete-marker-id` when it was present):
 
 ```bash
 ${CLAUDE_PLUGIN_ROOT}/scripts/gh_persist.py comment <owner/repo> issue <epic> \
-  "<facts.scratch>/delivery-log.md" [--delete-marker-id <existing-log-comment-id>]
+  "<facts.scratch>/delivery-log.md" [--delete-marker-id <facts.epic.delivery_log.comment_id>]
 ```
+
+When `delivery_log.ambiguous` is true the epic already carries more than one log comment, so there is
+no single comment to replace: post **nothing**, and report the duplicate `comment_urls` plus the
+recovery (delete the stale ones, re-run this evaluation to record this story's line). Reposting over an
+ambiguous log would add a third copy.
 
 ## Residual follow-ups + cleanup
 

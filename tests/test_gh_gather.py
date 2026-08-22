@@ -873,6 +873,18 @@ class MarkerIdUsesRestNumericIdNotNodeIdTests(unittest.TestCase):
         envelope = _parse_envelope(result)
         self.assertEqual(envelope["issue"]["comments"][0]["id"], "IC_abc1")
 
+    def test_thread_comment_also_carries_the_rest_numeric_id_as_database_id(self):
+        # Additive to the v1 shape above (#34): `id` stays the node id for every existing reader,
+        # and `databaseId` carries the numeric id the raw REST payload already held -- the only id
+        # space `gh_persist.py comment --delete-marker-id` can delete. A consumer that locates a
+        # marker by scanning this thread (prep_planner) reads it from here.
+        env = shimenv.intercepted_env(base_env=os.environ, fixture_case="gh_gather_happy_inline")
+        result = _run_script(["42", "o/r"], env=env)
+        envelope = _parse_envelope(result)
+        comment = envelope["issue"]["comments"][0]
+        self.assertEqual(comment["id"], "IC_abc1")
+        self.assertEqual(comment["databaseId"], 9001)
+
 
 class RepoPassedExplicitlyNeverAmbientCwdTests(unittest.TestCase):
     """S21 brief's cwd-discipline advisory: every gh call passes --repo explicitly rather than
