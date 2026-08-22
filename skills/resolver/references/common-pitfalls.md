@@ -53,7 +53,11 @@ its §review-loop, its S6 DoD projection) that carry the same numbering v1 used,
   Reproducing the full suite at a story gate defeats the targeted-tests strategy and re-imposes the
   cost-per-iteration this design exists to avoid. If you find yourself reaching for
   `<!-- pr-evaluator-static-checks -->` or `<!-- pr-evaluator-test-target -->` at a story gate, you've
-  drifted off the path. (The epic-baseline / bootstrap / post-rectification flow *does* run the full
+  drifted off the path. One case is *not* drift: the project's declared `broad-change-fallback` **is**
+  its canonical suite — a setup-time cost choice, flagged and confirmed at setup's propose-and-confirm
+  gate. Honoring that declared fallback when the widening rules land on it is honoring the config; this
+  pitfall bans escalating past the resolver's declared blocks to the evaluator's, not following the
+  resolver's own. (The epic-baseline / bootstrap / post-rectification flow *does* run the full
   canonical suite — that is the documented exception; see `epic-flow.md`'s "Running the full canonical
   suite".)
 - **Don't fall back to zero tests when uncertain.** "Zero tests" is reserved for empty-diff and pure-docs
