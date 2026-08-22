@@ -17,15 +17,16 @@ seam-analysis comment pre-seeds the candidate story list — test it in S2, neve
 
 This rewrite is destructive where a `create` is not, so it does **not** ride the cut's gate: diff-show the
 old→new Title, Labels ±, and changed/added/removed sections, wait for **explicit confirmation**, then apply
-all three. The new title takes the `Epic:` prefix — classification is **lexical**
-([`../../_shared/epic-story-hierarchy.md`](../../_shared/epic-story-hierarchy.md): an issue with neither label
-nor prefix reads as a non-epic), so skipping it half-promotes #N. Preserve any `> 📋 **Implementation plan:**`
-pointer verbatim — the superseded plan comment is the planner's artifact, replaced by the Epic's re-plan. A
-`## Stories` section is dropped: the native relation, not body text, is the story record.
+all three. Draft the new title **with** the `Epic:` prefix — classification is **lexical**
+([`../../_shared/epic-story-hierarchy.md`](../../_shared/epic-story-hierarchy.md): an issue with neither
+label nor prefix reads as a non-epic), so an unprefixed title half-promotes #N. Pass the confirmed title
+whole, never re-prefixed. Preserve any `> 📋 **Implementation plan:**` pointer verbatim — the superseded plan
+comment is the planner's artifact, replaced by the Epic's re-plan. A `## Stories` section is dropped: the
+native relation, not body text, is the story record.
 
 ```bash
 ${CLAUDE_PLUGIN_ROOT}/scripts/gh_persist.py edit-body <owner/repo> <N> "<facts.scratch>/epic.md"
-${CLAUDE_PLUGIN_ROOT}/scripts/gh_persist.py edit-title <owner/repo> <N> --title "Epic: <confirmed title>"
+${CLAUDE_PLUGIN_ROOT}/scripts/gh_persist.py edit-title <owner/repo> <N> --title "<confirmed title>"
 ${CLAUDE_PLUGIN_ROOT}/scripts/gh_persist.py edit-labels <owner/repo> <N> --add epic --remove <old-type>
 ```
 

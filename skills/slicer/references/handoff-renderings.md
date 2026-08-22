@@ -115,7 +115,7 @@ the planner's aborted run needs to know the target changed shape.
 
     /github-pipeline:planner 142
 
-**Why:** the planner's seam gate found #142 epic-shaped (most seams fell outside its Definition of done, each its own shippable unit), so it aborted and sent it here. #142's body was rewritten as an Epic at a confirmed gate, its `feature` label swapped for `epic`, and its seams cut into 3 stories per the seam-analysis comment. The superseded plan pointer was preserved verbatim; the Epic's own plan replaces it.
+**Why:** the planner's seam gate found #142 epic-shaped (most seams fell outside its Definition of done, each its own shippable unit), so it aborted and sent it here. #142's body was rewritten as an Epic at a confirmed gate, its title reprefixed `Epic:`, its `feature` label swapped for `epic`, and its seams cut into 3 stories per the seam-analysis comment. The superseded plan pointer was preserved verbatim; the Epic's own plan replaces it.
 ```
 
 **Remainder filed (epic resume), with adoptions.** A re-run over an epic that already has stories,

@@ -694,7 +694,8 @@ def _build_attention(
     if promotion:
         attention.append(
             "promotion requested: #%s is a %s issue that becomes an Epic before the cut — the body "
-            "rewrite and label swap ride their own confirm gate, ahead of the cut's write gate"
+            "rewrite, title rewrite and label swap ride their own confirm gate, ahead of the cut's "
+            "write gate"
             % (target["number"], target["type"])
         )
         if children["count"]:
