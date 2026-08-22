@@ -51,6 +51,17 @@ Stage the full revised body (plan pointer preserved) to `<facts.scratch>/revised
 ${CLAUDE_PLUGIN_ROOT}/scripts/gh_persist.py edit-body <owner/repo> <N> "<facts.scratch>/revised.md"
 ```
 
+**Title.** When the confirmed diff changed the title — and only then — apply it; an unchanged title
+issues no call:
+
+```bash
+${CLAUDE_PLUGIN_ROOT}/scripts/gh_persist.py edit-title <owner/repo> <N> --title "<confirmed title>"
+```
+
+On a `question` issue the confirmed title keeps the
+[`../../_shared/question-issue.md`](../../_shared/question-issue.md) form (`<tracker-id> — <question
+topic>`) — revise re-applies that convention, it never invents a title shape.
+
 Label changes are a separate `gh_persist.py edit-labels <owner/repo> <N> --add … --remove …`. If the
 revision materially changed scope / acceptance criteria / contracts the plan was built against, tell the
 user once after applying: the plan on #N may now be stale — re-run `/github-pipeline:planner` in revise

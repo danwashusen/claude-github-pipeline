@@ -184,9 +184,13 @@ per [architecture.md §7](docs/architecture.md)'s mapping table).
   dependencies, the legacy `## Stories` checklist for epic hierarchy.
 - `gh_pr_gather.py` — the PR-fetch envelope, with optional `--with-diff` / `--with-line-comments`
   (always spilled to disk) and the PR's own `labels`.
-- `gh_persist.py` — the single write path (`create` / `edit-body` / `edit-pr-body` / `edit-labels` /
-  `link` / `comment` / `close` / `reopen` / `create-pr` / `close-pr`; `edit-body` is `gh issue edit`
-  and rejects a PR number, which is why the PR-body write is its own op). Its leading size check is the
+- `gh_persist.py` — the single write path (`create` / `edit-body` / `edit-pr-body` / `edit-title` /
+  `edit-pr-title` / `edit-labels` / `link` / `comment` / `close` / `reopen` / `create-pr` /
+  `close-pr`; `edit-body` is `gh issue edit` and rejects a PR number, which is why the PR-body write
+  — and, for the same reason, the PR-title write — is its own op. `edit-title`/`edit-pr-title` are
+  the only ops that retitle an **already-filed** issue/PR; they are bodyless, so a title-only change
+  never restages a body, and without them the drafter's revise mode and the slicer's promotion
+  silently dropped an operator-confirmed title change). Its leading size check is the
   **empty-body gate**: the caller stages the verbatim body to its scratch dir and passes the
   *path*, so nothing re-serializes a body across the prompt boundary; an empty or missing file is
   an `EMPTY_BODY_FILE` decision **before** any `gh` write (the #626/#627 empty-body race). Returns

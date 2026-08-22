@@ -403,6 +403,17 @@ class PlaybookPersistDryRunTests(unittest.TestCase):
         )
         self._assert_dry_run_ok(proc, env, "edit-body")
 
+    def test_revise_title_edit_title_dry_run(self):
+        # revise.md Step R4: a confirmed Title old→new is applied through edit-title. Before this
+        # op existed the diff-shown, operator-confirmed title change was silently dropped (the
+        # playbook wrote only body + labels), since skills may not call raw `gh`.
+        proc, env = _run_persist(
+            ["edit-title", "octo/widgets", "142", "--title", "Build patient dashboard", "--dry-run"],
+        )
+        self._assert_dry_run_ok(proc, env, "edit-title")
+        self.assertEqual(env.get("title"), "Build patient dashboard")
+        self.assertNotIn("body_bytes", env)
+
     def test_revise_label_delta_edit_labels_dry_run(self):
         # revise.md label delta: gh_persist.py edit-labels <repo> <issue> --add … --remove …
         proc, env = _run_persist(

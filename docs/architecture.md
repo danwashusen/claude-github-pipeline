@@ -378,7 +378,10 @@ hard-fails naming `git remote set-head origin --auto` rather than guessing. A re
 - **Write path:** the skill stages the verbatim body to its scratch dir
   (`/tmp/gh-<skill>-<N>/…`) and passes the path; `gh_persist.py` verifies the round-trip hash
   itself and reports `body_sha256` in the envelope, failing on mismatch — callers act on
-  `status`, never re-hash prompt-side. The leading empty-body gate stays (the #626/#627 race
+  `status`, never re-hash prompt-side. Title writes on an already-filed issue/PR go through the
+  bodyless `edit-title` / `edit-pr-title` ops (the issue/PR split has `edit-pr-body`'s reason: `gh
+  issue edit` rejects a PR number); they stay script-backed under rule 7 — the sanctioned scriptless
+  executors remain exactly the three §10 lists. The leading empty-body gate stays (the #626/#627 race
   fix); an empty staged file is an `EMPTY_BODY_FILE` decision.
 - **Atomicity & idempotency stay as built:** marker replacement posts the new comment before
   deleting the old; `close` on a closed issue is a no-op; native-dependency writes are
