@@ -9,29 +9,30 @@ partial-failure rule are SKILL.md §3, not restated here.
 
 ## S0 — Promote (only when `facts.promotion`)
 
-The target is a standard issue the operator asked to become an Epic. Rewrite it **before** cutting, so
-the rest of the session is an ordinary epic-altitude run.
-
-Draft the Epic body from the house Epic template
-([`../../drafter/references/issue-templates.md`](../../drafter/references/issue-templates.md)),
-redistributing #N's own content between the Epic body and the story bodies you will propose (edit history
-preserves the original). A planner seam-analysis comment in the thread pre-seeds the candidate story list
-— a proposal to test in S2, never authority.
+The target is a standard issue the operator asked to become an Epic. Rewrite it **before** cutting, so the
+rest of the session is an ordinary epic-altitude run. Draft the Epic body from the house Epic template
+([`../../drafter/references/issue-templates.md`](../../drafter/references/issue-templates.md)), redistributing
+#N's own content between it and the story bodies you propose (edit history preserves the original). A planner
+seam-analysis comment pre-seeds the candidate story list — test it in S2, never authority.
 
 This rewrite is destructive where a `create` is not, so it does **not** ride the cut's gate: diff-show the
-old→new body (Title; Labels ±; changed/added/removed sections) and wait for **explicit confirmation**,
-then apply. Preserve any `> 📋 **Implementation plan:**` pointer line verbatim — the superseded plan
-comment is the planner's artifact, and the Epic's own re-plan replaces it. A `## Stories` section in the
-original body is dropped by the rewrite: the native relation, not body text, is the story record.
+old→new Title, Labels ±, and changed/added/removed sections, wait for **explicit confirmation**, then apply
+all three. Draft the new title **with** the `Epic:` prefix — classification is **lexical**
+([`../../_shared/epic-story-hierarchy.md`](../../_shared/epic-story-hierarchy.md): an issue with neither
+label nor prefix reads as a non-epic), so an unprefixed title half-promotes #N. Pass the confirmed title
+whole, never re-prefixed. Preserve any `> 📋 **Implementation plan:**` pointer verbatim — the superseded plan
+comment is the planner's artifact, replaced by the Epic's re-plan. A `## Stories` section is dropped: the
+native relation, not body text, is the story record.
 
 ```bash
 ${CLAUDE_PLUGIN_ROOT}/scripts/gh_persist.py edit-body <owner/repo> <N> "<facts.scratch>/epic.md"
+${CLAUDE_PLUGIN_ROOT}/scripts/gh_persist.py edit-title <owner/repo> <N> --title "<confirmed title>"
 ${CLAUDE_PLUGIN_ROOT}/scripts/gh_persist.py edit-labels <owner/repo> <N> --add epic --remove <old-type>
 ```
 
-On decline: perform neither write and emit the *Declined at the promotion gate* shape. Nothing else in
-this flow runs — an unpromoted issue cut at epic altitude would file stories under a non-epic parent,
-which the by-construction rule reads as slices.
+On decline: perform none of the three writes, emit the *Declined at the promotion gate* shape, stop — an
+unpromoted epic-altitude cut files stories under a non-epic parent, which the by-construction rule reads as
+slices.
 
 ## S1 — Ground, or refuse
 
@@ -104,8 +105,7 @@ companion `question` issue) rather than burying a decision in a child body.
 
 Then one summary table — designator-or-title · title · one-line outcome · the pending write (`create
 --parent` for a new child, `add-parent` for an adoption, `edit-body` for a checklist reconciliation or a
-bookend-omission `## Background` note) —
-and **one** explicit `AskUserQuestion` gate (per
+bookend-omission `## Background` note) — and **one** explicit `AskUserQuestion` gate (per
 [`../../_shared/asking-the-user.md`](../../_shared/asking-the-user.md)). Aborting here costs nothing; on
 decline perform no writes and emit the *Declined at the write gate* shape (the proposed cut is in the
 transcript; a re-run re-derives it).

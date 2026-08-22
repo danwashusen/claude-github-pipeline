@@ -12,6 +12,8 @@ Subcommands (unchanged surface from v1 — same names, same flags, same position
                                [--draft]                                        [--dry-run]
     gh_persist.py edit-body   <repo> <issue>     <body_path>                      [--dry-run]
     gh_persist.py edit-pr-body <repo> <pr>       <body_path>                      [--dry-run]
+    gh_persist.py edit-title  <repo> <issue>     --title <title>                  [--dry-run]
+    gh_persist.py edit-pr-title <repo> <pr>      --title <title>                  [--dry-run]
     gh_persist.py edit-labels <repo> <issue>     [--add L]... [--remove L]...     [--dry-run]
     gh_persist.py link        <repo> <issue>
                                [--add-blocked-by N]... [--remove-blocked-by N]...
@@ -103,6 +105,26 @@ gate, the same unconditional ``body_bytes``/``body_sha256`` receipt, the same ``
 and the same ``AUTH_REQUIRED`` classification. The op name says ``pr`` because the ``gh`` noun
 differs — a caller that passes a PR number to ``edit-body`` gets a ``gh`` error, not a silent
 mis-write.
+
+``edit-title``/``edit-pr-title`` (additive-only, same precedent) are the only ops that set the title
+of an ALREADY-FILED issue/PR — until they existed, ``create``/``create-pr`` ``--title`` was the whole
+title surface, so a flow that changed a title after filing had no executor to reach for and (skills
+being forbidden raw ``gh`` writes, architecture.md §7 rule 7) silently dropped the change: the
+drafter's revise mode and the slicer's S0 promotion both diff-show a ``Title old→new`` and take the
+operator's explicit confirmation, then applied only ``edit-body`` + ``edit-labels``. The slicer case
+was a correctness bug, not a cosmetic one — epic classification is LEXICAL
+(``skills/_shared/epic-story-hierarchy.md``: an issue carrying neither an ``epic`` label nor an
+``Epic:`` title prefix reads as a non-epic), so a promotion that never rewrote the title left the
+target half-promoted. Both are **bodyless** (mirroring ``edit-labels``/``link``, not
+``edit-body``): a title is not a body, so there is no ``--body-file``, no ``_verify_body_file``
+empty-body gate, and no ``body_bytes``/``body_sha256`` receipt. That is also why the title is NOT a
+flag on ``edit-body``: coupling the two would force a caller with a title-only change to restage and
+rewrite the entire body just to reach it. ``--title`` is ``required``, which gives the same "a
+caller can never mistake a no-op invocation for a successful edit" property ``edit-labels`` gets from
+its at-least-one-flag rule; the value crosses the boundary as one argv element (never
+shell-interpolated), exactly as ``create --title`` does. The issue/PR split has ``edit-body``'s
+reason, unchanged: ``gh issue edit`` rejects a PR number, so the noun must be in the op name for a
+mis-targeted call to fail loudly.
 
 ``create --blocked-by/--blocking`` and ``link`` set GitHub's NATIVE issue dependencies (gh >= 2.95
 + the repo feature enabled). They are capability-gated by ATTEMPTING the real write and classifying
@@ -508,6 +530,64 @@ def _cmd_edit_pr_body(args):
     payload = {"op": "edit-pr-body", "dry_run": False, "url": result.stdout.strip()}
     payload.update(_write_receipt_fields(args.body_path))
     emit_ok(payload=payload)
+    return EXIT_OK
+
+
+# ---- edit-title / edit-pr-title ----
+
+
+def _cmd_edit_title(args):
+    # Bodyless — a title is not a body, so no empty-body gate (mirrors edit-labels/link, not
+    # edit-body: see the module docstring's edit-title paragraph). --title is required at the
+    # parser, so a no-op invocation is a usage error rather than a silent success.
+    cmd = ["gh", "issue", "edit", args.issue, "--repo", args.repo, "--title", args.title]
+
+    if args.dry_run:
+        emit_ok(payload={
+            "op": "edit-title", "issue": args.issue, "dry_run": True,
+            "title": args.title, "would_run": _quote_cmd(cmd),
+        })
+        return EXIT_OK
+
+    result = process.run(cmd, cwd=args.cwd)
+    if result.auth_required:
+        emit_needs_decision(_auth_decision(result))
+        return EXIT_OK
+    if result.returncode != 0:
+        sys.stderr.write(result.stderr)
+        return 1
+
+    emit_ok(payload={
+        "op": "edit-title", "issue": args.issue, "dry_run": False,
+        "title": args.title, "url": result.stdout.strip(),
+    })
+    return EXIT_OK
+
+
+def _cmd_edit_pr_title(args):
+    # Mirrors _cmd_edit_title with the `pr` noun, for edit-pr-body's reason: `gh issue edit`
+    # rejects a PR number, so a mis-targeted call must fail loudly instead of mis-writing.
+    cmd = ["gh", "pr", "edit", args.pr, "--repo", args.repo, "--title", args.title]
+
+    if args.dry_run:
+        emit_ok(payload={
+            "op": "edit-pr-title", "pr": args.pr, "dry_run": True,
+            "title": args.title, "would_run": _quote_cmd(cmd),
+        })
+        return EXIT_OK
+
+    result = process.run(cmd, cwd=args.cwd)
+    if result.auth_required:
+        emit_needs_decision(_auth_decision(result))
+        return EXIT_OK
+    if result.returncode != 0:
+        sys.stderr.write(result.stderr)
+        return 1
+
+    emit_ok(payload={
+        "op": "edit-pr-title", "pr": args.pr, "dry_run": False,
+        "title": args.title, "url": result.stdout.strip(),
+    })
     return EXIT_OK
 
 
@@ -919,6 +999,18 @@ def _build_parser():
     p_edit_pr_body.add_argument("body_path")
     p_edit_pr_body.add_argument("--dry-run", action="store_true")
 
+    p_edit_title = sub.add_parser("edit-title")
+    p_edit_title.add_argument("repo")
+    p_edit_title.add_argument("issue")
+    p_edit_title.add_argument("--title", required=True)
+    p_edit_title.add_argument("--dry-run", action="store_true")
+
+    p_edit_pr_title = sub.add_parser("edit-pr-title")
+    p_edit_pr_title.add_argument("repo")
+    p_edit_pr_title.add_argument("pr")
+    p_edit_pr_title.add_argument("--title", required=True)
+    p_edit_pr_title.add_argument("--dry-run", action="store_true")
+
     p_edit_labels = sub.add_parser("edit-labels")
     p_edit_labels.add_argument("repo")
     p_edit_labels.add_argument("issue")
@@ -975,6 +1067,8 @@ def _build_parser():
             "create-pr": p_create_pr,
             "edit-body": p_edit,
             "edit-pr-body": p_edit_pr_body,
+            "edit-title": p_edit_title,
+            "edit-pr-title": p_edit_pr_title,
             "edit-labels": p_edit_labels,
             "link": p_link,
             "add-parent": p_add_parent,
@@ -999,6 +1093,10 @@ def main(argv):
         return _cmd_edit_body(args)
     if args.subcommand == "edit-pr-body":
         return _cmd_edit_pr_body(args)
+    if args.subcommand == "edit-title":
+        return _cmd_edit_title(args)
+    if args.subcommand == "edit-pr-title":
+        return _cmd_edit_pr_title(args)
     if args.subcommand == "edit-labels":
         # Pass edit-labels' own sub-parser for its .error() call, same rationale as link below.
         return _cmd_edit_labels(args, subparsers_by_name["edit-labels"])

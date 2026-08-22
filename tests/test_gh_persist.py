@@ -1693,6 +1693,94 @@ class EditLabelsTests(unittest.TestCase):
             self.assertEqual(env["decision"]["code"], "AUTH_REQUIRED")
 
 
+class EditTitleTests(unittest.TestCase):
+    """gh_persist.py edit-title / edit-pr-title -- the only ops that set the title of an
+    ALREADY-FILED issue/PR (module docstring's edit-title paragraph). Bodyless (a title is not a
+    body): no empty-body gate, no body_bytes/body_sha256 receipt, mirroring EditLabelsTests rather
+    than EditBodyTests. --title is required, so a no-op invocation is a usage error."""
+
+    def test_edit_title_emits_ok_with_title_echo(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            cmd = ["issue", "edit", "42", "--repo", "o/r", "--title", "Epic: payments rework"]
+            _write_stdout_file(tmp, "url.txt", b"https://github.com/o/r/issues/42\n")
+            _write_manifest(tmp, [{"argv": cmd, "stdout_file": "url.txt", "exit_code": 0}])
+            result = _run_script(
+                ["edit-title", "o/r", "42", "--title", "Epic: payments rework"], fixtures_dir=tmp
+            )
+            self.assertEqual(result.returncode, 0, msg=result.stderr)
+            env = _parse_envelope(result)
+            envelope_asserts.assert_full_envelope_conformance(env)
+            self.assertEqual(env["op"], "edit-title")
+            self.assertEqual(env["issue"], "42")
+            self.assertEqual(env["title"], "Epic: payments rework")
+            self.assertEqual(env["url"], "https://github.com/o/r/issues/42")
+            self.assertNotIn("body_bytes", env)
+            self.assertNotIn("body_sha256", env)
+
+    def test_edit_pr_title_uses_the_pr_noun(self):
+        # edit-body's reason for the split: `gh issue edit` rejects a PR number, so the noun is in
+        # the op name and a mis-targeted call fails loudly instead of mis-writing.
+        with tempfile.TemporaryDirectory() as tmp:
+            cmd = ["pr", "edit", "7", "--repo", "o/r", "--title", "fix: the thing"]
+            _write_stdout_file(tmp, "url.txt", b"https://github.com/o/r/pull/7\n")
+            _write_manifest(tmp, [{"argv": cmd, "stdout_file": "url.txt", "exit_code": 0}])
+            result = _run_script(
+                ["edit-pr-title", "o/r", "7", "--title", "fix: the thing"], fixtures_dir=tmp
+            )
+            self.assertEqual(result.returncode, 0, msg=result.stderr)
+            env = _parse_envelope(result)
+            envelope_asserts.assert_full_envelope_conformance(env)
+            self.assertEqual(env["op"], "edit-pr-title")
+            self.assertEqual(env["pr"], "7")
+            self.assertEqual(env["title"], "fix: the thing")
+            self.assertEqual(env["url"], "https://github.com/o/r/pull/7")
+            self.assertNotIn("body_bytes", env)
+
+    def test_title_with_spaces_and_quotes_crosses_as_one_argv_element(self):
+        # Exact-list argv matching in the shim IS the assertion: a shell-interpolated or re-split
+        # title would arrive as several elements and MISS.
+        tricky = 'Epic: "payments" & billing -- v2'
+        with tempfile.TemporaryDirectory() as tmp:
+            cmd = ["issue", "edit", "42", "--repo", "o/r", "--title", tricky]
+            _write_manifest(tmp, [{"argv": cmd, "exit_code": 0}])
+            result = _run_script(["edit-title", "o/r", "42", "--title", tricky], fixtures_dir=tmp)
+            self.assertEqual(result.returncode, 0, msg=result.stderr)
+            self.assertEqual(_parse_envelope(result)["title"], tricky)
+
+    def test_missing_title_flag_is_a_usage_error(self):
+        for argv in (["edit-title", "o/r", "42"], ["edit-pr-title", "o/r", "7"]):
+            with self.subTest(argv=argv):
+                result = _run_script(argv)
+                self.assertEqual(result.returncode, 2)
+                self.assertEqual(result.stdout, "")
+
+    def test_dry_run_previews_command_and_makes_no_live_call(self):
+        # No manifest/fixtures_dir -- any live gh call would MISS the shim.
+        for argv, op in (
+            (["edit-title", "o/r", "42", "--title", "T", "--dry-run"], "edit-title"),
+            (["edit-pr-title", "o/r", "7", "--title", "T", "--dry-run"], "edit-pr-title"),
+        ):
+            with self.subTest(op=op):
+                result = _run_script(argv)
+                self.assertEqual(result.returncode, 0, msg=result.stderr)
+                env = _parse_envelope(result)
+                envelope_asserts.assert_full_envelope_conformance(env)
+                self.assertEqual(env["op"], op)
+                self.assertTrue(env["dry_run"])
+                self.assertIn("would_run", env)
+                self.assertEqual(env["title"], "T")
+                self.assertNotIn("url", env)
+
+    def test_surfaces_auth_required_as_needs_decision(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            cmd = ["issue", "edit", "42", "--repo", "o/r", "--title", "T"]
+            _write_manifest(tmp, [{"argv": cmd, "exit_code": 4}])
+            result = _run_script(["edit-title", "o/r", "42", "--title", "T"], fixtures_dir=tmp)
+            self.assertEqual(result.returncode, 0, msg=result.stderr)
+            env = _parse_envelope(result)
+            self.assertEqual(env["decision"]["code"], "AUTH_REQUIRED")
+
+
 class ClosePrTests(unittest.TestCase):
     """gh_persist.py close-pr (added S13, additive per architecture.md §2) — closes a PR with an
     OPTIONAL staged comment (module docstring's close-pr paragraph). The comment crosses the

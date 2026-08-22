@@ -82,9 +82,9 @@ recommends it, ask first (`header: "Issue size"`) — promotion rewrites the iss
 
 - **Zero GitHub mutations before the one write gate.** Everything up to the cut summary is a read;
   everything after it is a write ([prd.md §8.2](../../docs/prd.md) report-then-apply). Aborting at the
-  gate costs nothing — that is the point of the gate, so never let a write creep earlier. The promotion
-  rewrite and its label swap are the only writes that precede it, behind their **own** explicit
-  confirmation (S0) — the cut itself still mutates nothing before its gate.
+  gate costs nothing — that is the point of the gate, so never let a write creep earlier. The promotion's
+  three writes — body rewrite, title rewrite, label swap — are the only ones that precede it, behind their
+  **own** explicit confirmation (S0) — the cut itself still mutates nothing before its gate.
 - **The parent's body is never edited** by the cut, and no `## Slices` section is ever written (the
   shared contract says why). Child detail lives only in child bodies. Exactly three parent-body writes
   are sanctioned, each an approved row in the S4 gate rather than a side effect of filing: the promotion

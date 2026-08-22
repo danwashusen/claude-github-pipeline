@@ -604,6 +604,21 @@ class PersistDryRunTests(unittest.TestCase):
             self.assertIn("--parent", envelope["would_run"])
             self.assertNotIn("url", envelope)
 
+    def test_promotion_title_edit_title_dry_run(self):
+        # cut.md S0: promotion rewrites the title as well as the body/labels. Classification is
+        # lexical (_shared/epic-story-hierarchy.md), so an `Epic:`-less title leaves #N a non-epic.
+        result = self._run_persist(
+            ["edit-title", "octo/widgets", "103", "--title", "Epic: patient access", "--dry-run"]
+        )
+        self.assertEqual(result.returncode, 0, msg=result.stderr)
+        envelope = json.loads(result.stdout.strip())
+        envelope_asserts.assert_full_envelope_conformance(envelope)
+        self.assertEqual(envelope["op"], "edit-title")
+        self.assertTrue(envelope["dry_run"])
+        self.assertIn("would_run", envelope)
+        self.assertEqual(envelope["title"], "Epic: patient access")
+        self.assertNotIn("url", envelope)
+
     def test_empty_body_is_gated_before_any_write(self):
         with tempfile.TemporaryDirectory() as tmp:
             body = Path(tmp) / "slice-S1.md"

@@ -176,7 +176,9 @@ ground these are produced by implementation step S1. Lettered items are individu
     cuts slices, and with *shippable*-independent seams it promotes the issue to an Epic and cuts
     stories (both of the gate's off-ramps land here since #16). It hands back to the planner, whose
     phases then map onto the slices (`sub-issue:`).
-  - (b2) **Promotion.** On the epic-shaped off-ramp it rewrites the target's body as an Epic and swaps
+  - (b2) **Promotion.** On the epic-shaped off-ramp it rewrites the target's body as an Epic, rewrites
+    its title to carry the `Epic:` prefix (classification is lexical, so a promotion that skipped the
+    title would leave the target reading as a non-epic), and swaps
     its type label, behind its **own** explicit diff-and-confirm gate ahead of the cut's write gate —
     a body rewrite is destructive where a `create` is not. Declining leaves the target untouched.
   - (b3) **Epic over existing issues.** Adopts already-filed issues as an epic's children through the
