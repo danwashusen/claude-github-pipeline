@@ -84,7 +84,14 @@ what to fall back to when a change can't be mapped to one suite.
 - **helpers-fallback** — what to run when a changed file is a shared helper that doesn't map to one
   suite (run the whole target, or `none`).
 - **broad-change-fallback** — what to run when a change is too broad to scope (run the whole target,
-  or `none`).
+  or `none`). When a target's drafted value equals the canonical suite —
+  `issue-resolver-canonical-suite`'s `full-suite`, or `pr-evaluator-test-target`'s
+  `full-suite-command` where that block stands in — that is a **flag for the propose-and-confirm
+  gate**, not a silent default: interview for a genuinely narrower rung (one target's whole suite, a
+  directory subset) and, when the full suite really is the honest answer, record the user's explicit
+  acknowledgment in that confirmation. The block bytes stay canonical either way — no annotation. This
+  line sets the per-iteration cost ceiling that targeted selection exists to lower: the resolver honors
+  it at every story-gate visit, on every review round.
 
 ### issue-resolver-canonical-suite
 
@@ -135,7 +142,9 @@ escalation rules fire (epic-integration PR, or an escalation label matched).
 
 The resolver and evaluator test-target blocks usually share the same `wrapper`, target names, and
 naming conventions — draft them together and keep them consistent. The only structural difference is
-this block's `full-suite-command` line.
+this block's `full-suite-command` line. The broad-change-fallback flag applies here too, against this
+block's own `full-suite-command`: a target whose fallback equals it widens every unscopeable change to
+the canonical run — confirm that deliberately or interview for narrower, same as the resolver block.
 
 ### pr-evaluator-escalation-labels
 
@@ -439,6 +448,10 @@ Rules of thumb:
   CI uses.
 - **Static lists exclude tests.** If detection surfaces a single "test everything" command, that's
   the test-target wrapper / full-suite-command, not a static check.
+- **A broad-change-fallback equal to the full suite is a flag, not a default.** Legitimate on a small
+  project — but it must reach the user as a deliberate, acknowledged choice at the propose-and-confirm
+  gate (interview for a narrower rung first), never arrive silently out of detection. The story gates
+  honor whatever that line declares, so it is where the per-round test cost is actually set.
 - **Never fabricate.** Two distinct failures, each worse than an absent block the pipeline skill asks
   about at runtime: a source that yields *nothing* for a block (present it empty and ask — don't
   invent a command), and a source that yields a *non-viable* one (a command the viability rule above

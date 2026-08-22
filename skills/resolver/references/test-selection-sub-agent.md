@@ -6,7 +6,12 @@ the **workspace path** from the prep facts block (`facts.workspace.path`) rather
 worktree itself, and the integration target is the **bare** `facts.audit_ref` name (`main`, or the
 parent epic's branch for a story) — the `git diff <target>...HEAD` two-dot-plus diff against a branch
 name is not the banned ref-arithmetic form (`git show <ref>:<path>` / `git grep <ref>` are; a branch
-diff is not). The heuristics, per-target widening rules, and blast-radius pass are unchanged.
+diff is not). The heuristics, per-target widening rules, and blast-radius pass are unchanged. The
+**diff-base override** (the §10.6 gate's scope, below) is a later addition.
+
+The evaluator's twin of this prompt (`skills/evaluator/references/test-selection-sub-agent.md`)
+deliberately has no diff-base override: its scope is the PR's whole cumulative diff at merge-readiness,
+where narrowing would undermine the gate. Don't port the input there.
 
 The pre-push verification gate (spine §S5's §8 gate, and the review loop's §10.6 re-push gate) spawns a
 read-only `Explore` sub-agent to pick which test suites to run for the cumulative diff. Reasoning happens
@@ -31,10 +36,18 @@ Inputs:
 - Integration target: <facts.audit_ref — main, or epic/<N>-<slug> for stories under an open epic>
 - Test-target config (verbatim from the project's COMMANDS.md / CLAUDE.md):
   <contents of the <!-- issue-resolver-test-target --> block = facts.config.test_target_raw>
+- Diff-base override: <a SHA, or empty. Set only by the review loop's §10.6
+  re-push gate: HEAD as of the fix sub-agent's dispatch, i.e. the last pushed,
+  gate-verified state.>
 
 Steps:
 
-1. Compute the diff: `git diff <integration-target>...HEAD` from the worktree.
+1. Compute the diff from the worktree. With no diff-base override:
+   `git diff <integration-target>...HEAD`. With an override: `git diff <override-sha>`
+   — no `...HEAD`, because the fix under selection is staged but not yet committed at
+   gate time, so the diff has to read the working tree. The override scopes selection to
+   what changed since the branch was last verified green; everything older was already
+   selected and run at an earlier gate.
    Read both the file paths and the hunk contents — don't decide based on paths alone.
    If the diff is empty, return COMMAND: (none) and a one-line rationale.
 2. List each declared target's directory: `ls <target>/` for each target in the config.

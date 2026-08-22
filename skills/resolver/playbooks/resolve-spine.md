@@ -125,8 +125,20 @@ open). Then run the **review loop** (S5.1).
 
 ### S5.1 — Review loop
 
-Record HEAD as the **loop-entry SHA** (the step-2 sub-agent's provenance-boundary input), then loop
-until `review` approves with zero Addressable / Cheap-fix-override items:
+Record HEAD as the **loop-entry SHA** (the step-2 sub-agent's provenance-boundary input — it attributes
+findings to this loop's fix commits, it never narrows what gets reviewed). `review`'s target is always
+the PR's **cumulative diff**, what `Skill(skill="review")` on the PR naturally reads — never the delta
+since the last fix: a correct-but-partial class fix reads as correct every round when only the delta is
+re-read, so a delta-scoped loop converges on its own blind spot instead of on the code. Then loop until
+`review` approves with zero Addressable / Cheap-fix-override items:
+
+**Pre-loop cold read on a large diff.** Before the first step-1 `review`, when the phase's cumulative
+diff is large — roughly 10+ files or 800+ changed lines (`git diff --stat` from
+`facts.workspace.base_ref` to HEAD, run in the workspace; a judgment threshold, not a parsed contract)
+— run one cold-read audit plus one fix iteration first, reusing step 4's **Cold-read audit** mechanics
+verbatim, then enter step 1. At that size the whole-state read surfaces cross-file findings a
+per-finding conversation reaches only rounds later, at a fraction of the cost. The loop still exits only
+through `review`'s approval; this read supplements the reviewer, never substitutes for it.
 
 1. Run `Skill(skill="review")` **in this main conversation** (the built-in command is unreachable from
    inside an `Agent`-dispatched sub-agent — that design consistently failed on PR #607, forcing prose
@@ -147,15 +159,26 @@ until `review` approves with zero Addressable / Cheap-fix-override items:
    loop, and run the **convergence check** each iteration: track the JSON's `finding_provenance` and
    `max_severity` (normalized by the sub-agent onto the ordered scale Blocker > High > Medium > Low >
    Nitpick); when `prior_fix` findings dominate a round (more than half) or max severity has not decayed
-   across two consecutive iterations, the delta loop has become the wrong instrument — fire the cap card
-   early. The trigger is one-shot per answer: on **Continue (N)** suppress it for the next N iterations
-   (the cap still applies); after a cold-read round, re-fire only if a later iteration's max severity
-   rises. On the cap or the convergence trigger, ask (`header: "Iter cap"`): **Continue** (free-text
-   count) / **Cold-read audit** / **Accept current** / **Abort**. On **Cold-read audit**: stage the
-   cumulative diff to `<facts.scratch>/cold-read-diff.patch` (`git diff` from
-   `facts.workspace.base_ref` to HEAD, run in the workspace), dispatch the cold-read `Explore` sub-agent
-   per [`../references/cold-read-audit-prompt.md`](../references/cold-read-audit-prompt.md) — it reviews
-   the touched modules' **final state** against their invariants, not correction-by-correction. If it
+   across two consecutive iterations, the delta loop has become the wrong instrument — fire the trigger
+   early. On its **first** firing in a run with unambiguous evidence — the round returned findings and
+   `finding_provenance.original_code == 0`, so every finding sits on this loop's own fix commits — do
+   not render the card: announce the firing and its evidence, then run the **Cold-read audit** path
+   directly. That is the router's gates-only-for-genuine-decisions invariant applied, not a skipped
+   gate — when the loop demonstrably reviews only its own corrections, continuing unchanged is the one
+   option the evidence has already ruled out. Every other firing asks: subsequent firings, first firings
+   on weaker evidence (severity non-decay alone, or a `prior_fix` majority short of all findings), and
+   the iteration cap itself, which always asks because the budget is the operator's call. The trigger is
+   one-shot per answer: on **Continue (N)** suppress it for the next N iterations (the cap still
+   applies); after a cold-read round — auto-selected or chosen — re-fire only if a later iteration's max
+   severity rises. On the cap or a non-auto-escalated convergence firing, ask (`header: "Iter cap"`):
+   **Continue** (free-text count) / **Cold-read audit** / **Accept current** / **Abort**. On the
+   **Cold-read audit** path, whether auto-selected or answered: stage the cumulative diff to
+   `<facts.scratch>/cold-read-diff.patch` (`git diff` from `facts.workspace.base_ref` to HEAD, run in
+   the workspace), dispatch the cold-read `Explore` sub-agent per
+   [`../references/cold-read-audit-prompt.md`](../references/cold-read-audit-prompt.md), filling
+   `<<prior_audit_findings>>` with the prior cold read's findings when one already ran this run and
+   `(none)` otherwise — it reviews the touched modules' **final state** against their invariants, not
+   correction-by-correction. If it
    returns `code: AMBIGUOUS` (missing/empty staged diff), do not dispatch a fix iteration — repair the
    staging and re-dispatch, or surface the failure to the operator. Otherwise write its findings to
    `<facts.scratch>/review-verdict.md`, run one step-2 sub-agent iteration on that verdict (the existing

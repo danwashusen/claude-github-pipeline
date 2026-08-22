@@ -89,14 +89,15 @@ run 2 cuts off the spiral before it doubles.
 
 ## Test selection on retry
 
-Run 1 and run 3 use the test-selection sub-agent's full verdict on the cumulative diff. Run 2 does **not**
-— it skips the sub-agent and re-runs only the tests that failed in run 1.
+Run 1 and run 3 use the test-selection sub-agent's full verdict; which diff that verdict covers depends
+on the gate (see "§10.6 selection scope" below). Run 2 does **not** — it skips the sub-agent and
+re-runs only the tests that failed in run 1.
 
 | Run | Selection mechanism |
 |---|---|
-| 1 | Full sub-agent verdict on cumulative diff (per `test-selection-sub-agent.md`). |
+| 1 | Full sub-agent verdict (per `test-selection-sub-agent.md`) — on the cumulative diff at §8; at §10.6, on the diff since the last gate-verified push, via the diff-base override. |
 | 2 | **Skip the sub-agent.** Build the command directly: re-run only the tests that failed in run 1, using the wrapper's targeted-run syntax (e.g. `<wrapper> -only-testing <Suite>/<TestMethod>`, `bin/rails test <path>:<line>`, `pytest <path>::<test>`), joined into a single invocation. Use the failing tests' fully-qualified identifiers as reported by the previous run. |
-| 3 | Full sub-agent verdict on cumulative diff. The deep fix may have changed the blast radius (lifted state, restructured a view tree or shared layout, modified a root-reachable surface), so the sub-agent's heuristics — especially the integration blast-radius rules at step 5 of the prompt template — need a fresh look. |
+| 3 | Full sub-agent verdict, same scope rule as run 1. The deep fix may have changed the blast radius (lifted state, restructured a view tree or shared layout, modified a root-reachable surface), so the sub-agent's heuristics — especially the integration blast-radius rules at step 5 of the prompt template — need a fresh look. |
 
 The narrowing at run 2 is a deliberate departure from "trust the sub-agent on every gate visit." The
 justification: the sub-agent's job is selecting tests *given a diff*; on a cheap-fix retry the only new
@@ -110,6 +111,24 @@ evaluator's full canonical run at PR-readiness time. That gap is acceptable: the
 small, and the safety net at the evaluator is exactly the reason this skill runs targeted tests rather than
 the canonical suite. The alternative — re-running the broad selection on every retry — is what produced the
 small-fix spiral this ladder exists to prevent.
+
+## §10.6 selection scope
+
+At §8 nothing on the branch is gate-verified, so the selection diff is the cumulative
+`git diff <integration-target>...HEAD`. At §10.6 the branch was verified green at the last push and only
+this iteration's fix edits have changed since — so runs 1 and 3 pass the sub-agent a **diff-base
+override**: HEAD as of the fix sub-agent's own dispatch. Commits wait until after the gate, so that HEAD
+is the last pushed state and the fix is working-tree-only; the override diff therefore reads the working
+tree (`git diff <sha>`, not `<sha>...HEAD`, which would come back empty and select nothing).
+
+This is run 2's narrowing argument one level up, with the same accepted gap and the same safety net: a
+fix whose effect surfaces only through earlier branch code it shares no symbol or file with is caught by
+the evaluator's canonical run, not by this gate. Three consequences worth stating. A comment-and-
+assertion fix round now legitimately selects `(none)` instead of re-running the whole prior selection.
+The blast-radius pass still runs, on the fix diff — a fix touching a high-fanout surface still widens,
+and "widen when uncertain" still applies within that diff. And a "Push with reds" push doesn't reset
+correctness: those failures stay tracked in the PR's `## Known failures`, not silently dropped from
+selection.
 
 ## Research breakpoint requirements
 

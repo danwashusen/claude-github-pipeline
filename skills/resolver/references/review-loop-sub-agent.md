@@ -175,7 +175,13 @@ Steps (one pass — no inner loop):
    Injection runs verify the test, not the diff, and do not count against
    the retry ladder's 3-run cap (`retry-ladder.md`).
 8. Run the pre-push verification gate (static checks →
-   test-selection sub-agent → test execution). The retry ladder per
+   test-selection sub-agent → test execution). Dispatch the test-selection
+   sub-agent with its **diff-base override** set to current HEAD
+   (`git rev-parse HEAD` in the worktree): your commits wait for step 9, so
+   HEAD is still the last pushed, gate-verified state and your fixes are
+   working-tree-only — the override scopes selection to what this round
+   actually changed. Scope rationale and its accepted gap: `retry-ladder.md`'s
+   "§10.6 selection scope". The retry ladder per
    `retry-ladder.md` caps a single visit at 3 runs with a forced research
    breakpoint between cheap and deep fixes. On retry-ladder escalation,
    trip the `verification_failure` guard rail.
