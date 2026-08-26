@@ -56,12 +56,11 @@ ${CLAUDE_PLUGIN_ROOT}/scripts/gh_persist.py edit-body <owner/repo> <epic> \
 If the checkbox is already `[x]`, note it and skip. A failed epic edit does **not** block the review or
 the other actions — surface it for manual reapplication.
 
-## Action 3 — Append the epic delivery log
+## Action 3 — Record this story in the epic delivery log
 
 Record what the story **actually delivered** so the planner's just-in-time planning of later stories
-grounds on what shipped. The evaluator is the **sole writer** of the single
-`<!-- epic-delivery-log:v1 -->` comment; recording every story — including the last — keeps it
-complete. Format and the writer/reader contract are owned by
+grounds on what shipped. The evaluator is the **sole writer**; recording every story — including the
+last — keeps the log complete. Format and the writer/reader contract are owned by
 [`../../_shared/epic-delivery-log.md`](../../_shared/epic-delivery-log.md); render it byte-for-byte per
 [`../references/epic-delivery-log.md`](../references/epic-delivery-log.md).
 
@@ -71,26 +70,59 @@ contract; a divergence is deliberately visible and is the planner's feedback edg
 the plan's `## Epic contract` `Delivers:` line (in hand from the facts). Under a `Plan override` (no
 plan), record the shape from the diff alone.
 
-The prior log comment is a **fact**: `facts.epic.delivery_log` — `present`, its `comment_id` (the
-numeric REST id `--delete-marker-id` requires), `comment_url`, and its staged `body` / `body_path`.
-Never re-fetch it: an id read off an issue thread is a GraphQL node id, which the REST delete path
-404s on, leaving a duplicate log the planner can then ground a later story on (#34).
+**One comment per story** (#41): stage **this story's entry alone** — marker line, then its one entry
+line — to `<facts.scratch>/delivery-log-entry.md`. Never assemble the whole log; a single accumulating
+comment is what reached GitHub's body cap and made merges unrecordable.
 
-Stage the full updated body (marker line first, then the header, then one line per shipped story) to
-`<facts.scratch>/delivery-log.md` — starting from `delivery_log`'s staged body when `present`, from
-scratch (marker + header + this story's line) when absent. Idempotent: update an existing `#<story>`
-line in place rather than duplicating. Post through the single write path (plain create when absent;
-delete-and-repost via `--delete-marker-id` when it was present):
+`facts.epic.delivery_log` already answers where this story stands, so never re-fetch a comment to find
+out — an id read off an issue thread is a GraphQL node id, which every REST comment endpoint 404s on
+(#34). Take the arm matching `story_recorded_in`:
 
-```bash
-${CLAUDE_PLUGIN_ROOT}/scripts/gh_persist.py comment <owner/repo> issue <epic> \
-  "<facts.scratch>/delivery-log.md" [--delete-marker-id <facts.epic.delivery_log.comment_id>]
-```
+- **`null` — no record yet.** Create the entry comment:
 
-When `delivery_log.ambiguous` is true the epic already carries more than one log comment, so there is
-no single comment to replace: post **nothing**, and report the duplicate `comment_urls` plus the
-recovery (delete the stale ones, re-run this evaluation to record this story's line). Reposting over an
-ambiguous log would add a third copy.
+  ```bash
+  ${CLAUDE_PLUGIN_ROOT}/scripts/gh_persist.py comment <owner/repo> issue <epic> \
+    "<facts.scratch>/delivery-log-entry.md"
+  ```
+
+- **`entries` — this story already has its own comment** (a re-evaluation, or a corrected shape).
+  Update it in place; the comment URL stays stable and GitHub's edit history is the supersession
+  record:
+
+  ```bash
+  ${CLAUDE_PLUGIN_ROOT}/scripts/gh_persist.py edit-comment <owner/repo> \
+    <facts.epic.delivery_log.entry.comment_id> "<facts.scratch>/delivery-log-entry.md"
+  ```
+
+- **`legacy` — this story's line lives in the legacy comment.** Update that line *in place inside the
+  legacy body* (from `facts.epic.delivery_log.legacy.body` / `body_path`), re-stage the whole legacy
+  body, and repost it. The tier a story is already recorded in is the tier that keeps it — opening a
+  per-story comment for a story the legacy body records would leave one story with two records, and
+  possibly two divergent shapes:
+
+  ```bash
+  ${CLAUDE_PLUGIN_ROOT}/scripts/gh_persist.py comment <owner/repo> issue <epic> \
+    "<facts.scratch>/delivery-log.md" --delete-marker-id <facts.epic.delivery_log.legacy.comment_id>
+  ```
+
+**Idempotent, per story.** A story has exactly one record; re-evaluating updates it and never adds a
+second.
+
+When `delivery_log.ambiguous` is true, some story carries two records (or the epic carries two legacy
+comments). It is **story-scoped**, so read `duplicated_stories` before deciding:
+
+- **This story is one of them** — there is no single record to update: post **nothing** for it, and
+  report the duplicate `comment_urls` plus the recovery (delete the stale one, re-run this evaluation).
+  Writing over an ambiguous record would add a third copy.
+- **This story is not** — record it normally by the arms above. A duplicate on another story is that
+  story's problem to fix and must not block this merge from being recorded.
+
+When `delivery_log.story_number` is null the PR closes zero or several issues, so the entry's story is
+not derivable from the PR. Identify the story from the issue whose `## Epic contract` this evaluation
+actually judged, then **look it up in `delivery_log.entries`** and take the arm its `tier` names —
+`entries` → `edit-comment` on that record's `comment_id`, `legacy` → the legacy-body update, absent
+from the list → create. Defaulting to a create without that lookup is how a re-evaluation posts a
+second record for a story that already has one. Name the story you recorded in the summary.
 
 ## Residual follow-ups + cleanup
 

@@ -16,8 +16,8 @@ this route supplies:
   `facts.epic.stories` — the sibling-sequencing source of truth), `## Story contracts` (per story,
   `delivers` / `consumes` — the cross-story seams Dimension 5 reads and each just-in-time story plan is
   checked against), `## Integration strategy` (how the stories converge on `epic/<N>-<slug>` and reach
-  `main`), and the epic `## Definition of done` grounding. The `<!-- epic-delivery-log:v1 -->` comment
-  is **not** created here — the evaluator creates it lazily when the first story merges.
+  `main`), and the epic `## Definition of done` grounding. The epic delivery log is
+  **not** created here — the evaluator records each story's entry as that story merges.
 - **Reviewer dimensions (spine S7).** `1, 2, 3, 5, 6` — Dimension 5 (sequencing) topologically checks
   the `## Story breakdown` order against the `## Story contracts` graph, no sibling plans needed.
 - **Open questions at the epic grain.** A story *fully* gated by an unresolved OQ is scoped out of

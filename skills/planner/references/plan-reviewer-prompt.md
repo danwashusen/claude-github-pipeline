@@ -70,8 +70,10 @@ failure mode; do not flag a plan for leaving line-level mechanics to the impleme
   plan body (its `## Story contracts` and `## Story breakdown`) for Dimension 8. Read it with
   `Read <<epic_plan>>`. Empty otherwise.
 - **Epic delivery log**: `<<epic_delivery_log>>` — for a story under an epic, an absolute path to the
-  staged parent-epic `<!-- epic-delivery-log:v1 -->` comment listing what each predecessor story actually
-  delivered (or `(none yet)`). Read it with `Read <<epic_delivery_log>>`. Dimension 8's "consumes only
+  staged parent-epic delivery log listing what each predecessor story actually delivered (or
+  `(none yet)`). Read it with `Read <<epic_delivery_log>>`. The log lives on the epic as one comment per
+  shipped story, so this file is the whole log assembled into one document — treat it as the single
+  artifact it is, and never go looking for a particular comment or marker. Dimension 8's "consumes only
   what's shipped" check reads this. Empty otherwise.
 - **Live sub-issues**: `<<live_slices>>` — the target's live sub-issue set in the sub-issue panel's
   own order, one row per entry (`#<N> — <state> — "<title>"`, plus `may-have-changed` when the
@@ -203,10 +205,11 @@ Run only the dimensions named in the inputs.
    `## Epic contract` against the parent epic plan: **delivers what the epic assigns it** (every contract
    the epic's `## Story contracts` lists this story as delivering appears in the story's `Delivers:` with
    a matching shape — a miss is a BLOCKER); **consumes only what's available, with a matching shape**
-   (`Consumes: (none)` is always fine; otherwise every named contract must already be in the epic's
-   `<!-- epic-delivery-log:v1 -->` comment (`<<epic_delivery_log>>`) — the log is the single source of
-   truth — and match the **shape the log records as delivered**: an out-of-sequence consume, or a shape
-   differing from the delivered shape, is a BLOCKER); **honors the epic approach** (no `## Architecture
+   (`Consumes: (none)` is always fine; otherwise every named contract must already be recorded in the
+   epic delivery log (`<<epic_delivery_log>>`) — the log is the single source of truth — and match the
+   **shape the log records as delivered**: an out-of-sequence consume, or a shape differing from the
+   delivered shape, is a BLOCKER. Where a story appears twice in that file, the per-story entry is
+   authoritative over a legacy monolithic one — the same precedence the reader applied); **honors the epic approach** (no `## Architecture
    decisions` / `## Changes` contradicting the epic plan's `## Approach` — a competing abstraction for a
    pinned seam is a BLOCKER). A dim-8 BLOCKER tracing to a wrong *epic* contract is remediated by the
    epic-plan feedback edge — flag it so the planner revises the epic plan.

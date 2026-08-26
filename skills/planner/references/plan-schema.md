@@ -137,7 +137,7 @@ Omit the key entirely when the target has no sub-issues; plans authored before i
 
 ## Epic-plan and story-under-epic sections
 
-An **epic** plan replaces `## Phases` (single-issue / multi-phase only) with the sections below, in this order after `## Approach`. The epic plan pins the cross-story **contracts** and sequencing; like every implementation plan it is verified and immutable (do not hand-edit — re-run the planner to revise). Child stories are planned just-in-time against it (planner Step 11 + "Just-in-time story planning" mode), not fanned out up front. The *living* record of what each story actually delivered is kept in a **separate** `<!-- epic-delivery-log:v1 -->` comment — its own artifact, never in this verified plan (see *Epic delivery log* under the schema below).
+An **epic** plan replaces `## Phases` (single-issue / multi-phase only) with the sections below, in this order after `## Approach`. The epic plan pins the cross-story **contracts** and sequencing; like every implementation plan it is verified and immutable (do not hand-edit — re-run the planner to revise). Child stories are planned just-in-time against it (planner Step 11 + "Just-in-time story planning" mode), not fanned out up front. The *living* record of what each story actually delivered is kept in the **separate** epic delivery log — its own artifact (one comment per shipped story on the epic issue), never in this verified plan (see *Epic delivery log* under the schema below).
 
 ```
 ## Story breakdown            (epic only)
@@ -155,7 +155,7 @@ An **epic** plan replaces `## Phases` (single-issue / multi-phase only) with the
 <how the stories converge on `epic/<N>-<slug>` and reach `main`>
 ```
 
-**A merged story's entry compresses on the next epic revise.** It keeps its `delivers` and `consumes` clauses and gains a third, `shipped:`, pointing at the `<!-- epic-delivery-log:v1 -->` comment — and it carries nothing else, per *Section ownership and size* above: what that story actually built is the log's fact, and re-arguing it here is the restatement that rule forbids. Two constraints make the compression safe:
+**A merged story's entry compresses on the next epic revise.** It keeps its `delivers` and `consumes` clauses and gains a third, `shipped:`, pointing at the epic delivery log — and it carries nothing else, per *Section ownership and size* above: what that story actually built is the log's fact, and re-arguing it here is the restatement that rule forbids. Two constraints make the compression safe:
 
 - **The pointer is additive, never a replacement.** Dimension 5 builds its sequencing graph from every entry's `delivers` / `consumes` and treats a `consumes` no entry `delivers` as a dangling-dependency BLOCKER. Dropping either clause in favour of the pointer would make every epic revise after the first merge emit false BLOCKERs.
 - **`delivers` stays verbatim as pinned.** The compressing session has the log in hand, so the tempting move is to make the entry agree with it — which silently re-pins the contract to the *shipped* shape. After that, the story-under-epic staleness check compares the log against a copy of itself and can never fire again. Pinned-versus-shipped divergence is the signal; preserving the pinned text is what keeps it visible.
@@ -167,9 +167,9 @@ A **story under an epic** uses the standard single-issue schema above — with t
 ```
 ## Epic contract              (story under an epic only)
 - Delivers: <contract this story produces, matching the epic plan's ## Story contracts entry for it> — [epic-plan: #<N>]
-- Consumes: <contract(s) this story builds on, each already recorded in the epic's `<!-- epic-delivery-log:v1 -->` comment, or (none)> — [epic-plan: #<N>]
+- Consumes: <contract(s) this story builds on, each already recorded in the epic delivery log, or (none)> — [epic-plan: #<N>]
 ```
 
 ### Epic delivery log (a separate, living comment — not part of the verified plan)
 
-What each story **actually** delivered is tracked in a separate `<!-- epic-delivery-log:v1 -->` comment on the epic issue — maintained by the `evaluator` (writer) and read by the `planner` (Just-in-time story planning + Dimension 8). It is **not** part of this verified plan: the plan is immutable, the log changes on every merge. **See [`../../_shared/epic-delivery-log.md`](../../_shared/epic-delivery-log.md)** for its verbatim format and the writer/reader contract.
+What each story **actually** delivered is tracked in the epic delivery log — one `<!-- epic-delivery-log:v2:story:<N> -->` comment per shipped story on the epic issue, plus a legacy monolithic tier that is read forever and never written again — maintained by the `evaluator` (writer) and read by the `planner` (Just-in-time story planning + Dimension 8). It is **not** part of this verified plan: the plan is immutable, the log changes on every merge. **See [`../../_shared/epic-delivery-log.md`](../../_shared/epic-delivery-log.md)** for its verbatim format and the writer/reader contract.

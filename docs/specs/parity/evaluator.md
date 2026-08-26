@@ -597,3 +597,63 @@ deliberate v1→v2 rename, free prose within the shared schema, a solo-run v2 ju
       the deliberate v1→v2 skill rename, free prose within the shared schema, or an identical run-time
       environment substitution. The S8 go/no-go input is satisfied: **S7 parity recorded with zero
       unexplained divergences.**
+
+---
+
+## The epic delivery log becomes one comment per story — ADJUDICATION RECORD (#41, 4.8.0)
+
+**Ruling: the delivery log is written as one comment per shipped story
+(`<!-- epic-delivery-log:v2:story:<N> -->`). The `<!-- epic-delivery-log:v1 -->` single-comment shape
+and its read path are retained permanently as tier 2, and there is no backfill.** This is a change to
+a [prd.md §7](../../prd.md) frozen artifact, so it is recorded here rather than left implicit in a
+diff.
+
+The forcing evidence: a single accumulating comment is bounded by GitHub's 65,536-character body cap,
+and an epic reaches it *by construction*. Measured on a live epic — 37,478 characters across 9
+entries, mean 4,152 per entry, 14 stories still open, projecting ~95,600 (146% of the cap) with about
+6 merges of headroom left. Past that point `_verify_body_file` returns `BODY_TOO_LONG` and **no story
+merge can be recorded at all**, with no compaction path and no owner but the append. Bounding the
+entry instead was considered and rejected: it manages the deadline rather than removing it, and the
+narration it would compress away (`⚠ Divergences later stories must read`) is precisely what a later
+story's plan needs in order not to ground on a stale contract.
+
+§7's guarantee is "an artifact written by a v1 skill is consumed correctly by its v2 counterpart, and
+vice versa". This change satisfies it in the forward direction literally and breaks the reverse
+direction knowingly, on four grounds:
+
+1. **The v1 artifact's schema and semantics are unchanged.** A new form is *added*; the old one is
+   not altered. That is what the `:v1` in the marker exists to allow, and it is why the frozen
+   example `docs/specs/examples/epic-delivery-log.md` is left unedited — the new shape got its own
+   record in `epic-delivery-log-per-story.md`.
+2. **The v1 read path is retained permanently**, not deprecated. A legacy monolith is read forever,
+   and an epic carrying both tiers is unioned by story number rather than halved.
+3. **The reverse direction degrades gracefully, and only for a reader that no longer exists.** A v1
+   reader on a v2-only epic finds no `<!-- epic-delivery-log:v1 -->` and reads "no log yet" — an
+   absence, not a misread. The v1 tree was retired at S20 and lives only in git history.
+4. **The precedent is #15.** Adopting the native parent/sub-issue relation dropped the legacy
+   `## Stories` *writer*, kept the legacy *reader*, and did no backfill — an accepted permanent
+   one-way change to a §7 row, on the same reasoning.
+
+**Scope-limiting rule.** This authorizes a superseding *form* for one artifact whose growth is
+unbounded by construction. It is not a licence to version other §7 artifacts for convenience: the
+test is whether the existing shape has a failure mode that no amount of careful authoring avoids.
+The plan comment, by contrast, is re-authored whole on every revise and therefore has a natural
+compaction moment (#38/#39) — it does not meet this bar.
+
+It also supersedes one standing ruling: `skills/_shared/epic-delivery-log.md` previously stated that
+this writer deliberately does **not** use `gh_persist.py edit-comment`, because "nothing here depends
+on a stable comment URL" and adopting it "would be a change to make on its own evidence, not a side
+effect of the planner's". #41 is that evidence — with one comment per story, in-place update is the
+natural mechanic and the alternative churns an entry's URL on every re-record. `comment
+--delete-marker-id` is **not** subsumed: it remains the only op that can create a first record and
+the only one that can collapse a duplicated marker.
+
+Pinned by `tests/test_delivery_log.py` (the tier resolution, the union-with-per-story-wins precedence
+rule, and story-scoped `MARKER_AMBIGUOUS`), `tests/test_prep_evaluator.py::ParentEpicStorySetTests`
+(the three tiers plus the duplicate degrade), `tests/test_prep_planner.py` (the `entries` tier and
+the two `attention` cases), and
+`tests/test_evaluator_routing.py::…::test_delivery_log_template_byte_compatible` (both fences pinned
+by predicate, so neither pin depends on document order).
+
+**Live parity: TODO.** No live run has exercised the per-story write path or a `mixed` epic; the
+offline suite is the whole evidence base so far.

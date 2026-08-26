@@ -502,27 +502,104 @@ class ParentEpicStorySetTests(PrepEvaluatorSandboxTestCase):
         self.assertEqual([s["state"] for s in epic["stories"]], [None, None, None])
 
     def test_delivery_log_carries_the_numeric_rest_comment_id_and_body(self):
-        """#34: the story route replaces this comment via `gh_persist.py comment
-        --delete-marker-id`, whose REST endpoint takes the NUMERIC comment id only. Prep sources it
-        from gh_gather's marker lookup (raw REST objects) — never from the normalized thread, whose
-        `id` is the GraphQL node id the delete always 404s on, leaving a duplicate log.
+        """#34: the story route addresses this comment through a REST endpoint that takes the
+        NUMERIC comment id only — never the normalized thread's GraphQL node id, which the
+        delete/patch always 404s on, leaving a duplicate log.
+
+        #41: this fixture's log is the LEGACY monolithic comment, so the two-tier read reports that
+        tier under `legacy` and stages its body there. The id now comes from a thread scan rather
+        than gh_gather's marker lookup — a per-story log is a SET of comments, which a
+        single-match `marker_prefix` cannot express — so `databaseId` is what keeps it numeric.
         """
         envelope = self._story_pr_envelope("prep_evaluator_story_type_delivery_log")
         log = envelope["epic"]["delivery_log"]
         self.assertTrue(log["present"])
         self.assertFalse(log["ambiguous"])
-        self.assertEqual(log["comment_id"], 5350498958)
-        self.assertNotIn("IC_", str(log["comment_id"]))
-        body = log.get("body")
+        self.assertEqual(log["log_source"], "legacy")
+        self.assertEqual(log["legacy"]["comment_id"], 5350498958)
+        self.assertNotIn("IC_", str(log["legacy"]["comment_id"]))
+        body = log["legacy"].get("body")
         if body is None:
-            body = Path(log["body_path"]).read_text(encoding="utf-8")
+            body = Path(log["legacy"]["body_path"]).read_text(encoding="utf-8")
         self.assertTrue(body.startswith("<!-- epic-delivery-log:v1 -->"))
         self.assertIn("#90 \u2014 delivered:", body)
+        # This PR closes #42, which the log does NOT record (its only entry is #90), so this story
+        # has no existing record and Action 3 creates one. The distinction is the point: `present`
+        # answers "does the epic have a log", `story_recorded_in` answers "is THIS story already
+        # recorded, and in which tier" — conflating them is how a re-record writes a second entry.
+        self.assertEqual(log["story_number"], 42)
+        self.assertIsNone(log["story_recorded_in"])
 
     def test_absent_delivery_log_reports_present_false_without_an_id(self):
         envelope = self._story_pr_envelope("prep_evaluator_story_type")
         log = envelope["epic"]["delivery_log"]
         self.assertEqual(log, {"present": False, "ambiguous": False})
+
+    def test_per_story_entries_report_the_entries_tier(self):
+        """#41: the shape every epic's log takes from now on. Many comments is the NORMAL state, so
+        the read cannot be a single-marker lookup — it is a scan of the thread the gather already
+        returned, which is also why it costs no extra fetch.
+        """
+        envelope = self._story_pr_envelope("prep_evaluator_story_type_log_entries")
+        log = envelope["epic"]["delivery_log"]
+        self.assertTrue(log["present"])
+        self.assertFalse(log["ambiguous"])
+        self.assertEqual(log["log_source"], "entries")
+        self.assertEqual(log["entry_count"], 2)
+        self.assertNotIn("legacy", log)
+        # This PR closes #42, which HAS its own entry comment, so Action 3 takes the in-place
+        # `edit-comment` arm against that comment's numeric REST id.
+        self.assertEqual(log["story_number"], 42)
+        self.assertEqual(log["story_recorded_in"], "entries")
+        self.assertEqual(log["entry"]["comment_id"], 5350499100)
+        self.assertNotIn("IC_", str(log["entry"]["comment_id"]))
+
+    def test_every_resolved_record_is_exposed_not_just_this_story_s(self):
+        """The write has to stay idempotent even when the closing-issue set cannot name a single
+        story. With only `story_recorded_in` available, that case has no arm but `create`, so a
+        re-evaluation posts a second entry — and a duplicate hard-blocks the planner on that epic.
+        The full map is what lets the write find an existing record instead.
+        """
+        envelope = self._story_pr_envelope("prep_evaluator_story_type_log_entries")
+        log = envelope["epic"]["delivery_log"]
+        by_story = {e["story"]: e for e in log["entries"]}
+        self.assertEqual(sorted(by_story), [42, 90])
+        self.assertEqual(by_story[90]["tier"], "entries")
+        self.assertEqual(by_story[90]["comment_id"], 5350498958)
+        # #90 is not the story this PR closes, and its record is still reachable.
+        self.assertNotEqual(log["story_number"], 90)
+
+    def test_mixed_epic_unions_both_tiers_with_the_per_story_entry_winning(self):
+        """The state every pre-#41 epic enters on its next merge. #90 is in BOTH tiers; it counts
+        once, from its per-story comment. Halving would lose a shipped story and keeping both would
+        hand the plan reviewer two shapes for one story.
+        """
+        envelope = self._story_pr_envelope("prep_evaluator_story_type_log_mixed")
+        log = envelope["epic"]["delivery_log"]
+        self.assertEqual(log["log_source"], "mixed")
+        self.assertEqual(log["entry_count"], 1)
+        self.assertEqual(log["legacy"]["comment_id"], 5350498958)
+        # #42 is recorded in neither tier, so Action 3 creates its entry.
+        self.assertEqual(log["story_number"], 42)
+        self.assertIsNone(log["story_recorded_in"])
+
+    def test_two_entries_for_one_story_degrade_without_gating_the_story_set(self):
+        """Story-scoped duplicates: the story number in the marker is what keeps a genuine duplicate
+        detectable now that "many comments" is normal. Still not prep's own decision — a merge
+        already judged on its own gates must not stall on its log — and no longer epic-wide: a
+        duplicate for one story leaves every other story recordable.
+        """
+        envelope = self._story_pr_envelope("prep_evaluator_story_type_log_dup_entry")
+        self.assertEqual(envelope["status"], "ok")
+        epic = envelope["epic"]
+        self.assertEqual([s["number"] for s in epic["stories"]], [90, 91, 92])
+        log = epic["delivery_log"]
+        self.assertTrue(log["ambiguous"])
+        self.assertEqual(log["comment_ids"], [5350498958, 5361313482])
+        self.assertTrue(
+            any("name story #90" in n for n in envelope["notices"]),
+            "the notice must name WHICH story is duplicated, got %r" % (envelope["notices"],),
+        )
 
     def test_duplicate_delivery_logs_degrade_without_gating_the_story_set(self):
         """More than one log comment is MARKER_AMBIGUOUS at the gather. It must NOT become prep's

@@ -67,21 +67,22 @@ import gh_pr_gather  # noqa: E402
 import parse  # noqa: E402
 import workspace  # noqa: E402
 from pipelib import process  # noqa: E402
-from pipelib.decisions import AMBIGUOUS, MARKER_AMBIGUOUS, needs_decision  # noqa: E402
+from pipelib.decisions import AMBIGUOUS, needs_decision  # noqa: E402
 from pipelib.envelope import EXIT_OK, EXIT_USAGE_ERROR, emit_needs_decision, emit_ok  # noqa: E402
+from pipelib.spill import spill_bytes  # noqa: E402
+
+import delivery_log  # noqa: E402  (in-process composition, not a subprocess chain)
 
 # Health-cache marker comment prefix (docs/specs/evaluator.md "Artifacts written") — self-read by
 # gh_pr_gather's marker-comment lookup so the health check needs no second fetch.
 HEALTH_CACHE_MARKER = "<!-- pr-evaluator-health-cache:v1 -->"
 
-# The epic delivery log (skills/_shared/epic-delivery-log.md) — the evaluator is its SOLE writer and
-# updates it in place at every story merge, so the story route needs the prior comment's REST id to
-# delete-and-repost through `gh_persist.py comment --delete-marker-id`. That id comes from
-# gh_gather's marker-comment lookup, which reads the RAW REST objects (numeric `id`) — never from
-# the normalized thread, whose `id` is the GraphQL node id the REST delete endpoint 404s on (#34:
-# the playbook used to tell the model to fetch the comment itself, which landed in node-id space,
-# so the delete silently failed and the log accumulated duplicates).
-DELIVERY_LOG_MARKER = "<!-- epic-delivery-log:v1 -->"
+# The epic delivery log (skills/_shared/epic-delivery-log.md) — the evaluator is its SOLE writer.
+# The markers, tier resolution and `log_source` classification live in `delivery_log.py`, shared
+# with prep_planner so the writer's view and the reader's cannot drift (#41). The ids this prep
+# hands the story route are REST NUMERIC ids, never the normalized thread's GraphQL node id, which
+# every REST comment endpoint 404s on (#34: the playbook used to fetch the comment itself, landed
+# in node-id space, so the delete silently failed and the log accumulated duplicates).
 
 # The four gate-config marker names (docs/specs/evaluator.md), read at the root `main` SHA
 # (architecture.md §6/§12: "gate config is pinned to trust ... never from a PR head").
@@ -377,7 +378,127 @@ def _parse_stories_checklist(epic_body):
     return entries
 
 
-def _build_epic_facts(base_ref_name, repo, scratch_dir):
+def _load_thread(envelope):
+    """Parse `envelope`'s `thread` field (inline text or path-mode file) back into the list of
+    normalized comment dicts `gh_gather.run` produced. Never re-fetches — the delivery log's entries
+    are scanned out of the thread this gather already returned."""
+    if envelope.get("thread_mode") == "path":
+        text = Path(envelope["thread_path"]).read_text(encoding="utf-8")
+    else:
+        text = envelope.get("thread")
+    if not text:
+        return []
+    return json.loads(text)
+
+
+def _build_delivery_log_facts(envelope, scratch_dir, epic_number, story_numbers):
+    """``facts.epic.delivery_log`` — the log resolved across both tiers, plus THIS story's record.
+
+    Returns ``(facts, notices)``. Tier resolution, ordering and ``log_source`` live in
+    ``delivery_log.py``, shared with ``prep_planner`` so the classification cannot drift between the
+    writer's prep and the reader's.
+
+    ``present`` keeps its established meaning — *the epic has a log* — and is deliberately NOT
+    redefined as "this story has an entry". Silently repurposing it is how a re-record ends up
+    writing a second record for a story already logged; the story-scoped answer is its own key.
+    """
+    thread = _load_thread(envelope)
+    log, decision = delivery_log.collect(thread)
+
+    if decision is not None:
+        # A duplicate — the #34 wreckage itself, or a hand-posted second copy. NOT forwarded as a
+        # decision: the hierarchy is never a gate, and a merge already judged on its own gates must
+        # not stall on its log. Under per-story comments this no longer blocks the whole epic: the
+        # resolved half still comes back from `collect`, so a duplicate on story A leaves story B
+        # recordable, and `duplicated_stories` says which stories are actually affected.
+        context = decision.get("context") or {}
+        ids = context.get("comment_ids") or []
+        scope = (
+            "name story #%s" % context["story"] if context.get("story") else "match the legacy marker"
+        )
+        return (
+            {
+                "present": True,
+                "ambiguous": True,
+                "comment_ids": ids,
+                "comment_urls": context.get("comment_urls") or [],
+            },
+            [
+                "%d epic-delivery-log comments on #%s %s — expected one; this story's entry was "
+                "not recorded (skills/_shared/epic-delivery-log.md)" % (len(ids), epic_number, scope)
+            ],
+        )
+
+    if not log["present"]:
+        # Exactly the two keys, so an absent log stays a two-key fact: there is no tier to name and
+        # no record to point at, and `present: False` already says so.
+        return {"present": False, "ambiguous": False}, []
+
+    facts = {
+        "present": True,
+        "ambiguous": False,
+        "log_source": log["log_source"],
+        "entry_count": log["entry_count"],
+        # Every resolved record, always — not just the one for `story_number`. When the closing-issue
+        # set cannot name a single story (below), this map is the only way the write can still find an
+        # existing record instead of defaulting to a create and posting a duplicate. The old
+        # single-comment design was idempotent without knowing the story number, because the whole
+        # body was staged; per-story writes have to be handed the same reach.
+        "entries": [
+            {
+                "story": e["story"],
+                "tier": e["tier"],
+                "comment_id": e.get("comment_id"),
+                "comment_url": e.get("comment_url"),
+            }
+            for e in log["entries"]
+        ],
+    }
+    if log["duplicated_stories"]:
+        facts["duplicated_stories"] = log["duplicated_stories"]
+
+    notices = []
+    # Which story this write targets. A story PR normally closes exactly one issue; zero (the
+    # `Plan override` / unlinked-PR case) and more than one are both legitimate, and neither yields
+    # a single record to update — so say so rather than guessing which sibling to overwrite.
+    if len(story_numbers) == 1:
+        story_number = story_numbers[0]
+        facts["story_number"] = story_number
+        tier, record = delivery_log.record_for_story(log, story_number)
+        facts["story_recorded_in"] = tier
+        if tier == delivery_log.SOURCE_ENTRIES:
+            facts["entry"] = {
+                "comment_id": record["comment_id"],
+                "comment_url": record["comment_url"],
+            }
+    else:
+        facts["story_number"] = None
+        facts["story_recorded_in"] = None
+        notices.append(
+            "this PR closes %d issues, so the delivery-log entry's story is not derivable from the "
+            "PR — Action 3 resolves it against `delivery_log.entries` and names the story it "
+            "recorded (skills/_shared/epic-delivery-log.md)" % len(story_numbers)
+        )
+
+    if log["legacy"] is not None:
+        # The legacy body is staged because updating a story's line *inside* it is one of Action 3's
+        # arms — the tier a story is already recorded in is the tier that keeps it.
+        facts["legacy"] = {
+            "comment_id": log["legacy"]["comment_id"],
+            "comment_url": log["legacy"]["comment_url"],
+        }
+        facts["legacy"].update(
+            spill_bytes(
+                log["legacy"]["body"].encode("utf-8"),
+                "body",
+                scratch_dir,
+                filename="epic-%s-delivery-log-legacy.md" % epic_number,
+            )
+        )
+    return facts, notices
+
+
+def _build_epic_facts(base_ref_name, repo, scratch_dir, story_numbers=()):
     """``facts.epic`` for a story PR: the parent epic plus its story set and progress.
 
     The epic number comes from the PR's own base ref (``epic/<N>-<slug>``) — no search needed. The
@@ -388,11 +509,21 @@ def _build_epic_facts(base_ref_name, repo, scratch_dir):
     A ``mixed`` epic is unioned, never halved — dropping either half would under-count siblings and
     could route a merge to "last sibling closed" while stories remain open.
 
-    The same gather carries the epic's ``<!-- epic-delivery-log:v1 -->`` comment as ``delivery_log``
-    — present/absent, the prior comment's **numeric REST id** (the only id space
-    ``gh_persist.py comment --delete-marker-id`` can delete), its url, and its staged body — so the
-    story route's Action 3 builds on the fetched body and replaces the comment instead of fetching
-    it itself and passing a node id that always 404s (#34).
+    The delivery log (``skills/_shared/epic-delivery-log.md``) rides on the SAME gather as
+    ``delivery_log``: where this story is already recorded and under which **numeric REST id** (the
+    only id space ``gh_persist.py edit-comment`` and ``comment --delete-marker-id`` can address), so
+    Action 3 updates the existing record instead of fetching it itself and passing a node id that
+    always 404s (#34).
+
+    It is read by scanning the gather's own already-paginated thread, not through a
+    ``marker_prefix``. Two reasons, both structural (#41): a per-story log is a SET of comments and
+    ``marker_prefix`` is a single-match lookup that calls more than one hit ``MARKER_AMBIGUOUS``;
+    and an exact per-story lookup would need a story number this function does not have — it is
+    built from the base ref alone, and a PR's closing-issue set can be empty (the ``Plan override``
+    case) or plural. Scanning also keeps the LEGACY tier visible, which is what stops a re-record
+    writing a second, divergent record for a story already recorded there. The thread is in the
+    envelope either way, so this costs zero extra ``gh`` calls — and removes one, since the old
+    ambiguity path re-gathered the whole issue a second time.
 
     Returns ``(epic_facts_or_None, notices)``. A gather failure here is **non-fatal**: this is
     display/routing context for a merge that has already been judged on its own gates, so it must
@@ -404,38 +535,12 @@ def _build_epic_facts(base_ref_name, repo, scratch_dir):
     epic_number = int(match.group(1))
 
     notices = []
-    delivery_log = None
     exit_code, envelope = gh_gather.run(
         str(epic_number),
         repo,
-        DELIVERY_LOG_MARKER,
         scratch_dir=scratch_dir,
         stream=_DiscardStream(),
     )
-    if (
-        envelope is not None
-        and envelope.get("status") == "needs_decision"
-        and (envelope.get("decision") or {}).get("code") == MARKER_AMBIGUOUS
-    ):
-        # Duplicate log comments — the #34 wreckage itself, or a hand-posted second copy. NOT
-        # forwarded as a decision: the hierarchy is never a gate, and a merge already judged on its
-        # own gates must not stall on its log. Keep the duplicate ids (numeric, from the marker
-        # lookup) for the story route to report, and re-gather WITHOUT the prefix so the story set
-        # — the part the route actually routes on — still arrives.
-        context = envelope["decision"].get("context") or {}
-        delivery_log = {
-            "present": True,
-            "ambiguous": True,
-            "comment_ids": context.get("marker_comment_ids") or [],
-            "comment_urls": context.get("marker_comment_urls") or [],
-        }
-        notices.append(
-            "%d epic-delivery-log comments on #%s — expected one; this story's line was not "
-            "recorded (skills/_shared/epic-delivery-log.md)" % (len(delivery_log["comment_ids"]), epic_number)
-        )
-        exit_code, envelope = gh_gather.run(
-            str(epic_number), repo, scratch_dir=scratch_dir, stream=_DiscardStream()
-        )
 
     if exit_code != 0 or envelope is None or envelope.get("status") != "ok":
         stub = {
@@ -446,8 +551,6 @@ def _build_epic_facts(base_ref_name, repo, scratch_dir):
             "sub_issues_summary": {},
             "subissues_available": None,
         }
-        if delivery_log is not None:
-            stub["delivery_log"] = delivery_log
         return stub, notices
 
     sub_issues = envelope.get("sub_issues") or []
@@ -486,20 +589,13 @@ def _build_epic_facts(base_ref_name, repo, scratch_dir):
     else:
         stories_source = "checklist"
 
-    if delivery_log is None:
-        delivery_log = {"present": bool(envelope.get("marker_comment_present")), "ambiguous": False}
-        if delivery_log["present"]:
-            # `marker_comment_id` is the RAW REST numeric id (gh_gather.py's marker lookup reads
-            # `c["id"]` off the raw objects, deliberately NOT the normalized thread's node id) —
-            # exactly what --delete-marker-id needs.
-            delivery_log["comment_id"] = envelope.get("marker_comment_id")
-            delivery_log["comment_url"] = envelope.get("marker_comment_url")
-            delivery_log["body_bytes"] = envelope.get("marker_comment_bytes")
-            delivery_log["body_mode"] = envelope.get("marker_comment_mode")
-            if envelope.get("marker_comment_mode") == "path":
-                delivery_log["body_path"] = envelope.get("marker_comment_path")
-            else:
-                delivery_log["body"] = envelope.get("marker_comment_body")
+    # Name it `delivery_log_facts`, never `delivery_log`: a local of that name shadows the imported
+    # module for this whole scope, so a later `delivery_log.collect(...)` here would raise
+    # UnboundLocalError rather than resolve the import.
+    delivery_log_facts, log_notices = _build_delivery_log_facts(
+        envelope, scratch_dir, epic_number, story_numbers
+    )
+    notices.extend(log_notices)
 
     return {
         "number": epic_number,
@@ -510,7 +606,7 @@ def _build_epic_facts(base_ref_name, repo, scratch_dir):
         "sub_issues": sub_issues,
         "sub_issues_summary": envelope.get("sub_issues_summary") or {},
         "subissues_available": envelope.get("subissues_available"),
-        "delivery_log": delivery_log,
+        "delivery_log": delivery_log_facts,
     }, notices + list(envelope.get("notices") or [])
 
 
@@ -828,7 +924,10 @@ def build_facts(pr_number, repo, root=".", scratch_dir=None, refresh=False, cwd=
 
     if pr_type == "story":
         epic_facts, epic_notices = _build_epic_facts(
-            pr_envelope.get("baseRefName"), repo, scratch_dir
+            pr_envelope.get("baseRefName"),
+            repo,
+            scratch_dir,
+            [issue["number"] for issue in closing_issues if issue.get("number") is not None],
         )
         issue_gather_notices.extend(epic_notices)
 
