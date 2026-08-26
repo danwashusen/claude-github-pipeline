@@ -109,6 +109,9 @@ Run only the dimensions named in the inputs.
    require (e.g. constitution §5)? A criterion with no coverage is a BLOCKER; an orphaned change is a
    SUGGESTION — except a contract-only seam pin whose boundary bullet defers the body to `#M`
    (Dimension 4's seam carve-out): that is sanctioned residue of an operator scope cut, not scope creep.
+   **On an epic** the criteria map to `## Story breakdown` entries and their `## Story contracts`, not
+   to `## Changes` / `## Test plan` — those carry shared surfaces only (see Altitude), so a
+   criterion with no `## Changes` line is correct there whenever a named story covers it.
 
    **Section ownership** *(runs on every plan)*. The schema gives each fact one **owning** section;
    every other section cites it by name instead of restating its substance. List the headings
@@ -120,6 +123,20 @@ Run only the dimensions named in the inputs.
    unexecutable in the literal sense the severity bar names. **Size is evidence, never the
    violation** — `wc -m <<plan_body>>` past half the cap is the signal to run this audit, not a
    finding in itself, and the finding is always the restated fact and the sections carrying it.
+
+   **Delivery status** *(epic plans only)*. A plan states what is to be built; what has shipped is the
+   epic delivery log's, and a merged story's `shipped:` clause in `## Story contracts`. Grep the body
+   for per-story delivered markers (`✅`, `Delivered #`, `already on the`) and flag every hit outside
+   `## Story contracts` as a SUGGESTION, quoting the line and its `<<plan_body>>:<line>` anchor. Each
+   mark is three words, so this is invisible to a section-by-section read and only the count shows it:
+   report the count alongside the individual findings.
+
+   **Altitude** *(epic plans only)*. `## UI decisions`, `## Changes (file-level)` and `## Test plan`
+   carry only what no single story owns — a decision binding two or more stories, a shared surface at
+   directory/module grain, a test exercising the stories' convergence. Read them against
+   `## Story breakdown`: an entry attributable to exactly one story is that story's just-in-time plan's,
+   and is a SUGGESTION here (name the story). Do not flag an entry you cannot attribute to a single
+   story — the shared ones are the section's whole purpose.
 
 4. **Implementation readiness.** The executable-vs-vague bar. **Every place the plan defers a decision a
    developer would have to make before writing code is a BLOCKER** — the plan is where those decisions

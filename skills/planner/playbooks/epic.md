@@ -18,6 +18,15 @@ this route supplies:
   checked against), `## Integration strategy` (how the stories converge on `epic/<N>-<slug>` and reach
   `main`), and the epic `## Definition of done` grounding. The epic delivery log is
   **not** created here — the evaluator records each story's entry as that story merges.
+- **Altitude.** `## UI decisions`, `## Changes (file-level)` and `## Test plan` carry only what no
+  single story owns — a decision binding on two or more stories, a shared surface at directory/module
+  grain, a test that exercises the stories' convergence (`plan-schema.md`, "Altitude"). Everything
+  file-, control- or suite-specific is the just-in-time story plan's, for the same reason this route
+  doesn't fan out story plans at all: it would be grounded on an epic snapshot that is stale by the
+  second story.
+- **No delivery status.** Nothing here records what has shipped — not on a fresh epic (nothing has) and
+  not on a revise (`plan-schema.md`, "Delivery status is not plan content"). The epic delivery log and a
+  merged story's `shipped:` clause own that.
 - **Reviewer dimensions (spine S7).** `1, 2, 3, 5, 6` — Dimension 5 (sequencing) topologically checks
   the `## Story breakdown` order against the `## Story contracts` graph, no sibling plans needed.
 - **Open questions at the epic grain.** A story *fully* gated by an unresolved OQ is scoped out of
