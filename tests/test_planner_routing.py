@@ -1196,5 +1196,154 @@ class HardReviseSequenceTests(unittest.TestCase):
         self.assertIn("facts.plan", self.revise)
 
 
+class EpicPlanGrowthBoundTests(unittest.TestCase):
+    """#269's epic plan measured 64,816 characters — 98.9% of `BODY_CHAR_LIMIT` — with the section-set
+    of a plan that had never been through the #38 rules. Two growth drivers the section-ownership rule
+    does not reach, because neither is a fact restated in a second SECTION: delivered status restated
+    from the delivery log into the plan (40 marks across 7 sections, three words each, so invisible to a
+    section-by-section read), and story-altitude material carried at epic altitude. These pin the rules
+    that bound both, and the retirement rule that makes the bound apply per merge rather than once."""
+
+    def setUp(self):
+        self.schema = (REFERENCES_DIR / "plan-schema.md").read_text(encoding="utf-8")
+        self.reviewer = (REFERENCES_DIR / "plan-reviewer-prompt.md").read_text(encoding="utf-8")
+        self.epic = (PLAYBOOKS_DIR / "epic.md").read_text(encoding="utf-8")
+        self.revise = (PLAYBOOKS_DIR / "revise.md").read_text(encoding="utf-8")
+
+    def test_delivery_status_has_one_owner_and_it_is_not_the_plan(self):
+        flat = " ".join(self.schema.split())
+        self.assertIn("Delivery status is not plan content", flat)
+        self.assertIn("epic delivery log", flat)
+        self.assertIn("`shipped:` clause", flat)
+
+    def test_delivery_status_rule_carries_why_the_section_read_cannot_catch_it(self):
+        # Without this, a later editor folds the rule into `Section ownership` — where it is dead,
+        # because the restatement is across ARTEFACTS and each instance is three words.
+        flat = " ".join(self.schema.split())
+        self.assertIn("across artefacts rather than across sections", flat)
+        self.assertIn("each mark is three words", flat.lower())
+
+    def test_altitude_rule_names_the_three_leaking_sections_and_their_owner(self):
+        flat = " ".join(self.schema.split())
+        self.assertIn("an epic plan is not the union of its stories' plans", flat.lower())
+        for section in ("`## UI decisions`", "`## Changes (file-level)`", "`## Test plan`"):
+            self.assertIn(section, flat, "the altitude rule must name %s" % section)
+        self.assertIn("just-in-time story plan", flat)
+
+    def test_altitude_rule_states_what_survives_at_the_epic_grain(self):
+        # A bare prohibition would empty the sections; the point is the cross-story residue stays.
+        flat = " ".join(self.schema.split())
+        self.assertIn("what no single story owns", flat)
+
+    def test_retirement_rule_is_per_merged_story_and_mechanical(self):
+        flat = " ".join(self.schema.split())
+        self.assertIn("a merged story shrinks the plan it came from", flat.lower())
+        self.assertIn("per merged story", flat)
+        self.assertIn("mechanically", flat)
+
+    def test_retirement_rule_covers_deviations_and_doc_grounding(self):
+        # The two sections that accumulate silently: 11.2% and 10.6% of #269's body, almost all of it
+        # settled history for stories that had already merged.
+        flat = " ".join(self.schema.split())
+        self.assertIn("`## Deviations from project docs` entry whose scope has merged", flat)
+        self.assertIn("`## Doc grounding` citation no unmerged story reads", flat)
+
+    def test_retirement_preserves_the_pinned_contract_clauses(self):
+        # The re-pinning hazard again: retirement must not become "make the entry agree with the log".
+        flat = " ".join(self.schema.split())
+        self.assertIn("keeps `delivers` / `consumes` verbatim as pinned and gains `shipped:`", flat)
+
+    def test_retirement_runs_after_the_promotion_check_not_instead_of_it(self):
+        flat = " ".join(self.schema.split())
+        self.assertIn("after the promotion check", flat)
+        self.assertIn("promote the decision and drop the status", flat)
+
+    def test_epic_playbook_carries_both_deltas(self):
+        flat = " ".join(self.epic.split())
+        self.assertIn("**Altitude.**", flat)
+        self.assertIn("**No delivery status.**", flat)
+        self.assertIn("Delivery status is not plan content", flat)
+
+    def test_epic_playbook_altitude_reuses_the_no_fanout_rationale(self):
+        # The altitude rule and the no-fan-out rule are the same argument; stating it once here is what
+        # stops a later editor reading them as two unrelated preferences.
+        flat = " ".join(self.epic.split())
+        self.assertIn("stale by the second story", flat)
+
+    def test_revise_delegates_retirement_to_the_schema_rather_than_restating_it(self):
+        flat = " ".join(self.revise.split())
+        self.assertIn('"Retirement" rule', flat)
+        self.assertIn("per merged story", flat)
+
+    def test_revise_prohibition_names_the_delivered_marker(self):
+        flat = " ".join(self.revise.split())
+        self.assertIn("per-story delivered marker outside `## Story contracts`", flat)
+
+    def test_reviewer_runs_both_audits_on_an_epic_plan(self):
+        flat = " ".join(self.reviewer.split())
+        self.assertIn("**Delivery status** *(epic-level plan only", flat)
+        self.assertIn("**Altitude** *(epic-level plan only", flat)
+
+    def test_both_audits_self_identify_the_way_dimension_5_does(self):
+        # The sub-agent is context-blind and its inputs never state the plan's TYPE, so "epic plans
+        # only" without an anchoring section is a predicate the reviewer has to guess at.
+        flat = " ".join(self.reviewer.split())
+        self.assertIn("fires on a `## Story breakdown` section", flat)
+        self.assertIn("against the plan's own `## Story breakdown`", flat)
+
+    def test_delivery_status_audit_is_attributive_not_a_closed_literal_grep(self):
+        # A three-literal grep reports zero on a plan that says "shipped in #211" throughout, and the
+        # instruction makes the COUNT the headline — so a false-negative count is worse than no audit.
+        flat = " ".join(self.reviewer.split())
+        self.assertIn("past-tense delivery claim attributed to a story", flat)
+        self.assertIn("Those are examples, not the detector", flat)
+        self.assertIn("worse than no audit", flat)
+        self.assertIn("report the total count", flat)
+
+    def test_delivery_status_audit_excludes_the_shim_watchpoint(self):
+        flat = " ".join(self.reviewer.split())
+        self.assertIn("trap for the resolver, not a status report", flat)
+
+    def test_reviewer_altitude_audit_refuses_to_flag_the_unattributable(self):
+        # Without the carve-out the reviewer empties the sections it is auditing.
+        flat = " ".join(self.reviewer.split())
+        self.assertIn("Do not flag an entry you cannot attribute to a single story", flat)
+
+    def test_reviewer_altitude_audit_accepts_the_empty_form(self):
+        flat = " ".join(self.reviewer.split())
+        self.assertIn("do not flag a section rendered `- (none — story-owned)`", flat)
+
+    def test_goal_coherence_carve_out_runs_in_both_directions(self):
+        # One-directional it still BLOCKERs every epic criterion with no epic-level test coverage and
+        # SUGGESTIONs every shared surface as scope creep — on essentially every epic plan.
+        flat = " ".join(self.reviewer.split())
+        self.assertIn("**On an epic this whole mapping moves down a level**, in both directions", flat)
+        self.assertIn("no `## Changes` line and no `## Test plan` entry is **correct**", flat)
+        self.assertIn("is **not** scope creep", flat)
+
+    def test_compaction_never_removes_an_anchor_another_dimension_verifies(self):
+        # Retirement without this reintroduces, in dimensions 1 and 6, the false-BLOCKER-on-every-
+        # revise-after-the-first-merge class the `shipped:` pointer's additive rule guards in 5.
+        flat = " ".join(self.schema.split())
+        self.assertIn("Compaction is narration-only", flat)
+        self.assertIn("`agreed with user <date>`", flat)
+        self.assertIn("undisclosed deviation", flat)
+        self.assertIn("only when **no surviving entry cites it**", flat)
+        self.assertIn("fabricated", flat)
+
+    def test_altitude_states_the_empty_rendering_for_the_non_omittable_sections(self):
+        # `## Changes (file-level)` and `## Test plan` carry no "(omit if ...)" marker and the fence is
+        # byte-pinned, so the epic-grain empty form has to be stated in prose or the author must pad.
+        flat = " ".join(self.schema.split())
+        self.assertIn("- (none — story-owned)", flat)
+        self.assertIn("the heading is parsed", flat)
+
+    def test_delivery_status_rule_carves_out_the_shim_watchpoint(self):
+        # The schema REQUIRES a shim/dual-emit trap, which is a shipped-versus-remaining split.
+        flat = " ".join(self.schema.split())
+        self.assertIn("false-positive trap", flat)
+        self.assertIn("would let the resolver believe something false", flat)
+
+
 if __name__ == "__main__":
     unittest.main()

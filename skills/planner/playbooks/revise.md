@@ -3,11 +3,11 @@
 Route for `vector.mode: revise` on a standalone issue or an epic (a story under an open epic revises
 through `story-jit.md` instead). A prior `<!-- implementation-plan:v1 -->` comment exists
 (`facts.plan.present`); this refreshes it against today's reality and reconciles any DoD ticks the
-resolver already projected. This is one flow **parameterized by the type facts** — `facts.plan_ref`
-(the open PR head when `facts.revise.open_pr`, else the base branch), `facts.revise.phase_tracker`, and
-`facts.epic` for an epic revise — never a type branch. **One exception is a re-derivation, not a branch:**
-on HARD "Start fresh" the session's starting `facts.plan_ref` stops being valid the moment the PR it was
-selected for closes — the HARD sequence below re-runs prep and lets the row table re-select it.
+resolver already projected. One flow **parameterized by the type facts** — `facts.plan_ref` (the open PR
+head when `facts.revise.open_pr`, else the base branch), `facts.revise.phase_tracker`, `facts.epic` for an
+epic revise — never a type branch. **One exception is a re-derivation, not a branch:** on HARD "Start
+fresh" the starting `facts.plan_ref` stops being valid the moment the PR it was selected for closes, and
+the row table re-selects it on the fresh run (steps 3–4).
 
 **Run the spine first.** Read [`plan-spine.md`](plan-spine.md) and execute it end to end, focused on
 **what changed** (re-walk the thread for newer direction, re-`Grep` the workspace for symbols the plan
@@ -22,7 +22,8 @@ this route supplies:
 - **The refreshed body supersedes; it never accumulates.** A revise re-authors at today's truth and
   writes the body whole, so the marker comment carries **no** history layer. Prohibited in the
   `<!-- implementation-plan:v1 -->` body: a retained prior `## Approach` paragraph, a chained footer note,
-  a `now void` / `it read "…"` superseded-text block, any "previously" annotation on a live bullet. Prior
+  a `now void` / `it read "…"` superseded-text block, any "previously" annotation on a live bullet, and
+  on an epic a per-story delivered marker outside `## Story contracts` (`plan-schema.md`). Prior
   text lives in the comment's edit history and the thread; the one bounded exception is HARD Start-fresh's
   `## Predecessor`. A prohibition because no single revise looks wrong — each adds a paragraph or two, and
   only the aggregate reaches a body GitHub refuses to write.
@@ -30,8 +31,9 @@ this route supplies:
   decision-shaped lines (a choice made, a constraint accepted, an alternative rejected); confirm each has
   a home in `## Architecture decisions`, `## Changes` or `## Risks & watchpoints`; promote the ones that
   don't, **then** drop. Skip it and dropping is a judgment call whose safe answer is to keep everything.
-- **Epic revise: compress merged stories' contracts.** A merged entry keeps `delivers` / `consumes`
-  verbatim as pinned and gains `shipped:` (`plan-schema.md`) — never re-pinned to the log's shape.
+- **Epic revise: compress merged stories' contracts** — and everything else a story leaves behind when it
+  merges. `plan-schema.md`'s "Retirement" rule owns what compacts and to what; run it per merged story,
+  mechanically, after the promotion check. A plan is immutable, so this is the only site it can run at.
 - **Persist in place (spine S8).** `gh_persist.py edit-comment <owner/repo> <facts.plan.comment_id>
   "<facts.scratch>/plan.md"` — a full replacement authored against the schema, never a delta appended to
   what is there. Ambiguous marker → `comment --delete-marker-id`, the only op that collapses a duplicate.
@@ -40,13 +42,11 @@ this route supplies:
   `facts.revise.phase_tracker`. When no draft PR exists this is a no-op (no projected ticks). An
   evaluator-rejection annotation is preserved verbatim — never auto-cleared.
 - **Reconcile the phases against the live sub-issue set.** When `facts.slices` is present the target's
-  sub-issues are its deliverable slices, and they are an **input constraint** on the plan's shape, not an
-  output of it. Read
-  [`../references/sub-issue-reconciliation.md`](../references/sub-issue-reconciliation.md) before
-  redrafting `## Phases`: it owns the `sub-issue:` cardinality rule, the diff cases prep already computed
+  sub-issues are its deliverable slices — an **input constraint** on the plan's shape, not an output of
+  it. Read [`../references/sub-issue-reconciliation.md`](../references/sub-issue-reconciliation.md)
+  before redrafting `## Phases`: it owns the `sub-issue:` cardinality rule, the diff cases prep computed
   in `facts.slices.diff`, and the mismatch gate (which gates or re-routes — it never silently re-cuts).
-  This is the route where that diff is richest: a prior plan exists, so every case is computable, and a
-  closed sub-issue is governed by the shipped-phase rules above rather than a second rule set.
+  A closed sub-issue is governed by the shipped-phase rules above, never a second rule set.
 - **Reviewer dimensions (spine S7).** The same set the issue's fresh route would pass, keyed on
   `facts.vector.type` (a bug adds 9; multi-phase adds 7 — passing `<<live_slices>>` from `facts.slices`;
   an epic uses 1, 2, 3, 5, 6), plus 10 when the plan carries `## Open questions`.
@@ -56,14 +56,14 @@ this route supplies:
 - **Show + confirm (spine S8 variant).** Show the diff-style plan update **and** the proposed body-edit
   diff together, then gate: SOFT → **Apply** / **Cancel**; HARD → **Start fresh (recommended)** /
   **Apply in place anyway** / **Cancel**. **SOFT-Apply** runs the spine's persist immediately as written
-  (update the plan comment in place per the persist bullet above, then apply the
-  reconciled DoD body via `gh_persist.py edit-body`) — the footer stays pinned at the open PR head
-  correctly, because a SOFT revise never closes that PR; the next resolver run is a `continue` on the
-  same branch, so grounding there stays valid. **HARD-Start-fresh does NOT run the spine's persist
-  here** — it defers posting to its own sequence below, because the plan drafted against
-  `facts.plan_ref` (the open-PR-head row, selected before this revise even started) is about to be
-  grounded on a branch this decision is closing; posting it as-is would leave the footer, and every
-  precedent citation in the body, pointing at a branch nothing can read once it's gone.
+  (plan comment in place per the persist bullet, then the reconciled DoD body via `edit-body`) — the
+  footer stays pinned at the open PR head correctly, because a SOFT revise never closes that PR; the
+  next resolver run is a `continue` on the same branch, so grounding there stays valid.
+  **HARD-Start-fresh does NOT run the spine's persist here** — it defers posting to its own sequence
+  below, because the plan drafted against `facts.plan_ref` (the open-PR-head row, selected before this
+  revise even started) is about to be grounded on a branch this decision is closing; posting it as-is
+  would leave the footer, and every precedent citation in the body, pointing at a branch nothing can
+  read once it's gone.
 - **HARD "Start fresh" — close, re-ground, then post (in that order).** Triggered only after the user
   picks **Start fresh** at the gate above — this sequence *executes* that already-gated decision, it
   gates nothing itself:
