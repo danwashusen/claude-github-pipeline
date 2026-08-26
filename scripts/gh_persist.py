@@ -22,6 +22,7 @@ Subcommands (unchanged surface from v1 — same names, same flags, same position
     gh_persist.py comment     <repo> <target> <id> <body_path>
                                [--review-action approve|comment|request-changes]
                                [--delete-marker-id <id>]                            [--dry-run]
+    gh_persist.py edit-comment <repo> <comment_id> <body_path>                      [--dry-run]
     gh_persist.py close       <repo> <issue> [--reason completed|"not planned"]     [--dry-run]
     gh_persist.py close-pr    <repo> <pr>     [--comment-file <path>]               [--dry-run]
     gh_persist.py reopen      <repo> <issue>                                        [--dry-run]
@@ -126,6 +127,24 @@ shell-interpolated), exactly as ``create --title`` does. The issue/PR split has 
 reason, unchanged: ``gh issue edit`` rejects a PR number, so the noun must be in the op name for a
 mis-targeted call to fail loudly.
 
+``edit-comment`` (additive-only, same precedent) updates an existing issue-thread comment IN PLACE,
+by numeric REST id. Until it existed, replacing a marker comment meant delete-and-repost, which is
+what destroys GitHub's own comment edit history — and a plan comment whose history vanishes on every
+revise is exactly the pressure that produced an inline history layer inside the body, growing it
+until GitHub refused the write (#38). With this op the edit history IS the supersession record.
+``gh`` exposes no edit-by-id command, so the executor is ``gh api --method PATCH
+repos/<repo>/issues/comments/<id> -F body=@<path>``; ``-F key=@file`` reads the value from the file,
+so the body still crosses both the prompt and the argv boundary as a PATH (the #626/#627 discipline
+is unchanged). Two properties the delete-and-repost path cannot offer: the comment URL is STABLE
+(no issue-body pointer refresh), and a single ``PATCH`` is atomic — post-then-delete makes its
+zero-or-two-marker window *safe*, this has no window at all. It is not a superset, though:
+``comment --delete-marker-id`` stays, because only delete-and-repost can collapse a duplicated
+marker, and ``edit-comment`` needs an id it does not have when no marker exists yet. It also cannot
+rescue an over-cap body — REST enforces the same limit as GraphQL, so ``_verify_body_file`` gates it
+identically. The id is the numeric REST comment id (a GraphQL node id is rejected up front, same
+rationale as ``--delete-marker-id``), and the endpoint is the issue-comment one, which serves PR
+conversation comments too but NOT PR review comments.
+
 ``create --blocked-by/--blocking`` and ``link`` set GitHub's NATIVE issue dependencies (gh >= 2.95
 + the repo feature enabled). They are capability-gated by ATTEMPTING the real write and classifying
 its stderr (see ``_is_deps_error``) — not a ``--help`` probe, which can't tell a repo with the
@@ -193,6 +212,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 from pipelib import process  # noqa: E402  (import after sys.path setup, by necessity)
 from pipelib.decisions import (  # noqa: E402
     AUTH_REQUIRED,
+    BODY_TOO_LONG,
     DEPS_UNSUPPORTED,
     EMPTY_BODY_FILE,
     SUBISSUES_UNSUPPORTED,
@@ -200,6 +220,7 @@ from pipelib.decisions import (  # noqa: E402
 )
 from pipelib.envelope import EXIT_OK, emit_needs_decision, emit_ok  # noqa: E402
 from pipelib.hashing import sha256_hex_file  # noqa: E402
+from pipelib.limits import BODY_CHAR_LIMIT  # noqa: E402
 
 # Precise capability signature for a deps-unsupported `gh` failure — ported verbatim from v1's
 # is_deps_error (gh-persist.sh: `grep -qiE 'unknown (flag|json field)|issue[ -]?dependenc'`). The
@@ -314,17 +335,25 @@ class _OrderedLinkFlagAction(argparse.Action):
 
 
 def _verify_body_file(body_path):
-    """The empty-body gate (architecture.md §12, #626/#627 empty-body race): the caller stages the
+    """The size gate (architecture.md §12, #626/#627 empty-body race): the caller stages the
     verbatim body to ``body_path`` and passes only the path — never the bytes — across the prompt
     boundary. This check runs *before* any `gh` call, so the failure mode that bit #626/#627 (an
     in-agent Write-vs-Bash race landing an empty body on `gh issue create --body-file`) is
     unrepresentable here: there is no intermediate file this script populates, only one the caller
     already wrote.
 
-    Returns ``None`` when the file exists and is non-empty. Returns the ``needs_decision`` payload
-    (``EMPTY_BODY_FILE``) otherwise — the caller emits it and returns EXIT_OK without touching
-    `gh`. (v1 exited 2 with a bare stderr line here; §3 makes EMPTY_BODY_FILE a proper decision
-    code, so v2 emits it as a normal needs_decision envelope at exit 0 instead.)
+    Returns ``None`` when the file exists, is non-empty, and fits :data:`BODY_CHAR_LIMIT`. Returns
+    the ``needs_decision`` payload (``EMPTY_BODY_FILE`` or ``BODY_TOO_LONG``) otherwise — the caller
+    emits it and returns EXIT_OK without touching `gh`. (v1 exited 2 with a bare stderr line here;
+    §3 makes EMPTY_BODY_FILE a proper decision code, so v2 emits it as a normal needs_decision
+    envelope at exit 0 instead.)
+
+    The upper bound is the same gate at the other end, and it is measured in **characters**, not
+    bytes — that is the unit GitHub enforces. The write receipts next door report ``body_bytes``,
+    which for non-ASCII text runs *ahead* of the character count, so gating on bytes would refuse
+    a legal multibyte body (a false refusal it can never detect) while a character gate can only
+    ever be right. Do not "simplify" this to ``stat().st_size``: reading the file to decode it is
+    the whole point, and both counts are reported so a caller can see the difference.
     """
     path = Path(body_path)
     if not path.is_file():
@@ -340,6 +369,26 @@ def _verify_body_file(body_path):
             summary="staged body file is empty: %s" % body_path,
             context={"body_path": str(body_path), "reason": "zero bytes"},
             options=["re-stage the verbatim body to %s and retry" % body_path],
+        )
+    data = path.read_bytes()
+    chars = len(data.decode("utf-8", errors="replace"))
+    if chars > BODY_CHAR_LIMIT:
+        return needs_decision(
+            BODY_TOO_LONG,
+            summary="staged body file is %d characters; the limit is %d (over by %d): %s"
+            % (chars, BODY_CHAR_LIMIT, chars - BODY_CHAR_LIMIT, body_path),
+            context={
+                "body_path": str(body_path),
+                "reason": "over character limit",
+                "actual_chars": chars,
+                "actual_bytes": len(data),
+                "limit_chars": BODY_CHAR_LIMIT,
+                "overage_chars": chars - BODY_CHAR_LIMIT,
+            },
+            options=[
+                "shorten the staged body to %d characters or fewer and retry" % BODY_CHAR_LIMIT,
+                "split the content so the write that carries this marker fits",
+            ],
         )
     return None
 
@@ -848,6 +897,59 @@ def _cmd_comment(args, parser):
     return EXIT_OK
 
 
+# ---- edit-comment ----
+
+
+def _cmd_edit_comment(args, parser):
+    if not args.comment_id.isdigit():
+        # Same id-space rule as `comment --delete-marker-id`: this endpoint is REST, which takes the
+        # NUMERIC comment id only. A GraphQL node id (`IC_kwDO…`, what a gather's normalized thread
+        # carries as `id`) can never resolve here, so it is a guaranteed 404 — rejected up front as a
+        # usage error, with nothing written. Marker ids come from a gather's marker-comment lookup
+        # (`marker_comment_id`, read off the raw REST objects), never from a thread comment's `id`.
+        parser.error(
+            "comment_id expects a numeric REST comment id, got %r — a GraphQL node id always "
+            "404s on the REST comment endpoint; pass the gather's marker_comment_id"
+            % args.comment_id
+        )
+
+    gate = _verify_body_file(args.body_path)
+    if gate is not None:
+        emit_needs_decision(gate)
+        return EXIT_OK
+
+    # `-F body=@<path>` makes `gh` read the value from the file, so the body never crosses argv as
+    # text (the #626/#627 staged-path discipline). --jq extracts the same html_url the `comment` op
+    # returns, so both write paths report a comparable `url`.
+    cmd = [
+        "gh", "api", "--method", "PATCH",
+        "repos/%s/issues/comments/%s" % (args.repo, args.comment_id),
+        "-F", "body=@%s" % args.body_path,
+        "--jq", ".html_url",
+    ]
+
+    if args.dry_run:
+        payload = {"op": "edit-comment", "dry_run": True, "would_run": _quote_cmd(cmd)}
+        payload.update(_write_receipt_fields(args.body_path))
+        emit_ok(payload=payload)
+        return EXIT_OK
+
+    result = process.run(cmd, cwd=args.cwd)
+    if result.auth_required:
+        emit_needs_decision(_auth_decision(result))
+        return EXIT_OK
+    if result.returncode != 0:
+        sys.stderr.write(result.stderr)
+        return 1
+
+    # One atomic write — there is no second call to fail partway, so unlike the post-then-delete
+    # path there is no window in which the issue carries zero or two markers.
+    payload = {"op": "edit-comment", "dry_run": False, "url": result.stdout.strip()}
+    payload.update(_write_receipt_fields(args.body_path))
+    emit_ok(payload=payload)
+    return EXIT_OK
+
+
 # ---- close / reopen ----
 
 
@@ -1044,6 +1146,12 @@ def _build_parser():
     p_comment.add_argument("--delete-marker-id", default=None)
     p_comment.add_argument("--dry-run", action="store_true")
 
+    p_edit_comment = sub.add_parser("edit-comment")
+    p_edit_comment.add_argument("repo")
+    p_edit_comment.add_argument("comment_id")
+    p_edit_comment.add_argument("body_path")
+    p_edit_comment.add_argument("--dry-run", action="store_true")
+
     p_close = sub.add_parser("close")
     p_close.add_argument("repo")
     p_close.add_argument("issue")
@@ -1073,6 +1181,7 @@ def _build_parser():
             "link": p_link,
             "add-parent": p_add_parent,
             "comment": p_comment,
+            "edit-comment": p_edit_comment,
             "close": p_close,
             "close-pr": p_close_pr,
             "reopen": p_reopen,
@@ -1110,6 +1219,8 @@ def main(argv):
         return _cmd_add_parent(args, subparsers_by_name["add-parent"])
     if args.subcommand == "comment":
         return _cmd_comment(args, subparsers_by_name["comment"])
+    if args.subcommand == "edit-comment":
+        return _cmd_edit_comment(args, subparsers_by_name["edit-comment"])
     if args.subcommand == "close":
         return _cmd_close(args)
     if args.subcommand == "close-pr":

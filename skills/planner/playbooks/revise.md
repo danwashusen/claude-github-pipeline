@@ -19,6 +19,22 @@ this route supplies:
   [`../../_shared/open-question-links.md`](../../_shared/open-question-links.md)) is no longer deferred —
   fold the now-decided scope into `## Changes` / `## Test plan` and drop its `## Open questions` entry;
   a newly-opened OQ adds a plan-around entry. Never resolve an open OQ yourself.
+- **The refreshed body supersedes; it never accumulates.** A revise re-authors at today's truth and
+  writes the body whole, so the marker comment carries **no** history layer. Prohibited in the
+  `<!-- implementation-plan:v1 -->` body: a retained prior `## Approach` paragraph, a chained footer note,
+  a `now void` / `it read "…"` superseded-text block, any "previously" annotation on a live bullet. Prior
+  text lives in the comment's edit history and the thread; the one bounded exception is HARD Start-fresh's
+  `## Predecessor`. A prohibition because no single revise looks wrong — each adds a paragraph or two, and
+  only the aggregate reaches a body GitHub refuses to write.
+- **Promote before you drop** — mechanical, not optional. Read the layer you are deleting for
+  decision-shaped lines (a choice made, a constraint accepted, an alternative rejected); confirm each has
+  a home in `## Architecture decisions`, `## Changes` or `## Risks & watchpoints`; promote the ones that
+  don't, **then** drop. Skip it and dropping is a judgment call whose safe answer is to keep everything.
+- **Epic revise: compress merged stories' contracts.** A merged entry keeps `delivers` / `consumes`
+  verbatim as pinned and gains `shipped:` (`plan-schema.md`) — never re-pinned to the log's shape.
+- **Persist in place (spine S8).** `gh_persist.py edit-comment <owner/repo> <facts.plan.comment_id>
+  "<facts.scratch>/plan.md"` — a full replacement authored against the schema, never a delta appended to
+  what is there. Ambiguous marker → `comment --delete-marker-id`, the only op that collapses a duplicate.
 - **Compute reconciliation** ([`../references/revise-reconciliation.md`](../references/revise-reconciliation.md)).
   Diff old plan vs new plan, classify **SOFT** vs **HARD**, and compute the body-edit diff against
   `facts.revise.phase_tracker`. When no draft PR exists this is a no-op (no projected ticks). An
@@ -40,7 +56,7 @@ this route supplies:
 - **Show + confirm (spine S8 variant).** Show the diff-style plan update **and** the proposed body-edit
   diff together, then gate: SOFT → **Apply** / **Cancel**; HARD → **Start fresh (recommended)** /
   **Apply in place anyway** / **Cancel**. **SOFT-Apply** runs the spine's persist immediately as written
-  (delete the stale comment via `--delete-marker-id <facts.plan.comment_id>`, repost, then apply the
+  (update the plan comment in place per the persist bullet above, then apply the
   reconciled DoD body via `gh_persist.py edit-body`) — the footer stays pinned at the open PR head
   correctly, because a SOFT revise never closes that PR; the next resolver run is a `continue` on the
   same branch, so grounding there stays valid. **HARD-Start-fresh does NOT run the spine's persist
@@ -89,7 +105,7 @@ this route supplies:
      PR number/branch, the stale plan's comment id, and the DoD bullets to un-tick.
   4. **The fresh planner run** (the operator's next session, in the right checkout) grounds
      normally (spine S3), re-verifies every precedent citation against the new ref, posts via the
-     single write path — delete the stale comment via `--delete-marker-id`, repost with the footer
+     single write path — `edit-comment` on the carried stale comment id, with the footer
      pinned to `<new plan_ref>@<new grounding SHA>` and the `## Predecessor` section (from the
      handoff's captured facts, inserted after `## Approach`) — and un-ticks the DoD bullets to the
      predecessor annotation form via `edit-body`.

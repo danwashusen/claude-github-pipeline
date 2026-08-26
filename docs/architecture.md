@@ -109,6 +109,8 @@ Every script emits exactly one JSON envelope on stdout.
     any script.
   - `EMPTY_BODY_FILE` — body-bearing write given an empty or missing staged file;
     `gh_persist.py`.
+  - `BODY_TOO_LONG` — body-bearing write given a staged file over the platform's per-body
+    character limit; `gh_persist.py`.
   - `MARKER_AMBIGUOUS` — more than one candidate marker comment/block where the contract expects
     one; the gathers + `config_block.py`.
   - `TARGET_IS_PR` — the requested issue number resolves to a pull request, not an issue;
@@ -381,8 +383,10 @@ hard-fails naming `git remote set-head origin --auto` rather than guessing. A re
   `status`, never re-hash prompt-side. Title writes on an already-filed issue/PR go through the
   bodyless `edit-title` / `edit-pr-title` ops (the issue/PR split has `edit-pr-body`'s reason: `gh
   issue edit` rejects a PR number); they stay script-backed under rule 7 — the sanctioned scriptless
-  executors remain exactly the three §10 lists. The leading empty-body gate stays (the #626/#627 race
-  fix); an empty staged file is an `EMPTY_BODY_FILE` decision.
+  executors remain exactly the three §10 lists. The leading size gate stays (the #626/#627 race
+  fix); an empty staged file is an `EMPTY_BODY_FILE` decision, and one over the platform's per-body
+  character limit is a `BODY_TOO_LONG` decision — both raised before any `gh` call, on every
+  body-bearing op.
 - **Atomicity & idempotency stay as built:** marker replacement posts the new comment before
   deleting the old; `close` on a closed issue is a no-op; native-dependency writes are
   capability-gated (`DEPS_UNSUPPORTED` notice + prose-link fallback), as is the native
@@ -517,11 +521,11 @@ not a deviation.
 
 | Invariant | Why (short) | Enforced by |
 |---|---|---|
-| Empty-body gate: no body-bearing write without a non-empty staged file | #626/#627 empty-body race | `gh_persist.py` size check + `EMPTY_BODY_FILE` + tests |
+| Size gate: no body-bearing write without a non-empty staged file, and none over the platform's per-body character limit | #626/#627 empty-body race; an over-cap body is rejected at every endpoint, so it must fail as a decision before the write, not as a raw `gh` error after the session's work | `gh_persist.py` size check + `EMPTY_BODY_FILE` / `BODY_TOO_LONG` + tests |
 | Bodies cross the prompt boundary as paths, never re-serialized | same race | staged-path convention (§7) |
 | Byte fidelity: persists verify the round-trip hash and return `body_sha256` | silent mangling is invisible | `gh_persist.py` + tests |
 | Successful write is self-confirming; never re-read to verify | re-reads reintroduce races | §3 rule + router invariant |
-| Post-new-before-delete-old on marker replacement | a crash must not lose the marker | `gh_persist.py` + tests |
+| Marker replacement never leaves the issue without a marker: `comment --delete-marker-id` posts the new comment before deleting the old, and `edit-comment` writes in place with no delete at all | a crash must not lose the marker. The in-place `PATCH` is not a weakening of this rule but its stronger form — post-then-delete makes the zero-or-two-marker window *safe*, a single atomic write has no window. Delete-and-repost stays: only it can collapse a duplicated marker, and only it works when no marker exists yet | `gh_persist.py` + tests |
 | Spill threshold on verbatim sections | context blowout | `pipelib` spill + tests |
 | Capability-gated degradation (native deps; native parent/sub-issues) with a per-relation notice | consuming repos and `gh` versions vary, and the two relations have different fallbacks | `gh_persist.py`/`gh_gather.py` ladders + tests |
 | Epic↔story hierarchy is the native parent/sub-issue relation, written only by the slicer — at filing time via `create --parent`, or after the fact via `add-parent` when an epic adopts an already-filed issue; readers fall back to a legacy `## Stories` checklist and never gate on the relation's absence | GitHub's sub-issue panel, progress rollup, and a Project's Sub-issues progress field are driven by the relation, not by markdown a checklist can't self-tick; and no backfill path exists, so pre-relation epics must keep working | [`skills/_shared/epic-story-hierarchy.md`](../skills/_shared/epic-story-hierarchy.md) + `create --parent` + prep two-tier reads + tests |

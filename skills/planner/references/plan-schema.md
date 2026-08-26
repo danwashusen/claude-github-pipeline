@@ -109,6 +109,18 @@ the decisions above as binding; a plan-invalidating discovery routes back here i
 Re-run this skill to revise — do not hand-edit._
 ```
 
+## Section ownership and size
+
+Each fact has **one owning section**; every other section that needs it **cites it by name** rather than restating its substance. `## Doc grounding` above already states this rule for itself; it generalises to the whole schema. The three sections that otherwise converge on the same material carry disjoint obligations:
+
+- `## Doc grounding` — the citation and what it constrains. No rationale, and no restatement of the decision it grounds.
+- `## Architecture decisions` — the decision, its rationale, its precedent. No doc summary (cite the `## Doc grounding` entry), and no restatement of the invariant it implies.
+- `## Risks & watchpoints` — the runtime invariant the resolver must preserve, naming the decision it follows from rather than re-deriving it.
+
+A cross-reference is a section name, not a paragraph: "per `## Architecture decisions`" is the whole citation. Restating a fact in a second section is the failure this rule exists to prevent, and it is invisible section by section — only the aggregate shows it.
+
+**Size.** A comment body cannot exceed **65,536 characters**: GitHub rejects the write at both the GraphQL and the REST endpoint, so an over-cap plan can be neither posted nor edited in place. Count **characters**, not bytes — the write receipts report `body_bytes`, which for non-ASCII text runs ahead of the character count the limit is actually measured in. A body past **half** the cap is a defect to fix before posting rather than a plan that happens to be long: against this section set, that much text almost always means a fact is being restated. Find the restatement; do not trim every section evenly to fit.
+
 ## The `sub-issue:` phase key   (multi-phase, non-epic target that already has sub-issues)
 
 When the target already has **sub-issues**, they are its **deliverable slices** by construction: the hierarchy is epic → story → slice, so the sub-issues of a *non-epic* target are slices (an epic's sub-issues are stories, and an epic plan carries no `## Phases` at all). Each `## Phases` entry then carries a sixth key naming the sub-issue it serves, appended after `depends-on`:
@@ -135,10 +147,20 @@ An **epic** plan replaces `## Phases` (single-issue / multi-phase only) with the
 ## Story contracts            (epic only — the cross-story seams; dimension 5 reads this)
 - #<story> — delivers: <type/service/API/file the story produces + intended shape>
             — consumes: <contract delivered by an earlier #<story>, or (none)>
+- #<story> — delivers: <the shape as originally pinned — never re-pinned to what shipped>
+            — consumes: <as originally pinned>
+            — shipped: see the epic delivery log      (merged stories only; third clause)
 
 ## Integration strategy       (epic only)
 <how the stories converge on `epic/<N>-<slug>` and reach `main`>
 ```
+
+**A merged story's entry compresses on the next epic revise.** It keeps its `delivers` and `consumes` clauses and gains a third, `shipped:`, pointing at the `<!-- epic-delivery-log:v1 -->` comment — and it carries nothing else, per *Section ownership and size* above: what that story actually built is the log's fact, and re-arguing it here is the restatement that rule forbids. Two constraints make the compression safe:
+
+- **The pointer is additive, never a replacement.** Dimension 5 builds its sequencing graph from every entry's `delivers` / `consumes` and treats a `consumes` no entry `delivers` as a dangling-dependency BLOCKER. Dropping either clause in favour of the pointer would make every epic revise after the first merge emit false BLOCKERs.
+- **`delivers` stays verbatim as pinned.** The compressing session has the log in hand, so the tempting move is to make the entry agree with it — which silently re-pins the contract to the *shipped* shape. After that, the story-under-epic staleness check compares the log against a copy of itself and can never fire again. Pinned-versus-shipped divergence is the signal; preserving the pinned text is what keeps it visible.
+
+A seam contract pinned by an operator scope cut keeps its `[user decision <date>]` attribution through the compression — dimensions 4 and 6 verify it.
 
 A **story under an epic** uses the standard single-issue schema above — with the `**Epic:** #<epic-#> — <epic title>` backlink as the **first line after** the `<!-- implementation-plan:v1 -->` marker (never above it) — plus this section, which dimension 8 checks against the epic plan and the delivery log:
 

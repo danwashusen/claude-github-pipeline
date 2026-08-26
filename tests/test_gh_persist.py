@@ -192,6 +192,211 @@ class EmptyBodyGateTests(unittest.TestCase):
             self.assertEqual(env["status"], "needs_decision")
 
 
+class BodyTooLongGateTests(unittest.TestCase):
+    """#38: the same gate as EMPTY_BODY_FILE, at the other end. GitHub rejects any body over 65,536
+    CHARACTERS at every endpoint (GraphQL addComment and REST PATCH alike), so without this the
+    caller gets a raw `gh` error at exit 1 with no envelope — and, for the planner, gets it at the
+    persist step after grounding, the gates, drafting and the whole reviewer loop have been spent.
+    """
+
+    # Every op that funnels through _verify_body_file. `comment` covers its three targets via the
+    # same call site; `close-pr` only gates when --comment-file is supplied.
+    BODY_BEARING_OPS = [
+        (["create", "o/r", "{body}", "--title", "T"], "create"),
+        (["create-pr", "o/r", "{body}", "--title", "T", "--head", "h", "--base", "b"], "create-pr"),
+        (["edit-body", "o/r", "42", "{body}"], "edit-body"),
+        (["edit-pr-body", "o/r", "42", "{body}"], "edit-pr-body"),
+        (["comment", "o/r", "issue", "42", "{body}"], "comment issue"),
+        (["comment", "o/r", "pr", "42", "{body}"], "comment pr"),
+        (["comment", "o/r", "pr-review", "42", "{body}", "--review-action", "comment"], "pr-review"),
+        (["close-pr", "o/r", "42", "--comment-file", "{body}"], "close-pr"),
+    ]
+
+    def _over_cap_body(self, tmp, char_count=70000, char="x"):
+        path = Path(tmp) / "big.md"
+        path.write_text(char * char_count, encoding="utf-8")
+        return path
+
+    def test_gate_fires_on_every_body_bearing_op(self):
+        for argv_template, label in self.BODY_BEARING_OPS:
+            with self.subTest(op=label):
+                with tempfile.TemporaryDirectory() as tmp:
+                    body = self._over_cap_body(tmp)
+                    argv = [a.replace("{body}", str(body)) for a in argv_template]
+                    # No manifest.json in this tempdir at all: any `gh` call would MISS the shim
+                    # (exit 2, no envelope) and fail the parse below, which is how this proves the
+                    # gate runs strictly before the write.
+                    result = _run_script(argv, fixtures_dir=tmp)
+                    self.assertEqual(result.returncode, 0, msg=result.stderr)
+                    env = _parse_envelope(result)
+                    envelope_asserts.assert_full_envelope_conformance(env)
+                    self.assertEqual(env["status"], "needs_decision")
+                    self.assertEqual(env["decision"]["code"], "BODY_TOO_LONG")
+
+    def test_decision_context_carries_actual_limit_and_overage(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            body = self._over_cap_body(tmp, char_count=70000)
+            result = _run_script(["edit-body", "o/r", "42", str(body)], fixtures_dir=tmp)
+            ctx = _parse_envelope(result)["decision"]["context"]
+            self.assertEqual(ctx["actual_chars"], 70000)
+            self.assertEqual(ctx["limit_chars"], 65536)
+            self.assertEqual(ctx["overage_chars"], 70000 - 65536)
+            self.assertEqual(ctx["actual_bytes"], 70000)  # single-byte fixture: bytes == chars
+
+    def test_a_multibyte_body_is_measured_in_characters_not_bytes(self):
+        # THE test that pins character-not-byte semantics. 65,530 two-byte codepoints is ~131 KB —
+        # well over the limit if you measure bytes, comfortably under it in the unit GitHub
+        # actually enforces. A byte gate would refuse this legal body and could never detect that
+        # it had. Must pass the gate and reach `gh`.
+        with tempfile.TemporaryDirectory() as tmp:
+            body = Path(tmp) / "multibyte.md"
+            body.write_text("é" * 65530, encoding="utf-8")
+            self.assertGreater(len(body.read_bytes()), 65536)  # over cap in bytes
+            stdout_file = _write_stdout_file(tmp, "url.txt", b"https://github.com/o/r/issues/42\n")
+            cmd = ["issue", "edit", "42", "--repo", "o/r", "--body-file", str(body)]
+            _write_manifest(tmp, [{"argv": cmd, "stdout_file": stdout_file}])
+            result = _run_script(["edit-body", "o/r", "42", str(body)], fixtures_dir=tmp)
+            self.assertEqual(result.returncode, 0, msg=result.stderr)
+            env = _parse_envelope(result)
+            self.assertEqual(env["status"], "ok", "a legal multibyte body was refused as too long")
+
+    def test_body_exactly_at_the_limit_is_accepted(self):
+        # The gate is `> limit`, matching the spill threshold's "at threshold is inline" convention.
+        with tempfile.TemporaryDirectory() as tmp:
+            body = Path(tmp) / "exact.md"
+            body.write_text("x" * 65536, encoding="utf-8")
+            stdout_file = _write_stdout_file(tmp, "url.txt", b"https://github.com/o/r/issues/42\n")
+            cmd = ["issue", "edit", "42", "--repo", "o/r", "--body-file", str(body)]
+            _write_manifest(tmp, [{"argv": cmd, "stdout_file": stdout_file}])
+            result = _run_script(["edit-body", "o/r", "42", str(body)], fixtures_dir=tmp)
+            self.assertEqual(_parse_envelope(result)["status"], "ok")
+
+    def test_gate_precedes_the_dry_run_preview(self):
+        # --dry-run must not be a way to get a "would_run" receipt for a body that can never land.
+        with tempfile.TemporaryDirectory() as tmp:
+            body = self._over_cap_body(tmp)
+            result = _run_script(["edit-body", "o/r", "42", str(body), "--dry-run"])
+            env = _parse_envelope(result)
+            self.assertEqual(env["status"], "needs_decision")
+            self.assertEqual(env["decision"]["code"], "BODY_TOO_LONG")
+            self.assertNotIn("would_run", env)
+
+    def test_empty_gate_still_wins_over_the_size_gate(self):
+        # Ordering: a missing file is EMPTY_BODY_FILE, not a 0-character BODY_TOO_LONG.
+        with tempfile.TemporaryDirectory() as tmp:
+            missing = str(Path(tmp) / "nope.md")
+            result = _run_script(["edit-body", "o/r", "42", missing], fixtures_dir=tmp)
+            self.assertEqual(_parse_envelope(result)["decision"]["code"], "EMPTY_BODY_FILE")
+
+
+class EditCommentTests(unittest.TestCase):
+    """#38: in-place marker update. `gh` has no edit-by-id command, so the executor is a REST PATCH;
+    `-F body=@<path>` keeps the body crossing as a path (the #626/#627 discipline). Its value over
+    delete-and-repost is a stable comment URL and GitHub's own edit history as the supersession
+    record — which is what removes the pressure to keep a history layer inside the body."""
+
+    def _fixture(self, tmp, body_path, comment_id="98765"):
+        cmd = [
+            "api", "--method", "PATCH",
+            "repos/o/r/issues/comments/%s" % comment_id,
+            "-F", "body=@%s" % body_path,
+            "--jq", ".html_url",
+        ]
+        stdout_file = _write_stdout_file(
+            tmp, "url.txt", b"https://github.com/o/r/issues/42#issuecomment-98765\n"
+        )
+        _write_manifest(tmp, [{"argv": cmd, "stdout_file": stdout_file}])
+
+    def test_edit_comment_happy_path_emits_write_receipt(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            body_path = Path(tmp) / "plan.md"
+            body_bytes = b"<!-- implementation-plan:v1 -->\nrefreshed\n"
+            body_path.write_bytes(body_bytes)
+            self._fixture(tmp, body_path)
+            result = _run_script(
+                ["edit-comment", "o/r", "98765", str(body_path)], fixtures_dir=tmp
+            )
+            self.assertEqual(result.returncode, 0, msg=result.stderr)
+            env = _parse_envelope(result)
+            envelope_asserts.assert_full_envelope_conformance(env)
+            envelope_asserts.assert_write_receipt_shape(env)
+            self.assertEqual(env["op"], "edit-comment")
+            self.assertEqual(env["body_sha256"], hashing.sha256_hex(body_bytes))
+
+    def test_returned_url_is_the_same_comment(self):
+        # The whole point: a revise no longer mints a new comment id, so a URL a prior handoff
+        # published still resolves and the issue-body pointer needs no refresh.
+        with tempfile.TemporaryDirectory() as tmp:
+            body_path = Path(tmp) / "plan.md"
+            body_path.write_bytes(b"body\n")
+            self._fixture(tmp, body_path)
+            result = _run_script(
+                ["edit-comment", "o/r", "98765", str(body_path)], fixtures_dir=tmp
+            )
+            self.assertIn("issuecomment-98765", _parse_envelope(result)["url"])
+
+    def test_body_crosses_as_a_path_not_as_text(self):
+        # `-F body=@<path>` is what keeps the staged-path discipline; a `-f body=<text>` form would
+        # re-serialize the body across argv and reopen the #626/#627 class of race.
+        with tempfile.TemporaryDirectory() as tmp:
+            body_path = Path(tmp) / "plan.md"
+            body_path.write_bytes(b"body\n")
+            result = _run_script(
+                ["edit-comment", "o/r", "98765", str(body_path), "--dry-run"]
+            )
+            would_run = _parse_envelope(result)["would_run"]
+            self.assertIn("-F body=@%s" % body_path, would_run)
+            self.assertIn("--method PATCH", would_run)
+
+    def test_graphql_node_id_is_a_usage_error_before_any_write(self):
+        # Same id-space rule as --delete-marker-id: REST takes the numeric id only, so a node id is
+        # a guaranteed 404. Rejected up front, with nothing written.
+        with tempfile.TemporaryDirectory() as tmp:
+            body_path = Path(tmp) / "plan.md"
+            body_path.write_bytes(b"body\n")
+            result = _run_script(
+                ["edit-comment", "o/r", "IC_kwDOabc123", str(body_path)], fixtures_dir=tmp
+            )
+            self.assertEqual(result.returncode, 2)
+            self.assertEqual(result.stdout, "")
+            self.assertIn("numeric REST comment id", result.stderr)
+
+    def test_over_cap_body_is_gated_here_too(self):
+        # REST enforces the same limit as GraphQL, so edit-comment is not an escape hatch for a body
+        # that cannot be written — it is an incentive fix, not a capacity fix.
+        with tempfile.TemporaryDirectory() as tmp:
+            body_path = Path(tmp) / "plan.md"
+            body_path.write_text("x" * 70000, encoding="utf-8")
+            result = _run_script(
+                ["edit-comment", "o/r", "98765", str(body_path)], fixtures_dir=tmp
+            )
+            env = _parse_envelope(result)
+            self.assertEqual(env["decision"]["code"], "BODY_TOO_LONG")
+
+    def test_empty_body_is_gated_here_too(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            body_path = Path(tmp) / "plan.md"
+            body_path.write_bytes(b"")
+            result = _run_script(
+                ["edit-comment", "o/r", "98765", str(body_path)], fixtures_dir=tmp
+            )
+            self.assertEqual(_parse_envelope(result)["decision"]["code"], "EMPTY_BODY_FILE")
+
+    def test_auth_required_classification(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            body_path = Path(tmp) / "plan.md"
+            body_path.write_bytes(b"body\n")
+            cmd = [
+                "api", "--method", "PATCH", "repos/o/r/issues/comments/98765",
+                "-F", "body=@%s" % body_path, "--jq", ".html_url",
+            ]
+            _write_manifest(tmp, [{"argv": cmd, "exit_code": 4}])
+            result = _run_script(
+                ["edit-comment", "o/r", "98765", str(body_path)], fixtures_dir=tmp
+            )
+            self.assertEqual(_parse_envelope(result)["decision"]["code"], "AUTH_REQUIRED")
+
+
 class CreateHappyPathTests(unittest.TestCase):
     def test_create_without_deps_emits_ok_with_write_receipt(self):
         with tempfile.TemporaryDirectory() as tmp:
