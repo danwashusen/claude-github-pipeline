@@ -7,7 +7,7 @@ resolver already projected. One flow **parameterized by the type facts** — `fa
 head when `facts.revise.open_pr`, else the base branch), `facts.revise.phase_tracker`, `facts.epic` for an
 epic revise — never a type branch. **One exception is a re-derivation, not a branch:** on HARD "Start
 fresh" the starting `facts.plan_ref` stops being valid the moment the PR it was selected for closes, and
-the row table re-selects it on the fresh run (step 3).
+the row table re-selects it on the fresh run (steps 3–4).
 
 **Run the spine first.** Read [`plan-spine.md`](plan-spine.md) and execute it end to end, focused on
 **what changed** (re-walk the thread for newer direction, re-`Grep` the workspace for symbols the plan

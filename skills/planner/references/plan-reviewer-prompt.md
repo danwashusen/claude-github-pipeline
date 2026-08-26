@@ -109,9 +109,12 @@ Run only the dimensions named in the inputs.
    require (e.g. constitution §5)? A criterion with no coverage is a BLOCKER; an orphaned change is a
    SUGGESTION — except a contract-only seam pin whose boundary bullet defers the body to `#M`
    (Dimension 4's seam carve-out): that is sanctioned residue of an operator scope cut, not scope creep.
-   **On an epic** the criteria map to `## Story breakdown` entries and their `## Story contracts`, not
-   to `## Changes` / `## Test plan` — those carry shared surfaces only (see Altitude), so a
-   criterion with no `## Changes` line is correct there whenever a named story covers it.
+   **On an epic this whole mapping moves down a level**, in both directions: the criteria map to
+   `## Story breakdown` entries and their `## Story contracts`, while `## Changes` / `## Test plan`
+   carry only what no single story owns (see Altitude). So a criterion with no `## Changes` line and no
+   `## Test plan` entry is **correct** whenever a named story covers it — neither is a BLOCKER — and a
+   shared surface or convergence test answering to no single criterion is **not** scope creep. Flag an
+   epic criterion only when no story covers it either.
 
    **Section ownership** *(runs on every plan)*. The schema gives each fact one **owning** section;
    every other section cites it by name instead of restating its substance. List the headings
@@ -124,19 +127,25 @@ Run only the dimensions named in the inputs.
    violation** — `wc -m <<plan_body>>` past half the cap is the signal to run this audit, not a
    finding in itself, and the finding is always the restated fact and the sections carrying it.
 
-   **Delivery status** *(epic plans only)*. A plan states what is to be built; what has shipped is the
-   epic delivery log's, and a merged story's `shipped:` clause in `## Story contracts`. Grep the body
-   for per-story delivered markers (`✅`, `Delivered #`, `already on the`) and flag every hit outside
-   `## Story contracts` as a SUGGESTION, quoting the line and its `<<plan_body>>:<line>` anchor. Each
-   mark is three words, so this is invisible to a section-by-section read and only the count shows it:
-   report the count alongside the individual findings.
+   **Delivery status** *(epic-level plan only; fires on a `## Story breakdown` section)*. A plan states
+   what is to be built; what has shipped is the epic delivery log's, and a merged story's `shipped:`
+   clause in `## Story contracts`. Read every bullet outside `## Story contracts` for a **past-tense
+   delivery claim attributed to a story** — a story number plus shipped/landed/merged/delivered, a `✅`,
+   an "already on the branch", a shipped-versus-remaining split inside one bullet. Those are examples,
+   not the detector: a closed literal grep reports zero on a plan that says "shipped in #211"
+   throughout, which is worse than no audit. Flag each as a SUGGESTION with its `<<plan_body>>:<line>`
+   anchor, and **report the total count** — each claim is three words, so this is invisible to a
+   section-by-section read and the count is what a reader acts on. One exclusion: a
+   `## Risks & watchpoints` false-positive-trap entry naming a live shim or dual-emit is a trap for the
+   resolver, not a status report.
 
-   **Altitude** *(epic plans only)*. `## UI decisions`, `## Changes (file-level)` and `## Test plan`
-   carry only what no single story owns — a decision binding two or more stories, a shared surface at
-   directory/module grain, a test exercising the stories' convergence. Read them against
-   `## Story breakdown`: an entry attributable to exactly one story is that story's just-in-time plan's,
-   and is a SUGGESTION here (name the story). Do not flag an entry you cannot attribute to a single
-   story — the shared ones are the section's whole purpose.
+   **Altitude** *(epic-level plan only; reads `## UI decisions` / `## Changes (file-level)` /
+   `## Test plan` against the plan's own `## Story breakdown`)*. Those three carry only what no single
+   story owns — a decision binding two or more stories, a shared surface at directory/module grain, a
+   test exercising the stories' convergence. An entry attributable to exactly one story is that story's
+   just-in-time plan's, and is a SUGGESTION here (name the story). Do not flag an entry you cannot
+   attribute to a single story — the shared ones are the section's whole purpose — and do not flag a
+   section rendered `- (none — story-owned)`, which is the correct empty form, not a gap.
 
 4. **Implementation readiness.** The executable-vs-vague bar. **Every place the plan defers a decision a
    developer would have to make before writing code is a BLOCKER** — the plan is where those decisions

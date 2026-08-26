@@ -1281,25 +1281,68 @@ class EpicPlanGrowthBoundTests(unittest.TestCase):
 
     def test_reviewer_runs_both_audits_on_an_epic_plan(self):
         flat = " ".join(self.reviewer.split())
-        self.assertIn("**Delivery status** *(epic plans only)*", flat)
-        self.assertIn("**Altitude** *(epic plans only)*", flat)
+        self.assertIn("**Delivery status** *(epic-level plan only", flat)
+        self.assertIn("**Altitude** *(epic-level plan only", flat)
 
-    def test_reviewer_delivery_status_audit_is_greppable_and_counted(self):
-        # A per-line SUGGESTION list understates it; the count is the finding a reader acts on.
+    def test_both_audits_self_identify_the_way_dimension_5_does(self):
+        # The sub-agent is context-blind and its inputs never state the plan's TYPE, so "epic plans
+        # only" without an anchoring section is a predicate the reviewer has to guess at.
         flat = " ".join(self.reviewer.split())
-        self.assertIn("Delivered #", flat)
-        self.assertIn("report the count alongside", flat)
+        self.assertIn("fires on a `## Story breakdown` section", flat)
+        self.assertIn("against the plan's own `## Story breakdown`", flat)
+
+    def test_delivery_status_audit_is_attributive_not_a_closed_literal_grep(self):
+        # A three-literal grep reports zero on a plan that says "shipped in #211" throughout, and the
+        # instruction makes the COUNT the headline — so a false-negative count is worse than no audit.
+        flat = " ".join(self.reviewer.split())
+        self.assertIn("past-tense delivery claim attributed to a story", flat)
+        self.assertIn("Those are examples, not the detector", flat)
+        self.assertIn("worse than no audit", flat)
+        self.assertIn("report the total count", flat)
+
+    def test_delivery_status_audit_excludes_the_shim_watchpoint(self):
+        flat = " ".join(self.reviewer.split())
+        self.assertIn("trap for the resolver, not a status report", flat)
 
     def test_reviewer_altitude_audit_refuses_to_flag_the_unattributable(self):
         # Without the carve-out the reviewer empties the sections it is auditing.
         flat = " ".join(self.reviewer.split())
         self.assertIn("Do not flag an entry you cannot attribute to a single story", flat)
 
-    def test_goal_coherence_does_not_false_block_an_epics_criteria(self):
-        # Altitude removes story-owned lines from `## Changes`, so the criterion->`## Changes` mapping
-        # would otherwise BLOCKER every epic plan.
+    def test_reviewer_altitude_audit_accepts_the_empty_form(self):
         flat = " ".join(self.reviewer.split())
-        self.assertIn("**On an epic** the criteria map to `## Story breakdown`", flat)
+        self.assertIn("do not flag a section rendered `- (none — story-owned)`", flat)
+
+    def test_goal_coherence_carve_out_runs_in_both_directions(self):
+        # One-directional it still BLOCKERs every epic criterion with no epic-level test coverage and
+        # SUGGESTIONs every shared surface as scope creep — on essentially every epic plan.
+        flat = " ".join(self.reviewer.split())
+        self.assertIn("**On an epic this whole mapping moves down a level**, in both directions", flat)
+        self.assertIn("no `## Changes` line and no `## Test plan` entry is **correct**", flat)
+        self.assertIn("is **not** scope creep", flat)
+
+    def test_compaction_never_removes_an_anchor_another_dimension_verifies(self):
+        # Retirement without this reintroduces, in dimensions 1 and 6, the false-BLOCKER-on-every-
+        # revise-after-the-first-merge class the `shipped:` pointer's additive rule guards in 5.
+        flat = " ".join(self.schema.split())
+        self.assertIn("Compaction is narration-only", flat)
+        self.assertIn("`agreed with user <date>`", flat)
+        self.assertIn("undisclosed deviation", flat)
+        self.assertIn("only when **no surviving entry cites it**", flat)
+        self.assertIn("fabricated", flat)
+
+    def test_altitude_states_the_empty_rendering_for_the_non_omittable_sections(self):
+        # `## Changes (file-level)` and `## Test plan` carry no "(omit if ...)" marker and the fence is
+        # byte-pinned, so the epic-grain empty form has to be stated in prose or the author must pad.
+        flat = " ".join(self.schema.split())
+        self.assertIn("- (none — story-owned)", flat)
+        self.assertIn("the heading is parsed", flat)
+
+    def test_delivery_status_rule_carves_out_the_shim_watchpoint(self):
+        # The schema REQUIRES a shim/dual-emit trap, which is a shipped-versus-remaining split.
+        flat = " ".join(self.schema.split())
+        self.assertIn("false-positive trap", flat)
+        self.assertIn("would let the resolver believe something false", flat)
 
 
 if __name__ == "__main__":
