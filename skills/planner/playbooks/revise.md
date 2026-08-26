@@ -52,7 +52,7 @@ this route supplies:
   an epic uses 1, 2, 3, 5, 6), plus 10 when the plan carries `## Open questions`.
 - **Off-ramp (spine S4).** Keyed on `facts.vector.type` like the dimension set: `offered` for a
   standalone issue, `not offered` for an epic revise. On "Split as epic" the superseded plan comment
-  stays put — the promoted Epic's own re-plan supersedes it via `--delete-marker-id`.
+  stays put — the promoted Epic's own re-plan supersedes it in place, per the persist bullet.
 - **Show + confirm (spine S8 variant).** Show the diff-style plan update **and** the proposed body-edit
   diff together, then gate: SOFT → **Apply** / **Cancel**; HARD → **Start fresh (recommended)** /
   **Apply in place anyway** / **Cancel**. **SOFT-Apply** runs the spine's persist immediately as written

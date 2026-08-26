@@ -748,6 +748,16 @@ class SectionOwnershipAndSizeTests(unittest.TestCase):
         self.assertIn("with that path", spine)
         self.assertNotIn("with the plan body", spine)
 
+    def test_review_loop_restages_the_plan_before_every_pass(self):
+        # PR #39 review finding 1. Passing the body by path decouples "the plan" from "the file":
+        # the loop applies findings to the plan, so a pass that re-reads the prior file re-reports
+        # findings already fixed — plausibly tripping the circular-repeat exit and gating the
+        # operator on stale findings. Inlining made the restage implicit; a path makes it explicit
+        # or it does not happen.
+        spine = " ".join((PLAYBOOKS_DIR / SPINE).read_text(encoding="utf-8").split())
+        self.assertIn("Loop up to 3 passes, **restaging `plan.md` before each**", spine)
+        self.assertIn("re-reads the prior file", spine.replace("re-reading", "re-reads"))
+
 
 class ReviseRetentionAndContractCompressionTests(unittest.TestCase):
     """#38 Phase 2. The two contributors to unbounded growth: a revise that annotates forward instead of
@@ -850,6 +860,18 @@ class InPlacePlanUpdateTests(unittest.TestCase):
                 self.assertIn("full replacement authored against the schema", flat)
                 self.assertIn("never a delta", flat)
 
+    def test_no_revise_path_still_names_delete_and_repost_as_its_default(self):
+        # PR #39 review finding 3. The promoted-epic re-plan reaches an issue that already carries a
+        # marker comment with a known id, so it takes the same in-place op — leaving it pointing at
+        # `--delete-marker-id` made two instructions in one file disagree about the same path. The
+        # only surviving mention is the ambiguous-marker carve-out asserted below.
+        mentions = [
+            line for line in (PLAYBOOKS_DIR / "revise.md").read_text(encoding="utf-8").splitlines()
+            if "--delete-marker-id" in line
+        ]
+        self.assertEqual(len(mentions), 1, mentions)
+        self.assertIn("Ambiguous marker", mentions[0])
+
     def test_delete_and_repost_survives_for_the_ambiguous_marker(self):
         # Only delete-and-repost collapses a duplicate, and edit-comment has no id when no marker
         # exists — so the op is not a superset and the fresh path must stay.
@@ -860,7 +882,7 @@ class InPlacePlanUpdateTests(unittest.TestCase):
     def test_spine_defers_the_op_choice_to_the_routed_playbook(self):
         # S8 is the knife-edge file; teaching it the op choice would have cost its scarce lines
         # twice. It states the fresh op and points at revise.md for the update.
-        self.assertIn("fresh only — on revise, revise.md names the in-place update op", self.spine)
+        self.assertIn("fresh only — revise.md / story-jit.md name the in-place update op", self.spine)
 
     def test_story_jit_names_its_own_op_rather_than_inheriting(self):
         # story-jit owns the revise path for a story under an open epic and never mentions

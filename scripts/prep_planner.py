@@ -1730,9 +1730,11 @@ def build_facts(issue_number, repo, root=".", scratch_dir=None, refresh=False, c
     # marker comment is unwritable by any endpoint, so the only route is a compacted re-author.
     # Surfaced here rather than discovered at the persist step, after grounding, the gates, drafting
     # and the reviewer loop have been spent. Strictly conditional: a canonical run's `attention` is
-    # asserted empty, and a plan comfortably under the cap is not worth a line.
+    # asserted empty, and a plan comfortably under the cap is not worth a line. The comparison is
+    # `>`, matching gh_persist's gate exactly — a body AT the limit still writes, so warning that it
+    # "cannot be reposted" would be false and would send the operator into a needless re-author.
     plan_chars = facts["plan"].get("body_chars")
-    if plan_chars is not None and plan_chars >= BODY_CHAR_LIMIT:
+    if plan_chars is not None and plan_chars > BODY_CHAR_LIMIT:
         facts["attention"].append(
             "live plan comment is %d characters against a %d limit — it cannot be edited or "
             "reposted as-is; re-author it within the cap before persisting (see the plan schema's "

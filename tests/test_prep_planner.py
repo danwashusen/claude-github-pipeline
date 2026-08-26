@@ -1176,6 +1176,35 @@ class DeliverableSubIssueFactsTests(PrepPlannerSandboxTestCase):
             self.assertEqual(len(flagged), 1, envelope["attention"])
             self.assertIn("cannot be edited or reposted as-is", flagged[0])
 
+    def test_a_plan_exactly_at_the_limit_raises_no_attention_line(self):
+        # PR #39 review finding 2. gh_persist's gate is `> limit`, so a body AT the limit writes
+        # fine. Warning "it cannot be edited or reposted as-is" there would be false, and would send
+        # the operator into a re-author they do not need. The two comparisons must agree.
+        src = shimenv.fixture_case_dir("prep_planner_slices_rescoped")
+        with tempfile.TemporaryDirectory() as tmp:
+            case = Path(tmp) / "at_cap"
+            shutil.copytree(src, case)
+            comments_path = case / "comments.json"
+            comments = json.loads(comments_path.read_text(encoding="utf-8"))
+            for comment in comments:
+                if "<!-- implementation-plan:v1 -->" in (comment.get("body") or ""):
+                    body = comment["body"]
+                    comment["body"] = body + "x" * (65536 - len(body))
+                    break
+            else:
+                self.fail("fixture no longer carries an implementation-plan marker comment")
+            comments_path.write_text(json.dumps(comments), encoding="utf-8")
+
+            args = ["250", "octo/widgets", "--root", str(self.root), "--scratch-dir", self.scratch]
+            result = self._run(args, fixture_case="prep_planner_slices_rescoped",
+                               extra_env={"GH_SHIM_FIXTURES": str(case)}, cwd=str(self.root))
+            envelope = _parse_one_envelope(result.stdout)
+            self.assertEqual(envelope["plan"]["body_chars"], 65536)
+            self.assertFalse(
+                [line for line in envelope["attention"] if "characters against" in line],
+                envelope["attention"],
+            )
+
     def test_no_size_keys_when_no_plan_exists(self):
         envelope = self._envelope(issue="200", fixture_case="prep_planner_row_default")
         self.assertFalse(envelope["plan"]["present"])

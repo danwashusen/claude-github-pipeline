@@ -371,6 +371,10 @@ def _verify_body_file(body_path):
             options=["re-stage the verbatim body to %s and retry" % body_path],
         )
     data = path.read_bytes()
+    # `errors="replace"` rather than a raise: a body a skill staged is always UTF-8, and a decode
+    # crash here would surface as a traceback with no envelope — strictly worse than a decision.
+    # The cost is that an invalid byte counts as one U+FFFD, so a non-UTF-8 file is measured
+    # approximately; that is acceptable because such a file is already malformed for `gh`.
     chars = len(data.decode("utf-8", errors="replace"))
     if chars > BODY_CHAR_LIMIT:
         return needs_decision(
