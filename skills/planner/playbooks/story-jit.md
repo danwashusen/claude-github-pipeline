@@ -26,7 +26,8 @@ this route supplies:
   bootstrap ref, since no epic branch exists yet), then continue in this same session to the story plan
   against it. This is a **composite epic+story session**; the emitted handoff is the story's (see below).
 - **Reconcile contracts against what shipped (feedback edge).** Compare `facts.story.epic_delivery_log`
-  (what predecessors *actually* delivered — the evaluator's record, read-only) against the epic plan's
+  (what predecessors *actually* delivered — the evaluator's record, read-only; one entry per shipped
+  story, already resolved across both tiers and staged as one document) against the epic plan's
   `## Story contracts` pinned shapes. On a mismatch the epic plan is stale — **stop and re-route to the
   planner on the epic in revise mode** (don't reshape the story to fit a wrong contract, don't run the
   epic revise inline).

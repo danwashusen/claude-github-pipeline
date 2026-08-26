@@ -420,9 +420,31 @@ class ArtifactRenderingByteCompatTests(unittest.TestCase):
         self.assertEqual(mine, example, "health-cache rendering diverges from the S1 example")
 
     def test_delivery_log_template_byte_compatible(self):
-        mine = self._fenced_blocks(self.REFERENCES_DIR / "epic-delivery-log.md", "```")[0]
-        example = self._fenced_blocks(self.EXAMPLES_DIR / "epic-delivery-log.md", "```")[0]
-        self.assertEqual(mine, example, "delivery-log rendering diverges from the S1 example")
+        """#41: the log is now a SET of per-story comments plus a legacy tier, so this reference
+        carries TWO fences. Both are pinned, and both are selected by PREDICATE rather than by index
+        — an index-based pin silently starts comparing the wrong fence the moment the document is
+        reordered, and the tempting "fix" is then to reorder the document back. Same technique as
+        `test_handoff_standard_terminal_byte_compatible` below.
+        """
+        mine = self._fenced_blocks(self.REFERENCES_DIR / "epic-delivery-log.md", "```")
+
+        per_story = next((b for b in mine if ":v2:story:" in b), None)
+        self.assertIsNotNone(per_story, "the per-story entry template must be present")
+        example = self._fenced_blocks(
+            self.EXAMPLES_DIR / "epic-delivery-log-per-story.md", "```"
+        )[0]
+        self.assertEqual(
+            per_story, example, "per-story delivery-log rendering diverges from its example"
+        )
+
+        # The legacy tier is read forever with no backfill, so its rendering stays pinned to the
+        # S1 example that defined it — that file is the historical record and is never edited.
+        legacy = next((b for b in mine if b.startswith("<!-- epic-delivery-log:v1 -->")), None)
+        self.assertIsNotNone(legacy, "the legacy tier's template must remain documented")
+        legacy_example = self._fenced_blocks(self.EXAMPLES_DIR / "epic-delivery-log.md", "```")[0]
+        self.assertEqual(
+            legacy, legacy_example, "legacy delivery-log rendering diverges from the S1 example"
+        )
 
     def test_handoff_standard_terminal_byte_compatible(self):
         # v3: pinned against handoff-evaluator-v3.md (the operator-owned-workspace rendering,

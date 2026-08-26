@@ -217,6 +217,8 @@ from pipelib.envelope import EXIT_OK, EXIT_USAGE_ERROR, emit_needs_decision, emi
 from pipelib.limits import BODY_CHAR_LIMIT  # noqa: E402
 from pipelib.spill import spill_bytes  # noqa: E402
 
+import delivery_log  # noqa: E402  (in-process composition, not a subprocess chain)
+
 # The implementation-plan marker (skills/planner/references/plan-schema.md;
 # docs/specs/planner.md "Artifacts read") — GATHER_ISSUE's marker_prefix on both the TARGET issue
 # (the revise-mode trigger) and, for a story under an open epic, the parent epic (the JIT epic
@@ -229,10 +231,12 @@ PLAN_MARKER = "<!-- implementation-plan:v1 -->"
 # fetch is already complete.
 RESEARCH_MARKER = "<!-- issue-research:v1 -->"
 
-# The epic-delivery-log marker (skills/_shared/epic-delivery-log.md) — read (never written) by the
-# planner, staged for both an epic-as-target run (its OWN delivery log, informational) and a
-# story-under-epic JIT run (the reconciliation input against the epic plan's pinned contracts).
-DELIVERY_LOG_MARKER = "<!-- epic-delivery-log:v1 -->"
+# The epic delivery log (skills/_shared/epic-delivery-log.md) — read (never written) by the planner
+# and staged for both an epic-as-target run (its OWN log, informational) and a story-under-epic JIT
+# run (the reconciliation input against the epic plan's pinned contracts). The tier resolution,
+# ordering and `log_source` classification live in `delivery_log.py`, composed in-process: the log
+# is now a SET of per-story comments plus a legacy monolithic tier (#41), and a copy of that
+# algorithm here is how `log_source` would come to disagree with prep_evaluator's.
 
 # Grounding docs come from the CONSUMING repo's `<!-- doc-catalogue -->` block, not from any path
 # list here (`skills/_shared/doc-catalogue.md`; `scripts/doc_catalogue.py`). This prep previously
@@ -986,6 +990,42 @@ def _stage_comment_body(comment, scratch_dir, filename):
     return spill_bytes(body.encode("utf-8"), "body", scratch_dir, filename=filename)
 
 
+def _read_delivery_log(thread_list, scratch_dir, epic_number):
+    """The epic delivery log as one fact, resolved across both tiers by `delivery_log.collect`.
+
+    Returns `(facts, decision)`. The whole log — legacy entries plus every per-story entry — is
+    staged to ONE path under the same `body_*` key convention the single-comment fact used, so the
+    plan reviewer's `<<epic_delivery_log>>` stays a single path and Dimension 8 needs no change.
+
+    `entry_count` / `text_chars` ride along because the *write* is bounded per story (#41) while
+    this *read* is not: the reviewer sub-agent is told to `Read` the staged file whole, so growth
+    here has to stay observable rather than becoming the same unbounded artifact one level down.
+    """
+    log, decision = delivery_log.collect(thread_list)
+    if decision is not None:
+        return {"present": False}, decision
+
+    facts = {
+        "present": log["present"],
+        "log_source": log["log_source"],
+        "entry_count": log["entry_count"],
+        "entries": log["entries"],
+    }
+    if log["legacy"] is not None:
+        facts["legacy_comment_id"] = log["legacy"]["comment_id"]
+        facts["legacy_comment_url"] = log["legacy"]["comment_url"]
+    if log["present"]:
+        facts.update(
+            spill_bytes(
+                log["text"].encode("utf-8"),
+                "body",
+                scratch_dir,
+                filename="epic-%s-delivery-log.md" % epic_number,
+            )
+        )
+    return facts, None
+
+
 # ---------------------------------------------------------------------------
 # Grounding-doc inventory (docs/specs/planner.md Step 5's read set, now declared by the consuming
 # repo rather than assumed here) — read INSIDE the already-ensured grounding workspace, never via
@@ -1188,8 +1228,12 @@ def _build_attention(
             attention.append(
                 "no epic integration branch exists yet on origin — grounding at main until bootstrap"
             )
+        # Reads the RESOLVED log (both tiers), never one tier's marker: an epic whose entries are
+        # all per-story comments has a complete log, and a v1-only lookup here would report "no
+        # story has merged" while nine had (#41). The claim is about merges, so it has to be
+        # derived from the same union the reader grounds on.
         if not (epic_facts.get("delivery_log") or {}).get("present", False):
-            attention.append("no epic delivery-log comment yet — no story has merged")
+            attention.append("no epic delivery-log entries yet — no story has merged")
     if story_facts is not None:
         if story_facts.get("parent_epic") is None:
             attention.append("no parent epic found referencing this story — grounding at main")
@@ -1371,18 +1415,11 @@ def build_facts(issue_number, repo, root=".", scratch_dir=None, refresh=False, c
         else:
             stories_source = "checklist"
 
-        delivery_log_comment, dl_decision = _find_one_marker(thread_list, DELIVERY_LOG_MARKER, "epic-delivery-log")
+        delivery_log_facts, dl_decision = _read_delivery_log(
+            thread_list, scratch_dir, issue_number
+        )
         if _forward_decision(dl_decision, notices=notices):
             return None
-        delivery_log_facts = {"present": delivery_log_comment is not None}
-        if delivery_log_comment is not None:
-            delivery_log_facts["comment_id"] = _marker_comment_id(delivery_log_comment)
-            delivery_log_facts["comment_url"] = delivery_log_comment.get("url")
-            delivery_log_facts.update(
-                _stage_comment_body(
-                    delivery_log_comment, scratch_dir, "epic-%s-delivery-log.md" % issue_number
-                )
-            )
 
         epic_facts = {
             "branch": epic_branch_facts,
@@ -1512,18 +1549,11 @@ def build_facts(issue_number, repo, root=".", scratch_dir=None, refresh=False, c
                         jit_epic_plan["body"] = epic_envelope.get("marker_comment_body")
 
                 epic_thread = _load_thread(epic_envelope)
-                dl_comment, dl_decision = _find_one_marker(epic_thread, DELIVERY_LOG_MARKER, "epic-delivery-log")
+                jit_delivery_log, dl_decision = _read_delivery_log(
+                    epic_thread, scratch_dir, parent_epic["number"]
+                )
                 if _forward_decision(dl_decision, notices=notices):
                     return None
-                jit_delivery_log = {"present": dl_comment is not None}
-                if dl_comment is not None:
-                    jit_delivery_log["comment_id"] = _marker_comment_id(dl_comment)
-                    jit_delivery_log["comment_url"] = dl_comment.get("url")
-                    jit_delivery_log.update(
-                        _stage_comment_body(
-                            dl_comment, scratch_dir, "epic-%s-delivery-log.md" % parent_epic["number"]
-                        )
-                    )
 
             story_facts = {
                 "parent_epic": parent_epic,

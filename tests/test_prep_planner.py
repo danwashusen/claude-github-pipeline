@@ -311,10 +311,15 @@ class PlanRefRowTests(PrepPlannerSandboxTestCase):
         self.assertTrue(envelope["story"]["parent_epic_open"])
         self.assertEqual(envelope["story"]["epic_branch"]["branch"], "epic/100-sandbox-fixture")
         self.assertTrue(envelope["story"]["epic_plan"]["present"])
-        self.assertTrue(envelope["story"]["epic_delivery_log"]["present"])
+        log = envelope["story"]["epic_delivery_log"]
+        self.assertTrue(log["present"])
+        # This fixture's log is the LEGACY monolithic comment, so the two-tier read reports that
+        # tier and exposes its id under `legacy_comment_id` — there is no single `comment_id` any
+        # more, because a per-story log is a SET of comments (#41).
+        self.assertEqual(log["log_source"], "legacy")
         # #34: located by a thread scan, so the id must be the REST numeric one (fixture node id
         # "IC_epic_log"), never the node id the REST delete endpoint 404s on.
-        self.assertEqual(envelope["story"]["epic_delivery_log"]["comment_id"], 9102)
+        self.assertEqual(log["legacy_comment_id"], 9102)
         self.assertEqual(envelope["suggested_playbook"], "story-jit.md")
 
     def test_untyped_sub_issue_of_an_open_epic_grounds_on_the_epic_branch(self):
@@ -452,6 +457,61 @@ class PlanRefRowTests(PrepPlannerSandboxTestCase):
         numbers = {s["number"]: s["state"] for s in envelope["epic"]["stories"]}
         self.assertEqual(numbers, {301: "OPEN", 302: "CLOSED"})
         self.assertEqual(envelope["suggested_playbook"], "epic.md")
+
+    def test_epic_with_per_story_log_entries_reports_the_entries_tier(self):
+        """#41: the planner reads the log across both tiers. This epic's entries are all per-story
+        comments, so a v1-only lookup would find nothing at all.
+        """
+        self._push_branch("epic/300-sandbox-epic")
+        envelope = self._envelope(
+            issue="300",
+            fixture_case="prep_planner_row_epic_log_entries",
+            ambient="epic/300-sandbox-epic",
+        )
+        log = envelope["epic"]["delivery_log"]
+        self.assertTrue(log["present"])
+        self.assertEqual(log["log_source"], "entries")
+        self.assertEqual(log["entry_count"], 2)
+        self.assertEqual([e["story"] for e in log["entries"]], [301, 302])
+        # The whole log is staged to ONE path, so the plan reviewer's `<<epic_delivery_log>>` stays a
+        # single file and Dimension 8 needs no change.
+        body = log.get("body")
+        if body is None:
+            body = Path(log["body_path"]).read_text(encoding="utf-8")
+        self.assertIn("#301 \u2014 delivered:", body)
+        self.assertIn("#302 \u2014 delivered:", body)
+
+    def test_a_v2_only_log_never_reports_that_no_story_has_merged(self):
+        """The silent regression this pins (#41). The `attention` claim is about MERGES, and it was
+        derived from a v1-marker lookup — so an epic whose entries are all per-story comments would
+        be told "no story has merged" while every story had. It regressed green: no test named the
+        string, and the operator is the only one who would notice.
+        """
+        self._push_branch("epic/300-sandbox-epic")
+        envelope = self._envelope(
+            issue="300",
+            fixture_case="prep_planner_row_epic_log_entries",
+            ambient="epic/300-sandbox-epic",
+        )
+        self.assertFalse(
+            [a for a in envelope["attention"] if "no story has merged" in a],
+            "a log made of per-story entries is a COMPLETE log — got %r" % (envelope["attention"],),
+        )
+
+    def test_an_epic_with_no_log_at_all_still_reports_that_no_story_has_merged(self):
+        """The other half: the attention line must still fire when it is true, or fixing the false
+        positive would just delete the signal."""
+        self._push_branch("epic/300-sandbox-epic")
+        envelope = self._envelope(
+            issue="300",
+            fixture_case="prep_planner_row_epic_native",
+            ambient="epic/300-sandbox-epic",
+        )
+        self.assertFalse(envelope["epic"]["delivery_log"]["present"])
+        self.assertTrue(
+            [a for a in envelope["attention"] if "no story has merged" in a],
+            "expected the no-merges attention line, got %r" % (envelope["attention"],),
+        )
 
     def test_row_epic_as_target_reports_checklist_source_for_a_legacy_epic(self):
         self._push_branch("epic/300-sandbox-epic")

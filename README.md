@@ -122,8 +122,8 @@ when a convention is absent, but work best when the repo provides:
   no documents and say so — nothing is guessed.
 
 The skills post and read durable marker comments: `<!-- implementation-plan:v1 -->` (planner),
-`<!-- issue-research:v1 -->` (researcher), `<!-- epic-delivery-log:v1 -->` (evaluator-written,
-planner-read), `<!-- pr-evaluator-health-cache:v1 -->` (evaluator), `<!-- question-decision:v1 -->`
+`<!-- issue-research:v1 -->` (researcher), `<!-- epic-delivery-log:v2:story:<N> -->` (evaluator-written,
+planner-read, one comment per shipped story; `:v1` is its read-forever legacy tier), `<!-- pr-evaluator-health-cache:v1 -->` (evaluator), `<!-- question-decision:v1 -->`
 (question-resolver), and the `<!-- open-question-links:v1 -->` build-issue body section (drafter).
 
 ## Notes for maintainers

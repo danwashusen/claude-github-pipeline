@@ -329,11 +329,19 @@ now the same rule everything else follows rather than an exception.
   closing contract (the resolver closes on the *last* serving phase; the evaluator is a merge-time
   backstop), and the recorded gap that **reopen is unowned**. The slice edge has no checklist fallback
   and never will — slices postdate the relation.
-- `epic-delivery-log.md` — the `<!-- epic-delivery-log:v1 -->` comment contract and its
-  writer/reader split. The **evaluator** is the sole writer (one entry per story at merge); the
-  **planner** reads it (just-in-time story planning + the "consumes only what's shipped" check). It
-  is a *separate* comment from the verified `<!-- implementation-plan:v1 -->` epic plan precisely
-  because it changes on every merge while the plan stays immutable.
+- `epic-delivery-log.md` — the epic delivery-log contract and its writer/reader split. The log is
+  **one comment per shipped story** (`<!-- epic-delivery-log:v2:story:<N> -->`), because a single
+  accumulating comment is bounded by `BODY_CHAR_LIMIT` and an epic reaches it by construction —
+  after which no merge can be recorded at all (#41). The story number in the marker is what keeps
+  one-marker-one-comment, so a genuine duplicate stays detectable. The **evaluator** is the sole
+  writer (one entry per story at merge, `edit-comment` for a re-record); the **planner** reads it
+  (just-in-time story planning + the "consumes only what's shipped" check) through a two-tier read
+  — per-story entries first, the legacy `<!-- epic-delivery-log:v1 -->` monolith second, unioned by
+  story number with the per-story entry winning, `log_source` reporting which answered. As with the
+  epic hierarchy there is **no backfill**, so a pre-#41 epic keeps its monolith permanently. The
+  shared read model is `scripts/delivery_log.py`, composed by both preps so the writer's view and
+  the reader's cannot drift. It is *separate* from the verified `<!-- implementation-plan:v1 -->`
+  epic plan precisely because it changes on every merge while the plan stays immutable.
 - `open-question-detection.md` — how to **find** an open question in any project doc (the
   `<!-- drafter-open-question-markers -->` config-block hint + heuristic cues; OQs aren't
   centralized) and **match** it to a tracker issue (search before filing, `Read` to confirm).
@@ -389,8 +397,8 @@ the *consuming* repo provides — not by plugin config:
   recomputing the slug, per the #102 orphaned-commits incident); the resolver/evaluator classify
   Epic vs story PRs by this pattern.
 - **Durable marker comments** the skills post and read: `<!-- implementation-plan:v1 -->`
-  (planner), `<!-- issue-research:v1 -->` (researcher), `<!-- epic-delivery-log:v1 -->`
-  (evaluator-written, planner-read), `<!-- pr-evaluator-health-cache:v1 -->` (evaluator, keyed on
+  (planner), `<!-- issue-research:v1 -->` (researcher), `<!-- epic-delivery-log:v2:story:<N> -->`
+  (evaluator-written, planner-read; `:v1` is its read-forever legacy tier), `<!-- pr-evaluator-health-cache:v1 -->` (evaluator, keyed on
   head SHA), `<!-- question-decision:v1 -->` (question-resolver-written; the tiered status read's
   Tier 1, so a marked question reads as resolved deterministically), and the
   `<!-- open-question-links:v1 -->` build-issue body section (drafter-written;
@@ -550,7 +558,7 @@ Prose has no compiler, so these greps are it. Run them after any prompt edit; `d
 # 1. Contract-token census — the set must not shrink across an edit (S1 baseline + the S20 v2-only
 #    re-baseline are in docs/specs/baseline.md §2 and §6; the v3 workspace-model change GREW the
 #    set by `github-pipeline:workspace-open` / `github-pipeline:workspace-close`).
-grep -roE '<!-- [a-z0-9:-]+ -->|§P?[0-9]+(\.[0-9]+)?|GATHER_[A-Z]+|PERSIST_[A-Z]+|github-pipeline:[a-z-]+' \
+grep -roE '<!-- [a-z0-9:-]+(:<N>)? -->|§P?[0-9]+(\.[0-9]+)?|GATHER_[A-Z]+|PERSIST_[A-Z]+|github-pipeline:[a-z-]+' \
   skills/ | sort | uniq -c
 
 # 2. Retired v1 names — zero hits across skills/ scripts/ tests/ README.md .claude-plugin/
