@@ -108,15 +108,21 @@ out — an id read off an issue thread is a GraphQL node id, which every REST co
 **Idempotent, per story.** A story has exactly one record; re-evaluating updates it and never adds a
 second.
 
-When `delivery_log.ambiguous` is true, two comments record the *same* story (or the epic carries two
-legacy comments), so there is no single record to update: post **nothing**, and report the duplicate
-`comment_urls` plus the recovery (delete the stale one, re-run this evaluation to record this story's
-entry). Writing over an ambiguous record would add a third copy. This is story-scoped — a duplicate
-for one story no longer blocks recording any other.
+When `delivery_log.ambiguous` is true, some story carries two records (or the epic carries two legacy
+comments). It is **story-scoped**, so read `duplicated_stories` before deciding:
+
+- **This story is one of them** — there is no single record to update: post **nothing** for it, and
+  report the duplicate `comment_urls` plus the recovery (delete the stale one, re-run this evaluation).
+  Writing over an ambiguous record would add a third copy.
+- **This story is not** — record it normally by the arms above. A duplicate on another story is that
+  story's problem to fix and must not block this merge from being recorded.
 
 When `delivery_log.story_number` is null the PR closes zero or several issues, so the entry's story is
-not derivable from the PR: record it against the issue whose `## Epic contract` this evaluation
-actually judged, and name that story in the summary.
+not derivable from the PR. Identify the story from the issue whose `## Epic contract` this evaluation
+actually judged, then **look it up in `delivery_log.entries`** and take the arm its `tier` names —
+`entries` → `edit-comment` on that record's `comment_id`, `legacy` → the legacy-body update, absent
+from the list → create. Defaulting to a create without that lookup is how a re-evaluation posts a
+second record for a story that already has one. Name the story you recorded in the summary.
 
 ## Residual follow-ups + cleanup
 

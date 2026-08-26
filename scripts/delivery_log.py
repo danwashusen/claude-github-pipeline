@@ -101,9 +101,15 @@ def collect(thread_list):
     """Resolve an epic's delivery log from its comment thread.
 
     Returns ``(log, decision)``. ``decision`` is a ``MARKER_AMBIGUOUS`` payload when one story
-    carries more than one per-story comment, or the epic carries more than one legacy comment —
-    both are genuine duplicates, and both are the caller's to degrade or forward (the evaluator
-    degrades: a merge already judged on its own gates must not stall on its log).
+    carries more than one per-story comment, or the epic carries more than one legacy comment — both
+    are genuine duplicates, and both are the caller's to degrade or forward (the evaluator degrades:
+    a merge already judged on its own gates must not stall on its log; the planner forwards, because
+    an unknown shape for a predecessor's contract is exactly what it must not ground on).
+
+    **A decision does not empty the log.** The duplicated story is omitted — its shape is precisely
+    what is unknown — and every other story still resolves, so a writer recording story B is not
+    blocked by a duplicate on story A. Ambiguity in the legacy tier likewise leaves the per-story
+    tier readable: the two tiers fail independently.
 
     ``log`` keys:
 
@@ -112,39 +118,47 @@ def collect(thread_list):
     ``entries``      -- the unioned records, in merge order. Each carries ``story``, ``tier``, and
                         for a per-story record its ``comment_id`` / ``comment_url``.
     ``entry_count``  -- how many stories are recorded (never double-counting a story in both tiers).
+    ``duplicated_stories``
+                     -- stories carrying more than one per-story comment, hence omitted above.
     ``legacy``       -- the legacy comment's ``comment_id`` / ``comment_url`` / ``body``, or ``None``.
     ``text``         -- the whole log as one document, for staging to a single path.
     ``text_chars``   -- ``len(text)``, so a caller can report growth without re-measuring.
     """
     thread_list = thread_list or []
 
-    per_story = {}
-    duplicates = []
+    # Group by story first, so a duplicate is identified per story rather than aborting the read.
+    # "Many comments" is the normal state now, so one story's duplicate must not erase every other
+    # story's record — the writer recording story B has to be able to proceed.
+    by_story = {}
     for comment in thread_list:
         story = story_number_for(comment)
         if story is None:
             continue
-        if story in per_story:
-            duplicates.append((story, comment))
-            continue
-        per_story[story] = comment
+        by_story.setdefault(story, []).append(comment)
+
+    duplicated = {story: cs for story, cs in by_story.items() if len(cs) > 1}
+    per_story = {story: cs[0] for story, cs in by_story.items() if len(cs) == 1}
 
     legacy_matches = [
         comment
         for comment in thread_list
-        if (comment.get("body") or "").startswith(MARKER_V1)
+        if comment is not None and (comment.get("body") or "").startswith(MARKER_V1)
     ]
 
-    if duplicates:
-        story, _ = duplicates[0]
-        clashing = [per_story[story]] + [c for s, c in duplicates if s == story]
-        return _absent_log(), needs_decision(
+    decision = None
+    if duplicated:
+        # Name the first duplicated story in thread order — deterministic, and the one the writer
+        # reports a recovery for. The resolved half is still returned alongside.
+        story = next(s for s in (story_number_for(c) for c in thread_list) if s in duplicated)
+        clashing = duplicated[story]
+        decision = needs_decision(
             MARKER_AMBIGUOUS,
             summary="%d delivery-log comments name story #%s — expected at most one per story"
             % (len(clashing), story),
             context={
                 "marker_prefix": entry_marker(story),
                 "story": story,
+                "duplicated_stories": sorted(duplicated),
                 "comment_ids": [comment_rest_id(c) for c in clashing],
                 "comment_urls": [c.get("url") for c in clashing],
             },
@@ -153,9 +167,8 @@ def collect(thread_list):
                 "delete the stale duplicate comment(s), then re-run",
             ],
         )
-
-    if len(legacy_matches) > 1:
-        return _absent_log(), needs_decision(
+    elif len(legacy_matches) > 1:
+        decision = needs_decision(
             MARKER_AMBIGUOUS,
             summary="%d comments match the legacy epic-delivery-log marker %r — expected at most one"
             % (len(legacy_matches), MARKER_V1),
@@ -170,15 +183,18 @@ def collect(thread_list):
             ],
         )
 
-    legacy_comment = legacy_matches[0] if legacy_matches else None
+    # An ambiguous legacy tier contributes nothing (there is no way to choose between two
+    # monoliths), but the per-story half stays readable — the tiers fail independently.
+    legacy_comment = legacy_matches[0] if len(legacy_matches) == 1 else None
     legacy_body = (legacy_comment.get("body") or "") if legacy_comment else ""
 
     # Union by story number, the per-story entry winning where a story appears in both tiers. Never
     # take one tier and drop the other: that silently loses shipped stories, and two shapes for one
-    # story would hand Dimension 8 a contradiction (the contract's precedence rule).
+    # story would hand Dimension 8 a contradiction (the contract's precedence rule). A story whose
+    # per-story tier is ambiguous is omitted from both halves — its shape is exactly what is unknown.
     entries = []
     for story in _legacy_story_numbers(legacy_body):
-        if story in per_story:
+        if story in per_story or story in duplicated:
             continue
         entries.append({"story": story, "tier": SOURCE_LEGACY})
 
@@ -187,7 +203,7 @@ def collect(thread_list):
     # keeps its original position, which is the intent: the position records when the story shipped.
     for comment in thread_list:
         story = story_number_for(comment)
-        if story is None:
+        if story is None or story not in per_story:
             continue
         entries.append(
             {
@@ -208,13 +224,14 @@ def collect(thread_list):
     else:
         log_source = None
 
-    text = _render(legacy_body, per_story, thread_list)
+    text = _render(legacy_body, per_story, duplicated, thread_list)
 
     log = {
         "present": log_source is not None,
         "log_source": log_source,
         "entries": entries,
         "entry_count": len(entries),
+        "duplicated_stories": sorted(duplicated),
         "legacy": (
             {
                 "comment_id": comment_rest_id(legacy_comment),
@@ -227,7 +244,7 @@ def collect(thread_list):
         "text": text,
         "text_chars": len(text),
     }
-    return log, None
+    return log, decision
 
 
 def _absent_log():
@@ -237,13 +254,14 @@ def _absent_log():
         "log_source": None,
         "entries": [],
         "entry_count": 0,
+        "duplicated_stories": [],
         "legacy": None,
         "text": "",
         "text_chars": 0,
     }
 
 
-def _render(legacy_body, per_story, thread_list):
+def _render(legacy_body, per_story, duplicated, thread_list):
     """The whole log as one document, for staging to the single path the plan reviewer reads.
 
     The legacy body first (its entries shipped before any per-story comment could exist), then the
@@ -252,7 +270,7 @@ def _render(legacy_body, per_story, thread_list):
     """
     parts = []
     if legacy_body:
-        superseded = set(per_story)
+        superseded = set(per_story) | set(duplicated)
         kept = [
             line
             for line in legacy_body.split("\n")
@@ -260,7 +278,8 @@ def _render(legacy_body, per_story, thread_list):
         ]
         parts.append("\n".join(kept).strip())
     for comment in thread_list:
-        if story_number_for(comment) is None:
+        story = story_number_for(comment)
+        if story is None or story not in per_story:
             continue
         parts.append((comment.get("body") or "").strip())
     return "\n\n".join(part for part in parts if part)

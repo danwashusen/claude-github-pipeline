@@ -554,6 +554,21 @@ class ParentEpicStorySetTests(PrepEvaluatorSandboxTestCase):
         self.assertEqual(log["entry"]["comment_id"], 5350499100)
         self.assertNotIn("IC_", str(log["entry"]["comment_id"]))
 
+    def test_every_resolved_record_is_exposed_not_just_this_story_s(self):
+        """The write has to stay idempotent even when the closing-issue set cannot name a single
+        story. With only `story_recorded_in` available, that case has no arm but `create`, so a
+        re-evaluation posts a second entry — and a duplicate hard-blocks the planner on that epic.
+        The full map is what lets the write find an existing record instead.
+        """
+        envelope = self._story_pr_envelope("prep_evaluator_story_type_log_entries")
+        log = envelope["epic"]["delivery_log"]
+        by_story = {e["story"]: e for e in log["entries"]}
+        self.assertEqual(sorted(by_story), [42, 90])
+        self.assertEqual(by_story[90]["tier"], "entries")
+        self.assertEqual(by_story[90]["comment_id"], 5350498958)
+        # #90 is not the story this PR closes, and its record is still reachable.
+        self.assertNotEqual(log["story_number"], 90)
+
     def test_mixed_epic_unions_both_tiers_with_the_per_story_entry_winning(self):
         """The state every pre-#41 epic enters on its next merge. #90 is in BOTH tiers; it counts
         once, from its per-story comment. Halving would lose a shipped story and keeping both would

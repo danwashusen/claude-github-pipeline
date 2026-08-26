@@ -209,7 +209,7 @@ Run only the dimensions named in the inputs.
    epic delivery log (`<<epic_delivery_log>>`) — the log is the single source of truth — and match the
    **shape the log records as delivered**: an out-of-sequence consume, or a shape differing from the
    delivered shape, is a BLOCKER. Where a story appears twice in that file, the per-story entry is
-   authoritative over a legacy monolithic one, which is the same precedence the reader applied;) **honors the epic approach** (no `## Architecture
+   authoritative over a legacy monolithic one — the same precedence the reader applied); **honors the epic approach** (no `## Architecture
    decisions` / `## Changes` contradicting the epic plan's `## Approach` — a competing abstraction for a
    pinned seam is a BLOCKER). A dim-8 BLOCKER tracing to a wrong *epic* contract is remediated by the
    epic-plan feedback edge — flag it so the planner revises the epic plan.

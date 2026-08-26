@@ -52,11 +52,12 @@ never created again; it is read forever, and a story already recorded here is up
 
 ## When `facts.epic.delivery_log.ambiguous` is true
 
-Two comments record the *same* story (or the epic carries two legacy comments), so there is no single
-record to update: post **nothing**, and report the duplicate `comment_urls` plus the recovery (delete
-the stale one, re-run this evaluation to record this story's entry). Writing over an ambiguous record
-would add a third copy. Note this is now story-scoped: a duplicate for one story no longer blocks
-recording any other.
+Some story carries two records (or the epic carries two legacy comments). This is **story-scoped**, so
+read `duplicated_stories` first. If **this** story is among them there is no single record to update:
+post **nothing** for it, and report the duplicate `comment_urls` plus the recovery (delete the stale
+one, re-run this evaluation to record this story's entry) — writing over an ambiguous record would add
+a third copy. If this story is **not** among them, record it normally: another story's duplicate must
+not block this merge from being recorded.
 
 ## When `facts.epic.delivery_log.story_number` is null
 

@@ -204,6 +204,53 @@ class DuplicateTests(unittest.TestCase):
         self.assertEqual(decision["code"], "MARKER_AMBIGUOUS")
         self.assertEqual(sorted(decision["context"]["comment_ids"]), [1, 2])
 
+    def test_a_duplicate_on_one_story_leaves_every_other_story_readable(self):
+        """The point of story-scoping. Under the single-comment log a duplicate blocked recording for
+        every story on the epic; if a duplicate emptied the read here it would do the same thing by
+        another route, and the "no longer blocks any other story" claim in the contract, the prep and
+        the playbook would all be false.
+        """
+        log, decision = delivery_log.collect(
+            [comment(1, entry(7)), comment(2, entry(7)), comment(3, entry(8))]
+        )
+        self.assertIsNotNone(decision)
+        self.assertTrue(log["present"])
+        self.assertEqual(log["duplicated_stories"], [7])
+        # #8 resolves normally, with the id a writer needs to update it in place.
+        self.assertEqual([e["story"] for e in log["entries"]], [8])
+        self.assertEqual(delivery_log.record_for_story(log, 8)[1]["comment_id"], 3)
+        # #7 is omitted rather than guessed — its shape is exactly what is unknown.
+        self.assertEqual(delivery_log.record_for_story(log, 7), (None, None))
+        self.assertNotIn(delivery_log.entry_marker(7), log["text"])
+
+    def test_an_ambiguous_legacy_tier_leaves_the_per_story_tier_readable(self):
+        """The tiers fail independently: two monoliths cannot be chosen between, but that says
+        nothing about the per-story entries alongside them."""
+        log, decision = delivery_log.collect(
+            [comment(1, legacy_body(184)), comment(2, legacy_body(184)), comment(3, entry(200))]
+        )
+        self.assertIsNotNone(decision)
+        self.assertEqual(decision["context"]["marker_prefix"], delivery_log.MARKER_V1)
+        self.assertIsNone(log["legacy"])
+        self.assertEqual([e["story"] for e in log["entries"]], [200])
+
+    def test_a_duplicated_story_also_suppresses_its_legacy_line(self):
+        """A story whose per-story tier is ambiguous must not silently fall back to its legacy line:
+        that would present a shape as authoritative when the newer record contradicts it."""
+        log, _ = delivery_log.collect(
+            [comment(9, legacy_body(184)), comment(1, entry(184)), comment(2, entry(184, shape="X"))]
+        )
+        self.assertEqual(log["duplicated_stories"], [184])
+        self.assertEqual(log["entries"], [])
+        self.assertNotIn("Legacy184", log["text"])
+
+    def test_a_none_element_in_the_thread_never_raises(self):
+        """The module contract is "never raises on malformed input" — two preps compose it
+        in-process, so an exception here takes down a session rather than degrading."""
+        log, decision = delivery_log.collect([None, comment(1, entry(184)), None])
+        self.assertIsNone(decision)
+        self.assertEqual([e["story"] for e in log["entries"]], [184])
+
     def test_a_duplicate_for_one_story_still_reports_that_story(self):
         """Under the single-comment log a duplicate blocked recording for every story on the epic.
         Story-scoping is the improvement, and the decision has to name which story is affected for
