@@ -44,6 +44,7 @@ SKILL_DIR = REPO_ROOT / "skills" / "planner"
 ROUTER = SKILL_DIR / "SKILL.md"
 PLAYBOOKS_DIR = SKILL_DIR / "playbooks"
 REFERENCES_DIR = SKILL_DIR / "references"
+SHARED_DIR = REPO_ROOT / "skills" / "_shared"
 GH_PERSIST = SCRIPTS_DIR / "gh_persist.py"
 S1_PLAN_CAPTURE = REPO_ROOT / "docs" / "specs" / "examples" / "implementation-plan.md"
 
@@ -571,6 +572,16 @@ class PlaybookPersistDryRunTests(unittest.TestCase):
         )
         self._assert_dry_run_ok(proc, env, "comment")
 
+    def test_plan_comment_in_place_update_dry_run(self):
+        # revise.md / story-jit.md: gh_persist.py edit-comment <repo> <marker-id> <plan.md> — the
+        # op the revise routes now name in place of the delete-and-repost above (#38).
+        proc, env = _run_persist(
+            ["edit-comment", "octo/widgets", "998877", "@BODY@", "--dry-run"],
+            body_text="<!-- implementation-plan:v1 -->\n**Implementation plan** — #142 x — planned "
+            "2026-07-11T00:00:00Z at `origin/main@b2c3d4e`\n\n## Approach\nRevised.\n",
+        )
+        self._assert_dry_run_ok(proc, env, "edit-comment")
+
     def test_issue_body_pointer_edit_body_dry_run(self):
         # spine S8 pointer upsert: gh_persist.py edit-body <repo> <issue> <issue-body-pointer.md>
         proc, env = _run_persist(
@@ -648,6 +659,247 @@ class PlanSchemaByteCompatTests(unittest.TestCase):
         block = _first_fenced_block((REFERENCES_DIR / "plan-schema.md").read_text(encoding="utf-8"))
         body_lines = block.splitlines()[1:]  # drop the opening ```
         self.assertEqual(body_lines[0], "<!-- implementation-plan:v1 -->")
+
+
+class SectionOwnershipAndSizeTests(unittest.TestCase):
+    """#38 Phase 1. A 266 KB plan body could not be posted; measured, retained revise narration was 8%
+    of it and ~90% was the SAME fact restated across six-to-ten sections. The schema bounded exactly one
+    section (`## Approach`) and stated the cite-don't-restate rule in exactly one place (`## Doc
+    grounding`), so every other section read satisfiable-by-restating. These pin the generalised rule,
+    the drafting-time cap, and the reviewer's ability to run the audit at all."""
+
+    def setUp(self):
+        self.schema = (REFERENCES_DIR / "plan-schema.md").read_text(encoding="utf-8")
+        self.reviewer = (REFERENCES_DIR / "plan-reviewer-prompt.md").read_text(encoding="utf-8")
+
+    def test_ownership_rule_is_stated_for_the_whole_schema(self):
+        self.assertIn("one owning section", self.schema)
+        self.assertIn("cites it by name", self.schema)
+
+    def test_the_three_converging_sections_carry_disjoint_obligations(self):
+        # Naming the sections is not enough — the point is that each is told what it must NOT carry,
+        # which is what makes "is this a restatement?" answerable at review time.
+        _, _, ownership = self.schema.partition("## Section ownership and size")
+        ownership = ownership.split("## The `sub-issue:` phase key")[0]
+        for section in ("## Doc grounding", "## Architecture decisions", "## Risks & watchpoints"):
+            self.assertIn(section, ownership, "%s has no stated obligation" % section)
+        self.assertIn("No rationale", ownership)
+        self.assertIn("No doc summary", ownership)
+        self.assertIn("rather than re-deriving it", ownership)
+
+    def test_ownership_rule_cites_doc_grounding_rather_than_duplicating_it(self):
+        # The rule would break itself in the sentence that introduces it if it re-quoted the
+        # `## Doc grounding` wording instead of pointing at it.
+        self.assertEqual(
+            self.schema.count("the citations, not a restatement of the approach"),
+            1,
+            "the ownership prose restates `## Doc grounding`'s rule instead of citing it",
+        )
+
+    def test_cap_is_stated_in_characters_at_drafting_time(self):
+        self.assertIn("65,536 characters", self.schema)
+        self.assertIn("body_bytes", self.schema)
+        self.assertRegex(
+            self.schema,
+            r"Count \*\*characters\*\*, not bytes",
+            "the schema must say which unit the cap is measured in",
+        )
+
+    def test_half_the_cap_is_a_defect_to_fix_before_posting(self):
+        self.assertRegex(self.schema, r"past \*\*half\*\* the cap is a defect to fix before posting")
+
+    def test_ownership_section_is_outside_the_frozen_fence(self):
+        # The first fenced block is byte-frozen against the S1 capture (PlanSchemaByteCompatTests).
+        # This is the guard that the new prose landed after it, not inside it.
+        self.assertNotIn("## Section ownership and size", _first_fenced_block(self.schema))
+
+    def test_reviewer_receives_the_plan_body_as_a_path(self):
+        # Inlined, the sub-agent can neither measure the body nor build a section map; the audit and
+        # the >50% signal are only mechanically runnable once it is a file.
+        self.assertIn("Read <<plan_body>>", self.reviewer)
+        self.assertIn("wc -m <<plan_body>>", self.reviewer)
+        self.assertNotIn("\n  ```\n  <<plan_body>>\n  ```\n", self.reviewer)
+
+    def test_epic_plan_and_delivery_log_are_paths_too(self):
+        self.assertIn("Read <<epic_plan>>", self.reviewer)
+        self.assertIn("Read <<epic_delivery_log>>", self.reviewer)
+
+    def test_live_slices_stays_inline(self):
+        # Small and prep-derived — don't over-generalize the path form.
+        self.assertNotIn("Read <<live_slices>>", self.reviewer)
+
+    def test_evidence_admits_a_plan_body_line_anchor(self):
+        self.assertIn("`<<plan_body>>:<line>`", self.reviewer)
+
+    def test_dimension_three_carries_the_section_ownership_subcheck(self):
+        self.assertIn("**Section ownership** *(runs on every plan)*", self.reviewer)
+
+    def test_size_is_evidence_never_the_violation(self):
+        # The rejected alternative was numeric per-section budgets; a >50% BLOCKER would reintroduce
+        # them through the back door. Over-cap IS a BLOCKER — an unpostable plan is unexecutable.
+        flat = " ".join(self.reviewer.split())
+        self.assertIn("**Size is evidence, never the violation**", flat)
+        self.assertIn("not a finding in itself", flat)
+        self.assertIn("over the 65,536-character cap** is a BLOCKER", flat)
+
+    def test_spine_passes_the_staged_path_and_holds_its_line_count(self):
+        spine = (PLAYBOOKS_DIR / SPINE).read_text(encoding="utf-8")
+        self.assertIn("Stage the plan body to `<facts.scratch>/plan.md`", spine)
+        self.assertIn("with that path", spine)
+        self.assertNotIn("with the plan body", spine)
+
+    def test_review_loop_restages_the_plan_before_every_pass(self):
+        # PR #39 review finding 1. Passing the body by path decouples "the plan" from "the file":
+        # the loop applies findings to the plan, so a pass that re-reads the prior file re-reports
+        # findings already fixed — plausibly tripping the circular-repeat exit and gating the
+        # operator on stale findings. Inlining made the restage implicit; a path makes it explicit
+        # or it does not happen.
+        spine = " ".join((PLAYBOOKS_DIR / SPINE).read_text(encoding="utf-8").split())
+        self.assertIn("Loop up to 3 passes, **restaging `plan.md` before each**", spine)
+        self.assertIn("re-reads the prior file", spine.replace("re-reading", "re-reads"))
+
+
+class ReviseRetentionAndContractCompressionTests(unittest.TestCase):
+    """#38 Phase 2. The two contributors to unbounded growth: a revise that annotates forward instead of
+    superseding (8% of the measured 266 KB — small per run, since each revise adds only 0.9-2.1 KB, and
+    only legible in aggregate), and an epic's `## Story contracts` that never sheds a merged story."""
+
+    def setUp(self):
+        self.revise = (PLAYBOOKS_DIR / "revise.md").read_text(encoding="utf-8")
+        self.schema = (REFERENCES_DIR / "plan-schema.md").read_text(encoding="utf-8")
+        self.log = (SHARED_DIR / "epic-delivery-log.md").read_text(encoding="utf-8")
+
+    def test_retention_is_stated_as_a_prohibition_with_named_artifacts(self):
+        flat = " ".join(self.revise.split())
+        self.assertIn("carries **no** history layer", flat)
+        self.assertIn("Prohibited in the", flat)
+        for artifact in ("`## Approach` paragraph", "chained footer note", "superseded-text block"):
+            self.assertIn(artifact, flat, "the prohibition must name %s" % artifact)
+
+    def test_prohibition_names_where_prior_text_may_live(self):
+        flat = " ".join(self.revise.split())
+        self.assertIn("comment's edit history", flat)
+        self.assertIn("`## Predecessor`", flat)
+
+    def test_prohibition_carries_its_why(self):
+        # The rationale is what stops a later editor softening this back to "refresh against today's
+        # reality", which reads perfectly compatibly with annotate-forward.
+        self.assertIn("no single revise looks wrong", " ".join(self.revise.split()))
+
+    def test_promotion_check_is_mechanical_and_ordered_before_the_drop(self):
+        flat = " ".join(self.revise.split())
+        self.assertIn("**Promote before you drop**", flat)
+        self.assertIn("mechanical, not optional", flat)
+        self.assertIn("**then** drop", flat)
+        for home in ("`## Architecture decisions`", "`## Changes`", "`## Risks & watchpoints`"):
+            self.assertIn(home, flat)
+
+    def test_epic_revise_is_the_compression_execution_site(self):
+        # A plan is immutable; `## Story contracts` only ever changes on a revise, which routes here
+        # rather than to epic.md — so the rule needs a site that runs at the right moment.
+        self.assertIn("compress merged stories' contracts", " ".join(self.revise.split()))
+
+    def test_pointer_is_a_third_clause_not_a_replacement(self):
+        # Replacing `consumes` would strip edges from Dimension 5's sequencing graph and produce false
+        # dangling-dependency BLOCKERs on every epic revise after the first merge.
+        epic_fence = self.schema.split("## Epic-plan and story-under-epic sections")[1]
+        contracts = epic_fence.split("## Story contracts")[1].split("## Integration strategy")[0]
+        self.assertIn("— delivers:", contracts)
+        self.assertIn("— consumes:", contracts)
+        self.assertIn("— shipped:", contracts)
+        flat = " ".join(self.schema.split())
+        self.assertIn("The pointer is additive, never a replacement", flat)
+
+    def test_compressed_entry_carries_nothing_beyond_the_three_clauses(self):
+        flat = " ".join(self.schema.split())
+        self.assertIn("it carries nothing else", flat)
+        self.assertIn("Section ownership and size", flat)
+
+    def test_delivers_is_never_repinned_to_the_shipped_shape(self):
+        # The re-pinning hazard: the compressing session has the log in hand, so making the entry agree
+        # with it is the locally-reasonable move — and it permanently disables the staleness detector.
+        schema_flat = " ".join(self.schema.split())
+        log_flat = " ".join(self.log.split())
+        self.assertIn("never re-pinned to what shipped", schema_flat)
+        self.assertIn("verbatim as originally pinned", log_flat)
+        self.assertIn("comparing the log against a copy of itself", log_flat)
+
+    def test_seam_attribution_survives_compression(self):
+        self.assertIn("[user decision <date>]", self.schema)
+
+    def test_story_jit_staleness_check_is_untouched(self):
+        # Shape-preserving compression needs no reader change. Pinned so a later editor does not
+        # "helpfully" sync this to the log and remove the left-hand side of the comparison.
+        story_jit = (PLAYBOOKS_DIR / "story-jit.md").read_text(encoding="utf-8")
+        flat = " ".join(story_jit.split())
+        self.assertIn("`## Story contracts` pinned shapes", flat)
+        self.assertIn("stop and re-route to the planner on the epic in revise mode", flat)
+
+
+class InPlacePlanUpdateTests(unittest.TestCase):
+    """#38 Phase 4. A revise updates the plan comment in place instead of delete-and-repost, so
+    GitHub's own edit history becomes the supersession record — removing the reason a session
+    invents an inline one. Ordering matters: the retention prohibition (Phase 2) must already be in
+    force, because a comment you update in place reads far more like an invitation to append."""
+
+    def setUp(self):
+        self.revise = (PLAYBOOKS_DIR / "revise.md").read_text(encoding="utf-8")
+        self.story_jit = (PLAYBOOKS_DIR / "story-jit.md").read_text(encoding="utf-8")
+        self.spine = (PLAYBOOKS_DIR / SPINE).read_text(encoding="utf-8")
+        self.renderings = (REFERENCES_DIR / "handoff-renderings.md").read_text(encoding="utf-8")
+
+    def test_revise_names_edit_comment_with_the_marker_id(self):
+        flat = " ".join(self.revise.split())
+        self.assertIn("gh_persist.py edit-comment <owner/repo> <facts.plan.comment_id>", flat)
+
+    def test_the_staged_body_is_a_full_replacement_never_a_delta(self):
+        # The guard against the op's own failure mode — see the class docstring.
+        for name, text in (("revise", self.revise), ("story-jit", self.story_jit)):
+            with self.subTest(playbook=name):
+                flat = " ".join(text.split())
+                self.assertIn("full replacement authored against the schema", flat)
+                self.assertIn("never a delta", flat)
+
+    def test_no_revise_path_still_names_delete_and_repost_as_its_default(self):
+        # PR #39 review finding 3. The promoted-epic re-plan reaches an issue that already carries a
+        # marker comment with a known id, so it takes the same in-place op — leaving it pointing at
+        # `--delete-marker-id` made two instructions in one file disagree about the same path. The
+        # only surviving mention is the ambiguous-marker carve-out asserted below.
+        mentions = [
+            line for line in (PLAYBOOKS_DIR / "revise.md").read_text(encoding="utf-8").splitlines()
+            if "--delete-marker-id" in line
+        ]
+        self.assertEqual(len(mentions), 1, mentions)
+        self.assertIn("Ambiguous marker", mentions[0])
+
+    def test_delete_and_repost_survives_for_the_ambiguous_marker(self):
+        # Only delete-and-repost collapses a duplicate, and edit-comment has no id when no marker
+        # exists — so the op is not a superset and the fresh path must stay.
+        flat = " ".join(self.revise.split())
+        self.assertIn("Ambiguous marker → `comment --delete-marker-id`", flat)
+        self.assertIn("the only op that collapses a duplicate", flat)
+
+    def test_spine_defers_the_op_choice_to_the_routed_playbook(self):
+        # S8 is the knife-edge file; teaching it the op choice would have cost its scarce lines
+        # twice. It states the fresh op and points at revise.md for the update.
+        self.assertIn("fresh only — revise.md / story-jit.md name the in-place update op", self.spine)
+
+    def test_story_jit_names_its_own_op_rather_than_inheriting(self):
+        # story-jit owns the revise path for a story under an open epic and never mentions
+        # --delete-marker-id, so without this it would silently inherit whatever S8 defaults to.
+        flat = " ".join(self.story_jit.split())
+        self.assertIn("gh_persist.py edit-comment", flat)
+        self.assertIn("names the op rather than inheriting a default", flat)
+
+    def test_handoff_states_the_url_is_unchanged(self):
+        flat = " ".join(self.renderings.split())
+        self.assertIn("carries the plan comment's **unchanged** URL", flat)
+        self.assertNotIn("the stale one was deleted", flat)
+
+    def test_revise_worked_example_reuses_the_fresh_comment_id(self):
+        # The example is the rule's own demonstration: a stable URL means the revise handoff shows
+        # the SAME comment id the fresh handoff published, not a new one.
+        self.assertNotIn("issuecomment-YYYYY", self.renderings)
 
 
 class FooterRuleTests(unittest.TestCase):

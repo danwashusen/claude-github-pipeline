@@ -18,7 +18,7 @@ artifact and no package manager. The "source" is:
   state-assembly scripts (including `prep_workspace_open.py` / `prep_workspace_close.py`, whose
   prep IS the tool's action), the `oq_tracker.py` and `doc_catalogue.py` helpers the preps compose
   (the open-question tracker search; the consuming repo's declared grounding docs), and
-  `scripts/pipelib/` (envelope, spill, decision codes, hashing, the locked-down subprocess
+  `scripts/pipelib/` (envelope, spill, decision codes, platform limits, hashing, the locked-down subprocess
   runner, the hook runner).
 - **An offline test harness** — `tests/` (stdlib `unittest`, a fixture-replaying `gh` shim, a git
   sandbox); `python3 tests/run.py` is the one command.
@@ -185,18 +185,25 @@ per [architecture.md §7](docs/architecture.md)'s mapping table).
 - `gh_pr_gather.py` — the PR-fetch envelope, with optional `--with-diff` / `--with-line-comments`
   (always spilled to disk) and the PR's own `labels`.
 - `gh_persist.py` — the single write path (`create` / `edit-body` / `edit-pr-body` / `edit-title` /
-  `edit-pr-title` / `edit-labels` / `link` / `comment` / `close` / `reopen` / `create-pr` /
+  `edit-pr-title` / `edit-labels` / `link` / `comment` / `edit-comment` / `close` / `reopen` /
+  `create-pr` /
   `close-pr`; `edit-body` is `gh issue edit` and rejects a PR number, which is why the PR-body write
   — and, for the same reason, the PR-title write — is its own op. `edit-title`/`edit-pr-title` are
   the only ops that retitle an **already-filed** issue/PR; they are bodyless, so a title-only change
   never restages a body, and without them the drafter's revise mode and the slicer's promotion
   silently dropped an operator-confirmed title change). Its leading size check is the
-  **empty-body gate**: the caller stages the verbatim body to its scratch dir and passes the
+  **size gate**: the caller stages the verbatim body to its scratch dir and passes the
   *path*, so nothing re-serializes a body across the prompt boundary; an empty or missing file is
-  an `EMPTY_BODY_FILE` decision **before** any `gh` write (the #626/#627 empty-body race). Returns
+  an `EMPTY_BODY_FILE` decision and one over `pipelib.limits.BODY_CHAR_LIMIT` a `BODY_TOO_LONG`
+  decision, both **before** any `gh` write (the #626/#627 empty-body race; #38's unpostable plan).
+  The cap is measured in **characters** — `body_bytes` runs ahead of it on non-ASCII text, so a byte
+  gate would false-refuse a legal body. Returns
   `body_bytes` + `body_sha256` and verifies the round-trip itself. `close` on a closed issue is a
-  no-op (safe for a reentrant caller like `question-resolver`); marker replacement posts the new
-  comment **before** deleting the old (a crash must not lose the marker); native-dependency writes
+  no-op (safe for a reentrant caller like `question-resolver`); marker replacement never leaves the
+  issue markerless — `comment --delete-marker-id` posts the new comment **before** deleting the old,
+  and `edit-comment` rewrites one in place by numeric REST id with no delete at all (a stable URL
+  and GitHub's own edit history as the supersession record — the planner's revise uses it; the
+  delete-and-repost path stays, since only it collapses a duplicate marker); native-dependency writes
   are capability-gated with a `DEPS_UNSUPPORTED` notice and a prose-link fallback, and
   `create --parent` — the native parent/sub-issue write that makes an epic's stories real
   sub-issues — with a `SUBISSUES_UNSUPPORTED` notice. A create carrying both relations descends a

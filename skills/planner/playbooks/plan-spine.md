@@ -97,26 +97,26 @@ its `## Risks & watchpoints` entry.
 
 ## S7 — Verify the plan
 
-Dispatch the isolated, context-blind plan-reviewer `Explore` sub-agent per
-[`../references/plan-reviewer-prompt.md`](../references/plan-reviewer-prompt.md) with the plan body,
-`mode`, `facts.target`, `facts.grounding.path` (sole code/doc source — never a ref), `facts.grounding_docs`,
-the routed playbook's `dimensions` **plus Dimension 10 whenever the plan has an `## Open questions`
-section**, `external_sources`, and (story-under-epic only) the epic plan + delivery-log staged paths; it
-returns findings by dimension. Loop up to 3 passes: drop findings without evidence; on empty findings
-exit clean; on a circular repeat or the cap, show the plan + a "Review notes" block and gate
-(`header: "Review notes"`) — **when any unresolved finding is a dimension-4 BLOCKER, "Post as-is" is not offered**
+Stage the plan body to `<facts.scratch>/plan.md`, then dispatch the isolated, context-blind
+plan-reviewer `Explore` sub-agent per [`../references/plan-reviewer-prompt.md`](../references/plan-reviewer-prompt.md)
+with that path, `mode`, `facts.target`, `facts.grounding.path` (sole code/doc source — never a ref),
+`facts.grounding_docs`, `external_sources`, the routed playbook's `dimensions` **plus Dimension 10 whenever
+the plan has an `## Open questions` section**, and (story-under-epic only) the epic plan + delivery-log staged paths; it
+returns findings by dimension. Loop up to 3 passes, **restaging `plan.md` before each** (findings are
+applied to the plan directly — its own artifact to fix — so a pass re-reading the prior file re-reports
+ones already fixed): drop findings without evidence; on empty findings exit clean; on a circular repeat
+or the cap, show the plan + a "Review notes" block and gate (`header: "Review notes"`) — **when any unresolved finding is a dimension-4 BLOCKER, "Post as-is" is not offered**
 (an open design decision); otherwise offer **Post as-is** / **Fix manually** / **Push back on reviewer**.
-Apply findings to the plan directly (the plan is this skill's own artifact to fix).
 
 ## S8 — Show + persist
 
 On a **clean verify exit**, show the plan's full body and auto-post — no confirmation gate on the
 common path (unless the user said "don't post yet"; `revise.md` adds its diff-show + reconciliation
-confirm first). Stage the approved body (marker line first) to `<facts.scratch>/plan.md` and post:
+confirm first). Restage the approved body (marker line first) to `<facts.scratch>/plan.md` and post:
 
 ```bash
 ${CLAUDE_PLUGIN_ROOT}/scripts/gh_persist.py comment <owner/repo> issue <issue> \
-  "<facts.scratch>/plan.md" [--delete-marker-id <facts.plan.comment_id>]   # --delete-marker-id: revise
+  "<facts.scratch>/plan.md"   # fresh only — revise.md / story-jit.md name the in-place update op
 ```
 
 Capture the returned comment URL, then ensure the issue-body plan pointer: stage the body with the

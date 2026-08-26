@@ -29,11 +29,10 @@ failure mode; do not flag a plan for leaving line-level mechanics to the impleme
 
 ## Inputs
 
-- **Plan under review**
-
-  ```
-  <<plan_body>>
-  ```
+- **Plan under review**: `<<plan_body>>` — an absolute path to the staged plan body. Read it with
+  `Read <<plan_body>>`; measure it with `wc -m <<plan_body>>`; list its section headings with
+  `grep -n "^## " <<plan_body>>`. It arrives as a file, not as pasted text, so a plan near the size
+  cap reviews without being inlined into this prompt, and a finding can cite `<<plan_body>>:<line>`.
 
 - **Mode**: `<<mode>>` — `draft` (no plan posted yet; review the body verbatim) or `revise <N>` (a plan
   comment already exists on issue #N; fetch the live issue state and walk the thread for direction that
@@ -67,11 +66,13 @@ failure mode; do not flag a plan for leaving line-level mechanics to the impleme
   authoritative for specific technology (may be empty). When a plan decision cites one, judge it against
   the source's content, not your own (possibly stale) training knowledge; fetch a reachable URL, or say
   so in the finding rather than guessing.
-- **Epic plan**: `<<epic_plan>>` — for a story under an epic, the parent epic's plan body (its
-  `## Story contracts` and `## Story breakdown`) for Dimension 8. Empty otherwise.
-- **Epic delivery log**: `<<epic_delivery_log>>` — for a story under an epic, the parent epic's
-  `<!-- epic-delivery-log:v1 -->` comment listing what each predecessor story actually delivered (or
-  `(none yet)`). Dimension 8's "consumes only what's shipped" check reads this. Empty otherwise.
+- **Epic plan**: `<<epic_plan>>` — for a story under an epic, an absolute path to the staged parent-epic
+  plan body (its `## Story contracts` and `## Story breakdown`) for Dimension 8. Read it with
+  `Read <<epic_plan>>`. Empty otherwise.
+- **Epic delivery log**: `<<epic_delivery_log>>` — for a story under an epic, an absolute path to the
+  staged parent-epic `<!-- epic-delivery-log:v1 -->` comment listing what each predecessor story actually
+  delivered (or `(none yet)`). Read it with `Read <<epic_delivery_log>>`. Dimension 8's "consumes only
+  what's shipped" check reads this. Empty otherwise.
 - **Live sub-issues**: `<<live_slices>>` — the target's live sub-issue set in the sub-issue panel's
   own order, one row per entry (`#<N> — <state> — "<title>"`, plus `may-have-changed` when the
   orchestrator flagged it as edited since the plan comment was posted). A non-epic target's
@@ -106,6 +107,17 @@ Run only the dimensions named in the inputs.
    require (e.g. constitution §5)? A criterion with no coverage is a BLOCKER; an orphaned change is a
    SUGGESTION — except a contract-only seam pin whose boundary bullet defers the body to `#M`
    (Dimension 4's seam carve-out): that is sanctioned residue of an operator scope cut, not scope creep.
+
+   **Section ownership** *(runs on every plan)*. The schema gives each fact one **owning** section;
+   every other section cites it by name instead of restating its substance. List the headings
+   (`grep -n "^## " <<plan_body>>`) and flag a fact whose substance is re-argued outside its owner:
+   name the fact, quote the owning line, and quote each restating line with its
+   `<<plan_body>>:<line>` anchor. A fact restated rather than cited in any other section is a
+   SUGGESTION — a bare cross-reference by section name is correct and is never a finding. A plan body
+   **over the 65,536-character cap** is a BLOCKER: it cannot be posted at all, so the plan is
+   unexecutable in the literal sense the severity bar names. **Size is evidence, never the
+   violation** — `wc -m <<plan_body>>` past half the cap is the signal to run this audit, not a
+   finding in itself, and the finding is always the restated fact and the sections carrying it.
 
 4. **Implementation readiness.** The executable-vs-vague bar. **Every place the plan defers a decision a
    developer would have to make before writing code is a BLOCKER** — the plan is where those decisions
@@ -238,8 +250,9 @@ Run only the dimensions named in the inputs.
 
 ## Evidence is mandatory
 
-Every finding cites at least one of: a quoted phrase from the plan (or, for dimension 8, from
-`<<epic_plan>>`); a file path + line range or section heading in the workspace docs/codebase (read via
+Every finding cites at least one of: a quoted phrase from the plan, optionally anchored as
+`<<plan_body>>:<line>` (or, for dimension 8, from `<<epic_plan>>`); a file path + line range or section
+heading in the workspace docs/codebase (read via
 `Read <<grounding_workspace>>/...`); a comment by author + date in the issue thread (revise mode); or
 whatever a dimension's own "Evidence" sentence names in addition. If you cannot quote evidence, **drop
 the finding.** "Seems risky" without a quote and a concrete alternative does not pass the bar. Do not

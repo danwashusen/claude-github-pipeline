@@ -14,6 +14,12 @@ story; independent of whether the epic *plan* itself already exists, see the nex
 **Run the spine first.** Read [`plan-spine.md`](plan-spine.md) and execute it end to end. The deltas
 this route supplies:
 
+- **Persist (spine S8).** No prior plan → the spine's `comment` as written. A prior plan
+  (`facts.plan.present`) → `gh_persist.py edit-comment <owner/repo> <facts.plan.comment_id>
+  "<facts.scratch>/plan.md"`, the same in-place update `revise.md` uses, and under the same rule: the
+  staged body is a full replacement authored against the schema, never a delta appended to what is
+  there. This route owns its own revise path, so it names the op rather than inheriting a default.
+
 - **Bootstrap the epic plan when absent (a judgment fill, not a named path).** If
   `facts.story.epic_plan.present` is false, the open parent epic has no plan yet. Author the epic plan
   first (the `epic.md` mechanics, run inline against `facts.story` — grounding stays at `main`, the

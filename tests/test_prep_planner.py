@@ -29,6 +29,7 @@ import contextlib
 import io
 import json
 import os
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -1122,6 +1123,92 @@ class DeliverableSubIssueFactsTests(PrepPlannerSandboxTestCase):
     def test_plan_updated_at_rides_in_the_plan_facts(self):
         envelope = self._envelope(issue="250", fixture_case="prep_planner_slices_rescoped")
         self.assertEqual(envelope["plan"]["updated_at"], "2026-03-01T00:00:00Z")
+
+    def test_live_plan_size_rides_in_the_plan_facts_in_both_units(self):
+        # #38: how close the live plan already is to the cap, knowable before the session invests in
+        # grounding and drafting. Both units because the cap is CHARACTERS while the write receipts
+        # report bytes — forwarding gh_gather's `marker_comment_bytes` as "the size" would understate
+        # a multibyte body's headroom against a character limit.
+        envelope = self._envelope(issue="250", fixture_case="prep_planner_slices_rescoped")
+        plan = envelope["plan"]
+        self.assertIn("body_chars", plan)
+        self.assertIn("body_bytes", plan)
+        self.assertEqual(plan["body_limit_chars"], 65536)
+        self.assertGreater(plan["body_chars"], 0)
+        self.assertGreaterEqual(plan["body_bytes"], plan["body_chars"])
+
+    def test_a_plan_under_the_cap_raises_no_attention_line(self):
+        # Strictly conditional: an ordinary plan is not worth a line, and a canonical run's
+        # `attention` is asserted empty elsewhere.
+        envelope = self._envelope(issue="250", fixture_case="prep_planner_slices_rescoped")
+        self.assertFalse(
+            [line for line in envelope["attention"] if "characters against" in line],
+            envelope["attention"],
+        )
+
+    def test_an_over_cap_live_plan_raises_exactly_one_attention_line(self):
+        # The failure #38 reported: the revise was refused at the persist step, after grounding, the
+        # gates, drafting and the whole reviewer loop had been spent. An already-unwritable plan is
+        # knowable from the facts block before any of that. The fixture is derived rather than
+        # committed — a 65 KB marker body in the repo would be dead weight.
+        src = shimenv.fixture_case_dir("prep_planner_slices_rescoped")
+        with tempfile.TemporaryDirectory() as tmp:
+            case = Path(tmp) / "over_cap"
+            shutil.copytree(src, case)
+            comments_path = case / "comments.json"
+            comments = json.loads(comments_path.read_text(encoding="utf-8"))
+            for comment in comments:
+                if "<!-- implementation-plan:v1 -->" in (comment.get("body") or ""):
+                    comment["body"] = comment["body"] + ("\npadding" * 9000)
+                    break
+            else:
+                self.fail("fixture no longer carries an implementation-plan marker comment")
+            comments_path.write_text(json.dumps(comments), encoding="utf-8")
+
+            args = ["250", "octo/widgets", "--root", str(self.root), "--scratch-dir", self.scratch]
+            result = self._run(args, fixture_case="prep_planner_slices_rescoped",
+                               extra_env={"GH_SHIM_FIXTURES": str(case)}, cwd=str(self.root))
+            self.assertEqual(result.returncode, 0, msg="stderr: %s" % result.stderr)
+            envelope = _parse_one_envelope(result.stdout)
+            self.assertEqual(envelope["status"], "ok", "an over-cap plan is a warning, not a refusal")
+            self.assertGreater(envelope["plan"]["body_chars"], 65536)
+            flagged = [line for line in envelope["attention"] if "characters against" in line]
+            self.assertEqual(len(flagged), 1, envelope["attention"])
+            self.assertIn("cannot be edited or reposted as-is", flagged[0])
+
+    def test_a_plan_exactly_at_the_limit_raises_no_attention_line(self):
+        # PR #39 review finding 2. gh_persist's gate is `> limit`, so a body AT the limit writes
+        # fine. Warning "it cannot be edited or reposted as-is" there would be false, and would send
+        # the operator into a re-author they do not need. The two comparisons must agree.
+        src = shimenv.fixture_case_dir("prep_planner_slices_rescoped")
+        with tempfile.TemporaryDirectory() as tmp:
+            case = Path(tmp) / "at_cap"
+            shutil.copytree(src, case)
+            comments_path = case / "comments.json"
+            comments = json.loads(comments_path.read_text(encoding="utf-8"))
+            for comment in comments:
+                if "<!-- implementation-plan:v1 -->" in (comment.get("body") or ""):
+                    body = comment["body"]
+                    comment["body"] = body + "x" * (65536 - len(body))
+                    break
+            else:
+                self.fail("fixture no longer carries an implementation-plan marker comment")
+            comments_path.write_text(json.dumps(comments), encoding="utf-8")
+
+            args = ["250", "octo/widgets", "--root", str(self.root), "--scratch-dir", self.scratch]
+            result = self._run(args, fixture_case="prep_planner_slices_rescoped",
+                               extra_env={"GH_SHIM_FIXTURES": str(case)}, cwd=str(self.root))
+            envelope = _parse_one_envelope(result.stdout)
+            self.assertEqual(envelope["plan"]["body_chars"], 65536)
+            self.assertFalse(
+                [line for line in envelope["attention"] if "characters against" in line],
+                envelope["attention"],
+            )
+
+    def test_no_size_keys_when_no_plan_exists(self):
+        envelope = self._envelope(issue="200", fixture_case="prep_planner_row_default")
+        self.assertFalse(envelope["plan"]["present"])
+        self.assertNotIn("body_chars", envelope["plan"])
 
     def test_childless_target_has_no_slices_key_and_no_extra_gh_call(self):
         envelope = self._envelope(issue="200", fixture_case="prep_planner_row_default")

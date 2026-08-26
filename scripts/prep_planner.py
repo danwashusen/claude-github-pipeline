@@ -214,6 +214,7 @@ from pipelib.decisions import (  # noqa: E402
     needs_decision,
 )
 from pipelib.envelope import EXIT_OK, EXIT_USAGE_ERROR, emit_needs_decision, emit_ok  # noqa: E402
+from pipelib.limits import BODY_CHAR_LIMIT  # noqa: E402
 from pipelib.spill import spill_bytes  # noqa: E402
 
 # The implementation-plan marker (skills/planner/references/plan-schema.md;
@@ -1276,6 +1277,16 @@ def build_facts(issue_number, repo, root=".", scratch_dir=None, refresh=False, c
         plan_facts["body_mode"] = issue_envelope.get("marker_comment_mode")
         if issue_envelope.get("marker_comment_mode") == "path":
             plan_facts["body_path"] = issue_envelope.get("marker_comment_path")
+        # #38: how close the LIVE plan already is to the platform's per-body cap, knowable before
+        # the session invests in grounding and drafting. Both units, because the cap is measured in
+        # CHARACTERS while the write receipts report bytes — forwarding gh_gather's
+        # `marker_comment_bytes` as "the size" would silently understate a multibyte body's headroom
+        # against a character limit. `plan_body` is already in hand (the sha extraction above read
+        # it), so this costs no round-trip and no second read.
+        if plan_body is not None:
+            plan_facts["body_chars"] = len(plan_body)
+            plan_facts["body_bytes"] = len(plan_body.encode("utf-8"))
+            plan_facts["body_limit_chars"] = BODY_CHAR_LIMIT
 
     # 3) Research dossier — scan the ALREADY-fetched thread (no second gh call).
     thread_list = _load_thread(issue_envelope)
@@ -1714,6 +1725,21 @@ def build_facts(issue_number, repo, root=".", scratch_dir=None, refresh=False, c
                 "grounding checkout has uncommitted changes — the plan footer SHA may not "
                 "reflect the files read"
             )
+
+    # #38: a revise whose live plan is already at or over the cap cannot be persisted at all — the
+    # marker comment is unwritable by any endpoint, so the only route is a compacted re-author.
+    # Surfaced here rather than discovered at the persist step, after grounding, the gates, drafting
+    # and the reviewer loop have been spent. Strictly conditional: a canonical run's `attention` is
+    # asserted empty, and a plan comfortably under the cap is not worth a line. The comparison is
+    # `>`, matching gh_persist's gate exactly — a body AT the limit still writes, so warning that it
+    # "cannot be reposted" would be false and would send the operator into a needless re-author.
+    plan_chars = facts["plan"].get("body_chars")
+    if plan_chars is not None and plan_chars > BODY_CHAR_LIMIT:
+        facts["attention"].append(
+            "live plan comment is %d characters against a %d limit — it cannot be edited or "
+            "reposted as-is; re-author it within the cap before persisting (see the plan schema's "
+            "section-ownership rule)" % (plan_chars, BODY_CHAR_LIMIT)
+        )
 
     sections = {}
     for key, value in issue_envelope.items():

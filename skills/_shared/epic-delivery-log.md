@@ -30,8 +30,12 @@ Go through the single write path — never hand-roll `gh` (a raw `gh api` / `Wri
 
 > `${CLAUDE_PLUGIN_ROOT}/scripts/gh_persist.py comment <owner/repo> issue <epic-N> <staged-body> [--delete-marker-id <existing log comment id>]`
 
-A plain create when the comment is absent; a delete-and-repost when it exists (the same mechanic the planner uses for its plan comment in revise mode and the evaluator uses for its health cache). There is no in-place edit op — append by re-staging the full body and reposting. Idempotent: if a line for `#<story>` already exists, update it in place in the staged body rather than duplicating.
+A plain create when the comment is absent; a delete-and-repost when it exists (the same mechanic the evaluator uses for its health cache). Append by re-staging the full body and reposting. Idempotent: if a line for `#<story>` already exists, update it in place in the staged body rather than duplicating.
+
+An in-place `gh_persist.py edit-comment` op does exist, and the planner's revise now uses it for the plan comment — but **the log deliberately does not**. Nothing here depends on a stable comment URL or on preserving edit history, and delete-and-repost is the mechanic this writer is specified and tested against; adopting the op would be a change to make on its own evidence, not a side effect of the planner's.
 
 ## Reading it (planner)
 
 Fetch the `<!-- epic-delivery-log:v1 -->` comment (`(none yet)` if absent). A `Consumes:` claim in a story's `## Epic contract` must name a contract already recorded here, **with a matching shape**; a divergence between a recorded shape and the epic plan's pinned `## Story contracts` is the planner's signal to re-plan the epic before grounding later stories on a stale contract.
+
+That comparison only works while the two sides stay independent. When an epic revise compresses a merged story's `## Story contracts` entry, the entry's `delivers` clause is preserved **verbatim as originally pinned** and is never re-pinned to the shape this log records — the compression is lossy in narration only. Re-pinning would leave the check comparing the log against a copy of itself, silently and permanently: no divergence could ever surface again, and each individual re-pin looks like a tidy-up.

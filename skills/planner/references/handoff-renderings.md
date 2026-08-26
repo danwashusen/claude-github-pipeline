@@ -252,8 +252,9 @@ answers), with a re-run breadcrumb. `plan: ✗`.
 **Why:** every part of #142 is gated by `OQ-08` (phone vs video), tracked in question #212 (audience:clinical, audience:business). Planning now would lock a guess. Answer #212 in its thread, then re-run `/github-pipeline:planner #142`. (If no companion question existed, this would instead point at `/github-pipeline:drafter` to file one first.)
 ```
 
-**Revise mode — plan refreshed.** Same forward shape; the `Issue:` line carries the **new** comment URL
-(the stale one was deleted via `--delete-marker-id`). The worked example below is the **SOFT / continue**
+**Revise mode — plan refreshed.** Same forward shape; the `Issue:` line carries the plan comment's
+**unchanged** URL — a revise updates that comment in place (`gh_persist.py edit-comment`), so the URL a
+prior handoff published still resolves. The worked example below is the **SOFT / continue**
 shape — `Grounding:` still reads the open PR head (`142-add-csv-export@e5f6a7b`), correctly, since a SOFT
 revise never closes that PR. On a HARD "Start fresh" the skill closes the superseded PR via
 `gh_persist.py close-pr` with the staged `Re-plan superseded this PR` supersession comment, re-runs prep,
@@ -264,7 +265,7 @@ the closed branch; `Why:` names the closed PR # and that it carries the superses
 ```
 ## Handoff
 
-**Issue:** #142 — Add CSV export · open · feature · plan: ✓ (https://github.com/owner/repo/issues/142#issuecomment-YYYYY)
+**Issue:** #142 — Add CSV export · open · feature · plan: ✓ (https://github.com/owner/repo/issues/142#issuecomment-XXXXX)
 **Grounding:** read at 142-add-csv-export@e5f6a7b · docs/architecture.md §3 (service layer), §7 (export pipeline); docs/constitution.md §6 (logging) · full detail in the plan's ## Doc grounding
 
 **Workspace:** <the PR's worktree under .worktrees/> — start the next session there
