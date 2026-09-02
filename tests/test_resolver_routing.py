@@ -1220,6 +1220,133 @@ class PhaseScopedReviewTests(unittest.TestCase):
                     "%s still names the retired fix sub-agent contract %r" % (path.name, token),
                 )
 
+class ChangesLinkHandoffTests(unittest.TestCase):
+    """The resolver pushes once per phase (plus one commit per review-loop iteration), so its handoff
+    is the operator's entry point for reviewing what the run shipped. The `Changes:` line carries that
+    link. It is defined in _shared/handoff-format.md (schema fence + omission rule) and only RENDERED
+    here, per CLAUDE.md's render-don't-restate rule. Two URL forms, both verified live against a real
+    PR: `<pr-url>/files/<a>..<b>` resolves only when the left SHA is a commit IN the PR (continue
+    mode); the PR's base commit 404s, so a fresh run — where the whole PR is the run's changes — links
+    the plain `<pr-url>/files`. These tests pin the definition, the per-shape presence/absence, and the
+    two link forms."""
+
+    RENDERINGS = REFERENCES_DIR / "handoff-renderings.md"
+    HANDOFF_FORMAT = REPO_ROOT / "skills" / "_shared" / "handoff-format.md"
+    SPINE = PLAYBOOKS_DIR / "resolve-spine.md"
+
+    # Section heading -> does that shape's run push commits?
+    SHAPES_WITH_PUSH = (
+        "## Forward — standard or story PR opened / updated",
+        "## Re-route — multi-phase, non-final code phase pushed",
+        "## Terminal-with-action — multi-phase, next phase is operator / decision-only",
+        "## Forward — multi-phase, last planned phase shipped",
+        "## In progress — Epic integration draft PR open (stories remain)",
+        "## Forward — Epic integration PR",
+        "## Re-route → planner",
+    )
+    SHAPES_WITHOUT_PUSH = (
+        "## Re-route → drafter (fitness audit)",
+        "## Re-route → drafter (doc conflict)",
+        "## Terminal — non-PR resolution",
+        "## Terminal — question-type issue",
+    )
+
+    def _sections(self):
+        """Split the reference into its `## ` shapes. Headings INSIDE a fence don't count — every
+        worked shape opens with a fenced `## Handoff` line of its own."""
+        lines = self.RENDERINGS.read_text(encoding="utf-8").splitlines()
+        out, head, buf, in_fence = {}, None, [], False
+        for line in lines:
+            if line.startswith("```"):
+                in_fence = not in_fence
+            elif not in_fence and line.startswith("## "):
+                if head is not None:
+                    out[head] = "\n".join(buf)
+                head, buf = line.strip(), []
+                continue
+            buf.append(line)
+        if head is not None:
+            out[head] = "\n".join(buf)
+        return out
+
+    def test_shared_owns_the_definition(self):
+        text = self.HANDOFF_FORMAT.read_text(encoding="utf-8")
+        self.assertIn(
+            "**Changes:**", text,
+            "_shared/handoff-format.md's schema fence must carry the Changes: line",
+        )
+        self.assertIn(
+            "- **`Changes:`**", text,
+            "_shared/handoff-format.md must carry the Changes: omission rule",
+        )
+        rule = text.split("- **`Changes:`**", 1)[1].split("\n", 1)[0]
+        self.assertIn(
+            "resolver-only", rule,
+            "the Changes: rule must scope the line to the resolver, as Cleanup: is to the evaluator",
+        )
+        self.assertIn(
+            "not a state marker", rule,
+            "the Changes: payload is free-form text — it must be excluded from the closed sets",
+        )
+        # Free-form payload => no closed-set table row (the table rows are `| Field | Values |`).
+        self.assertNotIn(
+            "| Issue `changes`", text,
+            "Changes: must not gain a closed-set vocabulary row",
+        )
+
+    def test_every_pushing_shape_carries_the_line(self):
+        sections = self._sections()
+        for head in self.SHAPES_WITH_PUSH:
+            self.assertIn(head, sections, "handoff-renderings.md must carry the %r shape" % head)
+            self.assertIn(
+                "**Changes:**", sections[head],
+                "%r pushed commits — its shape must render the Changes: review link" % head,
+            )
+
+    def test_no_push_shapes_omit_the_line(self):
+        sections = self._sections()
+        for head in self.SHAPES_WITHOUT_PUSH:
+            self.assertIn(head, sections, "handoff-renderings.md must carry the %r shape" % head)
+            self.assertNotIn(
+                "**Changes:**", sections[head],
+                "%r opened no PR and pushed nothing — a Changes: link would be a dangling URL" % head,
+            )
+
+    def test_rendered_links_use_a_verified_url_form(self):
+        text = self.RENDERINGS.read_text(encoding="utf-8")
+        rendered = [ln for ln in text.splitlines() if ln.startswith("**Changes:**")]
+        self.assertTrue(rendered, "no Changes: line is actually rendered in a worked shape")
+        range_form = re.compile(r"/pull/\d+/files/[0-9a-f]{7}\.\.[0-9a-f]{7}$")
+        whole_form = re.compile(r"/pull/\d+/files$")
+        for line in rendered:
+            url = line.rsplit(" ", 1)[-1]
+            self.assertTrue(
+                range_form.search(url) or whole_form.search(url),
+                "%r is neither verified form: <pr-url>/files/<a>..<b> (continue mode) nor "
+                "<pr-url>/files (fresh run / post-rebase). A compare/ link or a bare PR url "
+                "does not land the reader on the PR's reviewable diff." % url,
+            )
+            if range_form.search(url):
+                lo, hi = url.rsplit("/", 1)[-1].split("..")
+                self.assertIn(
+                    "%s..%s" % (lo, hi), line,
+                    "the rendered SHA range and the link's range must agree",
+                )
+
+    def test_spine_names_the_range_source(self):
+        text = self.SPINE.read_text(encoding="utf-8")
+        self.assertIn(
+            "facts.workspace.sha", text,
+            "the spine must name the session-entry SHA as the range's left side",
+        )
+        self.assertIn(
+            "after** the review loop settles", text,
+            "the spine must place the HEAD read after the loop settles — its fix rounds push commits, "
+            "so an earlier read names a range that stops short of what the run shipped. (4.11.0 "
+            "retired the review-loop sub-agent, so there is no final_pushed_sha to warn off any more.)",
+        )
+
+
 
 if __name__ == "__main__":
     unittest.main()
