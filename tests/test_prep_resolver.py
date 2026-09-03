@@ -36,6 +36,7 @@ SCRIPT = SCRIPTS_DIR / "prep_resolver.py"
 
 sys.path.insert(0, str(SCRIPTS_DIR))
 
+import parse  # noqa: E402  (the shared `## Phase tracker` scanner the tracker fact composes)
 import prep_resolver  # noqa: E402  (import after sys.path setup, by necessity)
 from tests.support import envelope_asserts, gitsandbox, shimenv  # noqa: E402
 
@@ -1110,7 +1111,10 @@ class TrackerFactTests(PrepResolverSandboxTestCase):
         self.assertTrue(tracker["present"])
         self.assertEqual(
             tracker["rows"][0],
-            {"checked": True, "phase": 1, "title": "substrate", "commit_sha": "abc1111"},
+            {
+                "checked": True, "phase": 1, "title": "substrate",
+                "commit_sha": "abc1111", "annotation": None,
+            },
         )
         self.assertEqual([row["phase"] for row in tracker["rows"]], [1, 2, 3, 4, 5, 6])
 
@@ -1191,12 +1195,81 @@ class TrackerDiffUnitTests(unittest.TestCase):
     """Direct tests of `build_tracker_diff`, the pure classifier — no subprocess, no shim."""
 
     @staticmethod
-    def _row(phase, title, checked=True, sha="abc1234"):
-        return {"phase": phase, "title": title, "checked": checked, "commit_sha": sha if checked else None}
+    def _row(phase, title, checked=True, sha="abc1234", annotation=None):
+        return {
+            "phase": phase,
+            "title": title,
+            "checked": checked,
+            "commit_sha": sha if checked else None,
+            "annotation": annotation,
+        }
 
     @staticmethod
     def _phase(number, title):
         return {"number": number, "title": title}
+
+    def test_a_ticked_operator_row_is_not_reported_as_drift(self):
+        # #48 review, finding 1: the row's `(operator action <ISO-date>)` used to land inside `title`,
+        # so EVERY operator phase read as `retitled` with no drift present — and the rebuild's "adopt
+        # the plan's title" would then erase the date, the only record that the phase landed.
+        rows = parse.scan_phase_tracker(
+            "## Phase tracker\n- [x] Phase 3 — the measurement (operator action 2026-06-04)\n"
+        )
+        diff = prep_resolver.build_tracker_diff(
+            rows["rows"], [self._phase(3, "the measurement")], rows["unparsed"]
+        )
+        self.assertEqual(diff["retitled"], [])
+        self.assertFalse(diff["conflict"])
+        self.assertEqual(rows["rows"][0]["annotation"], "operator action 2026-06-04")
+
+    def test_unreadable_rows_gate_rather_than_rebuild(self):
+        # #48 review, finding 2: a section whose rows do not parse has an UNKNOWN tick state. It must
+        # not rebuild silently — that would guess what shipped, which is what this fact prevents.
+        rows = parse.scan_phase_tracker("## Phase tracker\n- [x] Phase 5c — nope (commit abc1234)\n")
+        diff = prep_resolver.build_tracker_diff(
+            rows["rows"], [self._phase(1, "a")], rows["unparsed"]
+        )
+        self.assertEqual(diff["unparsed"], ["- [x] Phase 5c — nope (commit abc1234)"])
+        self.assertTrue(diff["conflict"])
+
+    def test_two_rows_for_one_phase_number_gate(self):
+        # Reachable on a real tracker, not only a hand-edit: the frozen worked instance shows
+        # free-form label rows (`- [ ] Phase 2-measurement (operator)`) that parse to the same number
+        # as `Phase 2`. Two rows for one phase cannot say what shipped.
+        rows = parse.scan_phase_tracker(
+            "## Phase tracker\n- [ ] Phase 2 — harness\n- [ ] Phase 2-measurement (operator)\n"
+        )
+        self.assertEqual([row["phase"] for row in rows["rows"]], [2, 2])
+        diff = prep_resolver.build_tracker_diff(rows["rows"], [self._phase(2, "harness")])
+        self.assertEqual(diff["duplicated"], [2])
+        self.assertTrue(diff["conflict"])
+
+    def test_an_ambiguous_title_names_no_destination(self):
+        # #48 review, finding 4: `setdefault` made this first-wins, so the gate could quote a
+        # destination picked on nothing better than list order. Two candidates now yield none.
+        row = [self._row(7, "integration tests")]
+        diff = prep_resolver.build_tracker_diff(
+            row, [self._phase(3, "integration tests"), self._phase(5, "Integration  Tests")]
+        )
+        self.assertEqual(diff["shifted"], [])
+        self.assertEqual(diff["removed_shipped"], [{"phase": 7, "title": "integration tests", "commit_sha": "abc1234"}])
+        self.assertTrue(diff["conflict"])
+
+    def test_a_sole_matching_title_still_names_its_destination(self):
+        # The uniqueness rule must not disable the useful case.
+        row = [self._row(7, "the proof")]
+        diff = prep_resolver.build_tracker_diff(row, [self._phase(1, "substrate"), self._phase(2, "the proof")])
+        self.assertEqual(diff["shifted"][0]["plan_phase"], 2)
+
+    def test_the_absent_tracker_is_a_factory_not_a_shared_constant(self):
+        # #48 review, finding 5: `dict(CONSTANT)` is shallow, so every "absent" fact shared one
+        # nested `diff` and `rows` with the constant. Preps compose in-process by design, so the
+        # first such caller would see another call's rows on a fact reporting `present: False`.
+        first, second = prep_resolver._absent_tracker(), prep_resolver._absent_tracker()
+        first["diff"]["missing"].append(99)
+        first["rows"].append({"phase": 1})
+        self.assertEqual(second["diff"]["missing"], [])
+        self.assertEqual(second["rows"], [])
 
     def test_shifted_wins_over_removed_shipped(self):
         # A ticked row whose number is gone but whose title matches another phase is work that MOVED.

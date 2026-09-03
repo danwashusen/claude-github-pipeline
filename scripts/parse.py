@@ -1026,47 +1026,82 @@ def run_phases(args):
 # `prep_resolver` (continue mode: the row set to reconcile against the plan) — which is why it lives
 # here rather than in either one.
 
-# `## Phase tracker` bullet grammar (docs/specs/resolver.md "Artifacts written"): `- [x] Phase N —
-# <title> (commit <sha>)` / `- [ ] Phase N — <title>` (unshipped). `\d+` only, matching
-# `_PHASE_HEAD_RE`'s integer-only phase labels — a `Phase 5c` row does not parse, by construction.
+# `## Phase tracker` bullet grammar (docs/specs/examples/phase-tracker.md, the frozen worked
+# instance): `- [x] Phase N — <title> (commit <sha>)` / `- [ ] Phase N — <title>` (unshipped) /
+# `- [x] Phase N — <title> (operator action <ISO-date>)` for an operator/decision-only tick. `\d+`
+# only, matching `_PHASE_HEAD_RE`'s integer-only phase labels — a `Phase 5c` row does not parse, by
+# construction.
+#
+# The trailing annotation is stripped from `title` and captured separately, and the alternation is
+# restricted to the CLOSED set (`commit …` / `operator …`) on purpose: a greedy "any parenthetical"
+# rule would eat a title that legitimately ends in one ("the flag (behind a feature gate)"), while
+# not stripping at all leaves an operator row's date inside `title` — where it compares unequal to
+# the plan's title on every single run and reads as drift that is not there.
 _PHASE_TRACKER_ROW_RE = re.compile(
-    r"^-\s*\[( |x|X)\]\s*Phase\s+(\d+)\s*(?:—|-)\s*(.+?)(?:\s*\(commit\s+([0-9a-f]{7,40})\))?$"
+    r"^-\s*\[( |x|X)\]\s*Phase\s+(\d+)\s*(?:—|-)\s*(.+?)"
+    r"(?:\s*\((?:commit\s+([0-9a-f]{7,40})|(operator[^()]*))\))?$"
 )
 
+# A line that *presents* as a checklist row. Used to tell "this row did not parse" (evidence that the
+# tracker's tick state is unknown) from "this line is prose inside the section" (harmless).
+_PHASE_TRACKER_ROWLIKE_RE = re.compile(r"^-\s*\[")
 
-def parse_phase_tracker(pr_body_text):
-    """Parse a PR body's `## Phase tracker` checklist. Returns a list of `{"checked", "phase",
-    "title", "commit_sha"}` dicts, in source order. `commit_sha` is `None` for an unshipped (`- [ ]`)
-    row, or a shipped `operator`/`decision-only` row that records a date rather than a commit (this
-    parser only extracts the `(commit <sha>)` form; a non-code-shipping ticked row's own annotation
-    shape is read by the model directly from the staged PR body, not re-derived here). No
-    `## Phase tracker` section: returns `[]`. Never raises on malformed input — see the note above.
+
+def scan_phase_tracker(pr_body_text):
+    """Scan a PR body's `## Phase tracker` section. Returns
+    `{"present", "rows", "unparsed"}`:
+
+      - `present` — the **section exists**, independent of whether any row parsed. A caller must not
+        infer this from `rows`: a section whose rows are all malformed (a `Phase 5c` row from a
+        pre-#47 plan, a hand-edit) yields rows `[]` while the section, and its unknown tick state,
+        very much exist.
+      - `rows` — `{"checked", "phase", "title", "commit_sha", "annotation"}` dicts in source order.
+        `commit_sha` is set only for the `(commit <sha>)` form; `annotation` carries an
+        `operator …` annotation verbatim so a rebuild can preserve it (it is the only record that an
+        operator phase landed — `skills/resolver/references/dod-projection-rule.md`).
+      - `unparsed` — row-LIKE lines that did not parse, verbatim. Non-empty means the tick state
+        cannot be trusted; prose lines in the section are not collected.
+
+    Never raises: the tracker is a rendering the resolver rebuilds, so a bad row is a row to rewrite.
     """
     lines = (pr_body_text or "").splitlines()
     found = _find_section(lines, r"Phase tracker")
     if found is None:
-        return []
+        return {"present": False, "rows": [], "unparsed": []}
     start, end = found
 
-    entries = []
+    rows, unparsed = [], []
     for raw_line in lines[start:end]:
-        match = _PHASE_TRACKER_ROW_RE.match(raw_line.strip())
+        stripped = raw_line.strip()
+        if not stripped:
+            continue
+        match = _PHASE_TRACKER_ROW_RE.match(stripped)
         if match:
-            entries.append(
+            rows.append(
                 {
                     "checked": match.group(1) in ("x", "X"),
                     "phase": int(match.group(2)),
                     "title": match.group(3).strip(),
                     "commit_sha": match.group(4),
+                    "annotation": match.group(5),
                 }
             )
-    return entries
+        elif _PHASE_TRACKER_ROWLIKE_RE.match(stripped):
+            unparsed.append(stripped)
+    return {"present": True, "rows": rows, "unparsed": unparsed}
+
+
+def parse_phase_tracker(pr_body_text):
+    """The rows alone — `prep_planner`'s revise-mode view, which needs what shipped and nothing
+    about section presence. `scan_phase_tracker` is the full surface.
+    """
+    return scan_phase_tracker(pr_body_text)["rows"]
 
 
 def normalize_tracker_title(title):
     """Fold a tracker row / plan phase title for comparison: whitespace-collapsed and case-folded.
     A retitle that is only a re-wrap or a capitalization change is not drift, so the tracker diff
-    must not report it — see `prep_resolver.build_tracker_facts`.
+    must not report it — see `prep_resolver.build_tracker_diff`.
     """
     return " ".join((title or "").split()).casefold()
 

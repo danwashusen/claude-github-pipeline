@@ -497,7 +497,7 @@ def _build_attention(work_workspace_envelope, prior_pr_row, epic_facts, story_ep
 # computed here and the playbook only *acts* on it.
 
 
-def build_tracker_diff(rows, phases):
+def build_tracker_diff(rows, phases, unparsed=None):
     """Classify a `## Phase tracker` row set against the plan's parsed `## Phases`.
 
     Returns the `diff` dict. Titles are compared whitespace-collapsed and case-folded
@@ -519,12 +519,29 @@ def build_tracker_diff(rows, phases):
         number = phase.get("number")
         if number is not None:
             by_number[number] = phase
-    title_to_number = {}
+    # title -> every phase number carrying it. A LIST, not first-wins: two phases can share a
+    # normalized title ("integration tests"), and naming one of them as a `shifted` destination on
+    # nothing better than list order would quote a wrong number at the operator gate. An ambiguous
+    # title yields no destination, so the row falls through to the conservative case below.
+    title_to_numbers = {}
     for number, phase in by_number.items():
-        title_to_number.setdefault(parse.normalize_tracker_title(phase.get("title")), number)
+        title_to_numbers.setdefault(
+            parse.normalize_tracker_title(phase.get("title")), []
+        ).append(number)
+
+    def _sole_destination(title_key, excluding=None):
+        candidates = [n for n in title_to_numbers.get(title_key, []) if n != excluding]
+        return candidates[0] if len(candidates) == 1 else None
 
     row_numbers = {row["phase"] for row in rows}
     missing = sorted(number for number in by_number if number not in row_numbers)
+    # A tracker cannot hold two rows for one phase and still say what shipped. The frozen worked
+    # instance (docs/specs/examples/phase-tracker.md) shows free-form label rows like
+    # `- [ ] Phase 2-measurement (operator)`, which parse to the SAME number as `Phase 2` — so this
+    # is reachable on a real tracker, not just a hand-edit.
+    duplicated = sorted(
+        number for number in row_numbers if sum(1 for row in rows if row["phase"] == number) > 1
+    )
 
     dropped, retitled, shifted, removed_shipped = [], [], [], []
     for row in rows:
@@ -534,8 +551,8 @@ def build_tracker_diff(rows, phases):
         if plan_phase is not None:
             plan_title = plan_phase.get("title") or ""
             if row["checked"] and row_title_key != parse.normalize_tracker_title(plan_title):
-                elsewhere = title_to_number.get(row_title_key)
-                if elsewhere is not None and elsewhere != number:
+                elsewhere = _sole_destination(row_title_key, excluding=number)
+                if elsewhere is not None:
                     shifted.append(
                         {
                             "row_phase": number,
@@ -557,7 +574,7 @@ def build_tracker_diff(rows, phases):
         if not row["checked"]:
             dropped.append({"phase": number, "title": row["title"]})
             continue
-        elsewhere = title_to_number.get(row_title_key)
+        elsewhere = _sole_destination(row_title_key)
         if elsewhere is not None:
             shifted.append(
                 {
@@ -578,24 +595,43 @@ def build_tracker_diff(rows, phases):
         "retitled": retitled,
         "shifted": shifted,
         "removed_shipped": removed_shipped,
+        "unparsed": list(unparsed or []),
+        "duplicated": duplicated,
         # One unmissable top-level boolean the playbook gates on, mirroring `open_questions_gate`'s
         # `blocked`: the router must never have to derive a gate from a disjunction of lists.
-        "conflict": bool(shifted or removed_shipped),
+        #
+        # `unparsed` and `duplicated` conflict for a different reason than the other two: those two
+        # say shipped work moved or vanished, these say the tick state is UNKNOWABLE. Rebuilding
+        # under either would mean guessing what shipped, which is the one thing this fact exists to
+        # stop — so they gate rather than rebuild.
+        "conflict": bool(shifted or removed_shipped or unparsed or duplicated),
     }
 
 
-_ABSENT_TRACKER = {
-    "present": False,
-    "rows": [],
-    "diff": {
-        "missing": [],
-        "dropped": [],
-        "retitled": [],
-        "shifted": [],
-        "removed_shipped": [],
-        "conflict": False,
-    },
-}
+def _absent_tracker():
+    """The tracker fact when there is nothing to reconcile (fresh mode, or a continue-mode PR with no
+    `## Phase tracker` section).
+
+    A FACTORY, not a module-level constant copied with `dict(...)`: that copy is shallow, so every
+    caller would share one nested `diff` dict and one `rows` list with the constant itself, and the
+    first in-process mutation would corrupt every later call. Preps are composed in-process by
+    design (`build_facts` is the testable core other preps' docstrings point at), so that aliasing
+    is reachable rather than theoretical.
+    """
+    return {
+        "present": False,
+        "rows": [],
+        "diff": {
+            "missing": [],
+            "dropped": [],
+            "retitled": [],
+            "shifted": [],
+            "removed_shipped": [],
+            "unparsed": [],
+            "duplicated": [],
+            "conflict": False,
+        },
+    }
 
 
 def _build_tracker(prior_pr_fact, phases, repo, scratch_dir=None, cwd=None):
@@ -609,26 +645,34 @@ def _build_tracker(prior_pr_fact, phases, repo, scratch_dir=None, cwd=None):
     """
     notices = []
     if not prior_pr_fact or not prior_pr_fact.get("number"):
-        return dict(_ABSENT_TRACKER), notices, None
+        return _absent_tracker(), notices, None
 
     pr_facts, pr_notices, decision = gh_pr_gather.build_pr_facts(
         prior_pr_fact["number"], repo, scratch_dir=scratch_dir, cwd=cwd
     )
-    if decision is not None:
-        return None, notices, decision
+    # Merge BEFORE the decision check: `build_pr_facts` populates notices at each of its decision
+    # returns too, and the caller forwards them alongside the decision (the same shape as this
+    # module's issue-envelope forward) — dropping them would lose a diagnostic on the one path where
+    # the operator has least to go on.
     for notice in pr_notices or []:
         if notice not in notices:
             notices.append(notice)
+    if decision is not None:
+        return None, notices, decision
 
     pr_body = pr_facts.get("body")
     if pr_body is None and pr_facts.get("body_mode") == "path":
         pr_body = Path(pr_facts["body_path"]).read_text(encoding="utf-8")
-    rows = parse.parse_phase_tracker(pr_body)
+    scan = parse.scan_phase_tracker(pr_body)
 
     tracker = {
-        "present": bool(rows),
-        "rows": rows,
-        "diff": build_tracker_diff(rows, phases),
+        # `present` is whether the SECTION exists, never `bool(rows)`: a section whose rows are all
+        # malformed parses to zero rows while its unknown tick state is exactly what must be
+        # reconciled. The spine gates its whole reconciliation step on this flag, so conflating the
+        # two would skip the step precisely where it is needed.
+        "present": scan["present"],
+        "rows": scan["rows"],
+        "diff": build_tracker_diff(scan["rows"], phases, unparsed=scan["unparsed"]),
         "body_mode": pr_facts.get("body_mode"),
     }
     if pr_facts.get("body_mode") == "path":
@@ -784,10 +828,10 @@ def build_facts(issue_number, repo, root=".", scratch_dir=None, refresh=False, c
         tracker, tracker_notices, tracker_decision = _build_tracker(
             prior_pr_fact, phases, repo, scratch_dir=scratch_dir, cwd=cwd
         )
-        if _forward_decision(tracker_decision):
+        if _forward_decision(tracker_decision, notices=tracker_notices):
             return None
     else:
-        tracker, tracker_notices = dict(_ABSENT_TRACKER), []
+        tracker, tracker_notices = _absent_tracker(), []
 
     # 5) DoD facts (parse.parse_dod_bullets, pure core) — over the ISSUE body (the resolver
     #    projects ticks onto the issue's own DoD, distinct from prep_evaluator's per-closing-issue

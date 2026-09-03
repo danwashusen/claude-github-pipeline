@@ -89,20 +89,26 @@ Prep computed the classification in `facts.tracker.diff`:
 
 - `missing` (a plan phase with no row) → add it unticked. `dropped` (an unticked row with no plan
   phase) → remove it. `retitled` (a ticked row whose title drifted) → keep the tick and its
-  `(commit <sha>)`, adopt the plan's title. All three are a silent rebuild: no tick's meaning changes.
+  `(commit <sha>)` or `annotation` — an operator row's `(operator action <ISO-date>)` is the only
+  record that phase landed — and adopt the plan's title. All three are a silent rebuild: no tick's
+  meaning changes.
   Every **unticked** row is rewritten from its plan phase wholesale, title included — it has no tick
   and no commit to preserve, so its drift is not reported and needs no case of its own. That is the
   common shape after an insert: the tail row keeps its number and takes the new phase's title, and the
   displaced phase arrives as a `missing` row appended after it.
-- `diff.conflict` — `shifted` (a ticked row whose work now sits at a different phase number) or
-  `removed_shipped` (a ticked row whose phase is gone) — is shipped work moving or vanishing, which
-  the reference above classifies HARD at the planner. Reaching you means that gate was applied anyway
-  or the plan was hand-edited. Gate (`header: "Tracker drift"`), quoting each conflicting row with its
-  commit: **Re-plan** (default — re-route to `/github-pipeline:planner revise #<N>`) / **Rebuild
-  un-ticked** (write the reconciled rows with every conflicting row **unticked**, its displaced
-  `(commit <sha>)` preserved in a `## Tracker reconciliation` note in the PR body — the same
-  needs-re-verification posture as a DoD un-tick; never carry a tick onto work it did not ship) /
-  **Abort**.
+- `diff.conflict` gates, and covers two unlike reasons. **Shipped work moved or vanished**:
+  `shifted` (a ticked row whose work now sits at a different phase number) or `removed_shipped` (a
+  ticked row whose phase is gone), which the reference above classifies HARD at the planner — reaching
+  you means that gate was applied anyway or the plan was hand-edited. **The tick state is
+  unknowable**: `unparsed` (row-shaped lines prep could not read — a `Phase 5c` row from a pre-gate
+  plan, a hand-edit) or `duplicated` (two rows for one phase number). Rebuilding under either would
+  mean guessing what shipped, which is the one thing this step exists to prevent.
+  Gate (`header: "Tracker drift"`), quoting each conflicting row with its `(commit <sha>)` or
+  `annotation`: **Re-plan** (default — re-route to `/github-pipeline:planner revise #<N>`) /
+  **Rebuild un-ticked** (write the reconciled rows with every conflicting row **unticked**, its
+  displaced `(commit <sha>)`/`annotation` preserved in a `## Tracker reconciliation` note in the PR
+  body — the same needs-re-verification posture as a DoD un-tick; never carry a tick onto work it did
+  not ship) / **Abort**.
 
 Write the reconciled tracker with the same `edit-body` on the PR that S6 uses, then select the cursor
 from it. Never select a phase by row title.

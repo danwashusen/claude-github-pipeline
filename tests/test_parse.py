@@ -702,7 +702,15 @@ class PhaseTrackerParseTests(unittest.TestCase):
         )
         self.assertEqual(
             rows,
-            [{"checked": True, "phase": 1, "title": "the writer", "commit_sha": "abc1234"}],
+            [
+                {
+                    "checked": True,
+                    "phase": 1,
+                    "title": "the writer",
+                    "commit_sha": "abc1234",
+                    "annotation": None,
+                }
+            ],
         )
 
     def test_unticked_row_has_no_commit(self):
@@ -710,14 +718,46 @@ class PhaseTrackerParseTests(unittest.TestCase):
         self.assertEqual(rows[0]["checked"], False)
         self.assertIsNone(rows[0]["commit_sha"])
 
-    def test_operator_row_ticked_with_a_date_has_no_commit_sha(self):
-        # The documented carve-out: an operator/decision-only row records a date, not a commit. It is
-        # still SHIPPED (checked), so a caller must not infer "unshipped" from a null commit.
+    def test_operator_row_keeps_its_date_out_of_the_title(self):
+        # The date must NOT land in `title`: the tracker diff compares titles, so an operator row
+        # would read as drift on every run and the "adopt the plan's title" rebuild would erase the
+        # ISO date — the only record that the operator phase landed.
         rows = parse.parse_phase_tracker(
             "## Phase tracker\n- [x] Phase 3 — the measurement (operator action 2026-06-04)\n"
         )
         self.assertEqual(rows[0]["checked"], True)
         self.assertIsNone(rows[0]["commit_sha"])
+        self.assertEqual(rows[0]["title"], "the measurement")
+        self.assertEqual(rows[0]["annotation"], "operator action 2026-06-04")
+
+    def test_a_title_that_legitimately_ends_in_parens_is_preserved(self):
+        # The annotation alternation is restricted to the closed set for this reason: a greedy
+        # "any parenthetical" rule would silently eat part of a real title.
+        rows = parse.parse_phase_tracker(
+            "## Phase tracker\n- [ ] Phase 2 — the flag (behind a feature gate)\n"
+        )
+        self.assertEqual(rows[0]["title"], "the flag (behind a feature gate)")
+        self.assertIsNone(rows[0]["annotation"])
+
+    def test_section_presence_is_independent_of_whether_rows_parsed(self):
+        # A section whose rows are all malformed has zero rows AND an unknown tick state. A caller
+        # inferring presence from `rows` would skip reconciling exactly the tracker that needs it.
+        scan = parse.scan_phase_tracker("## Phase tracker\n- [x] Phase 5c — nope (commit abc1234)\n")
+        self.assertTrue(scan["present"])
+        self.assertEqual(scan["rows"], [])
+        self.assertEqual(scan["unparsed"], ["- [x] Phase 5c — nope (commit abc1234)"])
+
+    def test_prose_inside_the_section_is_not_evidence_of_an_unreadable_row(self):
+        scan = parse.scan_phase_tracker(
+            "## Phase tracker\nPhases ship one per session.\n- [x] Phase 1 — a (commit abc1234)\n"
+        )
+        self.assertEqual(scan["unparsed"], [])
+        self.assertEqual([row["phase"] for row in scan["rows"]], [1])
+
+    def test_absent_section_is_not_present(self):
+        self.assertEqual(
+            parse.scan_phase_tracker("no tracker"), {"present": False, "rows": [], "unparsed": []}
+        )
 
     def test_absent_section_returns_empty(self):
         self.assertEqual(parse.parse_phase_tracker("no tracker here"), [])
@@ -734,7 +774,9 @@ class PhaseTrackerParseTests(unittest.TestCase):
     def test_letter_suffixed_row_does_not_parse(self):
         # `\d+` only, matching `_PHASE_HEAD_RE`. A `Phase 5c` row is simply not a row — which is why
         # the tracker cannot represent the shape #46 forbids either.
-        self.assertEqual(parse.parse_phase_tracker("## Phase tracker\n- [x] Phase 5c — nope\n"), [])
+        scan = parse.scan_phase_tracker("## Phase tracker\n- [x] Phase 5c — nope\n")
+        self.assertEqual(scan["rows"], [])
+        self.assertEqual(len(scan["unparsed"]), 1)
 
     def test_it_never_raises_on_garbage(self):
         for body in ("## Phase tracker\nfree-form prose, no rows at all\n", "## Phase tracker\n- [x]\n"):

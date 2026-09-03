@@ -448,6 +448,21 @@ class TrackerReconciliationTests(unittest.TestCase):
         self.assertIn("Every **unticked** row is rewritten from its plan phase wholesale", self.flat)
         self.assertIn("takes the new phase's title", self.flat)
 
+    def test_the_two_unknowable_state_classes_gate_for_their_own_reason(self):
+        # #48 review: `unparsed` (rows prep could not read) and `duplicated` (two rows for one phase)
+        # gate because the tick state is unknowable, not because work moved. Rebuilding under either
+        # would guess what shipped.
+        self.assertIn("`unparsed`", self.flat)
+        self.assertIn("`duplicated`", self.flat)
+        self.assertIn("The tick state is\n  unknowable", self.spine.replace("\r\n", "\n"))
+        self.assertIn("mean guessing what shipped", self.flat)
+
+    def test_the_rebuild_preserves_an_operator_annotation_not_just_a_commit(self):
+        # An operator row's `(operator action <ISO-date>)` is the only record that phase landed, so a
+        # rebuild that preserved only `(commit <sha>)` would erase it.
+        self.assertIn("`(commit <sha>)` or `annotation`", self.flat)
+        self.assertIn("the only record that phase landed", self.flat)
+
     def test_conflict_is_a_gate_with_its_three_recorded_options(self):
         self.assertIn('header: "Tracker drift"', self.flat)
         for option in ("**Re-plan**", "**Rebuild un-ticked**", "**Abort**"):

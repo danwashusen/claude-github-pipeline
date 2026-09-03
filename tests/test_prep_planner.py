@@ -802,11 +802,15 @@ class ReviseFactsTests(PrepPlannerSandboxTestCase):
         self.assertIsNotNone(revise["open_pr"])
         self.assertEqual(revise["open_pr"]["headRefName"], "900-large-plan")
         self.assertEqual(len(revise["phase_tracker"]), 2)
+        # `annotation` (#48 review): the row's trailing `(operator action <ISO-date>)` when it has
+        # one, so a rebuild can preserve the only record that an operator phase landed. `None` here.
         self.assertEqual(revise["phase_tracker"][0], {
             "checked": True, "phase": 1, "title": "substrate", "commit_sha": "9999999",
+            "annotation": None,
         })
         self.assertEqual(revise["phase_tracker"][1], {
             "checked": False, "phase": 2, "title": "harness", "commit_sha": None,
+            "annotation": None,
         })
 
     def test_fresh_mode_has_no_revise_key(self):
@@ -1647,8 +1651,14 @@ class PureHelperUnitTests(unittest.TestCase):
         self.assertEqual(
             prep_planner._parse_phase_tracker(body),
             [
-                {"checked": True, "phase": 1, "title": "substrate", "commit_sha": "abc1234"},
-                {"checked": False, "phase": 2, "title": "harness", "commit_sha": None},
+                {
+                    "checked": True, "phase": 1, "title": "substrate",
+                    "commit_sha": "abc1234", "annotation": None,
+                },
+                {
+                    "checked": False, "phase": 2, "title": "harness",
+                    "commit_sha": None, "annotation": None,
+                },
             ],
         )
 
