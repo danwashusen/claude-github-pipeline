@@ -687,6 +687,72 @@ class ParsePhasesMalformedModuleTests(unittest.TestCase):
 # ============================================================================================
 
 
+class PhaseTrackerParseTests(unittest.TestCase):
+    """#46: `parse_phase_tracker` is import-only — no subcommand, no decision code.
+
+    The tracker is a rendering the resolver rebuilds every push (the plan's `## Phases` owns which
+    rows exist, the tracker owns which are ticked), so an unparseable row is a row to rewrite, never
+    a run to fail. That asymmetry against `parse_phases` is deliberate; these tests pin it so a later
+    editor does not "unify" the two.
+    """
+
+    def test_ticked_row_yields_phase_title_and_commit(self):
+        rows = parse.parse_phase_tracker(
+            "## Phase tracker\n- [x] Phase 1 — the writer (commit abc1234)\n"
+        )
+        self.assertEqual(
+            rows,
+            [{"checked": True, "phase": 1, "title": "the writer", "commit_sha": "abc1234"}],
+        )
+
+    def test_unticked_row_has_no_commit(self):
+        rows = parse.parse_phase_tracker("## Phase tracker\n- [ ] Phase 2 — the flag\n")
+        self.assertEqual(rows[0]["checked"], False)
+        self.assertIsNone(rows[0]["commit_sha"])
+
+    def test_operator_row_ticked_with_a_date_has_no_commit_sha(self):
+        # The documented carve-out: an operator/decision-only row records a date, not a commit. It is
+        # still SHIPPED (checked), so a caller must not infer "unshipped" from a null commit.
+        rows = parse.parse_phase_tracker(
+            "## Phase tracker\n- [x] Phase 3 — the measurement (operator action 2026-06-04)\n"
+        )
+        self.assertEqual(rows[0]["checked"], True)
+        self.assertIsNone(rows[0]["commit_sha"])
+
+    def test_absent_section_returns_empty(self):
+        self.assertEqual(parse.parse_phase_tracker("no tracker here"), [])
+        self.assertEqual(parse.parse_phase_tracker(""), [])
+        self.assertEqual(parse.parse_phase_tracker(None), [])
+
+    def test_section_ends_at_the_next_heading(self):
+        rows = parse.parse_phase_tracker(
+            "## Phase tracker\n- [x] Phase 1 — a (commit abc1234)\n\n## Follow-ups\n"
+            "- [x] Phase 9 — not a tracker row\n"
+        )
+        self.assertEqual([r["phase"] for r in rows], [1])
+
+    def test_letter_suffixed_row_does_not_parse(self):
+        # `\d+` only, matching `_PHASE_HEAD_RE`. A `Phase 5c` row is simply not a row — which is why
+        # the tracker cannot represent the shape #46 forbids either.
+        self.assertEqual(parse.parse_phase_tracker("## Phase tracker\n- [x] Phase 5c — nope\n"), [])
+
+    def test_it_never_raises_on_garbage(self):
+        for body in ("## Phase tracker\nfree-form prose, no rows at all\n", "## Phase tracker\n- [x]\n"):
+            self.assertEqual(parse.parse_phase_tracker(body), [])
+
+    def test_normalize_title_folds_whitespace_and_case(self):
+        self.assertEqual(
+            parse.normalize_tracker_title("End-to-end   Proof"),
+            parse.normalize_tracker_title("end-to-end proof"),
+        )
+
+    def test_prep_planner_uses_the_shared_parser_not_a_copy(self):
+        # Pins the consolidation: two preps consume this, so a third copy must not drift into being.
+        import prep_planner
+
+        self.assertIs(prep_planner._parse_phase_tracker, parse.parse_phase_tracker)
+
+
 class ParsePhasesCliTests(unittest.TestCase):
     def test_phases_happy_path_envelope_conformance(self):
         rc, out, err = _run_cli(

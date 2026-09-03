@@ -27,7 +27,8 @@ ${CLAUDE_PLUGIN_ROOT}/scripts/prep_resolver.py <issue> <owner/repo>
 It returns one JSON **facts block** (`architecture.md §4`): `target` (issue number/title/state/
 labels/`blocked_by`/`blocking`), `vector` (`type` × `mode` × `prior_pr_row`, plus `gate` on a gated
 row and `comment_only`), `suggested_playbook`, `prior_pr`, `plan` (present/SHA/comment-id/url),
-`phases` (parsed `## Phases`), `dod` (the issue's `## Definition of done` bullets, each with its
+`phases` (parsed `## Phases`), `tracker` (continue mode: the prior PR's `## Phase tracker` rows plus
+`diff` — the row set reconciled against `phases`, with `diff.conflict` the gate), `dod` (the issue's `## Definition of done` bullets, each with its
 annotation), `open_questions` + `open_questions_gate` (the hard gate), `audit_ref` (a **bare** branch
 name), `config` (the three gate-config blocks read from **this worktree's working tree**, uncommitted
 edits included; `config.source` names the checkout/branch/SHA and its dirty state), `distiller_bundle` (staged paths for the

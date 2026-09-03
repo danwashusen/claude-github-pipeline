@@ -25,8 +25,10 @@ verbatim — that is your S3 grounding, so the main loop never re-reads project 
 
 **Continue mode** (`vector.mode == continue`, `prior_pr` present — the ambient worktree carries
 the in-flight work prep asserted): you are resuming an in-flight PR. The distiller still runs (the thread may have moved), but the PR's own
-`## Phase tracker` — re-read from the existing PR body — is the authoritative record of which phases
-shipped; reconcile the issue-body DoD ticks against it per S6 before shipping the next phase. Skip the
+`## Phase tracker` — parsed by prep into `facts.tracker.rows`, never re-fetched — is the authoritative
+record of which phases **shipped**. It is not authoritative for which phases *exist*: the plan's
+`## Phases` (`facts.phases`) owns the row set, and S4 reconciles the two before anything is built.
+Reconcile the issue-body DoD ticks against it per S6 before shipping the next phase. Skip the
 S2 audit on continue mode (the audit is a fresh-implementation-start gate, not a per-push gate).
 
 ## S2 — Fitness-to-implement audit (fresh start only)
@@ -78,6 +80,32 @@ the last-planned-phase-shipped handoff. On continue mode, the current phase is t
 in the existing PR's `## Phase tracker` whose `depends-on` is satisfied. An operator/decision-only
 phase (`kind: operator | decision-only`) ships no commits — surface it via the operator-phase handoff
 rather than running it.
+
+**Reconcile the tracker before you read that cursor** (`facts.tracker.present`). A planner revise can
+insert a phase and renumber the unshipped tail (`skills/planner/references/revise-reconciliation.md`,
+"Inserting a phase after work has shipped"), so a tracker written by an earlier session can hold rows
+the current plan no longer has and lack rows it now does — and the cursor above selects by row number.
+Prep computed the classification in `facts.tracker.diff`:
+
+- `missing` (a plan phase with no row) → add it unticked. `dropped` (an unticked row with no plan
+  phase) → remove it. `retitled` (a ticked row whose title drifted) → keep the tick and its
+  `(commit <sha>)`, adopt the plan's title. All three are a silent rebuild: no tick's meaning changes.
+  Every **unticked** row is rewritten from its plan phase wholesale, title included — it has no tick
+  and no commit to preserve, so its drift is not reported and needs no case of its own. That is the
+  common shape after an insert: the tail row keeps its number and takes the new phase's title, and the
+  displaced phase arrives as a `missing` row appended after it.
+- `diff.conflict` — `shifted` (a ticked row whose work now sits at a different phase number) or
+  `removed_shipped` (a ticked row whose phase is gone) — is shipped work moving or vanishing, which
+  the reference above classifies HARD at the planner. Reaching you means that gate was applied anyway
+  or the plan was hand-edited. Gate (`header: "Tracker drift"`), quoting each conflicting row with its
+  commit: **Re-plan** (default — re-route to `/github-pipeline:planner revise #<N>`) / **Rebuild
+  un-ticked** (write the reconciled rows with every conflicting row **unticked**, its displaced
+  `(commit <sha>)` preserved in a `## Tracker reconciliation` note in the PR body — the same
+  needs-re-verification posture as a DoD un-tick; never carry a tick onto work it did not ship) /
+  **Abort**.
+
+Write the reconciled tracker with the same `edit-body` on the PR that S6 uses, then select the cursor
+from it. Never select a phase by row title.
 
 ## S5 — Do the work + the review loop
 
@@ -202,7 +230,8 @@ ${CLAUDE_PLUGIN_ROOT}/scripts/gh_persist.py edit-body <owner/repo> <issue> \
   "<facts.scratch>/issue-body-projected.md"
 ```
 
-Then update the PR's `## Phase tracker` (stage + `edit-body` on the PR). Never tick a bullet the
+Then update the PR's `## Phase tracker` (stage + `edit-body` on the PR) — the **reconciled** row set
+from S4, never the rows a prior session wrote. Never tick a bullet the
 phase's `closes-dod` doesn't claim (the resolver projects the planner's declaration, it doesn't infer).
 Never re-tick a bullet the evaluator rejected (`… evaluator rejected: …` is a **sticky veto** —
 resolve it by re-planning or a new phase, never by silent re-ticking). Never mark a multi-phase PR

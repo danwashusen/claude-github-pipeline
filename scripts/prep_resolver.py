@@ -95,6 +95,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 import config_block  # noqa: E402  (import after sys.path setup, by necessity; in-process composition)
 import gh_gather  # noqa: E402
+import gh_pr_gather  # noqa: E402  (continue mode only: the prior PR's body, for the tracker diff)
 import branching  # noqa: E402  (shared branch/type/prior-PR cores; aliased below)
 import parse  # noqa: E402
 import workspace  # noqa: E402
@@ -480,6 +481,161 @@ def _build_attention(work_workspace_envelope, prior_pr_row, epic_facts, story_ep
 # ---------------------------------------------------------------------------
 
 
+# ---------------------------------------------------------------------------
+# `## Phase tracker` reconciliation facts (continue mode only)
+# ---------------------------------------------------------------------------
+#
+# The tracker and the plan's `## Phases` are two artifacts keyed by the same integer phase numbers,
+# written by different sessions. The tracker is authoritative for **tick state** (what shipped); the
+# plan is authoritative for the **row set** (what exists). A planner revise may insert a phase and
+# renumber the unshipped tail (`skills/planner/references/revise-reconciliation.md`, "Inserting a
+# phase after work has shipped"), which changes the row set — and the resolver's continue cursor
+# selects by row number, so an unreconciled tracker silently points at different work and can read
+# as complete while a plan phase has no row at all.
+#
+# This is a fact, not a judgment: the diff is fully determined by the two artifacts, so it is
+# computed here and the playbook only *acts* on it.
+
+
+def build_tracker_diff(rows, phases):
+    """Classify a `## Phase tracker` row set against the plan's parsed `## Phases`.
+
+    Returns the `diff` dict. Titles are compared whitespace-collapsed and case-folded
+    (`parse.normalize_tracker_title`), so a re-wrap or a capitalization change is not drift.
+
+    `shifted` is tested BEFORE `removed_shipped`: a ticked row whose phase number is gone from the
+    plan but whose title matches some other plan phase is work that MOVED, which is the more specific
+    (and more alarming) finding — reporting it as "removed" would lose the destination number the
+    gate needs to quote.
+
+    A ticked row whose plan phase was merely *retitled* is NOT a conflict. `revise-reconciliation.md`
+    makes a shipped phase's `ships`/`deliverable`/`kind` change HARD at the planner, and `title` is
+    deliberately not on that list — so a cosmetic retitle is legitimately SOFT, and a title-only
+    conflict would fire on every one of them. A tracker row carries no `ships`, so the resolver
+    structurally cannot see the field that HARD list keys on; it must not invent a stricter rule.
+    """
+    by_number = {}
+    for phase in phases or []:
+        number = phase.get("number")
+        if number is not None:
+            by_number[number] = phase
+    title_to_number = {}
+    for number, phase in by_number.items():
+        title_to_number.setdefault(parse.normalize_tracker_title(phase.get("title")), number)
+
+    row_numbers = {row["phase"] for row in rows}
+    missing = sorted(number for number in by_number if number not in row_numbers)
+
+    dropped, retitled, shifted, removed_shipped = [], [], [], []
+    for row in rows:
+        number = row["phase"]
+        plan_phase = by_number.get(number)
+        row_title_key = parse.normalize_tracker_title(row["title"])
+        if plan_phase is not None:
+            plan_title = plan_phase.get("title") or ""
+            if row["checked"] and row_title_key != parse.normalize_tracker_title(plan_title):
+                elsewhere = title_to_number.get(row_title_key)
+                if elsewhere is not None and elsewhere != number:
+                    shifted.append(
+                        {
+                            "row_phase": number,
+                            "plan_phase": elsewhere,
+                            "title": row["title"],
+                            "commit_sha": row["commit_sha"],
+                        }
+                    )
+                else:
+                    retitled.append(
+                        {
+                            "phase": number,
+                            "row_title": row["title"],
+                            "plan_title": plan_title,
+                            "commit_sha": row["commit_sha"],
+                        }
+                    )
+            continue
+        if not row["checked"]:
+            dropped.append({"phase": number, "title": row["title"]})
+            continue
+        elsewhere = title_to_number.get(row_title_key)
+        if elsewhere is not None:
+            shifted.append(
+                {
+                    "row_phase": number,
+                    "plan_phase": elsewhere,
+                    "title": row["title"],
+                    "commit_sha": row["commit_sha"],
+                }
+            )
+        else:
+            removed_shipped.append(
+                {"phase": number, "title": row["title"], "commit_sha": row["commit_sha"]}
+            )
+
+    return {
+        "missing": missing,
+        "dropped": dropped,
+        "retitled": retitled,
+        "shifted": shifted,
+        "removed_shipped": removed_shipped,
+        # One unmissable top-level boolean the playbook gates on, mirroring `open_questions_gate`'s
+        # `blocked`: the router must never have to derive a gate from a disjunction of lists.
+        "conflict": bool(shifted or removed_shipped),
+    }
+
+
+_ABSENT_TRACKER = {
+    "present": False,
+    "rows": [],
+    "diff": {
+        "missing": [],
+        "dropped": [],
+        "retitled": [],
+        "shifted": [],
+        "removed_shipped": [],
+        "conflict": False,
+    },
+}
+
+
+def _build_tracker(prior_pr_fact, phases, repo, scratch_dir=None, cwd=None):
+    """Fetch the prior PR's body and diff its `## Phase tracker` against `phases`. Returns
+    `(tracker_facts, notices, decision_or_none)`.
+
+    One extra `gh pr view`, on continue mode only. `gh_gather` fetches an open PR's body and then
+    strips it (`_REFERENCE_FILTER_ONLY_FIELDS`) because it is only needed for reference filtering;
+    keeping it there would widen the payload every prep carries, so this targeted fetch is the
+    narrower change. Mirrors `prep_planner._build_revise_facts`.
+    """
+    notices = []
+    if not prior_pr_fact or not prior_pr_fact.get("number"):
+        return dict(_ABSENT_TRACKER), notices, None
+
+    pr_facts, pr_notices, decision = gh_pr_gather.build_pr_facts(
+        prior_pr_fact["number"], repo, scratch_dir=scratch_dir, cwd=cwd
+    )
+    if decision is not None:
+        return None, notices, decision
+    for notice in pr_notices or []:
+        if notice not in notices:
+            notices.append(notice)
+
+    pr_body = pr_facts.get("body")
+    if pr_body is None and pr_facts.get("body_mode") == "path":
+        pr_body = Path(pr_facts["body_path"]).read_text(encoding="utf-8")
+    rows = parse.parse_phase_tracker(pr_body)
+
+    tracker = {
+        "present": bool(rows),
+        "rows": rows,
+        "diff": build_tracker_diff(rows, phases),
+        "body_mode": pr_facts.get("body_mode"),
+    }
+    if pr_facts.get("body_mode") == "path":
+        tracker["body_path"] = pr_facts.get("body_path")
+    return tracker, notices, None
+
+
 def _forward_decision(decision, notices=None):
     """Emit a composed core's returned `decision` (or a directly-raised one) AS-IS on prep's own
     stdout and return `True` when a decision was present. Mirrors `prep_evaluator._forward_decision`
@@ -621,6 +777,17 @@ def build_facts(issue_number, repo, root=".", scratch_dir=None, refresh=False, c
                 )
             )
             return None
+
+    # 4b) `## Phase tracker` reconciliation facts — continue mode only, and only once `phases` is
+    #     in hand (the diff is plan-versus-tracker). Fresh mode has no prior tracker to reconcile.
+    if mode == MODE_CONTINUE:
+        tracker, tracker_notices, tracker_decision = _build_tracker(
+            prior_pr_fact, phases, repo, scratch_dir=scratch_dir, cwd=cwd
+        )
+        if _forward_decision(tracker_decision):
+            return None
+    else:
+        tracker, tracker_notices = dict(_ABSENT_TRACKER), []
 
     # 5) DoD facts (parse.parse_dod_bullets, pure core) — over the ISSUE body (the resolver
     #    projects ticks onto the issue's own DoD, distinct from prep_evaluator's per-closing-issue
@@ -909,6 +1076,7 @@ def build_facts(issue_number, repo, root=".", scratch_dir=None, refresh=False, c
         "prior_pr": prior_pr_fact,
         "plan": plan_facts,
         "phases": phases,
+        "tracker": tracker,
         "dod": dod,
         "open_questions": open_questions,
         "open_questions_gate": open_questions_gate,
@@ -919,7 +1087,7 @@ def build_facts(issue_number, repo, root=".", scratch_dir=None, refresh=False, c
         "attention": _build_attention(
             work_workspace_envelope, prior_pr_row, epic_facts, story_epic_matches
         ) + config_attention,
-        "notices": list(config_notices) + link_notices + epic_notices,
+        "notices": list(config_notices) + link_notices + epic_notices + tracker_notices,
     }
     if prior_pr_rejected:
         facts["prior_pr_rejected"] = prior_pr_rejected

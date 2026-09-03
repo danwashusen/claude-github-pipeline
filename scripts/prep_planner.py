@@ -267,13 +267,6 @@ _STORY_FILED_RE = re.compile(r"^-\s*\[( |x|X)\]\s*#(\d+)\s*(?:—|-)\s*(.+)$")
 _STORY_PLAIN_RE = re.compile(r"^-\s*\[( |x|X)\]\s*(.+)$")
 _SECTION_HEADING_RE = re.compile(r"^##(?!#)")
 
-# `## Phase tracker` bullet grammar (docs/specs/resolver.md "Artifacts written"): `- [x] Phase N —
-# <title> (commit <sha>)` / `- [ ] Phase N — <title>` (unshipped). Same "no dedicated decision
-# code, best-effort" rationale as `_STORY_FILED_RE` above — the resolver's own §4.7 reads this
-# section as prose, not through a script; this module's parse is a convenience fact, not a gate.
-_PHASE_TRACKER_ROW_RE = re.compile(
-    r"^-\s*\[( |x|X)\]\s*Phase\s+(\d+)\s*(?:—|-)\s*(.+?)(?:\s*\(commit\s+([0-9a-f]{7,40})\))?$"
-)
 
 
 # ---------------------------------------------------------------------------
@@ -873,46 +866,12 @@ def _parse_stories_section(issue_body):
 
 
 # ---------------------------------------------------------------------------
-# `## Phase tracker` section parsing (PR body, revise mode only) — same "best-effort, no dedicated
-# decision code" rationale as `_parse_stories_section` above.
+# `## Phase tracker` section parsing (PR body, revise mode only) — the parser lives in `parse.py`
+# because `prep_resolver` needs it too (continue mode reconciles the tracker's row set against the
+# plan's `## Phases`). Aliased rather than re-implemented so a third copy cannot drift into being.
 # ---------------------------------------------------------------------------
 
-
-def _parse_phase_tracker(pr_body_text):
-    """Parse the open PR body's `## Phase tracker` checklist. Returns a list of `{"phase",
-    "title", "checked", "commit_sha"}` dicts, in source order. `commit_sha` is `None` for an
-    unshipped (`- [ ]`) row, or a shipped `operator`/`decision-only` row that records a date rather
-    than a commit (this parser only extracts the `(commit <sha>)` form; a non-code-shipping
-    ticked row's own annotation shape is read by the model directly from the staged PR body, not
-    re-derived here). No `## Phase tracker` section: returns `[]`.
-    """
-    lines = (pr_body_text or "").splitlines()
-    start = None
-    for i, line in enumerate(lines):
-        if re.match(r"^##\s+Phase tracker\s*$", line, re.IGNORECASE):
-            start = i + 1
-            break
-    if start is None:
-        return []
-    end = len(lines)
-    for j in range(start, len(lines)):
-        if _SECTION_HEADING_RE.match(lines[j]):
-            end = j
-            break
-
-    entries = []
-    for raw_line in lines[start:end]:
-        match = _PHASE_TRACKER_ROW_RE.match(raw_line.strip())
-        if match:
-            entries.append(
-                {
-                    "checked": match.group(1) in ("x", "X"),
-                    "phase": int(match.group(2)),
-                    "title": match.group(3).strip(),
-                    "commit_sha": match.group(4),
-                }
-            )
-    return entries
+_parse_phase_tracker = parse.parse_phase_tracker
 
 
 # ---------------------------------------------------------------------------

@@ -39,6 +39,11 @@ this route supplies:
   in `facts.slices.diff`, and the mismatch gate (which gates or re-routes — it never silently re-cuts).
   Distinct from the contract edge above: that one looks *up* at the epic, this one looks *down* at the
   slices.
+- **Reconcile against what already shipped.** When `facts.plan.present` and a draft PR carries ticked
+  phases, read [`../references/revise-reconciliation.md`](../references/revise-reconciliation.md)
+  before redrafting `## Phases`: it owns the SOFT/HARD classification, the DoD-annotation
+  reconciliation, and the renumbering rule for work landing between a shipped phase and an unshipped
+  one (the shipped prefix keeps its numbers). Keyed on the fact — no prior plan, nothing to reconcile.
 - **Schema sections.** The standard single-issue schema plus the `**Epic:** #<epic-#> — <epic title>`
   backlink as the **first line after** the marker (never above it) and a `## Epic contract` section —
   `Delivers` (matching the epic's `## Story contracts`) and `Consumes` (each already in the delivery

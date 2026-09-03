@@ -1013,6 +1013,65 @@ def run_phases(args):
 
 
 # ============================================================================================
+# `## Phase tracker` parsing (PR body) — import-only, NO subcommand and NO decision code
+# ============================================================================================
+#
+# The tracker is a *rendering the resolver rebuilds* on every push, not a contract another skill
+# authors: the plan's `## Phases` owns which rows exist, the tracker owns which are ticked. So an
+# unparseable row is a row to rewrite, never a run to fail — there is deliberately no
+# `PHASES_MALFORMED` analogue here and no CLI subcommand (nothing in a prompt invokes it; both
+# consumers are preps). Do not "unify" this with `parse_phases`: the asymmetry is the design.
+#
+# Two preps need it — `prep_planner` (revise mode: what shipped, for SOFT/HARD classification) and
+# `prep_resolver` (continue mode: the row set to reconcile against the plan) — which is why it lives
+# here rather than in either one.
+
+# `## Phase tracker` bullet grammar (docs/specs/resolver.md "Artifacts written"): `- [x] Phase N —
+# <title> (commit <sha>)` / `- [ ] Phase N — <title>` (unshipped). `\d+` only, matching
+# `_PHASE_HEAD_RE`'s integer-only phase labels — a `Phase 5c` row does not parse, by construction.
+_PHASE_TRACKER_ROW_RE = re.compile(
+    r"^-\s*\[( |x|X)\]\s*Phase\s+(\d+)\s*(?:—|-)\s*(.+?)(?:\s*\(commit\s+([0-9a-f]{7,40})\))?$"
+)
+
+
+def parse_phase_tracker(pr_body_text):
+    """Parse a PR body's `## Phase tracker` checklist. Returns a list of `{"checked", "phase",
+    "title", "commit_sha"}` dicts, in source order. `commit_sha` is `None` for an unshipped (`- [ ]`)
+    row, or a shipped `operator`/`decision-only` row that records a date rather than a commit (this
+    parser only extracts the `(commit <sha>)` form; a non-code-shipping ticked row's own annotation
+    shape is read by the model directly from the staged PR body, not re-derived here). No
+    `## Phase tracker` section: returns `[]`. Never raises on malformed input — see the note above.
+    """
+    lines = (pr_body_text or "").splitlines()
+    found = _find_section(lines, r"Phase tracker")
+    if found is None:
+        return []
+    start, end = found
+
+    entries = []
+    for raw_line in lines[start:end]:
+        match = _PHASE_TRACKER_ROW_RE.match(raw_line.strip())
+        if match:
+            entries.append(
+                {
+                    "checked": match.group(1) in ("x", "X"),
+                    "phase": int(match.group(2)),
+                    "title": match.group(3).strip(),
+                    "commit_sha": match.group(4),
+                }
+            )
+    return entries
+
+
+def normalize_tracker_title(title):
+    """Fold a tracker row / plan phase title for comparison: whitespace-collapsed and case-folded.
+    A retitle that is only a re-wrap or a capitalization change is not drift, so the tracker diff
+    must not report it — see `prep_resolver.build_tracker_facts`.
+    """
+    return " ".join((title or "").split()).casefold()
+
+
+# ============================================================================================
 # Dispatch
 # ============================================================================================
 
