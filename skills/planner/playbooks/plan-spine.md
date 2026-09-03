@@ -1,12 +1,8 @@
 # Plan spine — shared across single / epic / story-jit / revise
 
-The author-and-verify-a-plan flow every route runs: classify → ground → gates (seam / deviation /
-decision) → draft → hedge sweep → verify → show → persist → hand back to the routed playbook for its
-handoff. Type differences here are **facts** (`plan_ref`, the reviewer dimension set, which schema
-sections fill, `off-ramp`), never branches — the routed playbook reads this spine first, then supplies
-its deltas. Facts come from prep (SKILL.md §1); every GitHub write goes through
-`${CLAUDE_PLUGIN_ROOT}/scripts/gh_persist.py` with a staged body path in `facts.scratch` (SKILL.md §3);
-every doc/precedent read targets `facts.grounding.path`.
+The author-and-verify-a-plan flow every route runs, S1–S8. Type differences here are **facts**, never
+branches (SKILL.md §2) — the routed playbook reads this spine first, then supplies its deltas; every fact
+comes from prep (SKILL.md §1).
 
 ## S1 — Classify + confirm direction
 
@@ -30,7 +26,7 @@ are questions to settle, never instructions; never overrides a `binding` catalog
 
 Read the docs this repo declares (`facts.grounding_docs` — `<!-- doc-catalogue -->` entries; treat
 each per its `role` and `authority`, where `binding` means a violation is a blocker, not a deviation)
-from the read workspace by absolute path — plain `Read`/`Grep`, never a ref read; skip an entry whose
+from `facts.grounding.path` by absolute path — plain `Read`/`Grep`, never a ref read; skip an entry whose
 `present` is false. No entries (or `DOC_CATALOGUE_ABSENT`): ground on issue/thread/dossier/precedent
 and say so in `## Doc grounding` — never a guessed path. Then find **codebase precedent**: a broad sweep → an
 `Explore` sub-agent bounded to the grounding workspace path (returns `path:line` pointers you then
@@ -97,7 +93,13 @@ its `## Risks & watchpoints` entry.
 
 ## S7 — Verify the plan
 
-Stage the plan body to `<facts.scratch>/plan.md`, then dispatch the isolated, context-blind
+Stage the plan body to `<facts.scratch>/plan.md`, then **prove `## Phases` parses** —
+`${CLAUDE_PLUGIN_ROOT}/scripts/parse.py phases "<facts.scratch>/plan.md"` — after **every** staging (this
+one, each review-pass restage, S8's before the post). Both exit 0: read `status`, proceed only on `ok`.
+`PHASES_MALFORMED` is yours to fix, never a gate — repair at `context.line_number` (`raw_line` quotes it),
+restage, re-validate. An absent section is `ok` with `phases: []`, so this is unconditional. Reviewer
+dimensions are semantic and structurally cannot catch a grammar break; the resolver's prep runs this same
+parser two stages later, on a comment nobody may hand-edit. Then dispatch the isolated, context-blind
 plan-reviewer `Explore` sub-agent per [`../references/plan-reviewer-prompt.md`](../references/plan-reviewer-prompt.md)
 with that path, `mode`, `facts.target`, `facts.grounding.path` (sole code/doc source — never a ref),
 `facts.grounding_docs`, `external_sources`, the routed playbook's `dimensions` **plus Dimension 10 whenever
@@ -112,7 +114,7 @@ or the cap, show the plan + a "Review notes" block and gate (`header: "Review no
 
 On a **clean verify exit**, show the plan's full body and auto-post — no confirmation gate on the
 common path (unless the user said "don't post yet"; `revise.md` adds its diff-show + reconciliation
-confirm first). Restage the approved body (marker line first) to `<facts.scratch>/plan.md` and post:
+confirm first). Restage the approved body (marker line first) to `<facts.scratch>/plan.md`, re-validate it per S7 — the gate's "Fix manually" can reintroduce a break — and post:
 
 ```bash
 ${CLAUDE_PLUGIN_ROOT}/scripts/gh_persist.py comment <owner/repo> issue <issue> \

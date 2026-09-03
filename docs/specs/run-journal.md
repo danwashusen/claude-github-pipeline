@@ -698,6 +698,12 @@ sandbox, or delete anything outside the working tree and the sandbox.
   mismatch — conclusion + remediation correct as written); (ii) the 251/251 budget pin;
   (iii) S15/S16 reuse `edit-labels`, don't re-propose; (iv) future predecessor consumers read
   close comments.
+- **Post-run addendum (#45, 2026-09-03) — advisory (ii) discharged.** The 251/251 pin was offset,
+  not relaxed: the planner's S7 `parse.py phases` gate cost `plan-spine.md` +6 lines, paid back with
+  −4 in its intro (a ToC of its own headings + a restatement of SKILL.md §2/§3) and −3 in
+  `SKILL.md`. The budget is now **router 120 + spine 130 = 250 ≤ 251**, one line of headroom
+  restored. The ruling above stands as written — a new line still must be offset; the tripwire
+  (`tests/test_planner_routing.py`, `assertEqual`) was re-armed at 130, never relaxed.
 - **Census:** 83 → **85** (+`github-pipeline:researcher`, +`§6.5`; zero drops). **Dual-platform:**
   **801/801** macOS + Linux. S11 validator green over the new prompt.
 - **Process:** 1 opus implementor → gap report (two missing write ops) → orchestrator-authorized

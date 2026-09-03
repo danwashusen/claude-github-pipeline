@@ -321,10 +321,13 @@ class SubIssueReconciliationRuleTests(unittest.TestCase):
         self.assertIn("sub-issue reconciliation", text)
 
     def test_spine_is_unchanged_at_its_recorded_length(self):
-        # The 251 bar is a knife edge (router 123 + spine 128). Fail at the CAUSE — a spine edit —
-        # rather than only at the sum, whose message implicates whichever file was touched last.
+        # The 251 bar is a knife edge (router 120 + spine 130 = 250). Fail at the CAUSE — a spine
+        # edit — rather than only at the sum, whose message implicates whichever file was touched
+        # last. #45 is the authorized offset: the S7 parse gate cost the spine +6, paid back with
+        # -4 in its intro and -3 in SKILL.md. Stays assertEqual — assertLessEqual would delete the
+        # tripwire rather than re-arm it.
         n = len((PLAYBOOKS_DIR / SPINE).read_text(encoding="utf-8").splitlines())
-        self.assertEqual(n, 128, "plan-spine.md is %d lines; the 251 bar assumes 128" % n)
+        self.assertEqual(n, 130, "plan-spine.md is %d lines; the 251 bar assumes 130" % n)
 
 
 class ShapeTriageOffRampTests(unittest.TestCase):
@@ -1059,6 +1062,89 @@ class CitationCompletenessRuleTests(unittest.TestCase):
             self.spine, r"partial citation.*no named alternative.*(is a )?defect",
             "a pinned choice with a partial citation and no named alternative must be a named defect",
         )
+
+
+class PhasesSelfValidationTests(unittest.TestCase):
+    """#45: the planner proves its own `## Phases` parses BEFORE it posts.
+
+    A malformed section (`Phase 5c`, prose inside a `closes-dod:` value, an ordinal disagreeing with
+    its label) used to reach GitHub and surface two stages later as prep_resolver's PHASES_MALFORMED,
+    on a plan comment nobody may hand-edit.
+
+    Why the spine is the only place this can live:
+      * the plan reviewer's Dimension 7 is semantic — `closes-dod: (none — prose)` reads as `(none)`
+        and `depends-on: 5c` is backward-and-acyclic, so a conforming reviewer returns clean findings;
+      * prep_planner is DELIBERATELY lenient (tests/test_phase_grammar_contract.py: `status: ok`,
+        `prior_phases_parsed: false`, an attention line, no decision) because a revise run exists to
+        repair a bad plan. Making prep strict would remove the repair path.
+    So this authoring-time check is the pipeline's only gate — do not "simplify" it into prep.
+    """
+
+    def setUp(self):
+        self.spine_path = PLAYBOOKS_DIR / SPINE
+        self.flat = " ".join(self.spine_path.read_text(encoding="utf-8").split())
+
+    def test_spine_runs_the_resolvers_parser_on_the_staged_plan(self):
+        # The same parser prep_resolver runs, against the same staged body the write op posts.
+        self.assertIn(
+            '${CLAUDE_PLUGIN_ROOT}/scripts/parse.py phases "<facts.scratch>/plan.md"', self.flat
+        )
+
+    def test_validation_precedes_the_reviewer_dispatch(self):
+        # An unparseable section handed to the reviewer burns dimension budget (and up to all three
+        # passes) on prose it cannot structurally assess.
+        self.assertLess(
+            self.flat.index("parse.py phases"), self.flat.index("plan-reviewer-prompt.md")
+        )
+
+    def test_check_runs_on_every_staging_including_s8(self):
+        # One insertion at S7 is sufficient only because the rule binds to the ACT of staging and
+        # names S8's restage — the body S8 posts is restaged after the review loop exits.
+        self.assertIn("after **every** staging", self.flat)
+        self.assertIn("S8's before the post", self.flat)
+
+    def test_s8_restage_names_the_revalidation_at_its_own_point_of_use(self):
+        # S7's enumeration alone is not enough: S8 restages the APPROVED body, which can differ from
+        # what the loop last validated (the "Fix manually" gate arm edits the plan after review). A
+        # reader executing S8 linearly must see the requirement there, not 20 lines earlier.
+        self.assertIn(
+            'Restage the approved body (marker line first) to `<facts.scratch>/plan.md`, '
+            "re-validate it per S7",
+            self.flat,
+        )
+
+    def test_gate_keys_on_status_not_exit_code(self):
+        # `ok` and PHASES_MALFORMED both exit 0, so an exit-code gate is silently a no-op.
+        self.assertIn("Both exit 0", self.flat)
+        self.assertIn("read `status`, proceed only on `ok`", self.flat)
+
+    def test_repair_names_the_context_fields(self):
+        self.assertIn("context.line_number", self.flat)
+        self.assertIn("`raw_line`", self.flat)
+        self.assertIn("restage, re-validate", self.flat)
+
+    def test_malformed_is_self_repair_not_an_operator_gate(self):
+        # Guards against a later reader importing SKILL.md §1's decision-card rule by analogy and
+        # turning the planner's own punctuation into an AskUserQuestion.
+        self.assertIn("`PHASES_MALFORMED` is yours to fix, never a gate", self.flat)
+
+    def test_absent_phases_is_ok_so_no_route_conditional(self):
+        # parse.py returns ok/[] when the section is absent (epic, single-phase), which is what lets
+        # the check be unconditional — no route branch to interleave into the spine.
+        self.assertIn("`phases: []`", self.flat)
+        self.assertIn("unconditional", self.flat)
+
+    def test_rule_carries_its_why(self):
+        # CLAUDE.md: a rationale clause is what stops a later editor reintroducing the bug.
+        self.assertIn("semantic and structurally cannot catch a grammar break", self.flat)
+        self.assertIn("runs this same parser", self.flat)
+
+    def test_command_is_inline_not_fenced(self):
+        # Inline is in-file house style (S8's edit-body/edit-labels) and a fence costs ~4 lines on a
+        # file with no headroom. Locked so a later edit does not silently spend them.
+        for _lineno, line, in_fence in _fence_stripped_lines(self.spine_path):
+            if in_fence:
+                self.assertNotIn("parse.py phases", line)
 
 
 class OperatorGateCoverageTests(unittest.TestCase):
