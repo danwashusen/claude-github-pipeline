@@ -6,11 +6,10 @@ description: Plan *how* to build an already-filed GitHub issue (or an entire Epi
 # planner — router
 
 The design stage of the pipeline: a filed issue in → a verified, durable `<!-- implementation-plan:v1 -->`
-comment (locking approach, layer assignments, file-level changes, data-model impact, test strategy,
-sequencing) plus a `## Handoff` out. One planning attempt, one session; a fresh session on every
-re-entry (nothing survives between runs except what is persisted to GitHub). Read this router, run
-prep, route to exactly one playbook, then hand off. Scripts own the mechanical work; your judgment is
-the classification, the grounding, the gates, the drafting, the review verdicts, and the handoff `Why:`.
+comment plus a `## Handoff` out. One planning attempt, one session; a fresh session on every re-entry
+(nothing survives between runs except what is persisted to GitHub). Scripts own the mechanical work;
+your judgment is the classification, the grounding, the gates, the drafting, the review verdicts, and
+the handoff `Why:`.
 
 ## 1. Prep
 
@@ -84,9 +83,7 @@ Universal across every route:
   character before it makes the plan invisible. For a story, the `**Epic:**` backlink goes on the line
   *immediately after* the marker, never above it.
 - **Footer/handoff record the branch, never elide it.** `<plan-ref>@<short-sha>` is also the resolver's
-  PR base — `origin/<default-branch>` (`facts.root.default_branch`), the **bare** `epic/<N>-<slug>` or PR
-  `headRefName` otherwise; `@<short-sha>` is `facts.grounding.sha` (rendering rule in
-  `plan-spine.md` S5 + [`references/handoff-renderings.md`](references/handoff-renderings.md)).
+  PR base; the rendering rule is `plan-spine.md` S5 + [`references/handoff-renderings.md`](references/handoff-renderings.md).
 - **Staged-body writes.** Every GitHub write goes through
   `${CLAUDE_PLUGIN_ROOT}/scripts/gh_persist.py` via Bash: stage the verbatim body to
   `facts.scratch` (`/tmp/gh-planner-<issue>/…`) and pass the **path**. The script verifies the

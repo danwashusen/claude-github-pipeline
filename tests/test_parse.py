@@ -731,6 +731,29 @@ class ParsePhasesCliTests(unittest.TestCase):
         self.assertEqual(envelope["status"], "needs_decision")
         self.assertEqual(envelope["decision"]["code"], "PHASES_MALFORMED")
 
+    def test_letter_suffixed_label_is_malformed_with_locatable_evidence(self):
+        # The #185 shape (issue #45): work inserted between a shipped prefix and an unshipped tail
+        # by letter-suffixing the label instead of renumbering. `_PHASE_HEAD_RE` does not recognize
+        # the head at all, so it reads as a stray line inside the PRIOR phase. The planner's S7 gate
+        # tells the model to repair at `context.line_number` / `raw_line`, so both must be populated
+        # and must point at the offending head — not merely be present on the envelope.
+        rc, out, err = _run_cli(
+            ["phases", str(PHASES_FIXTURES_DIR / "malformed_letter_suffixed_label.md")]
+        )
+        self.assertEqual(rc, EXIT_OK)
+        envelope = _parse_one_envelope(out)
+        envelope_asserts.assert_full_envelope_conformance(envelope)
+        envelope_asserts.assert_decision_payload_shape(envelope)
+        self.assertEqual(envelope["status"], "needs_decision")
+        self.assertEqual(envelope["decision"]["code"], "PHASES_MALFORMED")
+        context = envelope["decision"]["context"]
+        self.assertIsInstance(context["line_number"], int)
+        self.assertIn("Phase 2c", context["raw_line"])
+        fixture_lines = (
+            PHASES_FIXTURES_DIR / "malformed_letter_suffixed_label.md"
+        ).read_text(encoding="utf-8").splitlines()
+        self.assertEqual(fixture_lines[context["line_number"] - 1], context["raw_line"])
+
     def test_phases_malformed_emits_phases_malformed_decision(self):
         rc, out, err = _run_cli(
             ["phases", str(PHASES_FIXTURES_DIR / "malformed_free_form_sequencing.md")]
