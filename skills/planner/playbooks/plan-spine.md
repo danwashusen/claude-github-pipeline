@@ -114,7 +114,7 @@ or the cap, show the plan + a "Review notes" block and gate (`header: "Review no
 
 On a **clean verify exit**, show the plan's full body and auto-post — no confirmation gate on the
 common path (unless the user said "don't post yet"; `revise.md` adds its diff-show + reconciliation
-confirm first). Restage the approved body (marker line first) to `<facts.scratch>/plan.md` and post:
+confirm first). Restage the approved body (marker line first) to `<facts.scratch>/plan.md`, re-validate it per S7 — the gate's "Fix manually" can reintroduce a break — and post:
 
 ```bash
 ${CLAUDE_PLUGIN_ROOT}/scripts/gh_persist.py comment <owner/repo> issue <issue> \

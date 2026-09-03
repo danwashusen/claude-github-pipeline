@@ -1103,6 +1103,16 @@ class PhasesSelfValidationTests(unittest.TestCase):
         self.assertIn("after **every** staging", self.flat)
         self.assertIn("S8's before the post", self.flat)
 
+    def test_s8_restage_names_the_revalidation_at_its_own_point_of_use(self):
+        # S7's enumeration alone is not enough: S8 restages the APPROVED body, which can differ from
+        # what the loop last validated (the "Fix manually" gate arm edits the plan after review). A
+        # reader executing S8 linearly must see the requirement there, not 20 lines earlier.
+        self.assertIn(
+            'Restage the approved body (marker line first) to `<facts.scratch>/plan.md`, '
+            "re-validate it per S7",
+            self.flat,
+        )
+
     def test_gate_keys_on_status_not_exit_code(self):
         # `ok` and PHASES_MALFORMED both exit 0, so an exit-code gate is silently a no-op.
         self.assertIn("Both exit 0", self.flat)
