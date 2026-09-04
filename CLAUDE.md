@@ -167,7 +167,7 @@ per [architecture.md §7](docs/architecture.md)'s mapping table).
 - **Judgment sub-agents** ([architecture.md §8](docs/architecture.md)) isolate reasoning that would
   otherwise pollute the main loop: the resolver's state-distiller (thread + plan *text*) and
   fitness audit (*code and docs* at a pinned ref), the planner's plan reviewer, the drafter's issue
-  reviewer, the researcher's dossier validator, the test-selection and review-loop sub-agents, and
+  reviewer, the researcher's dossier validator, the test-selection sub-agent, the cold-read audit, and
   the question-status reader. All are context-blind, receive **workspace paths and prep-staged
   files** (never refs), cannot call `AskUserQuestion` (they return a §3 decision code instead), and
   never write to GitHub.

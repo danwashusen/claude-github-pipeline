@@ -12,9 +12,8 @@ Three assertions, over every discovered v2 sub-agent prompt:
 1. **Codes ⊆ §3.** The typed decision codes a prompt names as returnable (via the shared
    `## Exception` / `code:` protocol, plus any decision-code-shaped backticked token) must all be
    members of the §3 closed set. A prompt that returns no §3 code (a reviewer that returns findings,
-   the test-selection sub-agent's `COMMAND:`/`RATIONALE:`, the review-loop's own richer
-   `decision_request` card whose lowercase `kind`s are a *separate* protocol, never a §3 code) is
-   vacuously conformant.
+   the test-selection sub-agent's `COMMAND:`/`RATIONALE:`, the cold-read audit's severity-labelled
+   findings) is vacuously conformant.
 2. **No retired-doc citation.** No v2 prompt cites `subagent-decision-signal` — §3 supersedes it.
 3. **No ref-arithmetic input.** No v2 prompt runs ref arithmetic (`git show <ref>:<path>` /
    `git grep <ref>`) inside a code fence — sub-agents read prep-staged paths / read workspaces, never
@@ -127,8 +126,8 @@ def extract_prompt_codes(text):
         code named only in a `Raise:` bullet or closed-set prose.
 
     Non-code ALL-CAPS prose never matches: severities (`BLOCKER`/`SUGGESTION`/`NIT`) are bold, not
-    backticked; the test-selection `COMMAND:`/`RATIONALE:` headers are not backticked; the review
-    loop's `decision_request` `kind`s are lowercase (`deadlock`, `architectural`, …) — a deliberately
+    backticked; the test-selection `COMMAND:`/`RATIONALE:` headers are not backticked; the resolver
+    review loop's guard-rail card kinds are lowercase (`deadlock`, `architectural`, …) — a deliberately
     *separate* rich-card protocol, not a §3 decision code.
     """
     codes = set()
@@ -182,14 +181,21 @@ class Section3ParseTests(unittest.TestCase):
 class PromptDiscoveryTests(unittest.TestCase):
     def test_discovery_finds_the_landed_v2_prompts_and_excludes_v1(self):
         found = {p.relative_to(SKILLS_DIR).as_posix() for p in V2_PROMPT_FILES}
-        # The four S10 resolver prompts must all be discovered.
+        # The S10 resolver prompts must all be discovered. The review fix round is deliberately
+        # absent: since 4.11.0 it runs in the main conversation, so it is a procedure reference, not
+        # a sub-agent prompt, and its file name matches neither discovery glob.
         for expected in (
             "resolver/references/state-distiller-prompt.md",
             "resolver/references/issue-audit-prompt.md",
-            "resolver/references/review-loop-sub-agent.md",
+            "resolver/references/cold-read-audit-prompt.md",
             "resolver/references/test-selection-sub-agent.md",
         ):
             self.assertIn(expected, found, "discovery must include %r" % expected)
+        self.assertNotIn(
+            "resolver/references/review-fix-round.md",
+            found,
+            "the main-loop fix-round procedure must not be discovered as a sub-agent prompt",
+        )
         # The S18 question-status reader converged onto the §3 vocabulary and must be discovered
         # at its v2 path.
         self.assertIn(

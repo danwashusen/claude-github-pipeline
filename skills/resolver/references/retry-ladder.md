@@ -117,7 +117,7 @@ small-fix spiral this ladder exists to prevent.
 At §8 nothing on the branch is gate-verified, so the selection diff is the cumulative
 `git diff <integration-target>...HEAD`. At §10.6 the branch was verified green at the last push and only
 this iteration's fix edits have changed since — so runs 1 and 3 pass the sub-agent a **diff-base
-override**: HEAD as of the fix sub-agent's own dispatch. Commits wait until after the gate, so that HEAD
+override**: HEAD at the start of the fix round (`git rev-parse HEAD` before the first fix edit). Commits wait until after the gate, so that HEAD
 is the last pushed state and the fix is working-tree-only; the override diff therefore reads the working
 tree (`git diff <sha>`, not `<sha>...HEAD`, which would come back empty and select nothing).
 
@@ -184,10 +184,9 @@ via `AskUserQuestion` (`header: "Tests red"`, options **Push with reds** / **Def
    feature needs).
 
 The summary at the handoff records which path was taken and why. The user picks; the skill does not pick a
-default. When you reach this gate from the spine's §8 you are the main loop — ask via `AskUserQuestion`
-directly. When you reach it from the §10.6 gate you are inside the review sub-agent, where
-`AskUserQuestion` is unavailable — return `status: "needs_decision"` with `kind: "verification_failure"`
-and these three options instead, and the main loop asks.
+default. You are the main loop at both gates — ask via `AskUserQuestion` directly. At the §10.6 gate the
+card is `review-fix-round.md`'s **Verification failure** guard rail (`header: "Tests red"`), with these
+same three options.
 
 ## What the ladder is and isn't
 
@@ -199,7 +198,7 @@ how many times the model may re-run tests within one of those iterations.
 It **isn't** a license to give up after one failure. Run 1 failing is normal — that's why the gate exists.
 The ladder activates when the model is about to enter a small-fix spiral, not on every red run.
 
-It also doesn't count defect-injection runs. An injection run (inject → red → revert, per the review-loop
-sub-agent's injection step) verifies the *test*, not the diff — it is *supposed* to go red. Only runs
+It also doesn't count defect-injection runs. An injection run (inject → red → revert, per
+`review-fix-round.md`'s injection step) verifies the *test*, not the diff — it is *supposed* to go red. Only runs
 asserting the diff is green count toward the 3-run cap; without this exemption a routine injection cycle
 would spuriously trip the escalation.

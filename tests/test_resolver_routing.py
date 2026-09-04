@@ -1023,5 +1023,99 @@ class WorkspaceModelV3Tests(unittest.TestCase):
             )
 
 
+class MainLoopReviewFixRoundTests(unittest.TestCase):
+    """4.11.0: the per-iteration fix sub-agent is retired — the fix round runs in the main
+    conversation, and exactly one cold-read audit sub-agent runs after `review` settles.
+
+    The sub-agent's per-iteration cold start plus its JSON -> card -> re-dispatch serialization was
+    the loop's dominant latency, and its tool calls never streamed, so the operator could not see
+    what was being fixed. Everything the prompt encoded (rubric, disciplines, injection, gate,
+    deadlock check, guard rails) survives in `review-fix-round.md`; only the dispatch is gone. The
+    convergence machinery that chose WHEN to cold-read goes with it: the read is now unconditional.
+    """
+
+    def setUp(self):
+        self.spine = (PLAYBOOKS_DIR / SPINE).read_text(encoding="utf-8")
+        self.flat = " ".join(self.spine.split())
+        self.reference = REFERENCES_DIR / "review-fix-round.md"
+
+    def test_the_fix_round_reference_exists_and_is_not_a_sub_agent_prompt(self):
+        self.assertTrue(self.reference.is_file(), "review-fix-round.md must exist")
+        for pattern in ("*-prompt*.md", "*-sub-agent*.md"):
+            self.assertNotIn(
+                self.reference,
+                set(REFERENCES_DIR.glob(pattern)),
+                "the main-loop fix round must not match the sub-agent-prompt discovery glob",
+            )
+
+    def test_the_spine_reads_the_fix_round_reference_and_dispatches_only_the_cold_read(self):
+        self.assertIn("review-fix-round.md", self.flat)
+        self.assertIn("cold-read-audit-prompt.md", self.flat)
+        self.assertIn("Run one **fix round** on it per the reference, in this conversation", self.flat)
+        self.assertIn("Cold-read audit — once per run, after settle", self.flat)
+
+    def test_the_iter_cap_card_lost_its_cold_read_option(self):
+        self.assertIn('header: "Iter cap"', self.flat)
+        for option in ("**Continue**", "**Accept current**", "**Abort**"):
+            self.assertIn(option, self.flat)
+        self.assertNotIn("**Cold-read audit** /", self.flat)
+
+    def test_the_fix_round_carries_the_rubric_and_the_guard_rail_cards(self):
+        text = self.reference.read_text(encoding="utf-8")
+        for bucket in (
+            "Addressable",
+            "Cheap-fix-override",
+            "Explicitly-deferred",
+            "Decision-required",
+            "Grounding-violation",
+        ):
+            self.assertIn(bucket, text, "the classification rubric must survive the move")
+        for header in ('"Review loop"', '"Decision"', '"Tests red"', '"Grounding"'):
+            self.assertIn(header, text, "guard rail %s must survive as a direct card" % header)
+        self.assertIn("AskUserQuestion", text)
+        self.assertNotIn("needs_decision", text)
+
+    def test_settle_covers_a_verdict_that_never_approves(self):
+        """A reviewer that requests changes but names only deferrable items addresses nothing.
+
+        Keying the exit on the approval line alone spins the loop on an unchanged PR until the cap;
+        the retired sub-agent's exit keyed on "no items", which handled it.
+        """
+        self.assertIn("The round addressed nothing", self.flat)
+        self.assertIn("a non-approving verdict whose every item classified as Explicitly-deferred", self.flat)
+
+    def test_the_cold_read_is_dispatched_at_most_once(self):
+        self.assertIn("the cold read has **not** run this run", self.flat)
+        self.assertIn("Settled and it **has** → S5.1 is done; go to S6", self.flat)
+        self.assertIn("never dispatched twice in one run", self.flat)
+
+    def test_terminating_guard_rail_answers_leave_the_loop(self):
+        for text in (self.flat, " ".join(self.reference.read_text(encoding="utf-8").split())):
+            self.assertIn("Re-plan", text)
+            self.assertIn("Restructure", text)
+        self.assertIn("leaves S5.1 immediately", self.flat)
+        self.assertIn(
+            "ends the round *and* S5.1 on the spot",
+            " ".join(self.reference.read_text(encoding="utf-8").split()),
+        )
+
+    def test_the_retired_sub_agent_and_its_convergence_machinery_are_gone(self):
+        for path in sorted(SKILL_DIR.rglob("*.md")):
+            text = path.read_text(encoding="utf-8")
+            for token in (
+                "review-loop-sub-agent",
+                "finding_provenance",
+                "max_severity",
+                "prior_decisions",
+                "prior_audit_findings",
+                "review-verdict.md",
+            ):
+                self.assertNotIn(
+                    token,
+                    text,
+                    "%s still names the retired fix sub-agent contract %r" % (path.name, token),
+                )
+
+
 if __name__ == "__main__":
     unittest.main()
