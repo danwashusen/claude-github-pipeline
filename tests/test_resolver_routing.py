@@ -1031,7 +1031,8 @@ class MainLoopReviewFixRoundTests(unittest.TestCase):
     the loop's dominant latency, and its tool calls never streamed, so the operator could not see
     what was being fixed. Everything the prompt encoded (rubric, disciplines, injection, gate,
     deadlock check, guard rails) survives in `review-fix-round.md`; only the dispatch is gone. The
-    convergence machinery that chose WHEN to cold-read goes with it: the read is now unconditional.
+    convergence machinery that chose WHEN to cold-read goes with it: the read is now unconditional
+    within a phase — once per phase at a given HEAD (4.13.0), never gated on a provenance count.
     """
 
     def setUp(self):
@@ -1052,7 +1053,7 @@ class MainLoopReviewFixRoundTests(unittest.TestCase):
         self.assertIn("review-fix-round.md", self.flat)
         self.assertIn("cold-read-audit-prompt.md", self.flat)
         self.assertIn("Run one **fix round** on it per the reference, in this conversation", self.flat)
-        self.assertIn("Cold-read audit — once per run, after settle", self.flat)
+        self.assertIn("Cold-read audit — once per phase, after settle", self.flat)
 
     def test_the_iter_cap_card_lost_its_cold_read_option(self):
         self.assertIn('header: "Iter cap"', self.flat)
@@ -1068,6 +1069,8 @@ class MainLoopReviewFixRoundTests(unittest.TestCase):
             "Explicitly-deferred",
             "Decision-required",
             "Grounding-violation",
+            "Plan-settled",
+            "Deferred-by-plan",
         ):
             self.assertIn(bucket, text, "the classification rubric must survive the move")
         for header in ('"Review loop"', '"Decision"', '"Tests red"', '"Grounding"'):
@@ -1098,6 +1101,107 @@ class MainLoopReviewFixRoundTests(unittest.TestCase):
             "ends the round *and* S5.1 on the spot",
             " ".join(self.reference.read_text(encoding="utf-8").split()),
         )
+
+    def test_settled_buckets_do_not_count_as_addressed(self):
+        # A verdict whose every item is Plan-settled / Deferred-by-plan addresses nothing, so the
+        # loop settles instead of spinning an unchanged PR.
+        self.assertIn(
+            "a non-approving verdict whose every item classified as Explicitly-deferred (filed), "
+            "Plan-settled, or Deferred-by-plan",
+            self.flat,
+        )
+        text = " ".join(self.reference.read_text(encoding="utf-8").split())
+        self.assertIn("refuted-items list", text)
+        self.assertIn("Settled (not addressed):", text)
+        # The citation requirement is what stops the bucket dismissing genuine findings.
+        self.assertIn("No citation → the item is not plan-settled", text)
+        # A refuted repeat re-settles silently; the deadlock card is for ADDRESSED repeats only.
+        self.assertIn("re-settled silently on its second occurrence: no card, no second reply", text)
+        # Deferred-by-plan files nothing (Explicitly-deferred is the bucket that files).
+        self.assertIn("file nothing", text)
+
+
+class PhaseScopedReviewTests(unittest.TestCase):
+    """4.13.0: a non-final phase reviews its own delta at `medium`; the final phase reviews the
+    cumulative diff at `high`; the outer cap has numbers; the cold read is once per PHASE, recorded on
+    the PR so a re-entered session does not re-run it (#448: one session re-entered three times ran
+    three cold reads under the once-per-run rule).
+    """
+
+    def setUp(self):
+        self.spine = (PLAYBOOKS_DIR / SPINE).read_text(encoding="utf-8")
+        self.flat = " ".join(self.spine.split())
+        self.cold_read = " ".join(
+            (REFERENCES_DIR / "cold-read-audit-prompt.md").read_text(encoding="utf-8").split()
+        )
+
+    def test_the_scope_rule_keeps_the_cumulative_diff_on_the_final_phase(self):
+        self.assertIn("Final → `review`'s target is the PR's **cumulative diff**", self.flat)
+        self.assertIn("Non-final → the **phase delta**", self.flat)
+        self.assertIn("`facts.tracker.last_shipped", self.flat)
+        # The fallback when nothing shipped or the SHA was force-pushed away.
+        self.assertIn("else `facts.workspace.base_ref`", self.flat)
+
+    def test_the_effort_level_is_passed_per_scope(self):
+        self.assertIn("level `medium` on a non-final phase, `high` on the final one", self.flat)
+        self.assertIn('Skill(skill="review", args=', self.flat)
+
+    def test_the_cap_has_numbers(self):
+        self.assertIn(
+            "`review` runs at most **2** times on a non-final phase and **4** times on the final phase "
+            "before the cold read; step 4 owns what follows it",
+            self.flat,
+        )
+        self.assertIn('header: "Iter cap"', self.flat)
+        # The confirming review after the cold read classifies but never pushes: a push there would
+        # demand a review the cap forbids, with no card to land on.
+        self.assertIn("That round classifies but does not fix", self.flat)
+
+    def test_review_fixes_from_pr_55(self):
+        # Finding 1: a trailing operator/decision-only phase must not steal "final" from the last
+        # code-shipping phase, or the PR ships with no cumulative pass at all.
+        self.assertIn("last unshipped `kind: code-shipping` entry of `facts.phases`", self.flat)
+        # Finding 4: the base can be a branch name (base_ref fallback), so the range is three-dot.
+        self.assertIn('args="<level> [<base>...HEAD] <context>"', self.flat)
+        self.assertNotIn("<base>..HEAD", self.flat)
+        self.assertIn("the fix round's settled buckets are the floor", self.flat)
+        # Finding 6: last_shipped is computed before S4 can un-tick a row.
+        self.assertIn("after an S4 **Rebuild un-ticked**, treat `last_shipped` as unreachable", self.flat)
+        # Finding 3: the skip compares the recorded sha to HEAD; an ancestor re-bases the read.
+        self.assertIn("whose `<sha>` **is** HEAD", self.flat)
+        self.assertIn("run the cold read with `<base>` = that sha", self.flat)
+        # Finding 9: the single-phase record has a defined phase number.
+        self.assertIn("`1` for a single-phase issue", self.flat)
+        # Finding 7: the plan-section token sits on one line.
+        self.assertIn("`## Deviations from project docs`", self.spine)
+        # Below-cap: context assembled once.
+        self.assertIn("Assemble `<context>` once at loop entry", self.flat)
+        reference = " ".join((REFERENCES_DIR / "review-fix-round.md").read_text(encoding="utf-8").split())
+        # Finding 2: a seeded deferral expires when its phase comes due.
+        self.assertIn("**except** a `deferred-by-plan` entry whose phase is the current phase", reference)
+        # Below-cap: a refuted repeat has a bounded escape.
+        self.assertIn("On its **third** occurrence in one run render the `Review loop` card", reference)
+        pitfalls = " ".join((REFERENCES_DIR / "common-pitfalls.md").read_text(encoding="utf-8").split())
+        # Finding 5: the turn-boundary pitfall cites step 4 instead of restating a stale mechanism.
+        self.assertNotIn("staging the cumulative diff", pitfalls)
+        self.assertIn("staging the scope diff and dispatching the cold read per S5.1 step 4", pitfalls)
+
+    def test_verification_does_not_scale_with_scope(self):
+        self.assertIn(
+            "the §8 / §10.6 gates and defect injection run at full strength on every phase", self.flat
+        )
+
+    def test_the_cold_read_is_once_per_phase_and_recorded_on_the_pr(self):
+        self.assertIn("Cold read: phase <N> @ <sha>", self.flat)
+        self.assertIn("skip it, S5.1 is done", self.flat)
+        self.assertIn("<<phase_context>>", self.flat)
+        self.assertIn("<<phase_context>>", self.cold_read)
+        self.assertIn("deferred to phase <N>", self.cold_read)
+
+    def test_the_prep_fact_exists(self):
+        # The fact the spine names must be a real fact.
+        self.assertTrue(callable(prep_resolver.last_shipped_phase))
+        self.assertIsNone(prep_resolver._absent_tracker()["last_shipped"])
 
     def test_the_retired_sub_agent_and_its_convergence_machinery_are_gone(self):
         for path in sorted(SKILL_DIR.rglob("*.md")):

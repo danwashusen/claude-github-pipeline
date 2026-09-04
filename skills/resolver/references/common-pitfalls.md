@@ -155,13 +155,18 @@ its §review-loop, its S6 DoD projection) that carry the same numbering v1 used,
   one it dispatches is the post-settle cold read, which never invokes `review`. Don't reintroduce a
   dispatched `review` thinking "this time stronger emphasis will work" — the constraint is the harness, not
   the model.
+- **Don't reach for Plan-settled or Deferred-by-plan without the citation the rubric requires.** The
+  buckets exist to stop re-litigation, not to dismiss findings; `review-fix-round.md`'s classification
+  rubric owns the rule and its escape hatches.
+- **Don't scale down verification with the review scope.** Scope narrows the adversarial review only;
+  the deterministic gates stay at full strength on every phase, per S5.1 "Scope".
 - **Don't stop at any turn-boundary beat in the review loop.** S5.1 has three beats where the
   model can summarize-and-stop before the run finishes; all three are the *PR #416 failure mode* and the
   *#653 missing-handoff failure mode* re-imported one layer up. (a) **After `Skill(review)` returns** — the
   verdict text reads like a finished deliverable, but `/review`'s job is only to emit the verdict, not to
   close the loop. Your next tool calls in the same turn are the classification and the fix edits — or, on a
-  settled verdict, staging the cumulative diff and dispatching the cold read. (b) **After the fix round's
-  push** — the next beat is re-invoking `Skill(skill="review")`, not a recap of what you fixed. (c) **After
+  settled verdict, staging the scope diff and dispatching the cold read per S5.1 step 4. (b) **After the fix round's
+  push** — the next beat is re-invoking `Skill(skill="review")` with S5.1's Invocation arguments, not a recap of what you fixed. (c) **After
   the cold-read sub-agent returns** — the next beat is a fix round on its findings, or S6 when it found
   nothing. Treat every one of these as a step inside S5.1, not the end of it.
 - **Don't post review feedback on the issue.** Review feedback on a PR goes on the PR, not on the

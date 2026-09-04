@@ -162,40 +162,69 @@ open). Then run the **review loop** (S5.1).
 ### S5.1 — Review loop
 
 Read [`../references/review-fix-round.md`](../references/review-fix-round.md) at loop entry: the
-classification rubric, the fix-round steps, and the guard-rail cards live there; this section is the
-control flow. `review`'s target is always the PR's **cumulative diff**, what `Skill(skill="review")` on the
-PR naturally reads — never the delta since the last fix: a correct-but-partial class fix reads as correct
-every round when only the delta is re-read, so a delta-scoped loop converges on its own blind spot instead
-of on the code. Keep an **addressed-items list** (one-line summaries, appended every round — the deadlock
-check reads it) alongside the follow-up registry. Loop until `review` approves with zero Addressable /
-Cheap-fix-override items:
+classification rubric (with its two plan-settled buckets), the fix-round steps, and the guard-rail cards
+live there; this section is the control flow. Keep an **addressed-items list** and a **refuted-items
+list** (one-line summaries, appended every round — the deadlock check reads both) alongside the
+follow-up registry.
 
-1. Run `Skill(skill="review")` **in this main conversation** (the built-in command is unreachable from
+**Scope.** The phase under review is **final** when the issue is single-phase, or when it is the last
+unshipped `kind: code-shipping` entry of `facts.phases` after S4 reconciliation — a trailing operator /
+decision-only phase ships no commits and never enters S5.1, so the last code phase carries the cumulative
+pass and is the one whose shipping flips the PR ready ("Return to the routed playbook"). Final → `review`'s target is the PR's **cumulative diff**, what
+`Skill(skill="review")` on the PR naturally reads: a correct-but-partial class fix reads as correct every
+round when only the delta since the last fix is re-read, so a delta-scoped loop converges on its own
+blind spot instead of on the code. Non-final → the **phase delta**: base = `facts.tracker.last_shipped.
+commit_sha` when `reachable` (the shipped phase nearest HEAD — phases ship in `depends-on` order, not
+numeric order), else `facts.workspace.base_ref` (phase 1, where the two coincide; or a force-pushed-away
+SHA); after an S4 **Rebuild un-ticked**, treat `last_shipped` as unreachable — the un-ticked work is
+what needs re-reading. The blind spot the cumulative rule guards bites *within* a fix loop, not across shipped phases; a
+cross-phase defect reaches the final phase's cumulative pass, its cold read, and the evaluator. Scope
+narrows the adversarial review only — the §8 / §10.6 gates and defect injection run at full strength on
+every phase.
+
+**Invocation.** `Skill(skill="review", args="<level> [<base>...HEAD] <context>")`: level `medium` on a
+non-final phase, `high` on the final one (`review` inherits whatever level the operator last typed when
+none is passed); the three-dot range on non-final phases only; `<context>` on every phase =
+`facts.phases` with the current phase marked, plus the plan's `## Architecture decisions` /
+`## UI decisions` / `## Deviations from project docs` bullets, so the reviewer can read a half-wired
+seam as deferred and a locked decision as locked. Assemble `<context>` once at loop entry and reuse it
+verbatim every round; only the current-phase marker differs between phases. Range and context are
+best-effort — an argument the skill does not honour is appended to its prompt as text — and the fix
+round's settled buckets are the floor whether or not they reached the reviewer. A verdict that read
+nothing (no file named, an approve with no evidence of the diff) is not a verdict: re-invoke with the PR
+number as the target.
+
+Loop until `review` approves with zero Addressable / Cheap-fix-override items:
+
+1. Run `Skill(skill="review")` with the Invocation arguments above, **in this main conversation** (the
+   built-in command is unreachable from
    inside an `Agent`-dispatched sub-agent — that design consistently failed on PR #607, forcing prose
    instead of a real verdict). Its verdict text is this round's input.
 2. Run one **fix round** on it per the reference, in this conversation: classify every listed item
-   (iteration 1 also folds in human PR comments and reviews), deadlock-check against the addressed-items
-   list, fix every Addressable + Cheap-fix-override item, defect-inject every new or changed assertion, run
-   the §10.6 pre-push gate (the same retry ladder as §8, test-selection diff-base override = HEAD), commit,
-   push, reply on the PR. "Approved" is **not** the exit condition — you re-classify every listed item;
-   soft politeness ("not blocking") does not move an item out of Addressable. A guard rail (deadlock /
-   architectural / verification failure / grounding violation) is a direct `AskUserQuestion` card per the
-   reference, rendered at the point it fires. A **grounding-violation** item is never filed as a follow-up
-   — the hard block exists to stop the ship.
+   (iteration 1 also folds in human PR comments and reviews, and seeds the refuted-items list from prior
+   rounds' `Settled (not addressed):` blocks), deadlock-check against both lists, fix every Addressable +
+   Cheap-fix-override item, defect-inject every new or changed assertion, run the §10.6 pre-push gate
+   (the same retry ladder as §8, test-selection diff-base override = HEAD), commit, push, reply on the
+   PR. "Approved" is **not** the exit condition — you re-classify every listed item; soft politeness
+   ("not blocking") does not move an item out of Addressable. A guard rail (deadlock / architectural /
+   verification failure / grounding violation) is a direct `AskUserQuestion` card per the reference,
+   rendered at the point it fires. A **grounding-violation** item is never filed as a follow-up — the
+   hard block exists to stop the ship.
 3. Branch on what the round did, not on the verdict's approval line alone:
    - **The round addressed items** (it pushed) → re-run step 1.
    - **The round addressed nothing** — an approved verdict with zero Addressable / Cheap-fix-override
-     items, *or* a non-approving verdict whose every item classified as Explicitly-deferred (filed) —
-     → the loop has **settled**. Nothing the loop can do moves an unchanged PR, so a reviewer that
-     never approves must not spin it: on the second shape, name the outstanding items and their
-     follow-up URLs in the PR body before settling.
-   - Settled and the cold read has **not** run this run → step 4. Settled and it **has** → S5.1 is
-     done; go to S6.
+     items, *or* a non-approving verdict whose every item classified as Explicitly-deferred (filed),
+     Plan-settled, or Deferred-by-plan — → the loop has **settled**. Nothing the loop can do moves an
+     unchanged PR, so a reviewer that never approves must not spin it: on the second shape, name the
+     outstanding items with their follow-up URLs or plan citations in the PR body before settling.
+   - Settled and the cold read has **not** run this run — nor, per step 4's PR record, on this phase
+     at this HEAD → step 4. Settled and it **has** → S5.1 is done; go to S6.
 
    After `review`'s verdict text lands, your next emissions are **operational tool calls** (the
    classification, the edits, the gate), not more prose — stopping at the verdict text is the PR
-   #416/#653 missing-handoff failure mode. Cap the outer loop — **one** cap across the whole of S5.1,
-   the post-cold-read rounds included — and on the cap ask (`header: "Iter cap"`): **Continue**
+   #416/#653 missing-handoff failure mode. Cap the outer loop — **one** cap across the whole of S5.1:
+   `review` runs at most **2** times on a non-final phase and **4** times on the final phase before the
+   cold read; step 4 owns what follows it. On the cap ask (`header: "Iter cap"`): **Continue**
    (free-text count) / **Accept current** (exit S5.1 as pushed, the cold read skipped when it has not
    run yet; every still-open Addressable item becomes a `file-now` follow-up and the PR body records
    the override) / **Abort**.
@@ -205,18 +234,27 @@ Cheap-fix-override items:
    read — and goes straight to the routed playbook's handoff, whose `Why:` quotes what triggered it. Only
    the continuing answers (**Try another angle**, **Accept + defer**, **Push with reds**, **Defer the
    tests**, a named architectural path) resume this loop.
-4. **Cold-read audit — once per run, after settle.** Stage the cumulative diff to
-   `<facts.scratch>/cold-read-diff.patch` (`git diff` from `facts.workspace.base_ref` to HEAD, run in the
-   workspace) and dispatch the cold-read `Explore` sub-agent per
-   [`../references/cold-read-audit-prompt.md`](../references/cold-read-audit-prompt.md). It reads the
-   touched modules' **final state** against their invariants and cross-site consistency — the cross-file
-   shape a per-finding conversation reaches only rounds later, if at all — never the round-by-round
-   history. `code: AMBIGUOUS` (missing or empty staged diff) → repair the staging and re-dispatch, or
-   surface the failure to the operator; never read it as "no findings". An empty `## Findings` → S5.1 is
-   done. Findings → run one fix round (step 2, those findings as the verdict), then **re-run step 1** and
-   iterate steps 1–3 to a second settle, which exits to S6 by step 3's last branch — the cold read is
-   never dispatched twice in one run. `review` stays the terminal gate; the cold read supplements the
-   reviewer, never substitutes for it.
+4. **Cold-read audit — once per phase, after settle.** The PR is the record: the round reply carries
+   `Cold read: phase <N> @ <sha>` (`<N>` the phase number, `1` for a single-phase issue; `<sha>` HEAD at
+   dispatch), surfaced by the iteration-1 re-read. A prior record for this phase whose `<sha>` **is**
+   HEAD → nothing pushed since; skip it, S5.1 is done. A record whose `<sha>` is an ancestor of HEAD →
+   the audit covered the branch up to it: run the cold read with `<base>` = that sha, so no commit is
+   cold-read twice, and the new reply carries the updated line. No record → `<base>` per the scope rule
+   above. Stage the scope diff to `<facts.scratch>/cold-read-diff.patch` (`git diff <base>...HEAD` in
+   the workspace — three-dot, so a branch-name base that has advanced adds no phantom reversals) and
+   dispatch the cold-read `Explore` sub-agent per
+   [`../references/cold-read-audit-prompt.md`](../references/cold-read-audit-prompt.md), filling
+   `<<phase_context>>` with `facts.phases` and the current phase marked. It reads the touched modules'
+   **final state** against their invariants and cross-site consistency — the cross-file shape a
+   per-finding conversation reaches only rounds later, if at all — never the round-by-round history.
+   `code: AMBIGUOUS` (missing or empty staged diff) → repair the staging and re-dispatch, or surface the
+   failure to the operator; never read it as "no findings". An empty `## Findings` → post one PR comment
+   carrying the `Cold read: phase <N> @ <sha>` line; S5.1 is done. Findings → run one fix round (step 2,
+   those findings as the verdict; its reply carries the `Cold read:` line), then **re-run step 1**
+   exactly once as the confirming review. That round classifies but does not fix: settled items settle
+   it, and any Addressable item goes straight to the `Iter cap` card (**Continue** resumes steps 1–3 for
+   the count given) — the cold read is never dispatched twice in one run. `review` stays the terminal
+   gate; the cold read supplements the reviewer, never substitutes for it.
 
 ## S6 — DoD projection on the push that shipped the phase
 
