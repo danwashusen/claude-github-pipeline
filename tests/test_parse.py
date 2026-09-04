@@ -707,6 +707,7 @@ class PhaseTrackerParseTests(unittest.TestCase):
                     "checked": True,
                     "phase": 1,
                     "title": "the writer",
+                    "sub_label": None,
                     "commit_sha": "abc1234",
                     "annotation": None,
                 }
@@ -753,6 +754,39 @@ class PhaseTrackerParseTests(unittest.TestCase):
         )
         self.assertEqual(scan["unparsed"], [])
         self.assertEqual([row["phase"] for row in scan["rows"]], [1])
+
+    def test_a_sub_row_is_bound_to_its_phase_not_a_second_row_of_it(self):
+        # #51: `dod-projection-rule.md` Example C's own row. `Phase 2-measurement` means the
+        # measurement sub-phase attached to phase 2 — reading it as "phase 2, titled measurement" made
+        # one plan phase look like two competing tracker rows.
+        rows = parse.parse_phase_tracker(
+            "## Phase tracker\n- [x] Phase 2-measurement (operator phase 2, applied 2026-06-04)\n"
+        )
+        self.assertEqual(rows[0]["phase"], 2)
+        self.assertEqual(rows[0]["sub_label"], "measurement")
+        self.assertEqual(rows[0]["annotation"], "operator phase 2, applied 2026-06-04")
+
+    def test_a_main_row_is_not_mistaken_for_a_sub_row(self):
+        # The separator is the discriminator: an em dash or a spaced hyphen introduces a title.
+        for line, title in (
+            ("- [x] Phase 2 — harness (commit abc1234)", "harness"),
+            ("- [x] Phase 2 - harness (commit abc1234)", "harness"),
+        ):
+            rows = parse.parse_phase_tracker("## Phase tracker\n%s\n" % line)
+            self.assertIsNone(rows[0]["sub_label"], line)
+            self.assertEqual(rows[0]["title"], title, line)
+
+    def test_the_frozen_worked_instance_parses_as_documented(self):
+        # docs/specs/examples/phase-tracker.md verbatim — three main rows plus one sub-row.
+        rows = parse.parse_phase_tracker(
+            "## Phase tracker\n"
+            "- [x] Phase 1 — substrate (commit abc1234)\n"
+            "- [ ] Phase 2 — harness\n"
+            "- [ ] Phase 2-measurement (operator)\n"
+            "- [ ] Phase 3 — decision write-up\n"
+        )
+        self.assertEqual([row["phase"] for row in rows], [1, 2, 2, 3])
+        self.assertEqual([row["sub_label"] for row in rows], [None, None, "measurement", None])
 
     def test_absent_section_is_not_present(self):
         self.assertEqual(

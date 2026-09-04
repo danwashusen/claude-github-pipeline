@@ -1112,7 +1112,7 @@ class TrackerFactTests(PrepResolverSandboxTestCase):
         self.assertEqual(
             tracker["rows"][0],
             {
-                "checked": True, "phase": 1, "title": "substrate",
+                "checked": True, "phase": 1, "title": "substrate", "sub_label": None,
                 "commit_sha": "abc1111", "annotation": None,
             },
         )
@@ -1195,13 +1195,14 @@ class TrackerDiffUnitTests(unittest.TestCase):
     """Direct tests of `build_tracker_diff`, the pure classifier — no subprocess, no shim."""
 
     @staticmethod
-    def _row(phase, title, checked=True, sha="abc1234", annotation=None):
+    def _row(phase, title, checked=True, sha="abc1234", annotation=None, sub_label=None):
         return {
             "phase": phase,
             "title": title,
             "checked": checked,
             "commit_sha": sha if checked else None,
             "annotation": annotation,
+            "sub_label": sub_label,
         }
 
     @staticmethod
@@ -1232,17 +1233,43 @@ class TrackerDiffUnitTests(unittest.TestCase):
         self.assertEqual(diff["unparsed"], ["- [x] Phase 5c — nope (commit abc1234)"])
         self.assertTrue(diff["conflict"])
 
-    def test_two_rows_for_one_phase_number_gate(self):
-        # Reachable on a real tracker, not only a hand-edit: the frozen worked instance shows
-        # free-form label rows (`- [ ] Phase 2-measurement (operator)`) that parse to the same number
-        # as `Phase 2`. Two rows for one phase cannot say what shipped.
+    def test_two_MAIN_rows_for_one_phase_number_gate(self):
+        # The case the gate is actually for: two main rows claiming one phase cannot say what shipped.
         rows = parse.scan_phase_tracker(
-            "## Phase tracker\n- [ ] Phase 2 — harness\n- [ ] Phase 2-measurement (operator)\n"
+            "## Phase tracker\n- [x] Phase 2 — harness (commit a1b2c3d)\n"
+            "- [x] Phase 2 — something else (commit d4e5f6a)\n"
         )
-        self.assertEqual([row["phase"] for row in rows["rows"]], [2, 2])
         diff = prep_resolver.build_tracker_diff(rows["rows"], [self._phase(2, "harness")])
         self.assertEqual(diff["duplicated"], [2])
         self.assertTrue(diff["conflict"])
+
+    def test_the_documented_operator_sub_row_does_not_gate(self):
+        # #51, the regression #48 shipped: `dod-projection-rule.md` Example C's own tracker raised the
+        # drift gate on EVERY continue-mode entry, because `Phase 2-measurement` folded into phase 2 as
+        # a second row of it. A sub-row is bound to its phase and carried through instead.
+        rows = parse.scan_phase_tracker(
+            "## Phase tracker\n"
+            "- [x] Phase 1 — substrate (commit abc1234)\n"
+            "- [x] Phase 2 — harness (commit def5678)\n"
+            "- [x] Phase 2-measurement (operator phase 2, applied 2026-06-04)\n"
+            "- [ ] Phase 3 — decision write-up\n"
+        )
+        plan = [self._phase(1, "substrate"), self._phase(2, "harness"), self._phase(3, "decision write-up")]
+        diff = prep_resolver.build_tracker_diff(rows["rows"], plan, rows["unparsed"])
+        self.assertEqual(diff["duplicated"], [])
+        self.assertFalse(diff["conflict"])
+        # and it is reported, so a rebuild knows to carry it (with its annotation) rather than drop it
+        self.assertEqual([row["sub_label"] for row in diff["sub_rows"]], ["measurement"])
+        self.assertEqual(diff["sub_rows"][0]["annotation"], "operator phase 2, applied 2026-06-04")
+
+    def test_a_sub_row_does_not_satisfy_its_phase_main_row(self):
+        # A phase whose ONLY row is a sub-row still needs a main row added.
+        rows = parse.scan_phase_tracker(
+            "## Phase tracker\n- [x] Phase 2-measurement (operator phase 2, applied 2026-06-04)\n"
+        )
+        diff = prep_resolver.build_tracker_diff(rows["rows"], [self._phase(2, "harness")])
+        self.assertEqual(diff["missing"], [2])
+        self.assertFalse(diff["conflict"])
 
     def test_an_ambiguous_title_names_no_destination(self):
         # #48 review, finding 4: `setdefault` made this first-wins, so the gate could quote a

@@ -1037,9 +1037,26 @@ def run_phases(args):
 # rule would eat a title that legitimately ends in one ("the flag (behind a feature gate)"), while
 # not stripping at all leaves an operator row's date inside `title` — where it compares unequal to
 # the plan's title on every single run and reads as drift that is not there.
-_PHASE_TRACKER_ROW_RE = re.compile(
-    r"^-\s*\[( |x|X)\]\s*Phase\s+(\d+)\s*(?:—|-)\s*(.+?)"
+# The separator is what distinguishes the two row kinds, so it is matched precisely: an em dash (with
+# optional spaces) or a SPACED hyphen introduces a main row's title, while a bare hyphen bound tight to
+# a word makes a sub-row label.
+_PHASE_TRACKER_ANNOTATION = (
     r"(?:\s*\((?:commit\s+([0-9a-f]{7,40})|(operator[^()]*))\))?$"
+)
+_PHASE_TRACKER_ROW_RE = re.compile(
+    r"^-\s*\[( |x|X)\]\s*Phase\s+(\d+)(?:\s*—\s*|\s+-\s+)(.+?)" + _PHASE_TRACKER_ANNOTATION
+)
+
+# `- [x] Phase <N>-<label> (…)` — a **sub-row**, bound to phase `<N>` rather than being a second row
+# *of* it (`skills/resolver/references/dod-projection-rule.md` Example C:
+# `- [x] Phase 2-measurement (operator phase 2, applied 2026-06-04)`, alonga `Phase 2 — harness` row of
+# its own). `Phase 2-measurement` means "the measurement sub-phase attached to phase 2", NOT "phase 2,
+# titled measurement" — reading it as the latter makes one plan phase look like two competing tracker
+# rows, which is a tick state nothing can reconcile. The plan's `## Phases` has no counterpart for the
+# label (integers only — `plan-schema.md`, "Phase numbering"), so a sub-row is carried through
+# reconciliation untouched rather than matched against a phase title.
+_PHASE_TRACKER_SUBROW_RE = re.compile(
+    r"^-\s*\[( |x|X)\]\s*Phase\s+(\d+)-(\S[^(]*?)" + _PHASE_TRACKER_ANNOTATION
 )
 
 # A line that *presents* as a checklist row. Used to tell "this row did not parse" (evidence that the
@@ -1055,7 +1072,9 @@ def scan_phase_tracker(pr_body_text):
         infer this from `rows`: a section whose rows are all malformed (a `Phase 5c` row from a
         pre-#47 plan, a hand-edit) yields rows `[]` while the section, and its unknown tick state,
         very much exist.
-      - `rows` — `{"checked", "phase", "title", "commit_sha", "annotation"}` dicts in source order.
+      - `rows` — `{"checked", "phase", "title", "sub_label", "commit_sha", "annotation"}` dicts in
+        source order. `sub_label` is `None` on a main row and the label on a `Phase <N>-<label>`
+        sub-row, which is bound to phase `<N>` rather than being a second row of it.
         `commit_sha` is set only for the `(commit <sha>)` form; `annotation` carries an
         `operator …` annotation verbatim so a rebuild can preserve it (it is the only record that an
         operator phase landed — `skills/resolver/references/dod-projection-rule.md`).
@@ -1076,14 +1095,18 @@ def scan_phase_tracker(pr_body_text):
         if not stripped:
             continue
         match = _PHASE_TRACKER_ROW_RE.match(stripped)
-        if match:
+        sub_match = None if match else _PHASE_TRACKER_SUBROW_RE.match(stripped)
+        if match or sub_match:
+            hit = match or sub_match
             rows.append(
                 {
-                    "checked": match.group(1) in ("x", "X"),
-                    "phase": int(match.group(2)),
-                    "title": match.group(3).strip(),
-                    "commit_sha": match.group(4),
-                    "annotation": match.group(5),
+                    "checked": hit.group(1) in ("x", "X"),
+                    "phase": int(hit.group(2)),
+                    "title": hit.group(3).strip(),
+                    # None on a main row; the label on a sub-row bound to `phase`.
+                    "sub_label": None if match else hit.group(3).strip(),
+                    "commit_sha": hit.group(4),
+                    "annotation": hit.group(5),
                 }
             )
         elif _PHASE_TRACKER_ROWLIKE_RE.match(stripped):

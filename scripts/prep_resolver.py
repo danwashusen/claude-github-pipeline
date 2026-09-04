@@ -533,18 +533,25 @@ def build_tracker_diff(rows, phases, unparsed=None):
         candidates = [n for n in title_to_numbers.get(title_key, []) if n != excluding]
         return candidates[0] if len(candidates) == 1 else None
 
-    row_numbers = {row["phase"] for row in rows}
+    # Only MAIN rows are reconciled against the plan. A `Phase <N>-<label>` sub-row is bound to phase
+    # `<N>` and has no plan counterpart to match (the plan's labels are integers — `plan-schema.md`,
+    # "Phase numbering"), so it is carried through untouched. Folding sub-rows in was #48's defect:
+    # `dod-projection-rule.md` Example C's own `Phase 2-measurement` row then read as a second row OF
+    # phase 2, and every operator-phase PR raised the drift gate with nothing drifting.
+    main_rows = [row for row in rows if not row.get("sub_label")]
+    sub_rows = [row for row in rows if row.get("sub_label")]
+
+    row_numbers = {row["phase"] for row in main_rows}
     missing = sorted(number for number in by_number if number not in row_numbers)
-    # A tracker cannot hold two rows for one phase and still say what shipped. The frozen worked
-    # instance (docs/specs/examples/phase-tracker.md) shows free-form label rows like
-    # `- [ ] Phase 2-measurement (operator)`, which parse to the SAME number as `Phase 2` — so this
-    # is reachable on a real tracker, not just a hand-edit.
+    # Two MAIN rows for one phase: a tick state nothing can reconcile, and the case the gate is for.
     duplicated = sorted(
-        number for number in row_numbers if sum(1 for row in rows if row["phase"] == number) > 1
+        number
+        for number in row_numbers
+        if sum(1 for row in main_rows if row["phase"] == number) > 1
     )
 
     dropped, retitled, shifted, removed_shipped = [], [], [], []
-    for row in rows:
+    for row in main_rows:
         number = row["phase"]
         plan_phase = by_number.get(number)
         row_title_key = parse.normalize_tracker_title(row["title"])
@@ -597,6 +604,10 @@ def build_tracker_diff(rows, phases, unparsed=None):
         "removed_shipped": removed_shipped,
         "unparsed": list(unparsed or []),
         "duplicated": duplicated,
+        # Informational, never a conflict: the rows a rebuild must carry through verbatim. Reported so
+        # the resolver knows they exist — rewriting the tracker without them would drop an operator
+        # phase's `(operator phase <N>, applied <ISO-date>)`, the only record that it landed.
+        "sub_rows": sub_rows,
         # One unmissable top-level boolean the playbook gates on, mirroring `open_questions_gate`'s
         # `blocked`: the router must never have to derive a gate from a disjunction of lists.
         #
@@ -629,6 +640,7 @@ def _absent_tracker():
             "removed_shipped": [],
             "unparsed": [],
             "duplicated": [],
+            "sub_rows": [],
             "conflict": False,
         },
     }
