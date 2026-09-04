@@ -632,6 +632,7 @@ def _absent_tracker():
     return {
         "present": False,
         "rows": [],
+        "last_shipped": None,
         "diff": {
             "missing": [],
             "dropped": [],
@@ -690,6 +691,53 @@ def _build_tracker(prior_pr_fact, phases, repo, scratch_dir=None, cwd=None):
     if pr_facts.get("body_mode") == "path":
         tracker["body_path"] = pr_facts.get("body_path")
     return tracker, notices, None
+
+
+def last_shipped_phase(rows, workspace_path):
+    """The shipped phase nearest HEAD — the non-final review's diff base (spine S5.1 "Scope").
+
+    Candidates are the ticked MAIN rows carrying a `(commit <sha>)`: a sub-row records an operator
+    phase, which ships no commits. Phases ship in `depends-on` order, not numeric order, so "the
+    highest ticked number" can name a commit that is not the branch's latest shipped state; the
+    rule is instead the candidate that is an ancestor of HEAD with the fewest commits between it and
+    HEAD (`git rev-list --count <sha>..HEAD`), probed in the work workspace. Returns
+    `{"phase", "commit_sha", "reachable"}` or `None` when nothing has shipped. Candidates present but
+    none reachable (a force-pushed-away SHA, no workspace to probe) → the numerically last ticked row
+    with `reachable: false`, so the spine falls back to `facts.workspace.base_ref`.
+
+    A convenience fact: no decision, no notice, never raises — an unprobeable SHA must not break a
+    session that reviews fine on the cumulative diff.
+    """
+    candidates = [
+        row for row in rows or []
+        if row.get("checked") and row.get("sub_label") is None and row.get("commit_sha")
+    ]
+    if not candidates:
+        return None
+    best = None
+    if workspace_path:
+        for row in candidates:
+            sha = row["commit_sha"]
+            try:
+                ancestor = process.run(
+                    ["git", "merge-base", "--is-ancestor", sha, "HEAD"], cwd=workspace_path
+                )
+                if ancestor.returncode != 0:
+                    continue
+                count = process.run(
+                    ["git", "rev-list", "--count", "%s..HEAD" % sha], cwd=workspace_path
+                )
+                if count.returncode != 0:
+                    continue
+                distance = int((count.stdout or "").strip())
+            except (OSError, ValueError):
+                continue
+            if best is None or distance < best[0]:
+                best = (distance, row)
+    if best is not None:
+        return {"phase": best[1]["phase"], "commit_sha": best[1]["commit_sha"], "reachable": True}
+    fallback = max(candidates, key=lambda row: row["phase"])
+    return {"phase": fallback["phase"], "commit_sha": fallback["commit_sha"], "reachable": False}
 
 
 def _forward_decision(decision, notices=None):
@@ -1171,6 +1219,12 @@ def build_facts(issue_number, repo, root=".", scratch_dir=None, refresh=False, c
             "source": "ambient",
             "setup": work_workspace_envelope.get("setup"),
         }
+    # The non-final review's diff base — probed in the asserted work workspace (the only checkout
+    # whose HEAD is the branch under review); None-workspace routes get the unreachable fallback.
+    tracker["last_shipped"] = last_shipped_phase(
+        tracker.get("rows"),
+        work_workspace_envelope["path"] if work_workspace_envelope is not None else None,
+    )
     if read_workspace_envelope is not None:
         facts["read_workspaces"] = {
             "audit": {

@@ -1,13 +1,14 @@
 # Cold-read audit sub-agent prompt (post-settle whole-state read)
 
-Dispatched once per run from the spine's S5.1 step 4, after the `review` loop settles. Per-finding review
+Dispatched once per phase from the spine's S5.1 step 4, after the `review` loop settles. Per-finding review
 converges on the round-by-round conversation: it reaches the cross-file shape of a change only rounds
 later, if at all, and it cannot see a defect its own corrections introduced. This sub-agent is the fresh
 instrument: an `Explore`-type judgment sub-agent (architecture.md §8) that reads the **final state** of
 the touched code against its own invariants and cross-site consistency, never the round-by-round history.
 The orchestrator fills the `<<...>>` placeholders before sending. **Do not include the review-loop
 history, prior `review` verdicts, the resolver's state summary, or any conversation turns** — the cold
-read is only meaningful uncontaminated. The sub-agent is context-blind, cannot call `AskUserQuestion`,
+read is only meaningful uncontaminated. The plan's phase list (`<<phase_context>>`) is plan text, not
+history, and is the one thing that lets the reader tell a seam a later phase ships from a gap. The sub-agent is context-blind, cannot call `AskUserQuestion`,
 and never writes to GitHub.
 
 Its verdict returns to the main loop and is handed to one fix round (`review-fix-round.md`), so findings
@@ -17,8 +18,8 @@ propagates here.
 
 ---
 
-You are a fresh reader auditing the final state of a change. You have the cumulative diff and the
-working tree it produced; you do **not** have the review rounds that shaped it, and that is deliberate —
+You are a fresh reader auditing the final state of a change. You have the diff for this review's scope
+and the working tree it produced; you do **not** have the review rounds that shaped it, and that is deliberate —
 your job is to judge what the code now *is*, not how it got here. Review the module against its
 invariants, not corrections against findings.
 
@@ -27,9 +28,15 @@ invariants, not corrections against findings.
 - **Workspace**: `<<workspace_path>>` — the absolute path to the checkout holding the final state
   (`facts.workspace.path`). Every `Read` / `grep` you run names paths inside it. Do not read any other
   checkout, and do not run ref arithmetic.
-- **Cumulative diff**: `<<diff_path>>` — the full diff from the integration target to HEAD, staged to a
-  file by the orchestrator. Read it to learn what changed; read the workspace for what the code now says.
-- **Integration target (name)**: `<<base_ref>>` — informational, for naming the target in findings.
+- **Scope diff**: `<<diff_path>>` — the diff from the review base to HEAD, staged to a file by the
+  orchestrator: this phase's delta on a non-final phase of a multi-phase plan, the cumulative diff from
+  the integration target on the final phase. Read it to learn what changed; read the workspace for what
+  the code now says.
+- **Review base (name)**: `<<base_ref>>` — the base the diff was taken from (a shipped phase's SHA, or
+  the integration target); informational, for naming it in findings.
+- **Phase context**: `<<phase_context>>` — the plan's `## Phases` list with the phase under review
+  marked (`(none)` for a single-phase issue). A consumer, wiring, or seam a **later** phase ships is not
+  a gap: tag such a finding `deferred to phase <N>` instead of reporting it as missing.
 - **Touched files**: `<<touched_files>>` — the diff's file list, pre-enumerated. Your scope is these
   files plus whatever shares their invariants (callers, siblings, the module around them).
 
@@ -64,6 +71,7 @@ Return a markdown verdict, nothing else:
 - `## Findings` — one bullet per defect: `**<severity>** — <file>:<line> — <what is wrong>`, severity
   drawn from this ordered scale (Blocker > High > Medium > Low > Nitpick),
   followed by the evidence (the invariant or sibling site it conflicts with, cited by path and line).
-  Name each finding concretely enough that a fixer can act without re-deriving your analysis. No finding
+  Name each finding concretely enough that a fixer can act without re-deriving your analysis. A finding
+  whose fix belongs to a later phase ends with `— deferred to phase <N>`. No finding
   is "the history was messy" — only defects present in the final state count. An empty section means the
   cold read found nothing; say so explicitly.

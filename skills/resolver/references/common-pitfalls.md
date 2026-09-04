@@ -155,13 +155,24 @@ its §review-loop, its S6 DoD projection) that carry the same numbering v1 used,
   one it dispatches is the post-settle cold read, which never invokes `review`. Don't reintroduce a
   dispatched `review` thinking "this time stronger emphasis will work" — the constraint is the harness, not
   the model.
+- **Don't classify a finding Plan-settled without the verbatim citation.** The bucket exists to stop the
+  reviewer re-litigating a decision the plan's `## Architecture decisions` / `## UI decisions` /
+  `## Deviations from project docs` already record, on every phase — not to dismiss findings. A
+  finding you cannot answer with the decision bullet, quoted verbatim in the PR reply, stays in its
+  default bucket; a finding that shows the decision is *defective* is Decision-required or
+  Grounding-violation, never settled. The same discipline for Deferred-by-plan: cite the later phase
+  by number and title, and a seam no phase ships is a gap.
+- **Don't scale down verification with the review scope.** A non-final phase narrows `review` to its
+  phase delta at `medium`; the §8 / §10.6 gates, the test-selection sub-agent, and defect injection run
+  at full strength on every phase regardless. The adversarial review is what scales; the deterministic
+  gates are the cheapest moment to catch a regression and stay where they are.
 - **Don't stop at any turn-boundary beat in the review loop.** S5.1 has three beats where the
   model can summarize-and-stop before the run finishes; all three are the *PR #416 failure mode* and the
   *#653 missing-handoff failure mode* re-imported one layer up. (a) **After `Skill(review)` returns** — the
   verdict text reads like a finished deliverable, but `/review`'s job is only to emit the verdict, not to
   close the loop. Your next tool calls in the same turn are the classification and the fix edits — or, on a
   settled verdict, staging the cumulative diff and dispatching the cold read. (b) **After the fix round's
-  push** — the next beat is re-invoking `Skill(skill="review")`, not a recap of what you fixed. (c) **After
+  push** — the next beat is re-invoking `Skill(skill="review")` with S5.1's Invocation arguments, not a recap of what you fixed. (c) **After
   the cold-read sub-agent returns** — the next beat is a fix round on its findings, or S6 when it found
   nothing. Treat every one of these as a step inside S5.1, not the end of it.
 - **Don't post review feedback on the issue.** Review feedback on a PR goes on the PR, not on the

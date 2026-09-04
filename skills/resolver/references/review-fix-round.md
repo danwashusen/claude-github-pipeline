@@ -23,6 +23,12 @@ This is **not** a sub-agent prompt: no placeholders, no JSON return, and every g
 - **Iteration number** — the 1-based index in S5.1's outer loop.
 - **The addressed-items list** — one-line summaries of what you fixed in every prior round this run. You
   append to it in step 9; the deadlock check in step 3 reads it.
+- **The refuted-items list** — one line per Plan-settled / Deferred-by-plan item with its citation, from
+  every prior round this run and (seeded on iteration 1, below) from earlier phases' rounds. Appended in
+  step 9; the deadlock check reads it too, and treats a match differently from an addressed match.
+- **The plan and the phase list** — the verified plan comment (`facts.plan.url`; its body is the
+  `marker_comment_*` entry of `facts.sections`) and `facts.phases`, with the current phase's number
+  (the S4 cursor) and its `depends-on`. The two settled buckets cite these.
 - **Doc-grounding statement** (from S3) and any audit / plan overrides carried into the PR body — use them
   when defending an implementation choice in a PR reply.
 - **Test config**: `facts.config.static_checks` and `facts.config.test_target_raw`.
@@ -34,7 +40,10 @@ This is **not** a sub-agent prompt: no placeholders, no JSON return, and every g
   reviewer commented between invocations). On **iteration 1 only**, before classifying, re-read the
   accumulated PR comments and reviews (`gh pr view --comments`, plus the `pulls/<N>/reviews` and
   `pulls/<N>/comments` REST endpoints via `gh api`) and treat any human reviewer comment as additional
-  Addressable input alongside the verdict.
+  Addressable input alongside the verdict. Seed the refuted-items list from every `Settled (not
+  addressed):` block in prior round replies (step 8) — each phase is a fresh session, and that block is
+  the only carrier of what earlier phases refuted — and note any `Cold read: phase <N> @ <sha>` line
+  for the current phase (S5.1 step 4 reads it).
 
 ## Classification rubric
 
@@ -51,10 +60,23 @@ Apply to every listed item:
   paths for: render the `Decision` card.
 - **Grounding-violation** — a diff that violates a documented constraint the issue/epic kept in-scope: if
   addressable here, fix it; else render the `Grounding` card. NEVER filed as a follow-up.
+- **Plan-settled** — the finding contests a decision the plan records in `## Architecture decisions`,
+  `## UI decisions`, or `## Deviations from project docs`, or repeats an item the refuted-items list
+  already carries. Settled, not addressed: no edit, no follow-up; the PR reply quotes the decision bullet
+  **verbatim** as the citation. No citation → the item is not plan-settled and stays in its default
+  bucket — this bucket exists to stop re-litigation, never to dismiss a finding. A finding that
+  *demonstrates* the decision is defective (a reproducible fault, a documented-constraint violation) is
+  not plan-settled: it is Decision-required or Grounding-violation.
+- **Deferred-by-plan** — the finding names a seam, consumer, or wiring that a **later** phase in
+  `facts.phases` ships (a phase after the current cursor). Settled: cite the phase number and title in
+  the PR reply, file nothing — `Explicitly-deferred` files a follow-up, and an issue for work a planned
+  phase already owns is a duplicate. A seam no phase ships is a gap, not deferred: it stays Addressable
+  or Decision-required.
 
 ## Steps (one round — no inner loop)
 
-1. **Classify** every issue and suggestion per the rubric. The reviewer's own "approved" verdict line is
+1. **Classify** every issue and suggestion per the rubric, reading the plan and `facts.phases` for the two
+   settled buckets. The reviewer's own "approved" verdict line is
    NOT the exit condition — re-classify each listed item. The cheap-fix override applies to <= ~20-line
    fixes on already-modified files even when the reviewer offered to defer. On iteration 1, fold in the
    human PR activity from the resume hint.
@@ -65,7 +87,9 @@ Apply to every listed item:
    step 1 and is fixed in step 4; it is never filed as a follow-up.)
 3. **Deadlock check.** If any item in the current verdict matches a summary in the addressed-items list
    (same file, same surface, same suggested change with no acknowledgement of your prior fix), render the
-   `Review loop` card. Don't address it a second time on the same hypothesis.
+   `Review loop` card. Don't address it a second time on the same hypothesis. An item matching the
+   **refuted-items list** is re-settled silently: no card, no second reply, no new list entry — a
+   refutation is settled for the run the moment it is cited.
 4. **Fix** every Addressable and Cheap-fix-override item. Apply `common-pitfalls.md`'s three
    fix-discipline bullets to each fix *before* writing it — "Don't fix the instance when the finding names
    a class", "Don't conform code to a stated invariant a finding contradicts", "Don't split an atomic call
@@ -73,9 +97,12 @@ Apply to every listed item:
    density of the code they corrected; those three are what that bought. File every Explicitly-deferred
    item via the follow-up filing protocol (urgency `file-now`, type per the reviewer's framing) and capture
    the returned URLs. Never file a Grounding-violation item.
-5. **No edits** (zero Addressable, zero Cheap-fix-override items) → this round is complete. Skip steps 6–8
-   and go to step 9, then back to S5.1 step 3, whose "addressed nothing" branch settles the loop — whether
-   or not the verdict's own line said approved.
+5. **No edits** (zero Addressable, zero Cheap-fix-override items — every item Explicitly-deferred or
+   settled) → this round is complete. Skip steps 6–7 and step 8's commit and push; post step 8's reply
+   only when this round settled a **new** item or was fed by the cold read (the `Settled (not
+   addressed):` block and/or the `Cold read:` line alone). Then step 9,
+   then back to S5.1 step 3, whose "addressed nothing" branch settles the loop — whether or not the
+   verdict's own line said approved.
 6. **Defect-inject** every new or changed assertion step 4 added. An assertion written to catch a finding's
    defect does not count as coverage until an injection has made it fail: stage the fix first (the
    injection revert restores the staged state; committing waits for step 8, after the gate), inject the
@@ -96,8 +123,19 @@ Apply to every listed item:
    and deep fixes. On escalation, render the `Tests red` card.
 8. **Commit. Push. Reply on the PR**, briefly describing what changed in response to which points of
    feedback. That per-round comment is the GitHub-side record — how a reviewer, and the next session,
-   follows what this loop did without replaying the conversation.
-9. **Record.** Append this round's one-line item summaries to the addressed-items list. Hold the filed
+   follows what this loop did without replaying the conversation. When the round settled anything new,
+   the reply ends with this fixed block — the next session's resume re-read seeds its refuted-items list
+   from it (each phase is a fresh session; this comment is the only carrier):
+
+   ```
+   Settled (not addressed):
+   - plan-settled — <one-line item> — cites: <section> "<decision bullet, verbatim>"
+   - deferred-by-plan — <one-line item> — phase <N> "<title>"
+   ```
+
+   A round fed by the cold read (S5.1 step 4) also carries the `Cold read: phase <N> @ <sha>` line.
+9. **Record.** Append this round's one-line item summaries to the addressed-items list and its settled
+   items, with citations, to the refuted-items list. Hold the filed
    follow-up URLs for the PR body and the handoff. Carry any **procedural note** (something the next
    session should know that is not worth an issue) as a capture-not-file item per
    `follow-up-tracking.md` — it lands in the PR body or the handoff `Why:`, never as a filed issue.

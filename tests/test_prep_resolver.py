@@ -1118,6 +1118,48 @@ class TrackerFactTests(PrepResolverSandboxTestCase):
         )
         self.assertEqual([row["phase"] for row in tracker["rows"]], [1, 2, 3, 4, 5, 6])
 
+    def test_last_shipped_falls_back_unreachable_on_fixture_shas(self):
+        # The fixture's SHAs are not commits in the sandbox, so nothing is an ancestor of HEAD: the
+        # numerically last ticked row is reported with `reachable: false` and the spine falls back
+        # to `facts.workspace.base_ref`. A convenience fact — never a decision, never a crash.
+        tracker = self._envelope(fixture_case="prep_resolver_tracker_clean")["tracker"]
+        self.assertEqual(tracker["last_shipped"]["phase"], 5)
+        self.assertFalse(tracker["last_shipped"]["reachable"])
+        self.assertRegex(tracker["last_shipped"]["commit_sha"], r"^[0-9a-f]{7}$")
+
+    def test_last_shipped_picks_the_shipped_phase_nearest_head(self):
+        # Phases ship in `depends-on` order, not numeric order: phase 2 shipped first, then phase 1.
+        # The non-final review's diff base is the shipped commit nearest HEAD — phase 1 — not the
+        # highest ticked number.
+        wt = self._mk_ambient("100-fix-the-widget")
+        shas = []
+        for name in ("phase-two", "phase-one"):
+            _write(wt / ("%s.txt" % name), name + "\n")
+            _git(["add", "."], wt)
+            _git(["commit", "-m", "ship " + name], wt)
+            shas.append(_git(["rev-parse", "--short=7", "HEAD"], wt).strip())
+        _write(wt / "wip.txt", "unshipped\n")
+        _git(["add", "."], wt)
+        _git(["commit", "-m", "in-flight phase 3 work"], wt)
+        rows = [
+            {"checked": True, "phase": 2, "title": "b", "sub_label": None, "commit_sha": shas[0], "annotation": None},
+            {"checked": True, "phase": 1, "title": "a", "sub_label": None, "commit_sha": shas[1], "annotation": None},
+            {"checked": True, "phase": 4, "title": "op", "sub_label": "measure", "commit_sha": None, "annotation": "operator phase 4, applied 2026-01-01"},
+            {"checked": False, "phase": 3, "title": "c", "sub_label": None, "commit_sha": None, "annotation": None},
+        ]
+        self.assertEqual(
+            prep_resolver.last_shipped_phase(rows, str(wt)),
+            {"phase": 1, "commit_sha": shas[1], "reachable": True},
+        )
+        # A force-pushed-away SHA is skipped, not fatal; with no reachable candidate the fallback is
+        # the numerically last ticked main row, flagged unreachable.
+        gone = [dict(rows[0], commit_sha="0000000"), dict(rows[1], commit_sha="1111111")]
+        self.assertEqual(
+            prep_resolver.last_shipped_phase(gone, str(wt)),
+            {"phase": 2, "commit_sha": "0000000", "reachable": False},
+        )
+        self.assertIsNone(prep_resolver.last_shipped_phase([rows[3]], str(wt)))
+
     def test_a_matching_tracker_reports_no_drift(self):
         diff = self._envelope(fixture_case="prep_resolver_tracker_clean")["tracker"]["diff"]
         self.assertEqual(diff["missing"], [])
@@ -1131,6 +1173,7 @@ class TrackerFactTests(PrepResolverSandboxTestCase):
         tracker = self._envelope(fixture_case="prep_resolver_row_no_prior_pr")["tracker"]
         self.assertFalse(tracker["present"])
         self.assertEqual(tracker["rows"], [])
+        self.assertIsNone(tracker["last_shipped"])
         self.assertFalse(tracker["diff"]["conflict"])
 
     def test_the_live_insert_shape_is_a_silent_rebuild(self):
