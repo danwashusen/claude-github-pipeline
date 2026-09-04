@@ -1031,7 +1031,8 @@ class MainLoopReviewFixRoundTests(unittest.TestCase):
     the loop's dominant latency, and its tool calls never streamed, so the operator could not see
     what was being fixed. Everything the prompt encoded (rubric, disciplines, injection, gate,
     deadlock check, guard rails) survives in `review-fix-round.md`; only the dispatch is gone. The
-    convergence machinery that chose WHEN to cold-read goes with it: the read is now unconditional.
+    convergence machinery that chose WHEN to cold-read goes with it: the read is now unconditional
+    within a phase — once per phase at a given HEAD (4.13.0), never gated on a provenance count.
     """
 
     def setUp(self):
@@ -1115,7 +1116,7 @@ class MainLoopReviewFixRoundTests(unittest.TestCase):
         # The citation requirement is what stops the bucket dismissing genuine findings.
         self.assertIn("No citation → the item is not plan-settled", text)
         # A refuted repeat re-settles silently; the deadlock card is for ADDRESSED repeats only.
-        self.assertIn("re-settled silently: no card, no second reply", text)
+        self.assertIn("re-settled silently on its second occurrence: no card, no second reply", text)
         # Deferred-by-plan files nothing (Explicitly-deferred is the bucket that files).
         self.assertIn("file nothing", text)
 
@@ -1148,10 +1149,42 @@ class PhaseScopedReviewTests(unittest.TestCase):
     def test_the_cap_has_numbers(self):
         self.assertIn(
             "`review` runs at most **2** times on a non-final phase and **4** times on the final phase "
-            "before the cold read, and exactly once after it",
+            "before the cold read; step 4 owns what follows it",
             self.flat,
         )
         self.assertIn('header: "Iter cap"', self.flat)
+        # The confirming review after the cold read classifies but never pushes: a push there would
+        # demand a review the cap forbids, with no card to land on.
+        self.assertIn("That round classifies but does not fix", self.flat)
+
+    def test_review_fixes_from_pr_55(self):
+        # Finding 1: a trailing operator/decision-only phase must not steal "final" from the last
+        # code-shipping phase, or the PR ships with no cumulative pass at all.
+        self.assertIn("last unshipped `kind: code-shipping` entry of `facts.phases`", self.flat)
+        # Finding 4: the base can be a branch name (base_ref fallback), so the range is three-dot.
+        self.assertIn('args="<level> [<base>...HEAD] <context>"', self.flat)
+        self.assertNotIn("<base>..HEAD", self.flat)
+        self.assertIn("the fix round's settled buckets are the floor", self.flat)
+        # Finding 6: last_shipped is computed before S4 can un-tick a row.
+        self.assertIn("after an S4 **Rebuild un-ticked**, treat `last_shipped` as unreachable", self.flat)
+        # Finding 3: the skip compares the recorded sha to HEAD; an ancestor re-bases the read.
+        self.assertIn("whose `<sha>` **is** HEAD", self.flat)
+        self.assertIn("run the cold read with `<base>` = that sha", self.flat)
+        # Finding 9: the single-phase record has a defined phase number.
+        self.assertIn("`1` for a single-phase issue", self.flat)
+        # Finding 7: the plan-section token sits on one line.
+        self.assertIn("`## Deviations from project docs`", self.spine)
+        # Below-cap: context assembled once.
+        self.assertIn("Assemble `<context>` once at loop entry", self.flat)
+        reference = " ".join((REFERENCES_DIR / "review-fix-round.md").read_text(encoding="utf-8").split())
+        # Finding 2: a seeded deferral expires when its phase comes due.
+        self.assertIn("**except** a `deferred-by-plan` entry whose phase is the current phase", reference)
+        # Below-cap: a refuted repeat has a bounded escape.
+        self.assertIn("On its **third** occurrence in one run render the `Review loop` card", reference)
+        pitfalls = " ".join((REFERENCES_DIR / "common-pitfalls.md").read_text(encoding="utf-8").split())
+        # Finding 5: the turn-boundary pitfall cites step 4 instead of restating a stale mechanism.
+        self.assertNotIn("staging the cumulative diff", pitfalls)
+        self.assertIn("staging the scope diff and dispatching the cold read per S5.1 step 4", pitfalls)
 
     def test_verification_does_not_scale_with_scope(self):
         self.assertIn(
@@ -1160,7 +1193,7 @@ class PhaseScopedReviewTests(unittest.TestCase):
 
     def test_the_cold_read_is_once_per_phase_and_recorded_on_the_pr(self):
         self.assertIn("Cold read: phase <N> @ <sha>", self.flat)
-        self.assertIn("skip it; S5.1 is done", self.flat)
+        self.assertIn("skip it, S5.1 is done", self.flat)
         self.assertIn("<<phase_context>>", self.flat)
         self.assertIn("<<phase_context>>", self.cold_read)
         self.assertIn("deferred to phase <N>", self.cold_read)

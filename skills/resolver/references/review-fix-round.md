@@ -42,8 +42,10 @@ This is **not** a sub-agent prompt: no placeholders, no JSON return, and every g
   `pulls/<N>/comments` REST endpoints via `gh api`) and treat any human reviewer comment as additional
   Addressable input alongside the verdict. Seed the refuted-items list from every `Settled (not
   addressed):` block in prior round replies (step 8) — each phase is a fresh session, and that block is
-  the only carrier of what earlier phases refuted — and note any `Cold read: phase <N> @ <sha>` line
-  for the current phase (S5.1 step 4 reads it).
+  the only carrier of what earlier phases refuted — **except** a `deferred-by-plan` entry whose phase is
+  the current phase or a ticked tracker row: its deferral has come due, and the finding classifies
+  fresh. Note any `Cold read: phase <N> @ <sha>` line for the current phase and whether its `<sha>` is
+  HEAD or an ancestor of it (S5.1 step 4 reads both).
 
 ## Classification rubric
 
@@ -88,8 +90,10 @@ Apply to every listed item:
 3. **Deadlock check.** If any item in the current verdict matches a summary in the addressed-items list
    (same file, same surface, same suggested change with no acknowledgement of your prior fix), render the
    `Review loop` card. Don't address it a second time on the same hypothesis. An item matching the
-   **refuted-items list** is re-settled silently: no card, no second reply, no new list entry — a
-   refutation is settled for the run the moment it is cited.
+   **refuted-items list** is re-settled silently on its second occurrence: no card, no second reply,
+   only the entry's repeat count bumped. On its **third** occurrence in one run render the `Review loop`
+   card with the refutation standing in for the prior fix — the reviewer's persistence is evidence the
+   citation may not answer it.
 4. **Fix** every Addressable and Cheap-fix-override item. Apply `common-pitfalls.md`'s three
    fix-discipline bullets to each fix *before* writing it — "Don't fix the instance when the finding names
    a class", "Don't conform code to a stated invariant a finding contradicts", "Don't split an atomic call
@@ -129,9 +133,12 @@ Apply to every listed item:
 
    ```
    Settled (not addressed):
-   - plan-settled — <one-line item> — cites: <section> "<decision bullet, verbatim>"
-   - deferred-by-plan — <one-line item> — phase <N> "<title>"
+   - plan-settled — <one-line item> — cites: <section> "<decision bullet, verbatim>" (×<repeats>)
+   - deferred-by-plan — <one-line item> — phase <N> "<title>" (×<repeats>)
    ```
+
+   `(×<repeats>)` is omitted on a first occurrence; carrying it is what lets the count survive a phase
+   boundary.
 
    A round fed by the cold read (S5.1 step 4) also carries the `Cold read: phase <N> @ <sha>` line.
 9. **Record.** Append this round's one-line item summaries to the addressed-items list and its settled

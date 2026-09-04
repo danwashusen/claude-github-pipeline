@@ -700,13 +700,15 @@ def last_shipped_phase(rows, workspace_path):
     phase, which ships no commits. Phases ship in `depends-on` order, not numeric order, so "the
     highest ticked number" can name a commit that is not the branch's latest shipped state; the
     rule is instead the candidate that is an ancestor of HEAD with the fewest commits between it and
-    HEAD (`git rev-list --count <sha>..HEAD`), probed in the work workspace. Returns
+    HEAD — one `git rev-list --left-right --count <sha>...HEAD` per candidate, probed in the work
+    workspace: `behind<TAB>ahead`, an ancestor iff `behind == 0`, the distance `ahead`. Returns
     `{"phase", "commit_sha", "reachable"}` or `None` when nothing has shipped. Candidates present but
     none reachable (a force-pushed-away SHA, no workspace to probe) → the numerically last ticked row
     with `reachable: false`, so the spine falls back to `facts.workspace.base_ref`.
 
     A convenience fact: no decision, no notice, never raises — an unprobeable SHA must not break a
-    session that reviews fine on the cumulative diff.
+    session that reviews fine on the cumulative diff. `build_facts` calls it only for a multi-phase
+    plan; the spine never reads it on a single-phase issue.
     """
     candidates = [
         row for row in rows or []
@@ -719,19 +721,18 @@ def last_shipped_phase(rows, workspace_path):
         for row in candidates:
             sha = row["commit_sha"]
             try:
-                ancestor = process.run(
-                    ["git", "merge-base", "--is-ancestor", sha, "HEAD"], cwd=workspace_path
+                counts = process.run(
+                    ["git", "rev-list", "--left-right", "--count", "%s...HEAD" % sha],
+                    cwd=workspace_path,
                 )
-                if ancestor.returncode != 0:
+                if counts.returncode != 0:
                     continue
-                count = process.run(
-                    ["git", "rev-list", "--count", "%s..HEAD" % sha], cwd=workspace_path
-                )
-                if count.returncode != 0:
-                    continue
-                distance = int((count.stdout or "").strip())
+                behind, ahead = (int(part) for part in (counts.stdout or "").split())
             except (OSError, ValueError):
                 continue
+            if behind != 0:
+                continue
+            distance = ahead
             if best is None or distance < best[0]:
                 best = (distance, row)
     if best is not None:
@@ -1221,9 +1222,13 @@ def build_facts(issue_number, repo, root=".", scratch_dir=None, refresh=False, c
         }
     # The non-final review's diff base — probed in the asserted work workspace (the only checkout
     # whose HEAD is the branch under review); None-workspace routes get the unreachable fallback.
-    tracker["last_shipped"] = last_shipped_phase(
-        tracker.get("rows"),
-        work_workspace_envelope["path"] if work_workspace_envelope is not None else None,
+    tracker["last_shipped"] = (
+        last_shipped_phase(
+            tracker.get("rows"),
+            work_workspace_envelope["path"] if work_workspace_envelope is not None else None,
+        )
+        if len(phases or []) > 1
+        else None
     )
     if read_workspace_envelope is not None:
         facts["read_workspaces"] = {
