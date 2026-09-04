@@ -38,6 +38,32 @@ still match the new wording?); DoD bullet wording adjustments without structural
 when ambiguous** — surprising a visible-progress regression on a SOFT misclassification is worse than
 offering "Start fresh" on a borderline-SOFT case the user can decline.
 
+### Inserting a phase after work has shipped
+
+New work that must run *between* a shipped phase and an unshipped one is the case that produces
+`Phase 5c`. It has exactly one legal shape, forced by the grammar
+([`plan-schema.md`](plan-schema.md), "Phase numbering"): numbers are integers, sequential and
+non-duplicate, so a phase's number **is** its position. A letter suffix (`5c`), a decimal (`6.1`) and
+an appended-but-out-of-order integer are all unrepresentable — and `depends-on` cannot rescue them,
+because it is backward-only (a phase depends on *earlier* numbers), so "phase 7, but run it before 6"
+has no spelling either.
+
+**The rule: a shipped phase keeps its number; the unshipped tail renumbers.** Phases 1..k are the ones
+ticked in `facts.revise.phase_tracker`. The new phase takes k+1; every previously-unshipped phase
+shifts up by one in its existing relative order; every `depends-on` and `closes-dod` reference to a
+shifted phase is rewritten to its new number. Nothing that has shipped moves.
+
+That is what keeps the insert **SOFT** under the lists above ("New phases added beyond what's
+shipped", "Only un-shipped phases changed"): no ticked phase's number changed, so no ticked bullet's
+attribution changed. Renumbering the shipped prefix instead — to put the new phase at the front — is
+the move that would make the same edit HARD, and it is never necessary: the insert point is always at
+or after k+1, since work that has already shipped cannot be preceded by work that has not.
+
+The PR's `## Phase tracker` is a **separate artifact keyed by the same numbers**, so this operation
+changes its row set. The resolver reconciles it against the new `## Phases` before it selects its next
+phase (`skills/resolver/playbooks/resolve-spine.md` S4, from `facts.tracker.diff`); name the shift in
+the handoff `Why:` so the operator sees it coming.
+
 ### SOFT-path body reconciliation
 
 Walk the captured body annotations against the new plan's `closes-dod` mappings together:
@@ -50,8 +76,15 @@ Walk the captured body annotations against the new plan's `closes-dod` mappings 
   projection respects it as a sticky veto until Y ships.
 - **Reassignment, new phase has shipped** (Y ticked) → re-attribute, leave ticked: `- [x] <text> (closed
   by phase Y, commit <Y-sha>)`.
-- **Phase removed/renumbered** → un-tick to `- [ ] <text> (resolver claimed phase X, commit <sha>;
-  evaluator rejected: re-plan removed phase X — needs re-verification)`.
+- **Phase removed** (the work phase X shipped is claimed by no phase of the new plan) → un-tick to
+  `- [ ] <text> (resolver claimed phase X, commit <sha>; evaluator rejected: re-plan removed phase X
+  — needs re-verification)`. **Removal is what costs the tick, not renumbering.** An insert leaves
+  every shipped phase's number alone (see "Inserting a phase after work has shipped" above), so a
+  *shipped* phase whose number changed at all means either a HARD path the user chose to apply anyway
+  or a plan predating that rule — and there the phase still exists, so route it through the
+  reassignment cases above (ticked at its new number → re-attribute, leave ticked) and un-tick
+  nothing. Un-ticking a bullet whose code is still on the branch, still claimed and still verified is
+  the visible-progress regression the SOFT list exists to prevent.
 - **Orphaned bullet** (no phase claims this index) → un-tick with the same orphan annotation; surface as
   a Dimension-7 violation in the new plan's verify loop (a re-plan bug the new plan should have caught).
 - **Evaluator-rejected bullet** (`- [ ] … evaluator rejected: …`) → **preserve verbatim.** Surface it at

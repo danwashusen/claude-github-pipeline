@@ -1147,6 +1147,165 @@ class PhasesSelfValidationTests(unittest.TestCase):
                 self.assertNotIn("parse.py phases", line)
 
 
+class PhaseNumberingRuleTests(unittest.TestCase):
+    """#46: the `## Phases` label grammar stated as a RULE, not inferable from a worked template.
+
+    Before this, the constraints lived only in `scripts/parse.py` and in the shape of the frozen
+    template — so an author under insertion pressure invented `Phase 5c`, which matches the template
+    everywhere except the one character that matters.
+    """
+
+    def setUp(self):
+        self.schema = (REFERENCES_DIR / "plan-schema.md").read_text(encoding="utf-8")
+        self.flat = " ".join(self.schema.split())
+        self.section = self.schema.partition("## Phase numbering")[2].split(
+            "## Epic-plan and story-under-epic sections"
+        )[0]
+
+    def test_grammar_states_integer_labels_and_ordinal_equals_label(self):
+        self.assertIn("both `<N>` are the **same integer**", self.flat)
+        self.assertIn("parsed as two separate captures", self.flat)
+
+    def test_grammar_states_sequential_non_duplicate_and_its_consequence(self):
+        self.assertIn("1..n, sequential and non-duplicate", self.flat)
+        self.assertIn("no way to append an entry numbered 7 and have it sit between 5 and 6", self.flat)
+
+    def test_values_are_none_or_bare_ints_with_no_prose(self):
+        self.assertIn("the literal `(none)` or a comma-separated list of **bare ints**", self.flat)
+        self.assertIn("no prose, no parenthetical, no qualifier", self.flat)
+        self.assertIn("that reason belongs in `deliverable`", self.flat)
+
+    def test_the_disallowed_shapes_are_named(self):
+        # Named so the rule is recognisable at the moment it would be broken, not only in the abstract.
+        for needle in ("Phase 5c", "`5a`/`5b`", "Phase 6.1", "depends-on: 5c"):
+            self.assertIn(needle, self.flat, needle)
+
+    def test_section_is_outside_the_frozen_first_fence(self):
+        # Same reasoning as test_grammar_is_documented_outside_the_frozen_first_fence: the first fence
+        # is byte-pinned to the S1 capture, so documenting the rule inside it would force an edit to
+        # the frozen v1 record and hollow out that assertion.
+        fence = _first_fenced_block(self.schema)
+        self.assertIn("## Phase numbering", self.schema)
+        self.assertNotIn("## Phase numbering", fence)
+        self.assertNotIn("5c", fence)
+
+    def test_placement_keeps_the_pinned_ownership_slice_intact(self):
+        # SectionOwnershipAndSizeTests slices between these two headings; a section inserted there
+        # would silently re-scope that slice for every future editor.
+        _, _, ownership = self.schema.partition("## Section ownership and size")
+        ownership = ownership.split("## The `sub-issue:` phase key")[0]
+        self.assertNotIn("## Phase numbering", ownership)
+
+    def test_it_cites_the_sub_issue_rule_rather_than_restating_it(self):
+        # The numbering section cites the rule; it must not re-derive it, or the schema grows a
+        # second authority on the same spelling.
+        self.assertEqual(self.schema.count("one spelling per meaning"), 1)
+        self.assertNotIn("one spelling per meaning", self.section)
+        self.assertIn("the `sub-issue:` phase key above owns that rule", self.section)
+
+    def test_it_points_at_the_operation_rather_than_defining_it(self):
+        self.assertIn("revise-reconciliation.md", self.section)
+        self.assertIn("Inserting a phase after work has shipped", self.section)
+        self.assertNotIn("keeps its number", self.section)
+
+    def test_the_frozen_fence_and_the_spine_pin_are_untouched(self):
+        ours = _first_fenced_block(self.schema)
+        s1 = _first_fenced_block(S1_PLAN_CAPTURE.read_text(encoding="utf-8"))
+        self.assertEqual(ours, s1)
+        self.assertEqual(
+            len((PLAYBOOKS_DIR / SPINE).read_text(encoding="utf-8").splitlines()), 130
+        )
+
+
+class InsertAfterShippingTests(unittest.TestCase):
+    """#46: the operation a session needs when work lands BETWEEN a shipped and an unshipped phase.
+
+    `revise-reconciliation.md` owns it: it is an operation over a plan plus a `## Phase tracker`, i.e.
+    over shipped-versus-unshipped state, which is exactly what that file already owns. The schema owns
+    only what a legal `## Phases` IS.
+    """
+
+    RECON = REFERENCES_DIR / "revise-reconciliation.md"
+
+    def setUp(self):
+        self.recon = self.RECON.read_text(encoding="utf-8")
+        self.flat = " ".join(self.recon.split())
+        self.section = self.recon.partition("### Inserting a phase after work has shipped")[2].split(
+            "### SOFT-path body reconciliation"
+        )[0]
+
+    def test_rule_is_stated_exactly_once_across_the_skill(self):
+        # Whitespace-normalized: these files hard-wrap, so a line-sensitive search would miss a real
+        # second copy that happens to wrap differently.
+        needle = "a shipped phase keeps its number"
+        hits = [
+            path.name
+            for path in _iter_md(SKILL_DIR)
+            if needle in re.sub(r"\s+", " ", path.read_text(encoding="utf-8"))
+        ]
+        self.assertEqual(hits, ["revise-reconciliation.md"], "stated once, in the reference: %r" % hits)
+
+    def test_both_halves_of_the_renumber_are_named(self):
+        self.assertIn("the unshipped tail renumbers", self.flat)
+        self.assertIn("shifts up by one in its existing relative order", self.flat)
+        self.assertIn("Nothing that has shipped moves", self.flat)
+
+    def test_the_grammar_constraint_is_given_as_the_why(self):
+        self.assertIn("numbers are integers, sequential and non-duplicate", self.flat)
+        self.assertIn("a phase's number **is** its position", self.flat)
+
+    def test_depends_on_is_named_as_backward_only(self):
+        self.assertIn("backward-only", self.flat)
+        self.assertIn('"phase 7, but run it before 6"', self.flat)
+
+    def test_the_insert_is_stated_to_stay_soft_and_why(self):
+        self.assertIn("no ticked phase's number changed, so no ticked bullet's attribution changed", self.flat)
+        self.assertIn("New phases added beyond what's shipped", self.flat)
+
+    def test_renumbering_the_shipped_prefix_is_named_as_the_hard_move_and_unnecessary(self):
+        self.assertIn("would make the same edit HARD", self.flat)
+        self.assertIn("the insert point is always at or after k+1", self.flat)
+
+    def test_the_tracker_consequence_is_stated_with_its_owner(self):
+        self.assertIn("separate artifact keyed by the same numbers", self.flat)
+        self.assertIn("facts.tracker.diff", self.flat)
+
+    def test_removed_and_renumbered_are_now_separate_cases(self):
+        # The old flat entry read as the cost of ANY renumber, contradicting the Always-SOFT list
+        # eleven lines above it.
+        self.assertNotIn("Phase removed/renumbered", self.recon)
+        self.assertIn("**Removal is what costs the tick, not renumbering.**", self.flat)
+
+    def test_a_renumbered_shipped_phase_routes_to_reassignment_and_unticks_nothing(self):
+        self.assertIn("re-attribute, leave ticked) and un-tick nothing", self.flat)
+        self.assertIn("visible-progress regression the SOFT list exists to prevent", self.flat)
+
+    def test_both_revise_paths_cite_the_reference(self):
+        # story-jit owns its own revise path and cited this reference NOWHERE before #46.
+        for name in ("revise.md", "story-jit.md"):
+            text = (PLAYBOOKS_DIR / name).read_text(encoding="utf-8")
+            self.assertIn("revise-reconciliation.md", text, name)
+            self.assertIn("shipped prefix keeps its numbers", " ".join(text.split()), name)
+
+    def test_story_jit_keys_on_the_fact_not_the_route(self):
+        # PlaybookInterleavingGrepTests covers the negative; this pins the positive shape.
+        self.assertIn(
+            "facts.plan.present", (PLAYBOOKS_DIR / "story-jit.md").read_text(encoding="utf-8")
+        )
+
+    def test_planner_budget_bar_still_holds(self):
+        router_lines = len(ROUTER.read_text(encoding="utf-8").splitlines())
+        playbooks = {
+            path.name: len(path.read_text(encoding="utf-8").splitlines())
+            for path in PLAYBOOKS_DIR.glob("*.md")
+        }
+        self.assertLessEqual(
+            router_lines + max(playbooks.values()),
+            V1_HALF_BAR,
+            "#46 added lines to revise.md and story-jit.md: %r" % playbooks,
+        )
+
+
 class OperatorGateCoverageTests(unittest.TestCase):
     """S13 DoD box 5 (offline half): the spec's operator gates are present in the v2 skill."""
 

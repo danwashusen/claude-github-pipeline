@@ -94,6 +94,22 @@ class MalformedPhasesAsymmetryTests(unittest.TestCase):
             self.assertEqual(len(plans), 1, case)
             self.assertTrue(plans[0].endswith(MALFORMED_SECTION), case)
 
+    def test_the_schema_documents_the_grammar_the_parser_enforces(self):
+        # #46: this file's whole subject is the parser<->prose contract, and the prose side was empty —
+        # the constraints lived only in `parse.py` and in the SHAPE of a frozen worked template, which
+        # is how `Phase 5c` got authored. Each needle is a rule the parser actually enforces.
+        schema = (
+            Path(__file__).resolve().parent.parent
+            / "skills" / "planner" / "references" / "plan-schema.md"
+        ).read_text(encoding="utf-8")
+        flat = " ".join(schema.split())
+        for needle in (
+            "both `<N>` are the **same integer**",   # _PHASE_HEAD_RE ordinal == label
+            "1..n, sequential and non-duplicate",     # _PhasesMalformed's sequencing check
+            "comma-separated list of **bare ints**",  # _REF_LIST_ITEM_RE
+        ):
+            self.assertIn(needle, flat, needle)
+
     def test_the_shared_parser_does_raise_on_it(self):
         with self.assertRaises(parse._PhasesMalformed):  # noqa: SLF001
             parse.parse_phases(MALFORMED_SECTION)

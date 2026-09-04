@@ -1,0 +1,31 @@
+{
+  "number": 55,
+  "title": "Fix: the widget (#100)",
+  "body": "Fixes #100\n\n## Doc grounding\n- none\n",
+  "state": "OPEN",
+  "isDraft": false,
+  "author": {
+    "login": "octocat"
+  },
+  "baseRefName": "main",
+  "headRefName": "100-fix-the-widget",
+  "commits": [],
+  "additions": 0,
+  "deletions": 0,
+  "changedFiles": 0,
+  "closingIssuesReferences": [
+    {
+      "number": 100
+    }
+  ],
+  "comments": [],
+  "reviews": [],
+  "latestReviews": [],
+  "reviewDecision": "",
+  "mergeStateStatus": "CLEAN",
+  "mergeable": "MERGEABLE",
+  "statusCheckRollup": [],
+  "headRefOid": "0000000000000000000000000000000000000000",
+  "url": "https://github.com/octo/widgets/pull/55",
+  "labels": []
+}

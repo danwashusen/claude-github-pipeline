@@ -91,7 +91,10 @@ action; surface it verbatim from the plan's `deliverable` so whoever runs it doe
 
 ## Forward — multi-phase, last planned phase shipped
 
-Every phase in `## Phases` is ticked in `## Phase tracker`. **Immediately before emitting this handoff,
+Every phase in `## Phases` is ticked in the **reconciled** `## Phase tracker` (spine S4). The plan owns
+the row set, so a plan phase with no row is *unshipped*, never not-applicable — an un-reconciled
+tracker with fewer rows than the plan reads as complete and flips the PR draft → ready early.
+**Immediately before emitting this handoff,
 run `gh pr ready <N> --repo <owner/repo>` to flip the PR draft → ready.** Without that flip, the
 evaluator's draft-PR guard deadlocks the handoff. The PR-line's `state: open` marker below reflects the
 post-flip state.

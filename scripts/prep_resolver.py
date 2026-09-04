@@ -95,6 +95,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 import config_block  # noqa: E402  (import after sys.path setup, by necessity; in-process composition)
 import gh_gather  # noqa: E402
+import gh_pr_gather  # noqa: E402  (continue mode only: the prior PR's body, for the tracker diff)
 import branching  # noqa: E402  (shared branch/type/prior-PR cores; aliased below)
 import parse  # noqa: E402
 import workspace  # noqa: E402
@@ -480,6 +481,205 @@ def _build_attention(work_workspace_envelope, prior_pr_row, epic_facts, story_ep
 # ---------------------------------------------------------------------------
 
 
+# ---------------------------------------------------------------------------
+# `## Phase tracker` reconciliation facts (continue mode only)
+# ---------------------------------------------------------------------------
+#
+# The tracker and the plan's `## Phases` are two artifacts keyed by the same integer phase numbers,
+# written by different sessions. The tracker is authoritative for **tick state** (what shipped); the
+# plan is authoritative for the **row set** (what exists). A planner revise may insert a phase and
+# renumber the unshipped tail (`skills/planner/references/revise-reconciliation.md`, "Inserting a
+# phase after work has shipped"), which changes the row set — and the resolver's continue cursor
+# selects by row number, so an unreconciled tracker silently points at different work and can read
+# as complete while a plan phase has no row at all.
+#
+# This is a fact, not a judgment: the diff is fully determined by the two artifacts, so it is
+# computed here and the playbook only *acts* on it.
+
+
+def build_tracker_diff(rows, phases, unparsed=None):
+    """Classify a `## Phase tracker` row set against the plan's parsed `## Phases`.
+
+    Returns the `diff` dict. Titles are compared whitespace-collapsed and case-folded
+    (`parse.normalize_tracker_title`), so a re-wrap or a capitalization change is not drift.
+
+    `shifted` is tested BEFORE `removed_shipped`: a ticked row whose phase number is gone from the
+    plan but whose title matches some other plan phase is work that MOVED, which is the more specific
+    (and more alarming) finding — reporting it as "removed" would lose the destination number the
+    gate needs to quote.
+
+    A ticked row whose plan phase was merely *retitled* is NOT a conflict. `revise-reconciliation.md`
+    makes a shipped phase's `ships`/`deliverable`/`kind` change HARD at the planner, and `title` is
+    deliberately not on that list — so a cosmetic retitle is legitimately SOFT, and a title-only
+    conflict would fire on every one of them. A tracker row carries no `ships`, so the resolver
+    structurally cannot see the field that HARD list keys on; it must not invent a stricter rule.
+    """
+    by_number = {}
+    for phase in phases or []:
+        number = phase.get("number")
+        if number is not None:
+            by_number[number] = phase
+    # title -> every phase number carrying it. A LIST, not first-wins: two phases can share a
+    # normalized title ("integration tests"), and naming one of them as a `shifted` destination on
+    # nothing better than list order would quote a wrong number at the operator gate. An ambiguous
+    # title yields no destination, so the row falls through to the conservative case below.
+    title_to_numbers = {}
+    for number, phase in by_number.items():
+        title_to_numbers.setdefault(
+            parse.normalize_tracker_title(phase.get("title")), []
+        ).append(number)
+
+    def _sole_destination(title_key, excluding=None):
+        candidates = [n for n in title_to_numbers.get(title_key, []) if n != excluding]
+        return candidates[0] if len(candidates) == 1 else None
+
+    row_numbers = {row["phase"] for row in rows}
+    missing = sorted(number for number in by_number if number not in row_numbers)
+    # A tracker cannot hold two rows for one phase and still say what shipped. The frozen worked
+    # instance (docs/specs/examples/phase-tracker.md) shows free-form label rows like
+    # `- [ ] Phase 2-measurement (operator)`, which parse to the SAME number as `Phase 2` — so this
+    # is reachable on a real tracker, not just a hand-edit.
+    duplicated = sorted(
+        number for number in row_numbers if sum(1 for row in rows if row["phase"] == number) > 1
+    )
+
+    dropped, retitled, shifted, removed_shipped = [], [], [], []
+    for row in rows:
+        number = row["phase"]
+        plan_phase = by_number.get(number)
+        row_title_key = parse.normalize_tracker_title(row["title"])
+        if plan_phase is not None:
+            plan_title = plan_phase.get("title") or ""
+            if row["checked"] and row_title_key != parse.normalize_tracker_title(plan_title):
+                elsewhere = _sole_destination(row_title_key, excluding=number)
+                if elsewhere is not None:
+                    shifted.append(
+                        {
+                            "row_phase": number,
+                            "plan_phase": elsewhere,
+                            "title": row["title"],
+                            "commit_sha": row["commit_sha"],
+                        }
+                    )
+                else:
+                    retitled.append(
+                        {
+                            "phase": number,
+                            "row_title": row["title"],
+                            "plan_title": plan_title,
+                            "commit_sha": row["commit_sha"],
+                        }
+                    )
+            continue
+        if not row["checked"]:
+            dropped.append({"phase": number, "title": row["title"]})
+            continue
+        elsewhere = _sole_destination(row_title_key)
+        if elsewhere is not None:
+            shifted.append(
+                {
+                    "row_phase": number,
+                    "plan_phase": elsewhere,
+                    "title": row["title"],
+                    "commit_sha": row["commit_sha"],
+                }
+            )
+        else:
+            removed_shipped.append(
+                {"phase": number, "title": row["title"], "commit_sha": row["commit_sha"]}
+            )
+
+    return {
+        "missing": missing,
+        "dropped": dropped,
+        "retitled": retitled,
+        "shifted": shifted,
+        "removed_shipped": removed_shipped,
+        "unparsed": list(unparsed or []),
+        "duplicated": duplicated,
+        # One unmissable top-level boolean the playbook gates on, mirroring `open_questions_gate`'s
+        # `blocked`: the router must never have to derive a gate from a disjunction of lists.
+        #
+        # `unparsed` and `duplicated` conflict for a different reason than the other two: those two
+        # say shipped work moved or vanished, these say the tick state is UNKNOWABLE. Rebuilding
+        # under either would mean guessing what shipped, which is the one thing this fact exists to
+        # stop — so they gate rather than rebuild.
+        "conflict": bool(shifted or removed_shipped or unparsed or duplicated),
+    }
+
+
+def _absent_tracker():
+    """The tracker fact when there is nothing to reconcile (fresh mode, or a continue-mode PR with no
+    `## Phase tracker` section).
+
+    A FACTORY, not a module-level constant copied with `dict(...)`: that copy is shallow, so every
+    caller would share one nested `diff` dict and one `rows` list with the constant itself, and the
+    first in-process mutation would corrupt every later call. Preps are composed in-process by
+    design (`build_facts` is the testable core other preps' docstrings point at), so that aliasing
+    is reachable rather than theoretical.
+    """
+    return {
+        "present": False,
+        "rows": [],
+        "diff": {
+            "missing": [],
+            "dropped": [],
+            "retitled": [],
+            "shifted": [],
+            "removed_shipped": [],
+            "unparsed": [],
+            "duplicated": [],
+            "conflict": False,
+        },
+    }
+
+
+def _build_tracker(prior_pr_fact, phases, repo, scratch_dir=None, cwd=None):
+    """Fetch the prior PR's body and diff its `## Phase tracker` against `phases`. Returns
+    `(tracker_facts, notices, decision_or_none)`.
+
+    One extra `gh pr view`, on continue mode only. `gh_gather` fetches an open PR's body and then
+    strips it (`_REFERENCE_FILTER_ONLY_FIELDS`) because it is only needed for reference filtering;
+    keeping it there would widen the payload every prep carries, so this targeted fetch is the
+    narrower change. Mirrors `prep_planner._build_revise_facts`.
+    """
+    notices = []
+    if not prior_pr_fact or not prior_pr_fact.get("number"):
+        return _absent_tracker(), notices, None
+
+    pr_facts, pr_notices, decision = gh_pr_gather.build_pr_facts(
+        prior_pr_fact["number"], repo, scratch_dir=scratch_dir, cwd=cwd
+    )
+    # Merge BEFORE the decision check: `build_pr_facts` populates notices at each of its decision
+    # returns too, and the caller forwards them alongside the decision (the same shape as this
+    # module's issue-envelope forward) — dropping them would lose a diagnostic on the one path where
+    # the operator has least to go on.
+    for notice in pr_notices or []:
+        if notice not in notices:
+            notices.append(notice)
+    if decision is not None:
+        return None, notices, decision
+
+    pr_body = pr_facts.get("body")
+    if pr_body is None and pr_facts.get("body_mode") == "path":
+        pr_body = Path(pr_facts["body_path"]).read_text(encoding="utf-8")
+    scan = parse.scan_phase_tracker(pr_body)
+
+    tracker = {
+        # `present` is whether the SECTION exists, never `bool(rows)`: a section whose rows are all
+        # malformed parses to zero rows while its unknown tick state is exactly what must be
+        # reconciled. The spine gates its whole reconciliation step on this flag, so conflating the
+        # two would skip the step precisely where it is needed.
+        "present": scan["present"],
+        "rows": scan["rows"],
+        "diff": build_tracker_diff(scan["rows"], phases, unparsed=scan["unparsed"]),
+        "body_mode": pr_facts.get("body_mode"),
+    }
+    if pr_facts.get("body_mode") == "path":
+        tracker["body_path"] = pr_facts.get("body_path")
+    return tracker, notices, None
+
+
 def _forward_decision(decision, notices=None):
     """Emit a composed core's returned `decision` (or a directly-raised one) AS-IS on prep's own
     stdout and return `True` when a decision was present. Mirrors `prep_evaluator._forward_decision`
@@ -621,6 +821,17 @@ def build_facts(issue_number, repo, root=".", scratch_dir=None, refresh=False, c
                 )
             )
             return None
+
+    # 4b) `## Phase tracker` reconciliation facts — continue mode only, and only once `phases` is
+    #     in hand (the diff is plan-versus-tracker). Fresh mode has no prior tracker to reconcile.
+    if mode == MODE_CONTINUE:
+        tracker, tracker_notices, tracker_decision = _build_tracker(
+            prior_pr_fact, phases, repo, scratch_dir=scratch_dir, cwd=cwd
+        )
+        if _forward_decision(tracker_decision, notices=tracker_notices):
+            return None
+    else:
+        tracker, tracker_notices = _absent_tracker(), []
 
     # 5) DoD facts (parse.parse_dod_bullets, pure core) — over the ISSUE body (the resolver
     #    projects ticks onto the issue's own DoD, distinct from prep_evaluator's per-closing-issue
@@ -909,6 +1120,7 @@ def build_facts(issue_number, repo, root=".", scratch_dir=None, refresh=False, c
         "prior_pr": prior_pr_fact,
         "plan": plan_facts,
         "phases": phases,
+        "tracker": tracker,
         "dod": dod,
         "open_questions": open_questions,
         "open_questions_gate": open_questions_gate,
@@ -919,7 +1131,7 @@ def build_facts(issue_number, repo, root=".", scratch_dir=None, refresh=False, c
         "attention": _build_attention(
             work_workspace_envelope, prior_pr_row, epic_facts, story_epic_matches
         ) + config_attention,
-        "notices": list(config_notices) + link_notices + epic_notices,
+        "notices": list(config_notices) + link_notices + epic_notices + tracker_notices,
     }
     if prior_pr_rejected:
         facts["prior_pr_rejected"] = prior_pr_rejected

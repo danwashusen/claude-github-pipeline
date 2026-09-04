@@ -36,6 +36,7 @@ SCRIPT = SCRIPTS_DIR / "prep_resolver.py"
 
 sys.path.insert(0, str(SCRIPTS_DIR))
 
+import parse  # noqa: E402  (the shared `## Phase tracker` scanner the tracker fact composes)
 import prep_resolver  # noqa: E402  (import after sys.path setup, by necessity)
 from tests.support import envelope_asserts, gitsandbox, shimenv  # noqa: E402
 
@@ -168,7 +169,7 @@ class HappyPathFactsSchemaTests(PrepResolverSandboxTestCase):
         for key in (
             "repo", "scratch", "root", "target", "vector", "suggested_playbook", "workspace",
             "config", "sections", "attention", "notices", "plan", "phases", "dod",
-            "open_questions", "open_questions_gate", "audit_ref", "distiller_bundle",
+            "open_questions", "open_questions_gate", "audit_ref", "distiller_bundle", "tracker",
         ):
             self.assertIn(key, envelope, "missing architecture.md §4 facts-block key %r" % key)
 
@@ -1074,6 +1075,12 @@ class SingleInvocationBudgetTests(PrepResolverSandboxTestCase):
         # derivation is mutually exclusive across rows), and continue mode's ladder rung 1 means
         # the linked-branch lookup is skipped too — a strictly SMALLER manifest than the
         # no-prior-PR case proves the lower bound half of the two-sided budget.
+        #
+        # 5, not 4, since #46: continue mode adds ONE `gh pr view` for the prior PR's body, which is
+        # the only way to reconcile its `## Phase tracker` row set against the plan's `## Phases`
+        # (`gh_gather` fetches an open PR's body for reference filtering and then strips it, and
+        # keeping it would widen the payload EVERY prep carries). Fresh mode still makes none — see
+        # TrackerFactTests.test_fresh_row_has_no_tracker_and_makes_no_pr_view_call.
         result = self._run(
             ["100", "octo/widgets", "--root", str(self.root), "--scratch-dir", self.scratch],
             fixture_case="prep_resolver_row_open_yours",
@@ -1082,7 +1089,220 @@ class SingleInvocationBudgetTests(PrepResolverSandboxTestCase):
         self.assertEqual(result.returncode, 0, msg=result.stderr)
         manifest_path = shimenv.fixture_case_dir("prep_resolver_row_open_yours") / "manifest.json"
         manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
-        self.assertEqual(len(manifest), 4)
+        self.assertEqual(len(manifest), 5)
+
+
+class TrackerFactTests(PrepResolverSandboxTestCase):
+    """#46: `facts.tracker` — the PR's `## Phase tracker` row set diffed against the plan's phases.
+
+    A planner revise can insert a phase and renumber the unshipped tail. The tracker is a separate
+    artifact keyed by the same numbers, and the resolver's continue cursor selects BY ROW NUMBER — so
+    without this diff the cursor silently points at different work, and a tracker with fewer rows than
+    the plan reads as complete and flips the PR draft to ready early.
+
+    The diff is fully determined by the two artifacts, so it is a fact (computed here), not a judgment
+    the playbook re-derives.
+    """
+
+    ambient_default = "100-fix-the-widget"
+
+    def test_continue_mode_carries_the_parsed_tracker_rows(self):
+        tracker = self._envelope(fixture_case="prep_resolver_tracker_clean")["tracker"]
+        self.assertTrue(tracker["present"])
+        self.assertEqual(
+            tracker["rows"][0],
+            {
+                "checked": True, "phase": 1, "title": "substrate",
+                "commit_sha": "abc1111", "annotation": None,
+            },
+        )
+        self.assertEqual([row["phase"] for row in tracker["rows"]], [1, 2, 3, 4, 5, 6])
+
+    def test_a_matching_tracker_reports_no_drift(self):
+        diff = self._envelope(fixture_case="prep_resolver_tracker_clean")["tracker"]["diff"]
+        self.assertEqual(diff["missing"], [])
+        self.assertEqual(diff["dropped"], [])
+        self.assertEqual(diff["retitled"], [])
+        self.assertFalse(diff["conflict"])
+
+    def test_fresh_row_has_no_tracker_and_makes_no_pr_view_call(self):
+        # The no-prior-PR manifest has no `pr view` entry, so an extra call here would be a loud shim
+        # miss rather than a silent pass — that is the assertion.
+        tracker = self._envelope(fixture_case="prep_resolver_row_no_prior_pr")["tracker"]
+        self.assertFalse(tracker["present"])
+        self.assertEqual(tracker["rows"], [])
+        self.assertFalse(tracker["diff"]["conflict"])
+
+    def test_the_live_insert_shape_is_a_silent_rebuild(self):
+        # Plan phases 1-7, tracker rows 1-6 with 1-5 ticked and row 6 unticked and titled for what is
+        # now phase 7. This MUST NOT gate: nothing shipped has moved, so the resolver just rebuilds —
+        # it adds row 7 and adopts the plan's title for row 6.
+        #
+        # Row 6 is NOT `dropped`: `dropped` keys on a row whose NUMBER has no plan phase, and 6 still
+        # has one (the inserted work). An unticked row whose title drifted is rebuilt silently and
+        # deliberately not reported — there is no separate action for it.
+        diff = self._envelope(fixture_case="prep_resolver_tracker_insert")["tracker"]["diff"]
+        self.assertEqual(diff["missing"], [7])
+        self.assertEqual(diff["dropped"], [])
+        self.assertEqual(diff["retitled"], [])
+        self.assertFalse(diff["conflict"])
+
+    def test_shifted_ticked_row_is_a_conflict_naming_its_destination(self):
+        diff = self._envelope(fixture_case="prep_resolver_tracker_shifted")["tracker"]["diff"]
+        self.assertEqual(
+            diff["shifted"],
+            [{"row_phase": 6, "plan_phase": 7, "title": "end-to-end proof", "commit_sha": "abc6666"}],
+        )
+        self.assertEqual(diff["removed_shipped"], [])
+        self.assertTrue(diff["conflict"])
+
+    def test_removed_shipped_row_is_a_conflict(self):
+        diff = self._envelope(fixture_case="prep_resolver_tracker_removed_shipped")["tracker"]["diff"]
+        self.assertEqual(
+            diff["removed_shipped"],
+            [{"phase": 8, "title": "the retired harness", "commit_sha": "abc8888"}],
+        )
+        self.assertTrue(diff["conflict"])
+
+    def test_retitled_ticked_row_is_reported_but_is_not_a_conflict(self):
+        # revise-reconciliation.md makes a shipped phase's ships/deliverable/kind change HARD and
+        # deliberately omits `title`, so a cosmetic retitle is legitimately SOFT at the planner — a
+        # title-only conflict would fire on every one of them.
+        diff = self._envelope(fixture_case="prep_resolver_tracker_retitled")["tracker"]["diff"]
+        self.assertEqual(len(diff["retitled"]), 1)
+        entry = diff["retitled"][0]
+        self.assertEqual(entry["phase"], 4)
+        self.assertEqual(entry["row_title"], "the anchor read")
+        self.assertEqual(entry["plan_title"], "the anchor read capability")
+        self.assertFalse(diff["conflict"])
+
+    def test_unticked_title_drift_is_not_reported(self):
+        # Row 6 in the retitled fixture is unticked; an unticked row is rebuilt silently, so reporting
+        # its drift would be noise the playbook has no action for.
+        diff = self._envelope(fixture_case="prep_resolver_tracker_retitled")["tracker"]["diff"]
+        self.assertEqual([entry["phase"] for entry in diff["retitled"]], [4])
+
+    def test_refresh_recomputes_the_tracker(self):
+        # The PR body is volatile state, not setup state — `--refresh` must not skip it.
+        tracker = self._envelope(
+            fixture_case="prep_resolver_tracker_insert", extra_args=["--refresh"]
+        )["tracker"]
+        self.assertTrue(tracker["present"])
+        self.assertEqual(tracker["diff"]["missing"], [7])
+
+
+class TrackerDiffUnitTests(unittest.TestCase):
+    """Direct tests of `build_tracker_diff`, the pure classifier — no subprocess, no shim."""
+
+    @staticmethod
+    def _row(phase, title, checked=True, sha="abc1234", annotation=None):
+        return {
+            "phase": phase,
+            "title": title,
+            "checked": checked,
+            "commit_sha": sha if checked else None,
+            "annotation": annotation,
+        }
+
+    @staticmethod
+    def _phase(number, title):
+        return {"number": number, "title": title}
+
+    def test_a_ticked_operator_row_is_not_reported_as_drift(self):
+        # #48 review, finding 1: the row's `(operator action <ISO-date>)` used to land inside `title`,
+        # so EVERY operator phase read as `retitled` with no drift present — and the rebuild's "adopt
+        # the plan's title" would then erase the date, the only record that the phase landed.
+        rows = parse.scan_phase_tracker(
+            "## Phase tracker\n- [x] Phase 3 — the measurement (operator action 2026-06-04)\n"
+        )
+        diff = prep_resolver.build_tracker_diff(
+            rows["rows"], [self._phase(3, "the measurement")], rows["unparsed"]
+        )
+        self.assertEqual(diff["retitled"], [])
+        self.assertFalse(diff["conflict"])
+        self.assertEqual(rows["rows"][0]["annotation"], "operator action 2026-06-04")
+
+    def test_unreadable_rows_gate_rather_than_rebuild(self):
+        # #48 review, finding 2: a section whose rows do not parse has an UNKNOWN tick state. It must
+        # not rebuild silently — that would guess what shipped, which is what this fact prevents.
+        rows = parse.scan_phase_tracker("## Phase tracker\n- [x] Phase 5c — nope (commit abc1234)\n")
+        diff = prep_resolver.build_tracker_diff(
+            rows["rows"], [self._phase(1, "a")], rows["unparsed"]
+        )
+        self.assertEqual(diff["unparsed"], ["- [x] Phase 5c — nope (commit abc1234)"])
+        self.assertTrue(diff["conflict"])
+
+    def test_two_rows_for_one_phase_number_gate(self):
+        # Reachable on a real tracker, not only a hand-edit: the frozen worked instance shows
+        # free-form label rows (`- [ ] Phase 2-measurement (operator)`) that parse to the same number
+        # as `Phase 2`. Two rows for one phase cannot say what shipped.
+        rows = parse.scan_phase_tracker(
+            "## Phase tracker\n- [ ] Phase 2 — harness\n- [ ] Phase 2-measurement (operator)\n"
+        )
+        self.assertEqual([row["phase"] for row in rows["rows"]], [2, 2])
+        diff = prep_resolver.build_tracker_diff(rows["rows"], [self._phase(2, "harness")])
+        self.assertEqual(diff["duplicated"], [2])
+        self.assertTrue(diff["conflict"])
+
+    def test_an_ambiguous_title_names_no_destination(self):
+        # #48 review, finding 4: `setdefault` made this first-wins, so the gate could quote a
+        # destination picked on nothing better than list order. Two candidates now yield none.
+        row = [self._row(7, "integration tests")]
+        diff = prep_resolver.build_tracker_diff(
+            row, [self._phase(3, "integration tests"), self._phase(5, "Integration  Tests")]
+        )
+        self.assertEqual(diff["shifted"], [])
+        self.assertEqual(diff["removed_shipped"], [{"phase": 7, "title": "integration tests", "commit_sha": "abc1234"}])
+        self.assertTrue(diff["conflict"])
+
+    def test_a_sole_matching_title_still_names_its_destination(self):
+        # The uniqueness rule must not disable the useful case.
+        row = [self._row(7, "the proof")]
+        diff = prep_resolver.build_tracker_diff(row, [self._phase(1, "substrate"), self._phase(2, "the proof")])
+        self.assertEqual(diff["shifted"][0]["plan_phase"], 2)
+
+    def test_the_absent_tracker_is_a_factory_not_a_shared_constant(self):
+        # #48 review, finding 5: `dict(CONSTANT)` is shallow, so every "absent" fact shared one
+        # nested `diff` and `rows` with the constant. Preps compose in-process by design, so the
+        # first such caller would see another call's rows on a fact reporting `present: False`.
+        first, second = prep_resolver._absent_tracker(), prep_resolver._absent_tracker()
+        first["diff"]["missing"].append(99)
+        first["rows"].append({"phase": 1})
+        self.assertEqual(second["diff"]["missing"], [])
+        self.assertEqual(second["rows"], [])
+
+    def test_shifted_wins_over_removed_shipped(self):
+        # A ticked row whose number is gone but whose title matches another phase is work that MOVED.
+        # Classifying it as "removed" would lose the destination number the operator gate must quote.
+        diff = prep_resolver.build_tracker_diff(
+            [self._row(8, "the proof")], [self._phase(1, "substrate"), self._phase(2, "the proof")]
+        )
+        self.assertEqual(diff["shifted"], [{"row_phase": 8, "plan_phase": 2, "title": "the proof", "commit_sha": "abc1234"}])
+        self.assertEqual(diff["removed_shipped"], [])
+
+    def test_title_compare_is_whitespace_and_case_insensitive(self):
+        diff = prep_resolver.build_tracker_diff(
+            [self._row(1, "End-to-end   Proof")], [self._phase(1, "end-to-end proof")]
+        )
+        self.assertEqual(diff["retitled"], [])
+        self.assertFalse(diff["conflict"])
+
+    def test_empty_rows_against_a_plan_reports_every_phase_missing(self):
+        diff = prep_resolver.build_tracker_diff([], [self._phase(1, "a"), self._phase(2, "b")])
+        self.assertEqual(diff["missing"], [1, 2])
+        self.assertFalse(diff["conflict"])
+
+    def test_no_plan_phases_leaves_ticked_rows_as_removed_shipped(self):
+        diff = prep_resolver.build_tracker_diff([self._row(1, "a")], [])
+        self.assertEqual(diff["removed_shipped"], [{"phase": 1, "title": "a", "commit_sha": "abc1234"}])
+        self.assertTrue(diff["conflict"])
+
+    def test_conflict_is_the_disjunction_of_the_two_shipped_classes(self):
+        # The router must read one boolean, never re-derive the gate from a disjunction of lists.
+        clean = prep_resolver.build_tracker_diff(
+            [self._row(1, "a", checked=False)], [self._phase(1, "a")]
+        )
+        self.assertFalse(clean["conflict"])
 
 
 class PureHelperUnitTests(unittest.TestCase):

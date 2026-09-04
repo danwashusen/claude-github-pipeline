@@ -401,6 +401,120 @@ class SliceClosingRungTests(unittest.TestCase):
         self.assertIn("would_run", env)
 
 
+class TrackerReconciliationTests(unittest.TestCase):
+    """#46: the PR's `## Phase tracker` is reconciled against the plan before the cursor is read.
+
+    The tracker and the plan's `## Phases` are two artifacts keyed by the same integer phase numbers,
+    written by different sessions. A planner revise may insert a phase and renumber the unshipped tail,
+    which changes the row set — and continue mode selects its next phase by ROW NUMBER. Unreconciled,
+    the cursor silently points at different work, and a tracker with fewer rows than the plan reads as
+    complete and flips the PR draft → ready early.
+    """
+
+    def setUp(self):
+        self.spine_path = PLAYBOOKS_DIR / SPINE
+        self.spine = self.spine_path.read_text(encoding="utf-8")
+        self.flat = " ".join(self.spine.split())
+        self.renderings = (REFERENCES_DIR / "handoff-renderings.md").read_text(encoding="utf-8")
+
+    def test_the_tracker_is_a_prep_fact_not_a_model_re_read(self):
+        self.assertIn("parsed by prep into `facts.tracker.rows`, never re-fetched", self.flat)
+        self.assertNotIn("re-read from the existing PR body", self.flat)
+
+    def test_authority_is_split_between_tick_state_and_row_set(self):
+        # The un-qualified "authoritative record" is why nothing rebuilt the rows.
+        self.assertIn("authoritative record of which phases **shipped**", self.flat)
+        self.assertIn("not authoritative for which phases *exist*", self.flat)
+        self.assertIn("(`facts.phases`) owns the row set", self.flat)
+
+    def test_reconciliation_precedes_cursor_selection(self):
+        self.assertLess(
+            self.flat.index("Reconcile the tracker before you read that cursor"),
+            self.flat.index("Write the reconciled tracker"),
+        )
+        self.assertIn("then select the cursor from it", self.flat)
+        self.assertIn("Never select a phase by row title", self.flat)
+
+    def test_the_three_silent_rebuild_classes_are_named_with_their_disposition(self):
+        for key in ("`missing`", "`dropped`", "`retitled`"):
+            self.assertIn(key, self.flat, key)
+        self.assertIn("All three are a silent rebuild: no tick's meaning changes", self.flat)
+
+    def test_unticked_rows_are_rebuilt_wholesale_including_their_title(self):
+        # The common post-insert shape: the tail row keeps its number and takes the NEW phase's title,
+        # and the displaced phase arrives as a `missing` row. Prep reports no drift for it (there is no
+        # tick or commit to preserve), so the spine must say what to do without a diff entry to key on
+        # — otherwise the resolver builds the inserted work under the displaced phase's title.
+        self.assertIn("Every **unticked** row is rewritten from its plan phase wholesale", self.flat)
+        self.assertIn("takes the new phase's title", self.flat)
+
+    def test_the_two_unknowable_state_classes_gate_for_their_own_reason(self):
+        # #48 review: `unparsed` (rows prep could not read) and `duplicated` (two rows for one phase)
+        # gate because the tick state is unknowable, not because work moved. Rebuilding under either
+        # would guess what shipped.
+        self.assertIn("`unparsed`", self.flat)
+        self.assertIn("`duplicated`", self.flat)
+        self.assertIn("The tick state is\n  unknowable", self.spine.replace("\r\n", "\n"))
+        self.assertIn("mean guessing what shipped", self.flat)
+
+    def test_the_rebuild_preserves_an_operator_annotation_not_just_a_commit(self):
+        # An operator row's `(operator action <ISO-date>)` is the only record that phase landed, so a
+        # rebuild that preserved only `(commit <sha>)` would erase it.
+        self.assertIn("`(commit <sha>)` or `annotation`", self.flat)
+        self.assertIn("the only record that phase landed", self.flat)
+
+    def test_conflict_is_a_gate_with_its_three_recorded_options(self):
+        self.assertIn('header: "Tracker drift"', self.flat)
+        for option in ("**Re-plan**", "**Rebuild un-ticked**", "**Abort**"):
+            self.assertIn(option, self.flat, option)
+        self.assertIn("`diff.conflict`", self.flat)
+
+    def test_the_conflict_classes_are_named_and_defined(self):
+        self.assertIn("`shifted` (a ticked row whose work now sits at a different phase number)", self.flat)
+        self.assertIn("`removed_shipped` (a ticked row whose phase is gone)", self.flat)
+
+    def test_the_override_never_carries_a_tick_onto_work_it_did_not_ship(self):
+        self.assertIn("never carry a tick onto work it did not ship", self.flat)
+        self.assertIn("## Tracker reconciliation", self.flat)
+        self.assertIn("displaced", self.flat)
+
+    def test_the_gate_names_the_planner_rule_it_is_downstream_of(self):
+        self.assertIn("revise-reconciliation.md", self.flat)
+        self.assertIn("classifies HARD at the planner", self.flat)
+
+    def test_s6_writes_the_reconciled_row_set(self):
+        self.assertIn("the **reconciled** row set from S4, never the rows a prior session wrote", self.flat)
+
+    def test_completion_condition_runs_against_the_reconciled_tracker(self):
+        flat_renderings = " ".join(self.renderings.split())
+        self.assertIn("ticked in the **reconciled** `## Phase tracker` (spine S4)", flat_renderings)
+        self.assertIn("*unshipped*, never not-applicable", flat_renderings)
+
+    def test_router_lists_the_tracker_fact(self):
+        router = " ".join(ROUTER.read_text(encoding="utf-8").split())
+        self.assertIn("`tracker`", router)
+        self.assertIn("`diff.conflict` the gate", router)
+
+    def test_prep_owns_the_pr_fetch_no_raw_gh_pr_view_in_a_fence(self):
+        # facts-by-script: the body comes from prep_resolver's gh_pr_gather call, never a fenced
+        # `gh pr view` the model runs itself.
+        for lineno, line, in_fence in _fence_stripped_lines(self.spine_path):
+            if in_fence:
+                self.assertNotIn("gh pr view", line, "%s:%d" % (SPINE, lineno))
+
+    def test_structural_bar_still_holds(self):
+        router_lines = len(ROUTER.read_text(encoding="utf-8").splitlines())
+        playbooks = {
+            path.name: len(path.read_text(encoding="utf-8").splitlines())
+            for path in PLAYBOOKS_DIR.glob("*.md")
+        }
+        self.assertLessEqual(
+            router_lines + max(playbooks.values()),
+            V1_HALF_BAR,
+            "#46 added the S4 reconciliation step: %r" % playbooks,
+        )
+
+
 class PlaybookPersistDryRunTests(unittest.TestCase):
     """Each GitHub write the resolver playbooks specify, run with --dry-run: a conformant envelope,
     status ok, `would_run` present, exit 0, no live gh call. These are the exact gh_persist invocation

@@ -261,6 +261,12 @@ revise never closes that PR. On a HARD "Start fresh" the skill closes the supers
 and re-grounds *after* the close (`revise.md`'s HARD sequence) — so `Grounding:` instead reads the
 **re-selected** ref (`origin/main@<fresh-sha>` for a standalone issue, the epic branch for a story), never
 the closed branch; `Why:` names the closed PR # and that it carries the supersession note.
+When the revise **renumbered the unshipped tail** to insert a phase
+(`revise-reconciliation.md`, "Inserting a phase after work has shipped"), `Why:` names the shift so the
+operator is not surprised by it — e.g. "phase 6 is new; the former phase 6 (end-to-end proof) is now
+phase 7 — the resolver reconciles the PR's `## Phase tracker` on its next continue run." The shift is a
+narrative note only: the resolver derives the row diff itself from `facts.tracker`, so nothing carries
+it as a fact.
 
 ```
 ## Handoff

@@ -40,7 +40,9 @@ this route supplies:
 - **Compute reconciliation** ([`../references/revise-reconciliation.md`](../references/revise-reconciliation.md)).
   Diff old plan vs new plan, classify **SOFT** vs **HARD**, and compute the body-edit diff against
   `facts.revise.phase_tracker`. When no draft PR exists this is a no-op (no projected ticks). An
-  evaluator-rejection annotation is preserved verbatim — never auto-cleared.
+  evaluator-rejection annotation is preserved verbatim — never auto-cleared. New work landing *between*
+  a shipped phase and an unshipped one follows that reference's renumbering rule: the shipped prefix
+  keeps its numbers, the unshipped tail shifts up — never a `5c`.
 - **Reconcile the phases against the live sub-issue set.** When `facts.slices` is present the target's
   sub-issues are its deliverable slices — an **input constraint** on the plan's shape, not an output of
   it. Read [`../references/sub-issue-reconciliation.md`](../references/sub-issue-reconciliation.md)
