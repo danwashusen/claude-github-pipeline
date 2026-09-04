@@ -4,7 +4,7 @@ The resolver's anti-patterns, extracted here so they don't consume the load budg
 this file before any code or review-loop work begins. Each bullet is the full text of one pitfall; the
 `§N` references name the v2 flow points (the spine's §8 pre-push gate, its §10.6 review-loop re-push gate,
 its §review-loop, its S6 DoD projection) that carry the same numbering v1 used, so cross-references from
-`retry-ladder.md` / `review-loop-sub-agent.md` still resolve.
+`retry-ladder.md` / `review-fix-round.md` still resolve.
 
 - **Don't ignore in-progress PRs.** Prep classifies the prior-PR state; a gated row means another author's
   PR already exists — never fall through to opening a duplicate. Opening a duplicate PR wastes everyone's
@@ -106,7 +106,7 @@ its §review-loop, its S6 DoD projection) that carry the same numbering v1 used,
   *after* the code under test already read the good state (a record destroyed after context capture, a
   value poisoned after the fixture resolved), and an absence-assertion with no positive control proving
   it can ever fail. In review-loop fix rounds, defect injection (inject → red → revert) is mandatory per
-  the review-loop sub-agent's steps; for initial-implementation tests, construct the bad state before
+  `review-fix-round.md`'s injection step; for initial-implementation tests, construct the bad state before
   the code under test runs and give every absence-assertion a positive control.
 - **Don't `rm` snapshot/golden files to force regeneration.** A failing snapshot test means recorded
   output changed in a way that needs human eyes — a pixel-level visual diff, a serialized-output change, an
@@ -134,37 +134,36 @@ its §review-loop, its S6 DoD projection) that carry the same numbering v1 used,
   exceptions, no "this change is too small to review."
 - **Don't exit the loop just because the verdict says "approved".** Reviews routinely approve with
   `Medium`, `Low`, or `Nitpick` items — issues *and* suggestions — that the reviewer still expects fixed
-  (e.g., "Approved with minor fixes"). Exit only when `review`'s verdict is approved **and** the sub-agent's
+  (e.g., "Approved with minor fixes"). Exit only when `review`'s verdict is approved **and** your
   re-classification finds zero Addressable or Cheap-fix-override items in that verdict. Items the reviewer
   routes elsewhere with a **concrete tracking target** (filed as #N, depends on un-landed sibling, citable
   PRD/scope exclusion) are deferred and filed as follow-ups. Soft politeness alone ("could be fast-follow",
   "not blocking", "deferrable", "informational only", "future PR", "consider for a future change") is
-  **not** sufficient — the sub-agent re-classifies per the rubric, and the **default for any
+  **not** sufficient — re-classify per `review-fix-round.md`'s rubric, where the **default for any
   concretely-named change is Addressable**. The Cheap-fix override addresses ≤ ~20-line fixes on
-  already-modified files even when the reviewer defers them. The sub-agent boundary enforces this
-  structurally for the *body* of an iteration (classify + act), and the main loop's tight "read JSON →
-  re-invoke `review` or proceed to the handoff" sequencing protects the outer loop's exit decision — but the
-  rubric still governs whether the loop should exit at all, so the hazard this bullet exists for hasn't gone
-  away.
-- **Don't drive `review` from inside the review sub-agent.** The `review` command (and the bundled
+  already-modified files even when the reviewer defers them. Nothing structural enforces this any more:
+  the classify-and-act body used to sit behind a sub-agent boundary that made skipping it visible, and it
+  now runs in the same conversation that just read the verdict. The rubric applied to every listed item is
+  the only guard left, so the hazard this bullet exists for is fully live.
+- **Don't move `review` into a sub-agent.** The `review` command (and the bundled
   `code-review` skill) is not reachable from inside an `Agent`-dispatched sub-agent — the `Skill` tool
   inside a sub-agent only reaches *project, user, and plugin* skills (per the sub-agents reference). Putting
-  `Skill(skill="review")` inside the review sub-agent prompt was the original design and it consistently
+  `Skill(skill="review")` inside a dispatched prompt was the original design and it consistently
   failed: the sub-agent had no path to the actual review and was forced to improvise a manual one, returning
-  prose instead of the JSON envelope (PR #607). The fix is structural — `review` runs in the main
-  conversation per the spine's review-loop control; the sub-agent classifies + addresses the verdict the
-  main loop hands it. Don't reintroduce the `review` invocation into the sub-agent prompt thinking "this
-  time stronger emphasis will work" — the constraint is the harness, not the model.
-- **Don't stop at either turn-boundary beat in the review loop.** The review loop has two beats where the
-  model can summarize-and-stop before the run finishes; both are the *PR #416 failure mode* and the *#653
-  missing-handoff failure mode* re-imported one layer up. (a) **After `Skill(review)` returns** — the
+  prose instead of a real verdict (PR #607). `review` runs in the main conversation per the spine's S5.1
+  control, and since 4.11.0 the fix round does too — the loop has no sub-agent in it at all, and the only
+  one it dispatches is the post-settle cold read, which never invokes `review`. Don't reintroduce a
+  dispatched `review` thinking "this time stronger emphasis will work" — the constraint is the harness, not
+  the model.
+- **Don't stop at any turn-boundary beat in the review loop.** S5.1 has three beats where the
+  model can summarize-and-stop before the run finishes; all three are the *PR #416 failure mode* and the
+  *#653 missing-handoff failure mode* re-imported one layer up. (a) **After `Skill(review)` returns** — the
   verdict text reads like a finished deliverable, but `/review`'s job is only to emit the verdict, not to
-  close the loop. Your next tool calls in the same turn are `Write` the verdict file and the `Agent`
-  dispatch — even when the verdict says "approved, zero open suggestions" (the sub-agent's step 6 handles
-  that path with an early return). (b) **After the review sub-agent returns** — the next beat is either
-  re-invoking `Skill(skill="review")` for another iteration, rendering a `needs_decision` via
-  `AskUserQuestion`, or proceeding to the handoff if the exit condition holds. Treat reading the JSON as a
-  step inside an iteration, not the end of one.
+  close the loop. Your next tool calls in the same turn are the classification and the fix edits — or, on a
+  settled verdict, staging the cumulative diff and dispatching the cold read. (b) **After the fix round's
+  push** — the next beat is re-invoking `Skill(skill="review")`, not a recap of what you fixed. (c) **After
+  the cold-read sub-agent returns** — the next beat is a fix round on its findings, or S6 when it found
+  nothing. Treat every one of these as a step inside S5.1, not the end of it.
 - **Don't post review feedback on the issue.** Review feedback on a PR goes on the PR, not on the
   originating issue.
 - **Don't mis-route comments between issue and PR.** Problem questions go on the issue, solution questions

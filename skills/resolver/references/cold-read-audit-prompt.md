@@ -1,23 +1,18 @@
-# Cold-read audit sub-agent prompt (review-loop convergence path)
+# Cold-read audit sub-agent prompt (post-settle whole-state read)
 
-Dispatched from the spine's S5.1 on any **Cold-read audit** path — the pre-loop read on a large diff,
-the convergence trigger's auto-escalation on unambiguous evidence, or the operator picking it from the
-iter-cap card. What each path has in common: per-finding review is the wrong instrument, either because
-the corrections have themselves become the dominant defect source or because the diff is too large for
-a conversation to reach its cross-file shape in a reasonable number of rounds. This sub-agent is the
-fresh instrument: an `Explore`-type judgment sub-agent (architecture.md §8) that reads the **final
-state** of the touched code against its own invariants and cross-site consistency, never the
-round-by-round history. The orchestrator fills the `<<...>>` placeholders before sending. **Do not
-include the review-loop history, prior `review` verdicts, the resolver's state summary, or any
-conversation turns** — the cold read is only meaningful uncontaminated. The one sanctioned exception is
-the `<<prior_audit_findings>>` input below: prior **cold-read** findings only, which let a repeat read
-skip re-reporting what it already got fixed without importing the delta conversation. The sub-agent is
-context-blind, cannot call `AskUserQuestion`, and never writes to GitHub.
+Dispatched once per run from the spine's S5.1 step 4, after the `review` loop settles. Per-finding review
+converges on the round-by-round conversation: it reaches the cross-file shape of a change only rounds
+later, if at all, and it cannot see a defect its own corrections introduced. This sub-agent is the fresh
+instrument: an `Explore`-type judgment sub-agent (architecture.md §8) that reads the **final state** of
+the touched code against its own invariants and cross-site consistency, never the round-by-round history.
+The orchestrator fills the `<<...>>` placeholders before sending. **Do not include the review-loop
+history, prior `review` verdicts, the resolver's state summary, or any conversation turns** — the cold
+read is only meaningful uncontaminated. The sub-agent is context-blind, cannot call `AskUserQuestion`,
+and never writes to GitHub.
 
-Its output is written to `<facts.scratch>/review-verdict.md` and handed to one review-loop sub-agent
-iteration (`review-loop-sub-agent.md`), so findings must be itemized the way that rubric classifies:
-severity-labelled, concretely named, one item per defect. Checks 1–3 below are the audit-side rendering
-of the fix disciplines whose canonical statement lives in `common-pitfalls.md` — an edit there
+Its verdict returns to the main loop and is handed to one fix round (`review-fix-round.md`), so findings
+must be itemized the way that rubric classifies: severity-labelled, concretely named, one item per
+defect. Checks 1–3 below are the audit-side rendering of the fix disciplines whose canonical statement lives in `common-pitfalls.md` — an edit there
 propagates here.
 
 ---
@@ -37,11 +32,6 @@ invariants, not corrections against findings.
 - **Integration target (name)**: `<<base_ref>>` — informational, for naming the target in findings.
 - **Touched files**: `<<touched_files>>` — the diff's file list, pre-enumerated. Your scope is these
   files plus whatever shares their invariants (callers, siblings, the module around them).
-- **Prior audit findings**: `<<prior_audit_findings>>` — `(none)` on this run's first cold read. On a
-  second or later one it carries the prior cold read's findings, and nothing else: already reported and
-  since fixed. Judge the final state as it now stands and re-report an item only if it is still present.
-  Treat the list as claims to re-verify, not as context to reason from — you are still reading the code,
-  not the history.
 
 ## What to check
 

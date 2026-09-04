@@ -127,7 +127,7 @@ the legacy `## Stories` checklist, per
 
 The integration PR lands the whole epic on `main` at once — higher risk, so apply the same review-loop
 discipline as any story PR, per [`resolve-spine.md`](resolve-spine.md) §S5.1 and
-[`../references/review-loop-sub-agent.md`](../references/review-loop-sub-agent.md). It runs **here, at
+[`../references/review-fix-round.md`](../references/review-fix-round.md). It runs **here, at
 the ready flip — never on a draft refresh**: a review per landed story would re-review the same
 accumulated diff on every epic run, and the stories already carried their own.
 
