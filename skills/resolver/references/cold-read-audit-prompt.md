@@ -62,7 +62,7 @@ Return a markdown verdict, nothing else:
 - `## Cold-read verdict` — two or three sentences: does the final state hold together, and where is it
   weakest?
 - `## Findings` — one bullet per defect: `**<severity>** — <file>:<line> — <what is wrong>`, severity
-  drawn from the review loop's ordered scale (Blocker > High > Medium > Low > Nitpick),
+  drawn from this ordered scale (Blocker > High > Medium > Low > Nitpick),
   followed by the evidence (the invariant or sibling site it conflicts with, cited by path and line).
   Name each finding concretely enough that a fixer can act without re-deriving your analysis. No finding
   is "the history was messy" — only defects present in the final state count. An empty section means the

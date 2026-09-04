@@ -1075,6 +1075,30 @@ class MainLoopReviewFixRoundTests(unittest.TestCase):
         self.assertIn("AskUserQuestion", text)
         self.assertNotIn("needs_decision", text)
 
+    def test_settle_covers_a_verdict_that_never_approves(self):
+        """A reviewer that requests changes but names only deferrable items addresses nothing.
+
+        Keying the exit on the approval line alone spins the loop on an unchanged PR until the cap;
+        the retired sub-agent's exit keyed on "no items", which handled it.
+        """
+        self.assertIn("The round addressed nothing", self.flat)
+        self.assertIn("a non-approving verdict whose every item classified as Explicitly-deferred", self.flat)
+
+    def test_the_cold_read_is_dispatched_at_most_once(self):
+        self.assertIn("the cold read has **not** run this run", self.flat)
+        self.assertIn("Settled and it **has** → S5.1 is done; go to S6", self.flat)
+        self.assertIn("never dispatched twice in one run", self.flat)
+
+    def test_terminating_guard_rail_answers_leave_the_loop(self):
+        for text in (self.flat, " ".join(self.reference.read_text(encoding="utf-8").split())):
+            self.assertIn("Re-plan", text)
+            self.assertIn("Restructure", text)
+        self.assertIn("leaves S5.1 immediately", self.flat)
+        self.assertIn(
+            "ends the round *and* S5.1 on the spot",
+            " ".join(self.reference.read_text(encoding="utf-8").split()),
+        )
+
     def test_the_retired_sub_agent_and_its_convergence_machinery_are_gone(self):
         for path in sorted(SKILL_DIR.rglob("*.md")):
             text = path.read_text(encoding="utf-8")

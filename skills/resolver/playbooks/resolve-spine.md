@@ -182,14 +182,29 @@ Cheap-fix-override items:
    architectural / verification failure / grounding violation) is a direct `AskUserQuestion` card per the
    reference, rendered at the point it fires. A **grounding-violation** item is never filed as a follow-up
    — the hard block exists to stop the ship.
-3. An approved verdict with zero Addressable / Cheap-fix-override items → the loop has **settled**; go to
-   step 4. Anything addressed → re-run step 1. After `review`'s verdict text lands, your next emissions are
-   **operational tool calls** (the classification, the edits, the gate), not more prose — stopping at the
-   verdict text is the PR #416/#653 missing-handoff failure mode. Cap the outer loop — **one** cap across
-   the whole of S5.1, the post-cold-read rounds included — and on the cap ask (`header: "Iter cap"`):
-   **Continue** (free-text count) / **Accept current** (exit S5.1 as pushed, the cold read skipped when it
-   has not run yet; every still-open Addressable item becomes a `file-now` follow-up and the PR body
-   records the override) / **Abort**.
+3. Branch on what the round did, not on the verdict's approval line alone:
+   - **The round addressed items** (it pushed) → re-run step 1.
+   - **The round addressed nothing** — an approved verdict with zero Addressable / Cheap-fix-override
+     items, *or* a non-approving verdict whose every item classified as Explicitly-deferred (filed) —
+     → the loop has **settled**. Nothing the loop can do moves an unchanged PR, so a reviewer that
+     never approves must not spin it: on the second shape, name the outstanding items and their
+     follow-up URLs in the PR body before settling.
+   - Settled and the cold read has **not** run this run → step 4. Settled and it **has** → S5.1 is
+     done; go to S6.
+
+   After `review`'s verdict text lands, your next emissions are **operational tool calls** (the
+   classification, the edits, the gate), not more prose — stopping at the verdict text is the PR
+   #416/#653 missing-handoff failure mode. Cap the outer loop — **one** cap across the whole of S5.1,
+   the post-cold-read rounds included — and on the cap ask (`header: "Iter cap"`): **Continue**
+   (free-text count) / **Accept current** (exit S5.1 as pushed, the cold read skipped when it has not
+   run yet; every still-open Addressable item becomes a `file-now` follow-up and the PR body records
+   the override) / **Abort**.
+
+   **A guard rail's answer can end the run.** **Re-plan** and **Restructure** re-route to the planner,
+   **Abort** / **Abort loop** stop the run: each leaves S5.1 immediately — no further `review`, no cold
+   read — and goes straight to the routed playbook's handoff, whose `Why:` quotes what triggered it. Only
+   the continuing answers (**Try another angle**, **Accept + defer**, **Push with reds**, **Defer the
+   tests**, a named architectural path) resume this loop.
 4. **Cold-read audit — once per run, after settle.** Stage the cumulative diff to
    `<facts.scratch>/cold-read-diff.patch` (`git diff` from `facts.workspace.base_ref` to HEAD, run in the
    workspace) and dispatch the cold-read `Explore` sub-agent per
@@ -199,8 +214,9 @@ Cheap-fix-override items:
    history. `code: AMBIGUOUS` (missing or empty staged diff) → repair the staging and re-dispatch, or
    surface the failure to the operator; never read it as "no findings". An empty `## Findings` → S5.1 is
    done. Findings → run one fix round (step 2, those findings as the verdict), then **re-run step 1** and
-   iterate steps 1–3 to a second settle. The cold read never runs twice in one run; `review` stays the
-   terminal gate — the cold read supplements the reviewer, never substitutes for it.
+   iterate steps 1–3 to a second settle, which exits to S6 by step 3's last branch — the cold read is
+   never dispatched twice in one run. `review` stays the terminal gate; the cold read supplements the
+   reviewer, never substitutes for it.
 
 ## S6 — DoD projection on the push that shipped the phase
 

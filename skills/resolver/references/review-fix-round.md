@@ -74,7 +74,8 @@ Apply to every listed item:
    item via the follow-up filing protocol (urgency `file-now`, type per the reviewer's framing) and capture
    the returned URLs. Never file a Grounding-violation item.
 5. **No edits** (zero Addressable, zero Cheap-fix-override items) → this round is complete. Skip steps 6–8
-   and go to step 9, then back to S5.1 step 3.
+   and go to step 9, then back to S5.1 step 3, whose "addressed nothing" branch settles the loop — whether
+   or not the verdict's own line said approved.
 6. **Defect-inject** every new or changed assertion step 4 added. An assertion written to catch a finding's
    defect does not count as coverage until an injection has made it fail: stage the fix first (the
    injection revert restores the staged state; committing waits for step 8, after the gate), inject the
@@ -104,8 +105,14 @@ Apply to every listed item:
 ## Guard rails — direct cards
 
 Render each via `AskUserQuestion` per [`../../_shared/asking-the-user.md`](../../_shared/asking-the-user.md)
-at the point it fires, and act on the answer inside this round. An answer settles that gate for the run —
-don't re-raise it on a later round.
+at the point it fires. An answer settles that gate for the run — don't re-raise it on a later round.
+
+Two kinds of answer, and the difference is load-bearing. A **continuing** answer (Try another angle,
+Accept + defer, Push with reds, Defer the tests, a named architectural path) is acted on inside this
+round, which then finishes normally. A **terminating** answer — **Re-plan** and **Restructure** (re-route
+to the planner), **Abort** and **Abort loop** — ends the round *and* S5.1 on the spot: stop fixing, run no
+further gate, and hand back to the routed playbook for its handoff, quoting the trigger in the `Why:`.
+Don't try to satisfy a re-route inside the round; there is nothing here that can.
 
 - **Same-feedback-twice deadlock.** The current verdict flags an item matching the addressed-items list.
   Don't address it a second time on the same hypothesis. `header: "Review loop"`, options: **Try another
