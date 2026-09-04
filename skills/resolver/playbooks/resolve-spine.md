@@ -91,7 +91,9 @@ Prep computed the classification in `facts.tracker.diff`:
   phase) → remove it. `retitled` (a ticked row whose title drifted) → keep the tick and its
   `(commit <sha>)` or `annotation` — an operator row's `(operator action <ISO-date>)` is the only
   record that phase landed — and adopt the plan's title. All three are a silent rebuild: no tick's
-  meaning changes.
+  meaning changes. A `Phase <N>-<label>` **sub-row** (`diff.sub_rows`) is bound to phase `<N>` rather
+  than being a row of its own, so it has no plan counterpart to match: carry it through verbatim, with
+  its `annotation`. Dropping one erases the only record that an operator phase landed.
   Every **unticked** row is rewritten from its plan phase wholesale, title included — it has no tick
   and no commit to preserve, so its drift is not reported and needs no case of its own. That is the
   common shape after an insert: the tail row keeps its number and takes the new phase's title, and the

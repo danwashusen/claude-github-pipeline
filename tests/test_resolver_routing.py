@@ -448,6 +448,13 @@ class TrackerReconciliationTests(unittest.TestCase):
         self.assertIn("Every **unticked** row is rewritten from its plan phase wholesale", self.flat)
         self.assertIn("takes the new phase's title", self.flat)
 
+    def test_a_sub_row_is_carried_through_rather_than_reconciled(self):
+        # #51: the spine must say what to do with a `Phase <N>-<label>` row, or a rebuild drops the
+        # operator annotation that is the only record the phase landed.
+        self.assertIn("`diff.sub_rows`", self.flat)
+        self.assertIn("carry it through verbatim", self.flat)
+        self.assertIn("bound to phase `<N>`", self.flat)
+
     def test_the_two_unknowable_state_classes_gate_for_their_own_reason(self):
         # #48 review: `unparsed` (rows prep could not read) and `duplicated` (two rows for one phase)
         # gate because the tick state is unknowable, not because work moved. Rebuilding under either

@@ -11,6 +11,20 @@ reader must respect. This skill writes the three `closed by ...` ticked forms �
 the evaluator (sticky-veto un-ticks) and the planner (revise-mode predecessor un-ticks); they are read
 here to respect existing annotations during projection.
 
+**Tracker row grammar.** Two row kinds, and the separator distinguishes them — the tracker is
+number-keyed, so a reader that conflates them cannot say what shipped:
+
+- **Main row** — `- [x] Phase <N> — <title> (commit <short-sha>)`, one per plan phase, `<N>` an integer
+  matching the plan's `## Phases` label (`../../planner/references/plan-schema.md`, "Phase numbering").
+  The title is introduced by an em dash or a spaced hyphen. **Exactly one main row per phase number**:
+  two is a tick state nothing can reconcile, and prep reports it as `tracker.diff.duplicated`.
+- **Sub-row** — `- [x] Phase <N>-<label> (operator phase <N>, applied <ISO-date>)`, the bare hyphen bound
+  tight to the label. It is **bound to** phase `<N>`, not a second row *of* it: `Phase 2-measurement`
+  means the measurement sub-phase attached to phase 2, never "phase 2, titled measurement". The plan has
+  no counterpart for the label, so reconciliation carries a sub-row through untouched
+  (`tracker.diff.sub_rows`) — a rebuild that dropped one would erase the only record that the operator
+  phase landed.
+
 **Reconciliation source.** The projection's expected DoD-bullet set is computed from two inputs only:
 
 - The PR's `## Phase tracker` (ticked entries only) — the authoritative record of which phases have

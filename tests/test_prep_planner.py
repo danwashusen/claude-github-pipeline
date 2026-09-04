@@ -806,11 +806,11 @@ class ReviseFactsTests(PrepPlannerSandboxTestCase):
         # one, so a rebuild can preserve the only record that an operator phase landed. `None` here.
         self.assertEqual(revise["phase_tracker"][0], {
             "checked": True, "phase": 1, "title": "substrate", "commit_sha": "9999999",
-            "annotation": None,
+            "annotation": None, "sub_label": None,
         })
         self.assertEqual(revise["phase_tracker"][1], {
             "checked": False, "phase": 2, "title": "harness", "commit_sha": None,
-            "annotation": None,
+            "annotation": None, "sub_label": None,
         })
 
     def test_fresh_mode_has_no_revise_key(self):
@@ -1652,11 +1652,11 @@ class PureHelperUnitTests(unittest.TestCase):
             prep_planner._parse_phase_tracker(body),
             [
                 {
-                    "checked": True, "phase": 1, "title": "substrate",
+                    "checked": True, "phase": 1, "title": "substrate", "sub_label": None,
                     "commit_sha": "abc1234", "annotation": None,
                 },
                 {
-                    "checked": False, "phase": 2, "title": "harness",
+                    "checked": False, "phase": 2, "title": "harness", "sub_label": None,
                     "commit_sha": None, "annotation": None,
                 },
             ],
