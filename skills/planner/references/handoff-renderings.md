@@ -23,10 +23,12 @@ The plan-comment footer (`plan-spine.md` S5) and the handoff `Grounding:` line r
 
 - `<plan-ref>` renders **`origin/<default-branch>`** for the default branch (`origin/main` in every
   example below — read the repo's own name off `facts.root.default_branch`, never assume `main`), and
-  the **bare, un-truncated** `epic/<N>-<slug>` or the open PR's `headRefName` otherwise (the `origin/`
-  prefix is dropped for a non-default branch). Never emit a bare `main@<sha>` — the default branch
-  always carries the `origin/` prefix; every other branch never does. This exact string is the resolver's PR base, so eliding the
-  branch would break that reuse.
+  the **bare, un-truncated** branch otherwise — `epic/<N>-<slug>`, a story's own branch (row
+  `story-own-branch` or `open-pr-head`), or the open PR's `headRefName` (the `origin/` prefix is dropped
+  for a non-default branch). Never emit a bare `main@<sha>` — the default branch always carries the
+  `origin/` prefix; every other branch never does. This string names the ref the plan was GROUNDED on,
+  which is not always the resolver's PR base (a story grounded on its own branch still bases its PR on
+  the epic branch), so eliding the branch loses the one fact it carries.
 - `<short-sha>` is a 7-character hex prefix of `facts.grounding.sha` — the read
   workspace's own HEAD, so the plan's "planned at `<sha>`" *is* the ref the docs were read at.
 
@@ -259,8 +261,9 @@ shape — `Grounding:` still reads the open PR head (`142-add-csv-export@e5f6a7b
 revise never closes that PR. On a HARD "Start fresh" the skill closes the superseded PR via
 `gh_persist.py close-pr` with the staged `Re-plan superseded this PR` supersession comment, re-runs prep,
 and re-grounds *after* the close (`revise.md`'s HARD sequence) — so `Grounding:` instead reads the
-**re-selected** ref (`origin/main@<fresh-sha>` for a standalone issue, the epic branch for a story), never
-the closed branch; `Why:` names the closed PR # and that it carries the supersession note.
+**re-selected** ref (`origin/main@<fresh-sha>` for a standalone issue; for a story, the epic branch — or
+the story's own branch when this checkout is it and already contains the epic tip, row `story-own-branch`),
+never the closed branch; `Why:` names the closed PR # and that it carries the supersession note.
 When the revise **renumbered the unshipped tail** to insert a phase
 (`revise-reconciliation.md`, "Inserting a phase after work has shipped"), `Why:` names the shift so the
 operator is not surprised by it — e.g. "phase 6 is new; the former phase 6 (end-to-end proof) is now

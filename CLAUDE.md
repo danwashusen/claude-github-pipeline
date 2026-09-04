@@ -273,7 +273,10 @@ state, merged-PR-aware, refused from inside the target). Resolver/evaluator sess
 branch / project root / detached / stale are `WORKSPACE_MISMATCH` decisions) and re-run the
 `<!-- worktree-setup -->` hooks on every entry, discovered in that worktree's own working tree. The
 planner grounds on its asserted ambient checkout (`facts.grounding`; a default-branch plan_ref
-passes from any current checkout of it including the project root — plan-before-open). A `read` workspace
+passes from any current checkout of it including the project root — plan-before-open, and a story's
+own branch is its own plan_ref when that checkout already CONTAINS the tip of the ref it would
+otherwise have grounded on — row `story-own-branch`, the containment probe standing in for the
+branch-name equality check that refused a bit-identical checkout). A `read` workspace
 is `.worktrees/ro-<ref-slug>` (detached HEAD at `origin/<ref>`, reset on every ensure, `gc`'d by
 age — and only `ro-*` is ever gc'd): script-internal plumbing for the resolver's audit view.
 

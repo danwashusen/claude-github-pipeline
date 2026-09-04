@@ -172,10 +172,23 @@ class PrepPlannerSandboxTestCase(unittest.TestCase):
         envelope_asserts.assert_full_envelope_conformance(envelope)
         return envelope
 
-    def _push_branch(self, name):
+    def _push_branch(self, name, base="origin/main"):
+        """`base` defaults to origin/main so every pre-existing call site is unchanged; a
+        `story-own-branch` test passes the epic branch instead, so the story branch DESCENDS from
+        it (the shape `workspace-open` actually produces) rather than forking at main."""
         _git(["fetch", "origin"], self.root)
-        _git(["branch", name, "origin/main"], self.root)
+        _git(["branch", name, base], self.root)
         _git(["push", "origin", name], self.root)
+
+    def _commit_in(self, worktree, filename, message):
+        """One commit inside a worktree, left UNPUSHED. Returns its sha."""
+        _write(worktree / filename, "%s\n" % message)
+        _git(["add", "-A"], worktree)
+        _git(["commit", "-m", message], worktree)
+        return subprocess.run(
+            ["git", "rev-parse", "HEAD"], cwd=str(worktree),
+            capture_output=True, encoding="utf-8", check=True,
+        ).stdout.strip()
 
 
 class ScriptExistsTests(unittest.TestCase):
@@ -310,6 +323,9 @@ class PlanRefRowTests(PrepPlannerSandboxTestCase):
         self.assertEqual(envelope["story"]["parent_epic"]["number"], 100)
         self.assertTrue(envelope["story"]["parent_epic_open"])
         self.assertEqual(envelope["story"]["epic_branch"]["branch"], "epic/100-sandbox-fixture")
+        # The session sits in the EPIC worktree, which is not this story's own branch, so the
+        # `story-own-branch` probe is suppressed and this row is reached unchanged.
+        self.assertIsNone(envelope["story"]["ambient_contains_base_tip"])
         self.assertTrue(envelope["story"]["epic_plan"]["present"])
         log = envelope["story"]["epic_delivery_log"]
         self.assertTrue(log["present"])
@@ -338,6 +354,8 @@ class PlanRefRowTests(PrepPlannerSandboxTestCase):
         self.assertEqual(envelope["plan_ref"], "epic/100-sandbox-fixture")
         self.assertEqual(envelope["grounding"]["ref"], "epic/100-sandbox-fixture")
         self.assertEqual(envelope["story"]["parent_epic"]["number"], 100)
+        # Same suppression as the typed sibling: `epic/100-…` is not #264's own branch.
+        self.assertIsNone(envelope["story"]["ambient_contains_base_tip"])
         self.assertTrue(envelope["story"]["epic_plan"]["present"])
         self.assertTrue(envelope["story"]["epic_delivery_log"]["present"])
         # The epic's `## Story contracts` and delivery log are exactly what this target needs, so
@@ -974,6 +992,191 @@ class GroundingMismatchTests(PrepPlannerSandboxTestCase):
         # either run — the fix writes ONLY info/exclude, never this file.
         self.assertEqual((self.root / ".gitignore").read_text(encoding="utf-8"), gitignore_before)
         self.assertEqual(_git(["status", "--porcelain"], self.root), "", "root must stay clean")
+
+
+class StoryOwnBranchPlanRefTests(PrepPlannerSandboxTestCase):
+    """Row 4 (`story-own-branch`): a story session standing in its OWN worktree grounds on that
+    branch, provided the branch already CONTAINS the tip of the ref rows 5/6 would have chosen.
+
+    The incident this closes: both worktrees sat at the identical SHA and the attach gate refused
+    anyway, because its branch-name equality check stands in for a content check it never performs.
+    Row 1 (`open-pr-head`) already grounds a story on its own branch once a PR exists; this row
+    closes the window before the first PR.
+    """
+
+    EPIC_BRANCH = "epic/100-sandbox-fixture"
+    STORY_BRANCH = "202-returning-login"
+
+    def _story_worktree_on_epic(self, story_branch=None):
+        """The shape `workspace-open` produces: the story branch DESCENDS from the epic branch."""
+        story_branch = story_branch or self.STORY_BRANCH
+        self._push_branch(self.EPIC_BRANCH)
+        self._push_branch(story_branch, base=self.EPIC_BRANCH)
+        return story_branch
+
+    def _advance_epic_branch(self, from_clone=None):
+        """Move `origin/<EPIC_BRANCH>` forward. From the sandbox clone the new object lands in the
+        shared object DB (the `behind` case); from a SECOND clone it does not (the `unanswerable`
+        case) — that difference is the whole point of the tri-state probe."""
+        if from_clone is None:
+            wt = self._mk_ambient(self.EPIC_BRANCH)
+            self._commit_in(wt, "epic-moved.txt", "predecessor story landed")
+            _git(["push", "origin", self.EPIC_BRANCH], wt)
+            return
+        _git(["fetch", "origin"], from_clone)
+        _git(["checkout", "-B", self.EPIC_BRANCH, "origin/%s" % self.EPIC_BRANCH], from_clone)
+        _write(Path(from_clone) / "epic-moved.txt", "landed elsewhere\n")
+        _git(["add", "-A"], from_clone)
+        _git(["commit", "-m", "predecessor story landed elsewhere"], from_clone)
+        _git(["push", "origin", self.EPIC_BRANCH], from_clone)
+
+    # --- the incident, and the ahead case -----------------------------------------------
+
+    def test_story_branch_at_the_identical_epic_sha_grounds_on_itself(self):
+        # The live incident verbatim: story worktree and epic worktree at the SAME sha. A commit is
+        # its own ancestor, so containment holds and the row fires — where today's gate refused
+        # with zero information gain.
+        story = self._story_worktree_on_epic()
+        envelope = self._envelope(
+            issue="202", fixture_case="prep_planner_row_story_under_epic", ambient=story,
+        )
+        self.assertEqual(envelope["status"], "ok")
+        self.assertEqual(
+            envelope["vector"]["plan_ref_row"], prep_planner.PLAN_REF_ROW_STORY_OWN_BRANCH
+        )
+        self.assertEqual(envelope["plan_ref"], story)
+        self.assertEqual(envelope["grounding"]["ref"], story)
+        self.assertEqual(envelope["grounding"]["branch"], story)
+        self.assertEqual(len(envelope["grounding"]["sha"]), 40)
+        self.assertTrue(envelope["story"]["ambient_contains_base_tip"])
+        self.assertEqual(envelope["story"]["ambient_branch"], story)
+        self.assertEqual(envelope["story"]["own_branch_base_ref"], self.EPIC_BRANCH)
+        self.assertTrue(
+            any("own branch" in item for item in envelope["attention"]), envelope["attention"]
+        )
+        # Routing is unaffected — the row names the grounding vantage, never the playbook.
+        self.assertEqual(envelope["suggested_playbook"], "story-jit.md")
+
+    def test_story_branch_ahead_of_the_epic_tip_grounds_on_its_own_head(self):
+        # The normal mid-story posture: unpushed local work on top of the epic tip. The footer must
+        # record THIS head, which is the reality the operator is planning against.
+        story = self._story_worktree_on_epic()
+        wt = self._mk_ambient(story)
+        head = self._commit_in(wt, "story-wip.txt", "work in progress")
+        envelope = self._envelope(
+            issue="202", fixture_case="prep_planner_row_story_under_epic", ambient=story,
+        )
+        self.assertEqual(
+            envelope["vector"]["plan_ref_row"], prep_planner.PLAN_REF_ROW_STORY_OWN_BRANCH
+        )
+        self.assertEqual(envelope["grounding"]["sha"], head)
+
+    def test_collision_suffixed_story_branch_still_belongs_to_the_issue(self):
+        # `-vN` suffixing is how workspace-open resolves a branch-name collision; such a branch is
+        # still this issue's, so a reopened workspace must not lose the row.
+        story = self._story_worktree_on_epic(story_branch="202-returning-login-v2")
+        envelope = self._envelope(
+            issue="202", fixture_case="prep_planner_row_story_under_epic", ambient=story,
+        )
+        self.assertEqual(
+            envelope["vector"]["plan_ref_row"], prep_planner.PLAN_REF_ROW_STORY_OWN_BRANCH
+        )
+        self.assertEqual(envelope["plan_ref"], "202-returning-login-v2")
+
+    def test_bootstrap_story_branch_containing_main_grounds_on_itself(self):
+        # The pre-bootstrap half: the parent epic has no integration branch yet, so workspace-open
+        # bases the first story on `main` and rows 5/6 choose `main` as the base. Same argument,
+        # same row — the base it was measured against is what `own_branch_base_ref` records.
+        self._push_branch("203-first-story")
+        envelope = self._envelope(
+            issue="203", fixture_case="prep_planner_row_story_parent_bootstrap",
+            ambient="203-first-story",
+        )
+        self.assertEqual(envelope["status"], "ok")
+        self.assertEqual(
+            envelope["vector"]["plan_ref_row"], prep_planner.PLAN_REF_ROW_STORY_OWN_BRANCH
+        )
+        self.assertEqual(envelope["plan_ref"], "203-first-story")
+        self.assertEqual(envelope["story"]["own_branch_base_ref"], "main")
+
+    # --- the two fall-through paths -----------------------------------------------------
+
+    def test_story_branch_behind_the_epic_tip_refuses_exactly_as_today(self):
+        # A predecessor story merged into the epic since this branch was cut. Grounding here would
+        # plan against code the predecessor has since moved — the invariant the row must not break.
+        story = self._story_worktree_on_epic()
+        self._mk_ambient(story)
+        self._advance_epic_branch()
+        envelope = self._envelope(
+            issue="202", fixture_case="prep_planner_row_story_under_epic", ambient=story,
+        )
+        self.assertEqual(envelope["status"], "needs_decision")
+        self.assertEqual(envelope["decision"]["code"], "WORKSPACE_MISMATCH")
+        self.assertEqual(envelope["decision"]["context"]["reason"], "branch_mismatch")
+        self.assertEqual(envelope["decision"]["context"]["expected_branch"], self.EPIC_BRANCH)
+        # The notice is the ONLY machine-readable channel that survives a needs_decision exit —
+        # the mismatch card is built generically inside workspace.py and forwarded verbatim.
+        self.assertIn(prep_planner.STORY_BRANCH_BEHIND_BASE_TIP, envelope["notices"])
+        self.assertNotIn(prep_planner.BASE_TIP_CONTAINMENT_UNAVAILABLE, envelope["notices"])
+
+    def test_unfetched_epic_tip_falls_through_with_the_unanswerable_notice(self):
+        # `ls-remote` reports a tip this checkout has never fetched, so containment is unanswerable.
+        # A prep does not fetch to find out — it refuses, and says which of the two causes applied.
+        story = self._story_worktree_on_epic()
+        self._mk_ambient(story)
+        other = gitsandbox.mk_clone(self.origin)
+        self.addCleanup(other.cleanup)
+        self._advance_epic_branch(from_clone=other.path)
+        envelope = self._envelope(
+            issue="202", fixture_case="prep_planner_row_story_under_epic", ambient=story,
+        )
+        self.assertEqual(envelope["status"], "needs_decision")
+        self.assertEqual(envelope["decision"]["context"]["reason"], "branch_mismatch")
+        self.assertIn(prep_planner.BASE_TIP_CONTAINMENT_UNAVAILABLE, envelope["notices"])
+        self.assertNotIn(prep_planner.STORY_BRANCH_BEHIND_BASE_TIP, envelope["notices"])
+
+    # --- the probe must not fire where it has no business firing -------------------------
+
+    def test_project_root_never_probes_and_still_refuses(self):
+        # The companion to test_non_main_plan_ref_from_the_project_root_is_a_mismatch: `main` is
+        # not this issue's branch, so the probe never runs and neither notice can appear.
+        self._push_branch(self.EPIC_BRANCH)
+        envelope = self._envelope(issue="202", fixture_case="prep_planner_row_story_under_epic")
+        self.assertEqual(envelope["decision"]["context"]["reason"], "at_project_root")
+        self.assertNotIn(prep_planner.STORY_BRANCH_BEHIND_BASE_TIP, envelope["notices"])
+        self.assertNotIn(prep_planner.BASE_TIP_CONTAINMENT_UNAVAILABLE, envelope["notices"])
+
+    def test_sitting_in_the_epic_worktree_is_unchanged(self):
+        # #31's shape and the pre-existing happy path: the epic branch is not the STORY's branch,
+        # so the probe is suppressed and row 5 answers exactly as before.
+        self._push_branch(self.EPIC_BRANCH)
+        envelope = self._envelope(
+            issue="202", fixture_case="prep_planner_row_story_under_epic", ambient=self.EPIC_BRANCH,
+        )
+        self.assertEqual(
+            envelope["vector"]["plan_ref_row"], prep_planner.PLAN_REF_ROW_STORY_PARENT_BRANCH
+        )
+        self.assertIsNone(envelope["story"]["ambient_contains_base_tip"])
+        self.assertIsNone(envelope["story"]["own_branch_base_ref"])
+
+    def test_refresh_reports_the_same_row_as_a_full_run(self):
+        # --refresh skips the grounding assertion but still emits plan_ref. If the row applied on
+        # the full run and not here, plan_ref would flip mid-session and the rendered footer would
+        # go dishonest — the exact failure this change exists to prevent. The probe is local git
+        # only, so it costs refresh nothing.
+        story = self._story_worktree_on_epic()
+        full = self._envelope(
+            issue="202", fixture_case="prep_planner_row_story_under_epic", ambient=story,
+        )
+        refreshed = self._envelope(
+            issue="202", fixture_case="prep_planner_row_story_under_epic", ambient=story,
+            extra_args=["--refresh"],
+        )
+        self.assertEqual(
+            refreshed["vector"]["plan_ref_row"], full["vector"]["plan_ref_row"],
+        )
+        self.assertEqual(refreshed["plan_ref"], story)
+        self.assertNotIn("grounding", refreshed)
 
 
 class RefreshModeTests(PrepPlannerSandboxTestCase):
@@ -1621,6 +1824,66 @@ class PureHelperUnitTests(unittest.TestCase):
         self.assertEqual(
             prep_planner._select_plan_ref("story", "epic/1-x", "44-fix-thing", "main"),
             ("44-fix-thing", prep_planner.PLAN_REF_ROW_OPEN_PR_HEAD),
+        )
+
+    def test_select_plan_ref_story_own_branch_row(self):
+        # Row 4. The caller has already verified both preconditions; the table just honours them.
+        self.assertEqual(
+            prep_planner._select_plan_ref(
+                "story", "epic/1-x", None, "main",
+                parent_epic_open=True, own_branch_at_base_tip="42-thing",
+            ),
+            ("42-thing", prep_planner.PLAN_REF_ROW_STORY_OWN_BRANCH),
+        )
+
+    def test_select_plan_ref_story_own_branch_row_over_the_bootstrap_base(self):
+        # The pre-bootstrap half: no epic branch, so rows 5/6 would have chosen `main` — the row
+        # fires the same way, and the table needs no knowledge of WHICH base it displaced.
+        self.assertEqual(
+            prep_planner._select_plan_ref(
+                "story", None, None, "main",
+                parent_epic_open=True, own_branch_at_base_tip="42-thing",
+            ),
+            ("42-thing", prep_planner.PLAN_REF_ROW_STORY_OWN_BRANCH),
+        )
+
+    def test_select_plan_ref_open_pr_head_wins_over_own_branch(self):
+        # Row 1 keeps its precedence structurally: its check returns before the story arm is
+        # reached, so the own-branch kwarg cannot displace it even if a caller passed one.
+        self.assertEqual(
+            prep_planner._select_plan_ref(
+                "story", "epic/1-x", "42-thing-pr", "main", own_branch_at_base_tip="42-thing",
+            ),
+            ("42-thing-pr", prep_planner.PLAN_REF_ROW_OPEN_PR_HEAD),
+        )
+
+    def test_select_plan_ref_epic_target_ignores_the_own_branch_kwarg(self):
+        # The epic arm returns ahead of the story arm — an epic-as-target is never own-branch.
+        self.assertEqual(
+            prep_planner._select_plan_ref(
+                "epic", "epic/1-x", None, "main", own_branch_at_base_tip="1-x",
+            ),
+            ("epic/1-x", prep_planner.PLAN_REF_ROW_EPIC_BRANCH),
+        )
+
+    def test_select_plan_ref_own_branch_is_keyword_only(self):
+        # The tripwire protecting the eight positional calls above: a sixth positional argument
+        # would silently land in `own_branch_at_base_tip` and rewrite every one of their rows.
+        with self.assertRaises(TypeError):
+            prep_planner._select_plan_ref("story", "epic/1-x", None, "main", True, "42-thing")
+
+    def test_eligible_base_rows_are_the_two_live_epic_story_rows(self):
+        # Rows 7/8 (`main` with no epic above them) are deliberately excluded — widening this set
+        # is the follow-up, and doing it here would contradict row 7's own "grounding at main"
+        # attention line.
+        self.assertEqual(
+            prep_planner.STORY_ROWS_ELIGIBLE_FOR_OWN_BRANCH,
+            frozenset(
+                (
+                    prep_planner.PLAN_REF_ROW_STORY_PARENT_BRANCH,
+                    prep_planner.PLAN_REF_ROW_STORY_PARENT_BOOTSTRAP,
+                )
+            ),
         )
 
     def test_parse_stories_section_filed_and_placeholder(self):

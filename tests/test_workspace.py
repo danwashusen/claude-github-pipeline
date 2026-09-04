@@ -386,6 +386,32 @@ class DefaultBranchTests(unittest.TestCase):
         self.assertEqual(envelope["branch"], "trunk")
 
 
+class ContainsCommitTests(WorkspaceGitSandboxTestCase):
+    """`contains_commit` is tri-state on purpose: `prep_planner`'s `story-own-branch` row must be
+    able to tell "this branch is behind" from "I cannot tell", because the two get different
+    notices and neither may be answered by fetching. `_build_attach` folds both onto its
+    pre-refactor `is True`, so this behaviour is additive there, not a change."""
+
+    def test_head_contains_its_own_commit_and_its_ancestors(self):
+        head = _git(["rev-parse", "HEAD"], self.root)
+        # A commit is its own ancestor — the identical-SHA case the planner row turns on.
+        self.assertIs(workspace.contains_commit(self.root, head), True)
+
+    def test_a_commit_only_on_a_sibling_branch_is_not_contained(self):
+        _git(["checkout", "-b", "sibling"], self.root)
+        _write(self.root / "sibling.txt", "sibling\n")
+        _git(["add", "-A"], self.root)
+        _git(["commit", "-m", "sibling commit"], self.root)
+        sibling_head = _git(["rev-parse", "HEAD"], self.root)
+        _git(["checkout", "main"], self.root)
+        self.assertIs(workspace.contains_commit(self.root, sibling_head), False)
+
+    def test_an_object_absent_from_the_repo_is_unanswerable_not_false(self):
+        # The never-fetched tip: git exits 128, which must NOT be reported as "not contained".
+        absent = "0" * 39 + "1"
+        self.assertIsNone(workspace.contains_commit(self.root, absent))
+
+
 class EnsureWorkTests(WorkspaceGitSandboxTestCase):
     def test_create_reports_facts_and_is_not_reused(self):
         envelope = self._envelope(["ensure", "--work", "feature-x", "--base", "main"])
