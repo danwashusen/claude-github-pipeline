@@ -94,17 +94,17 @@ this route supplies:
        --comment-file "<facts.scratch>/close-comment.md"
      ```
 
-  3. **Stop — this session cannot re-ground itself.** With the PR closed, the open-PR-head row no
-     longer fires and `plan_ref` re-selects deterministically off the row table — `main` for a
-     standalone issue, the parent epic's branch for a story (never hardcode `main`; the fresh
-     facts decide). But this session's AMBIENT checkout is the superseded PR's worktree, which no
-     longer matches that fresh `plan_ref` — a re-run of prep here would (correctly) refuse with
-     `WORKSPACE_MISMATCH`. Emit the HARD-revise handoff instead, with the remedy matched to the
-     fresh `plan_ref`: the default branch → "re-run `/github-pipeline:planner <N>` from a current
-     default-branch checkout" (**not** workspace-open — no branch should exist before a plan does); the parent
-     epic's branch → "re-run from the parent-epic worktree". Carry a `Workspace:` line naming that
-     target checkout, plus the captured predecessor facts (step 1) the fresh run needs: the closed
-     PR number/branch, the stale plan's comment id, and the DoD bullets to un-tick.
+  3. **Stop — this session cannot re-ground itself.** With the PR closed, the open-PR-head row no longer
+     fires and `plan_ref` re-selects deterministically off the row table — `main` for a standalone issue,
+     the parent epic's branch or **this story's own branch** for a story (never hardcode `main`; the fresh
+     facts decide). Emit the HARD-revise handoff, remedy matched to the fresh `plan_ref`: the default branch
+     → "re-run `/github-pipeline:planner <N>` from a current default-branch checkout" (**not** workspace-open
+     — no branch should exist before a plan does); the parent epic's branch → "re-run from the parent-epic
+     worktree". A story in its OWN worktree re-grounds **in place** (row `story-own-branch`), so name THIS
+     checkout — send the operator to the parent-epic worktree only when this branch is behind the epic tip,
+     where a prep re-run here would (correctly) refuse with `WORKSPACE_MISMATCH`. Carry a `Workspace:` line
+     naming that target checkout, plus the captured predecessor facts (step 1) the fresh run needs: the
+     closed PR number/branch, the stale plan's comment id, and the DoD bullets to un-tick.
   4. **The fresh planner run** (the operator's next session, in the right checkout) grounds
      normally (spine S3), re-verifies every precedent citation against the new ref, posts via the
      single write path — `edit-comment` on the carried stale comment id, with the footer

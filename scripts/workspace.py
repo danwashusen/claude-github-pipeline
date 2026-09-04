@@ -144,6 +144,27 @@ def _current_sha(cwd):
     return _git_stdout(["rev-parse", "HEAD"], cwd)
 
 
+def contains_commit(cwd, sha):
+    """Tri-state: does ``cwd``'s HEAD history already contain ``sha``?
+
+    ``True`` contained — ``git merge-base --is-ancestor`` exit 0. Note a commit is its own
+    ancestor, so a HEAD *equal* to ``sha`` is contained.
+    ``False`` genuinely not contained (exit 1) — the checkout is behind or diverged.
+    ``None`` unanswerable (any other exit, in practice 128): the object is not in this checkout's
+    object DB because it was never fetched, or git failed.
+
+    **Never fetches.** A prep that fetched to answer this would mutate the operator's checkout
+    mid-read, and could turn a genuine "behind" into a false pass. Callers degrade on ``None``
+    rather than reaching for the network; the tri-state exists so "not contained" and "cannot
+    tell" stay distinguishable at the call site."""
+    result = _git(["merge-base", "--is-ancestor", sha, "HEAD"], cwd)
+    if result.returncode == 0:
+        return True
+    if result.returncode == 1:
+        return False
+    return None
+
+
 def _remote_branch_exists(cwd, branch):
     """True iff ``origin/<branch>`` exists on the remote — a live probe via ``git ls-remote``, not
     a local remote-tracking-ref lookup. A freshly created local branch has no remote-tracking ref
@@ -934,10 +955,9 @@ def _build_attach(
         # "Ahead" = the remote SHA is an ancestor of HEAD (unpushed local work — normal for the
         # resolver). Anything else (behind, or diverged) means the checkout does not contain the
         # remote's state — a decision, never a silent proceed on stale code.
-        ancestor_result = _git(
-            ["merge-base", "--is-ancestor", expected_remote_sha, sha], top
-        )
-        ahead = ancestor_result.returncode == 0
+        # `is True` preserves the pre-refactor behaviour exactly: an unanswerable probe (exit 128 —
+        # the remote sha is not in this object DB) counted as "not ahead" then and does now.
+        ahead = contains_commit(top, expected_remote_sha) is True
         if require_exact_remote_sha or not ahead:
             return None, [], _workspace_mismatch(
                 "stale_checkout",

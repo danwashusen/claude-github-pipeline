@@ -78,23 +78,43 @@ an operator gate — grounding is always safe (a detached, read-only view), unli
 work worktree, which can impersonate another author's in-flight branch.
 
 **`plan_ref` selection — the FULL v1 table (docs/specs/planner.md Step 4.5), moved into code.**
-Six distinct facts (:func:`_select_plan_ref`), collapsing to the same v1 table (whose row 5
+Seven distinct facts (:func:`_select_plan_ref`), collapsing to the same v1 table (whose row 5
 bundles two cases this module reports as two distinct, independently-testable facts) — precedence
 is fixed: when more than one row applies (a story under an open epic that ALSO has an open PR),
 the open-PR-head row always wins (v1's documented rationale: that head is a strict superset of the
-epic branch, and is what the resolver actually continues on):
+epic branch, and is what the resolver actually continues on). Within the story arm, the own-branch
+row (4) wins over the two rows it is eligible against (5 and 6) whenever BOTH its preconditions
+hold:
 
   1. ``PLAN_REF_ROW_OPEN_PR_HEAD`` — an open PR already exists for this issue -> that PR's
      `headRefName`. Checked FIRST, unconditionally, so it wins the precedence rule for free.
   2. ``PLAN_REF_ROW_EPIC_BRANCH`` — epic-as-target, `epic/<N>-<slug>` branch discovered -> that
      branch.
   3. ``PLAN_REF_ROW_EPIC_BOOTSTRAP`` — epic-as-target, zero `git ls-remote` matches -> `main`.
-  4. ``PLAN_REF_ROW_STORY_PARENT_BRANCH`` — story under an OPEN parent epic, `epic/<N>-<slug>`
+  4. ``PLAN_REF_ROW_STORY_OWN_BRANCH`` — story (or untyped sub-issue) under an OPEN parent epic
+     where the AMBIENT checkout is this issue's OWN branch (`branching.branch_belongs_to_issue`)
+     and that checkout's HEAD already CONTAINS the tip of the ref rows 5/6 would have chosen ->
+     that story branch. **Added post-v3:** row 1 already makes a story's own branch the `plan_ref`
+     once a PR exists, so this row closes the window BEFORE the first PR — between
+     `workspace-open` (which bases a story branch on the epic branch, or on `main` pre-bootstrap)
+     and the first push. Without it a story worktree is refused for a ref it is frequently
+     bit-identical to: the attach gate's branch-name equality check stands in for a content check
+     it never performs. Containment is what makes the substitution sound — a contained base tip
+     means the story branch is a strict SUPERSET of that ref, so grounding on it can only see
+     more truth, never less. It is probed offline (:func:`workspace.contains_commit`, never a
+     fetch); a branch that is behind or diverged, and a base tip this checkout never fetched, both
+     fall through to rows 5/6 and refuse exactly as before (notices
+     ``STORY_BRANCH_BEHIND_BASE_TIP`` / ``BASE_TIP_CONTAINMENT_UNAVAILABLE``) — a later story must
+     never ground on code a predecessor has since moved past, and that is a containment property,
+     not a naming one. The base it was measured against rides out as
+     `story.own_branch_base_ref`, so ONE row label carries both eligible cases without losing
+     provenance.
+  5. ``PLAN_REF_ROW_STORY_PARENT_BRANCH`` — story under an OPEN parent epic, `epic/<N>-<slug>`
      branch discovered -> that branch.
-  5. ``PLAN_REF_ROW_STORY_PARENT_BOOTSTRAP`` — story under an OPEN parent epic, zero
+  6. ``PLAN_REF_ROW_STORY_PARENT_BOOTSTRAP`` — story under an OPEN parent epic, zero
      `git ls-remote` matches (the parent epic itself hasn't bootstrapped its integration branch
      yet — no story has been resolved for it) -> `main`. **Added post-S13 (D4 fix):** the story
-     branch of :func:`_select_plan_ref` previously collapsed this case into row 6 below by keying
+     branch of :func:`_select_plan_ref` previously collapsed this case into row 7 below by keying
      on branch ABSENCE alone (`epic_branch_name is None`), which is truthful for `plan_ref` itself
      (both rows fall back to `main`) but produces a self-contradictory `vector.plan_ref_row` label
      when `story.parent_epic_open` is simultaneously `true` — a fact the row name flatly denies
@@ -102,11 +122,14 @@ epic branch, and is what the resolver actually continues on):
      UNCHANGED by this fix (`main`; `_suggested_playbook` keys on `parent_epic_open`, never on the
      row name — see that function); only the row's truthfulness is fixed, per architecture.md §4's
      "facts are data, never re-derived" invariant applied to the row label itself.
-  6. ``PLAN_REF_ROW_STORY_NO_PARENT`` — story with NO parent epic found, or a CLOSED one -> `main`.
-     Distinguished from row 5 by `parent_epic_open` (`False` here, `True` there) — both still ride
-     the same `plan_ref` (`main`), but the row now says which reality produced it.
-  7. ``PLAN_REF_ROW_DEFAULT`` — everything else (standalone bug/feature/incomplete/multi-phase,
-     no open PR) -> `main`.
+  7. ``PLAN_REF_ROW_STORY_NO_PARENT`` — story with NO parent epic found, or a CLOSED one -> `main`.
+     Distinguished from row 6 by `parent_epic_open` (`False` here, `True` there) — both still ride
+     the same `plan_ref` (`main`), but the row now says which reality produced it. NOT eligible for
+     row 4: with no live epic above it this is the same case as row 8, and the two belong together
+     in a follow-up (row 7 also carries an `attention` line — "grounding at main" — that a firing
+     own-branch row would contradict).
+  8. ``PLAN_REF_ROW_DEFAULT`` — everything else (standalone bug/feature/incomplete/multi-phase,
+     no open PR) -> `main`. Not eligible for row 4; see row 7.
 
 Every row (:func:`build_facts`) ends the same way regardless of which fired: an unconditional
 ``workspace._build_ensure_read(root, plan_ref)`` — the plan's (and eventually the handoff's)
@@ -358,6 +381,32 @@ def _list_remote_branches_with_sha(root, pattern):
     return sorted(entries, key=lambda e: e["branch"])
 
 
+def _ambient_branch(path):
+    """The ambient checkout's branch name, or `None` when it cannot be read — not a repo, a
+    detached HEAD, or any git failure.
+
+    Deliberately non-raising, unlike `workspace._current_branch`. This fact can only ever ADD the
+    `story-own-branch` row, so its absence must degrade to today's behaviour and never to a crash
+    on a path that reads no checkout today (`--refresh`, which skips the grounding assertion
+    entirely and may run from anywhere)."""
+    result = process.run(["git", "rev-parse", "--abbrev-ref", "HEAD"], cwd=str(path))
+    if result.returncode != 0:
+        return None
+    branch = result.stdout.strip()
+    return None if branch in ("", "HEAD") else branch
+
+
+def _remote_tip_sha(root, branch):
+    """`origin/<branch>`'s tip sha, or `None` when the remote has no such branch.
+
+    Matched EXACTLY: `git ls-remote --heads origin main` also matches `refs/heads/foo/main`, so the
+    result is filtered on the full branch name rather than trusted as a single-row answer."""
+    for entry in _list_remote_branches_with_sha(root, "refs/heads/%s" % branch):
+        if entry["branch"] == branch:
+            return entry["sha"]
+    return None
+
+
 def _discover_epic_branch(root, epic_number):
     """Discover `epic/<epic_number>-*` on origin. Returns `(facts_dict, decision_or_none)`:
       - zero matches -> `{"match_count": 0, "branch": None, "sha": None}` (bootstrap — the planner
@@ -499,6 +548,24 @@ def _fetch_story_state(repo, story_number, cwd=None):
 # `subIssues` node data already in hand is the fallback — numbers/titles/states survive, per-child
 # timestamps and bodies do not (notices are open by contract, pipelib/decisions.py).
 SUBISSUE_DETAIL_UNSUPPORTED = "SUBISSUE_DETAIL_UNSUPPORTED"
+
+# Non-blocking, both emitted only on the `story-own-branch` probe's fall-through paths (module
+# docstring row 4). The run that emits either ALSO ends `needs_decision` with no facts block — the
+# `WORKSPACE_MISMATCH` card is built generically inside `workspace._build_attach` and forwarded
+# verbatim, so prep cannot enrich its `options`. `_forward_decision(..., notices=notices)` carries
+# these into that envelope, making them the only machine-readable channel that survives to say WHY
+# a story worktree was refused.
+#
+# The ambient checkout IS this story's own branch, but its HEAD does not contain the base ref's tip
+# — behind, or diverged. Grounding falls back to the base ref, which this checkout is not. Remedy:
+# rebase this branch onto `origin/<base_ref>`.
+STORY_BRANCH_BEHIND_BASE_TIP = "STORY_BRANCH_BEHIND_BASE_TIP"
+
+# Same fall-through, different cause: the base tip commit is not in this checkout's object DB (it
+# was never fetched — typically another machine pushed it), so containment is UNANSWERABLE here.
+# Never escalates and never triggers a fetch; a prep does not mutate the operator's checkout to
+# answer a question.
+BASE_TIP_CONTAINMENT_UNAVAILABLE = "BASE_TIP_CONTAINMENT_UNAVAILABLE"
 
 
 def _fetch_sub_issue_details(repo, issue_number, env=None, cwd=None):
@@ -1009,13 +1076,29 @@ def _grounding_doc_inventory(grounding_path):
 PLAN_REF_ROW_OPEN_PR_HEAD = "open-pr-head"
 PLAN_REF_ROW_EPIC_BRANCH = "epic-as-target"
 PLAN_REF_ROW_EPIC_BOOTSTRAP = "epic-as-target-bootstrap"
+PLAN_REF_ROW_STORY_OWN_BRANCH = "story-own-branch"
 PLAN_REF_ROW_STORY_PARENT_BRANCH = "story-under-open-epic"
 PLAN_REF_ROW_STORY_PARENT_BOOTSTRAP = "story-parent-epic-bootstrap"
 PLAN_REF_ROW_STORY_NO_PARENT = "story-no-open-parent-epic"
 PLAN_REF_ROW_DEFAULT = "no-open-pr-default-branch"
 
+# The rows the `story-own-branch` row may displace: a story under a LIVE open epic, whether or not
+# the epic's integration branch has bootstrapped. Rows 7/8 (`plan_ref = main` with no epic above
+# them) are deliberately excluded — see the module docstring's row 7.
+STORY_ROWS_ELIGIBLE_FOR_OWN_BRANCH = frozenset(
+    (PLAN_REF_ROW_STORY_PARENT_BRANCH, PLAN_REF_ROW_STORY_PARENT_BOOTSTRAP)
+)
 
-def _select_plan_ref(issue_type, epic_branch_name, open_pr_headref, root_branch, parent_epic_open=False):
+
+def _select_plan_ref(
+    issue_type,
+    epic_branch_name,
+    open_pr_headref,
+    root_branch,
+    parent_epic_open=False,
+    *,
+    own_branch_at_base_tip=None,
+):
     """Pure lookup table: `(issue_type, epic_branch_name, open_pr_headref, parent_epic_open)` ->
     `(plan_ref, plan_ref_row)`. `epic_branch_name` is the discovered branch (or `None` on
     bootstrap/no-parent); `open_pr_headref` is the target issue's own first open PR's
@@ -1028,6 +1111,15 @@ def _select_plan_ref(issue_type, epic_branch_name, open_pr_headref, root_branch,
     the open-PR-head check runs FIRST and unconditionally, so the "open-PR-head wins when more than
     one row applies" precedence rule (docs/specs/planner.md Step 4.5) falls out of the ordering
     rather than needing a separate conflict check.
+
+    `own_branch_at_base_tip` (story arm only) is the AMBIENT checkout's branch when — and ONLY
+    when — the caller has already verified BOTH of the row-4 preconditions: it is this target
+    issue's own branch (`branching.branch_belongs_to_issue`) AND its HEAD already contains the tip
+    of the ref rows 5/6 would have chosen (`workspace.contains_commit` returned `True`). Passing a
+    branch that fails either one is a caller bug: this stays a pure table and cannot re-verify the
+    second, which needs git. Keyword-only so the four-positional call form the unit tests use
+    cannot silently absorb it; `parent_epic_open` deliberately stays ahead of the `*`, since
+    narrowing an existing parameter's calling convention is not part of this change.
     """
     if open_pr_headref:
         return open_pr_headref, PLAN_REF_ROW_OPEN_PR_HEAD
@@ -1036,14 +1128,61 @@ def _select_plan_ref(issue_type, epic_branch_name, open_pr_headref, root_branch,
             return epic_branch_name, PLAN_REF_ROW_EPIC_BRANCH
         return root_branch, PLAN_REF_ROW_EPIC_BOOTSTRAP
     # Keyed on the epic-context facts, not the `story` label (#31): an untyped sub-issue of an open
-    # epic reaches here with the same two facts set, and rows 4-6 describe its grounding exactly.
+    # epic reaches here with the same two facts set, and rows 4-7 describe its grounding exactly.
     if issue_type == "story" or epic_branch_name or parent_epic_open:
+        # Row 4 — eligibility (which base rows qualify, branch ownership, tip containment) is the
+        # caller's, already settled before this call; see the parameter's docstring.
+        if own_branch_at_base_tip:
+            return own_branch_at_base_tip, PLAN_REF_ROW_STORY_OWN_BRANCH
         if epic_branch_name:
             return epic_branch_name, PLAN_REF_ROW_STORY_PARENT_BRANCH
         if parent_epic_open:
             return root_branch, PLAN_REF_ROW_STORY_PARENT_BOOTSTRAP
         return root_branch, PLAN_REF_ROW_STORY_NO_PARENT
     return root_branch, PLAN_REF_ROW_DEFAULT
+
+
+def _probe_own_branch(base_ref, base_row, epic_branch_facts, root, issue_number, cwd):
+    """Row 4's two preconditions, evaluated once. Returns
+    ``(own_branch_at_base_tip, probe_facts, notices)``.
+
+    ``own_branch_at_base_tip`` is the ambient branch when it is this issue's own AND already
+    contains ``base_ref``'s tip, else ``None`` — it is the only thing :func:`_select_plan_ref` is
+    handed, because the table cannot re-verify a containment test that needs git.
+    ``probe_facts`` publishes what was observed (`ambient_branch`, `ambient_contains_base_tip`,
+    `own_branch_base_ref`), so the row label stays data a reader consumes rather than re-derives;
+    an unset value means that step was never reached, not that it was false.
+
+    Never fetches: a base tip absent from this checkout's object DB yields the unanswerable notice
+    and today's refusal, not a network round-trip that would mutate the operator's checkout.
+    """
+    facts = {"ambient_branch": None, "ambient_contains_base_tip": None, "own_branch_base_ref": None}
+    if base_row not in STORY_ROWS_ELIGIBLE_FOR_OWN_BRANCH:
+        return None, facts, []
+    probe_cwd = Path(cwd if cwd is not None else ".").resolve()
+    ambient_branch = _ambient_branch(probe_cwd)
+    facts["ambient_branch"] = ambient_branch
+    if not branching.branch_belongs_to_issue(ambient_branch, issue_number):
+        return None, facts, []
+    # The epic branch's tip is already in hand from `_discover_epic_branch`'s ls-remote; only the
+    # bootstrap base (the default branch) costs a second one.
+    base_tip_sha = (
+        epic_branch_facts.get("sha")
+        if base_row == PLAN_REF_ROW_STORY_PARENT_BRANCH and epic_branch_facts
+        else _remote_tip_sha(root, base_ref)
+    )
+    if not base_tip_sha:
+        return None, facts, []
+    contains = workspace.contains_commit(probe_cwd, base_tip_sha)
+    facts["ambient_contains_base_tip"] = contains
+    if contains:
+        facts["own_branch_base_ref"] = base_ref
+        return ambient_branch, facts, []
+    # Both fall-throughs end in the SAME refusal the pre-row behaviour produced; the notice is what
+    # distinguishes "rebase this branch" from "this checkout has never seen that commit".
+    return None, facts, [
+        STORY_BRANCH_BEHIND_BASE_TIP if contains is False else BASE_TIP_CONTAINMENT_UNAVAILABLE
+    ]
 
 
 # ---------------------------------------------------------------------------
@@ -1194,6 +1333,16 @@ def _build_attention(
         if not (epic_facts.get("delivery_log") or {}).get("present", False):
             attention.append("no epic delivery-log entries yet — no story has merged")
     if story_facts is not None:
+        if story_facts.get("ambient_contains_base_tip") and story_facts.get("ambient_branch"):
+            attention.append(
+                "grounding on this story's own branch '%s' — it already contains '%s' tip, so the "
+                "plan footer records the story branch, not '%s'"
+                % (
+                    story_facts["ambient_branch"],
+                    story_facts.get("own_branch_base_ref"),
+                    story_facts.get("own_branch_base_ref"),
+                )
+            )
         if story_facts.get("parent_epic") is None:
             attention.append("no parent epic found referencing this story — grounding at main")
         elif not story_facts.get("parent_epic_open"):
@@ -1313,6 +1462,9 @@ def build_facts(issue_number, repo, root=".", scratch_dir=None, refresh=False, c
     open_pr_headref = open_prs[0]["headRefName"] if open_prs else None
 
     epic_branch_name = None
+    # Bound up-front rather than only inside the two arms that discover a branch: step 5's row-4
+    # probe reads it, and a standalone target enters neither arm.
+    epic_branch_facts = None
     epic_facts = None
     story_facts = None
     parent_epic_open = False
@@ -1518,6 +1670,12 @@ def build_facts(issue_number, repo, root=".", scratch_dir=None, refresh=False, c
                 "parent_epic": parent_epic,
                 "parent_epic_open": parent_open,
                 "epic_branch": epic_branch_facts,
+                # The three `story-own-branch` (row 4) facts. Declared here so the story schema is
+                # readable in one place; filled in at step 5 by `_probe_own_branch`, which owns
+                # what each `None` means.
+                "ambient_branch": None,
+                "ambient_contains_base_tip": None,
+                "own_branch_base_ref": None,
                 "epic_plan": jit_epic_plan,
                 "epic_delivery_log": jit_delivery_log,
             }
@@ -1585,9 +1743,25 @@ def build_facts(issue_number, repo, root=".", scratch_dir=None, refresh=False, c
         slices_facts["diff"]["prior_phases_error"] = prior_phases_error
 
     # 5) plan_ref selection (docs/specs/planner.md Step 4.5's FULL table — see module docstring).
+    #    Two passes over the SAME pure table, never a second copy of the row logic: pass 1 answers
+    #    "which ref would this have grounded on", which is exactly the ref the row-4 containment
+    #    probe has to measure against; pass 2 re-runs it with the verified branch. The table stays
+    #    the single source of the row set, `_select_plan_ref` stays pure, and the one impure step
+    #    (reading the ambient checkout, probing containment) sits here, in the open.
+    base_ref, base_row = _select_plan_ref(
+        issue_type, epic_branch_name, open_pr_headref, root_branch,
+        parent_epic_open=parent_epic_open,
+    )
+    own_branch_at_base_tip, probe_facts, probe_notices = _probe_own_branch(
+        base_ref, base_row, epic_branch_facts, root, issue_number, cwd
+    )
+    _merge_notices(notices, probe_notices)
+    if story_facts is not None:
+        story_facts.update(probe_facts)
     plan_ref, plan_ref_row = _select_plan_ref(
         issue_type, epic_branch_name, open_pr_headref, root_branch,
         parent_epic_open=parent_epic_open,
+        own_branch_at_base_tip=own_branch_at_base_tip,
     )
 
     # 6) Ambient grounding (v3): the planner grounds on the CHECKOUT THE SESSION WAS STARTED IN,

@@ -35,9 +35,10 @@ prep already did.
 `AskUserQuestion` card (per [`../_shared/asking-the-user.md`](../_shared/asking-the-user.md)), act on
 the answer, and re-run prep (`--refresh` for volatile facts). This is the single universal handler for
 every closed-set code (`AUTH_REQUIRED`, `MARKER_AMBIGUOUS`, `WORKSPACE_MISMATCH`, `AMBIGUOUS`, `TARGET_IS_SLICE` on a slice of a non-epic parent, …).
-`WORKSPACE_MISMATCH`: the checkout isn't `plan_ref`'s vantage — a default-branch `plan_ref` passes from any
-current checkout of it **including the project root** (plan-before-open; only staleness is checked, never
-uncommitted changes); a non-default one (parent-epic branch / plan-PR head / epic branch) needs its worktree. The operator fixes it — never you.
+`WORKSPACE_MISMATCH`: the checkout isn't `plan_ref`'s vantage — a default-branch `plan_ref` passes from any current checkout of it
+**including the project root** (plan-before-open; only staleness is checked, never uncommitted changes); a non-default one (parent-epic
+branch / plan-PR head / epic branch) needs its worktree, except a story's own branch already **containing** its base ref's tip, which prep
+grounds on directly (row `story-own-branch`); one *behind* that tip still refuses — rebase onto `origin/<base-ref>` rather than moving. The operator fixes it — never you.
 
 **Newly-detected OQ lookup.** When grounding surfaces an open question the issue body does **not**
 already record (so prep's body-driven `open_question_candidates` never searched it), run the tracker
@@ -59,11 +60,10 @@ one** playbook.
 | `type: epic` (fresh) | `playbooks/epic.md` | epic-level plan (`## Story breakdown`/`## Story contracts`/`## Integration strategy`); stop before per-story fan-out |
 | everything else fresh (no open parent epic, whatever the `type`) | `playbooks/single.md` | single-issue plan; `## Phases` when multi-phase |
 
-Every playbook opens by reading the shared spine `playbooks/plan-spine.md` (S1–S8, classify through
-persist). The routed playbook supplies only what **differs in actions**: the schema sections it fills,
-the reviewer dimension set it passes, its pre-draft reconnaissance, and its handoff shape. Type
-differences the spine consumes (`plan_ref`, the dimension set, which schema sections, `off-ramp` —
-which off-ramps the shape triage may offer) are **facts / values**, never branches.
+Every playbook opens by reading the shared spine `playbooks/plan-spine.md` (S1–S8, classify through persist). The routed playbook supplies
+only what **differs in actions**: the schema sections it fills, the reviewer dimension set it passes, its pre-draft reconnaissance, and its
+handoff shape. Type differences the spine consumes (`plan_ref`, the dimension set, which schema sections, `off-ramp` — which off-ramps the
+shape triage may offer) are **facts / values**, never branches.
 
 **Override rule** (`architecture.md §5`): honor `suggested_playbook` unless the thread carries evidence
 the script could not see (e.g. it supersedes the labels' type) — state the reason. Never interleave type
@@ -82,8 +82,8 @@ Universal across every route:
   revise lookup) locates the plan by matching `<!-- implementation-plan:v1 -->` with `startswith` — any
   character before it makes the plan invisible. For a story, the `**Epic:**` backlink goes on the line
   *immediately after* the marker, never above it.
-- **Footer/handoff record the branch, never elide it.** `<plan-ref>@<short-sha>` is also the resolver's
-  PR base; the rendering rule is `plan-spine.md` S5 + [`references/handoff-renderings.md`](references/handoff-renderings.md).
+- **Footer/handoff record the branch, never elide it.** `<plan-ref>` is the ref the plan was GROUNDED on — not
+  always the resolver's PR base; render per `plan-spine.md` S5 + [`references/handoff-renderings.md`](references/handoff-renderings.md).
 - **Staged-body writes.** Every GitHub write goes through
   `${CLAUDE_PLUGIN_ROOT}/scripts/gh_persist.py` via Bash: stage the verbatim body to
   `facts.scratch` (`/tmp/gh-planner-<issue>/…`) and pass the **path**. The script verifies the

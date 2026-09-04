@@ -7,9 +7,12 @@ the revise path for such a target (a prior plan just refreshes in place). Planni
 story now — not up front with its siblings — is what keeps it current: it grounds against the epic
 branch HEAD *after* every predecessor has landed. `facts.plan_ref` is the parent epic's
 `epic/<N>-<slug>` branch (row `story-under-open-epic`), or the story's own open PR head when one exists
-(row `open-pr-head` wins), or `main` when the parent's integration branch hasn't bootstrapped yet (row
-`story-parent-epic-bootstrap` — the branch is created only once the resolver implements the first
-story; independent of whether the epic *plan* itself already exists, see the next bullet).
+(row `open-pr-head` wins), or **this story's own branch** when the session sits in its worktree and that
+branch already contains the base ref's tip (row `story-own-branch` — the post-`workspace-open`, pre-PR
+window; a strict superset of the base, so it grounds on more truth, never less), or `main` when the
+parent's integration branch hasn't bootstrapped yet (row `story-parent-epic-bootstrap` — the branch is
+created only once the resolver implements the first story; independent of whether the epic *plan* itself
+already exists, see the next bullet).
 
 **Run the spine first.** Read [`plan-spine.md`](plan-spine.md) and execute it end to end. The deltas
 this route supplies:
@@ -66,7 +69,8 @@ Everything below runs only after the spine returns; on a re-route exit, emit the
 Read [`../references/handoff-renderings.md`](../references/handoff-renderings.md):
 
 - **Just-in-time story plan posted**: `Story:` line (`plan: ✓ (<url>)`) + parent `Epic:` line (progress
-  count) + `Grounding:` (`read at epic/<N>-<slug>@<short-sha>`, or `origin/main` on the bootstrap case)
+  count) + `Grounding:` (`read at <facts.plan_ref>@<short-sha>` — the epic branch, this story's own
+  branch, or `origin/main` on the bootstrap case; never hardcode one)
   + `**Open questions:**` **whenever any plan posted this session carries `## Open questions`** — for a
   composite epic+story session that means the line renders when *either* the epic plan or the story plan
   carries one; drop it never because the shape matched a single-axis example first (bug (b)). `Next:

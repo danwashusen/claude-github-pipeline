@@ -303,7 +303,12 @@ project root, not detached, not stale against the expected remote state — ever
 `WORKSPACE_MISMATCH` decision) and re-run the setup hooks on every session entry; they never
 create work worktrees. The planner grounds the same way on its asserted ambient checkout
 (`facts.grounding`); a default-branch plan_ref accepts any current checkout of it including the
-project root — fresh planning happens *before* workspace-open (plan-before-open).
+project root — fresh planning happens *before* workspace-open (plan-before-open). A story's own
+branch is likewise its own plan_ref (the `story-own-branch` row) when that checkout already
+**contains** the tip of the ref it would otherwise have grounded on — a strict superset, so it sees
+more truth, not less — rather than being refused for a ref it is frequently bit-identical to. The
+containment probe, not the branch name, is what enforces "a later story never grounds on code a
+predecessor has since moved": behind or diverged still refuses.
 
 **The default branch is derived, never assumed** — `workspace.default_branch` reads `git
 symbolic-ref refs/remotes/origin/HEAD`, falling back to `gh repo view --json defaultBranchRef`, and
