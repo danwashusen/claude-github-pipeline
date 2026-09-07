@@ -22,20 +22,20 @@ revise mode (a target issue exists) — omit it for new-issue mode:
 ${CLAUDE_PLUGIN_ROOT}/scripts/prep_drafter.py <owner/repo> [--issue N]
 ```
 
-It returns one JSON **facts block** (`architecture.md §4`): `vector` (`mode` × `type` — the routing
-contract), `suggested_playbook`, `ambient` (the issue this checkout's branch is standing in, or `null` —
-the relationship the spine offers), `target` (revise: number/title/state/labels/`blocked_by`/
-`blocking`/`deps_available`), `config.oq_markers` (the `<!-- drafter-open-question-markers -->` block, or
-`heuristics_active` — a **detection hint**, never a gate), `repo_context` (issue templates, `gh label
-list`, and `docs` — the repo's own `<!-- doc-catalogue -->` entries plus its `prd`), `open_questions` + `open_question_candidates` (the search-before-file
-tracker de-dup on the target body), `revise` mode facts, `sections` (spilled issue-body/
-thread/plan-marker paths), and `attention`. Consume every fact as **data** — never re-derive the mode,
-the target's type, or the tracker candidates in prose; prep already did.
+It returns one JSON **facts block** (`architecture.md §4`): `vector` (`mode` × `type` — the routing contract),
+`suggested_playbook`, `ambient` (the issue this checkout's branch is standing in, or `null` — the relationship the
+spine offers), `target` (revise: number/title/state/labels/`blocked_by`/ `blocking`/`deps_available`),
+`config.oq_markers` (the `<!-- drafter-open-question-markers -->` block, or `heuristics_active` — a **detection
+hint**, never a gate), `repo_context` (issue templates, `gh label list`, and `docs` — the repo's own `<!--
+doc-catalogue -->` entries plus its `prd`), `open_questions` + `open_question_candidates` (the search-before-file
+tracker de-dup on the target body), `revise` mode facts, `sections` (spilled issue-body/ thread/plan-marker paths),
+and `attention`. Consume every fact as **data** — never re-derive the mode, the target's type, or the tracker
+candidates in prose; prep already did.
 
 **Decision card rule.** If prep exits with `status: needs_decision`, render its `decision` as one
 `AskUserQuestion` card (per [`../_shared/asking-the-user.md`](../_shared/asking-the-user.md)), act on the
 answer, and re-run prep. This is the single universal handler for every closed-set code (`AUTH_REQUIRED`,
-`AMBIGUOUS`, …).
+`AMBIGUOUS`, …). A re-run mints a **fresh `facts.scratch`** in new mode — stage to the latest value.
 
 **Newly-detected OQ lookup.** When you spot an open question in the feedback/grounding text that prep's
 body-driven `open_question_candidates` never searched (new mode has no target body; a grounding-doc OQ
