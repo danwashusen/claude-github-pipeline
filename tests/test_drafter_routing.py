@@ -968,6 +968,41 @@ class ReviewTierAndAnchorRuleTests(unittest.TestCase):
         )
         self.assertIn("never pasted grep output", tracking)
 
+    def test_filing_protocol_spawns_the_approved_batch_in_one_message(self):
+        """Serial spawning cost the drafter's full round-trip per item (an observed run: 3 follow-ups
+        in ~30 minutes). The items are independent, so the batch goes out concurrently."""
+        self.assertIn("all in one message", self.filing_flat)
+        self.assertIn("so the batch runs concurrently", self.filing_flat)
+
+    def test_filing_protocol_isolates_a_failed_item_and_serializes_same_target_revises(self):
+        self.assertIn("does not hold up the others", self.filing_flat)
+        self.assertIn(
+            "`revise-existing` items that share a target issue go one at a time",
+            self.filing_flat,
+            "same-target revises stage to one revised.md and would race edit-body",
+        )
+
+    def test_resolver_registry_renders_the_batch_rule(self):
+        # render, don't restate — the caller must not read as serial where the shared file is batched.
+        tracking = self._flat(
+            (REPO_ROOT / "skills" / "resolver" / "references" / "follow-up-tracking.md").read_text(
+                encoding="utf-8"
+            )
+        )
+        self.assertIn("all in one message", tracking)
+
+    def test_router_names_the_per_process_new_mode_scratch(self):
+        """Concurrent proxy-filed drafters must not share a staging dir (prep_drafter.py's default)."""
+        self.assertIn("/tmp/gh-drafter-new-<pid>", ROUTER.read_text(encoding="utf-8"))
+
+    def test_router_warns_that_a_prep_re_run_changes_the_scratch(self):
+        """Per-process keying made `facts.scratch` per-invocation, where it used to be stable across a
+        session. A decision-card retry re-runs prep, so a stale value now stages into an abandoned dir
+        and the create aborts on the empty-body gate."""
+        router = self._flat(ROUTER.read_text(encoding="utf-8"))
+        self.assertIn("A re-run mints a **fresh `facts.scratch`** in new mode", router)
+        self.assertIn("stage to the latest value", router)
+
     def test_reviewer_prompt_carries_tier_and_delta_scope_inputs(self):
         self.assertIn("<<review_tier>>", self.prompt)
         self.assertIn("<<changed_summary>>", self.prompt)

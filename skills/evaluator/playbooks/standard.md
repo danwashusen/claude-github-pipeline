@@ -33,7 +33,8 @@ issues already linked in the PR body's `## Follow-ups` *Filed* entries — never
 grounding violations never reach here — they soft-reject pre-merge and take the no-merge exit.)
 
 File each via the shared protocol in [`../../_shared/follow-up-filing.md`](../../_shared/follow-up-filing.md)
-— one `general-purpose` sub-agent per item, type from `bug | incomplete-feature | deferred-test |
+— one `general-purpose` sub-agent per item, spawned together in one message, type from
+`bug | incomplete-feature | deferred-test |
 revise-existing`, parent reference = this PR + the issue. After filing, post the URLs as a brief PR
 comment so they're durable (stage the list to `<facts.scratch>/followups.md`):
 ```bash

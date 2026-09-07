@@ -369,7 +369,9 @@ now the same rule everything else follows rather than an exception.
   tracked-dependency registry, not buildable scope or DoD.
 - `follow-up-filing.md` — the drafter-proxy sub-agent protocol the resolver, the evaluator, and the
   planner (seam-disposition follow-ups) use to file a follow-up issue (never a hand-crafted
-  `gh issue create` body).
+  `gh issue create` body). One filing moment's approved items are spawned as **one concurrent
+  batch, in a single message** — the items are independent, and serial spawning cost the drafter's
+  full round-trip each in series; same-target `revise-existing` items are the one exception.
 - `asking-the-user.md` — the `AskUserQuestion` card shape, and the rule that a sub-agent returns a
   §3 decision code instead of asking.
 
@@ -436,7 +438,9 @@ the *consuming* repo provides — not by plugin config:
 - **`${CLAUDE_PLUGIN_ROOT}` substitution.** Skill bodies reference bundled files as
   `${CLAUDE_PLUGIN_ROOT}/...`; Claude Code substitutes the real install path inline before the
   model reads it. That path changes on every plugin update and is **read-only** — never write state
-  there. Scratch dirs are uniformly `/tmp/gh-<skill>-<N>/`, and prep reports the one in use as
+  there. Scratch dirs are uniformly `/tmp/gh-<skill>-<N>/` — `<N>` the session's key: the issue/PR
+  number, or the **process id** for a new-mode drafter that has none yet, so the concurrently-spawned
+  drafters of one follow-up batch never share a staging dir — and prep reports the one in use as
   `facts.scratch`. Where a path must reach a *raw-read* reference file or a *dispatched sub-agent
   prompt* (which are **not** substituted), the orchestrating skill resolves the path itself and
   passes it as an explicit placeholder.

@@ -460,7 +460,9 @@ Authorship rule: a v2 router + playbook set is written **from scratch** against 
 spec and this section — never derived by editing v1 `SKILL.md` prose down. Only two classes of
 v1 text are carried: the [prd.md §7](prd.md)-frozen artifact renderings (byte-compatible by
 requirement) and the judgment sub-agent prompts a cutover step explicitly marks as carried. Standalone tools keep
-`disable-model-invocation: true`. Scratch dirs are uniformly `/tmp/gh-<skill>-<N>/`. Skill and
+`disable-model-invocation: true`. Scratch dirs are uniformly `/tmp/gh-<skill>-<N>/`, `<N>` being the
+session's key — the issue/PR number, or the process id for a new-mode drafter that has none yet, so
+the concurrently-spawned drafters of one follow-up batch never share a staging dir. Skill and
 directory names are the [prd.md §2](prd.md) fixed names; nothing echoes the `github-pipeline`
 namespace.
 

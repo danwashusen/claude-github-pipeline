@@ -389,6 +389,17 @@ class SliceBackstopTests(unittest.TestCase):
         self.assertTrue(envelope.get("dry_run"))
 
 
+class FollowUpBatchTests(unittest.TestCase):
+    """The residual-filing step spawns its sub-agents concurrently — the items are independent, and
+    serial spawning costs the drafter's full round-trip each in series."""
+
+    def test_standard_route_spawns_the_follow_up_batch_in_one_message(self):
+        standard = re.sub(
+            r"\s+", " ", (PLAYBOOKS_DIR / "standard.md").read_text(encoding="utf-8").replace("**", "")
+        )
+        self.assertIn("spawned together in one message", standard)
+
+
 class ArtifactRenderingByteCompatTests(unittest.TestCase):
     """The artifact renderings this skill writes must diff clean against the S1-captured v1 examples
     (S7 DoD box 2). Parses the fenced template block out of each reference and the matching example

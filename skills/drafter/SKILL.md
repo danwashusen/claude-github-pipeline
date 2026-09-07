@@ -8,12 +8,10 @@ description: Drafts well-structured GitHub issues from informal developer feedba
 The first stage of the pipeline: informal feedback in → **one** filed/revised, template-conformant issue
 (bug / incomplete / feature / story / Epic), or a filed/revised `question`-type issue — always ending in
 a single `## Handoff`. One issue per run, an Epic's body included: the drafter **decomposes nothing** —
-cutting an Epic into stories, or an issue into slices, is the slicer's at either altitude (#16). It files;
-planner researches and attaches the plan later, the resolver builds it. One drafting attempt, one
-session; nothing survives between runs except what is persisted to GitHub. Read this router, run prep,
-route to exactly one playbook, then hand off. Scripts own the mechanical I/O; your judgment is the
-classification, the PRD-tension calls, the drafting, the open-question dispositions, the review
-verdicts, and the handoff `Why:`.
+cutting an Epic into stories, or an issue into slices, is the slicer's at either altitude (#16). One
+drafting attempt, one session. Read this router, run prep, route to exactly one playbook, then hand off.
+Scripts own the mechanical I/O; your judgment is the classification, the PRD-tension calls, the drafting,
+the open-question dispositions, the review verdicts, and the handoff `Why:`.
 
 ## 1. Prep
 
@@ -24,20 +22,20 @@ revise mode (a target issue exists) — omit it for new-issue mode:
 ${CLAUDE_PLUGIN_ROOT}/scripts/prep_drafter.py <owner/repo> [--issue N]
 ```
 
-It returns one JSON **facts block** (`architecture.md §4`): `vector` (`mode` × `type` — the routing
-contract), `suggested_playbook`, `ambient` (the issue this checkout's branch is standing in, or `null` —
-the relationship the spine offers), `target` (revise: number/title/state/labels/`blocked_by`/
-`blocking`/`deps_available`), `config.oq_markers` (the `<!-- drafter-open-question-markers -->` block, or
-`heuristics_active` — a **detection hint**, never a gate), `repo_context` (issue templates, `gh label
-list`, and `docs` — the repo's own `<!-- doc-catalogue -->` entries plus its `prd`), `open_questions` + `open_question_candidates` (the search-before-file
-tracker de-dup on the target body), `revise` mode facts, `sections` (spilled issue-body/
-thread/plan-marker paths), and `attention`. Consume every fact as **data** — never re-derive the mode,
-the target's type, or the tracker candidates in prose; prep already did.
+It returns one JSON **facts block** (`architecture.md §4`): `vector` (`mode` × `type` — the routing contract),
+`suggested_playbook`, `ambient` (the issue this checkout's branch is standing in, or `null` — the relationship the
+spine offers), `target` (revise: number/title/state/labels/`blocked_by`/ `blocking`/`deps_available`),
+`config.oq_markers` (the `<!-- drafter-open-question-markers -->` block, or `heuristics_active` — a **detection
+hint**, never a gate), `repo_context` (issue templates, `gh label list`, and `docs` — the repo's own `<!--
+doc-catalogue -->` entries plus its `prd`), `open_questions` + `open_question_candidates` (the search-before-file
+tracker de-dup on the target body), `revise` mode facts, `sections` (spilled issue-body/ thread/plan-marker paths),
+and `attention`. Consume every fact as **data** — never re-derive the mode, the target's type, or the tracker
+candidates in prose; prep already did.
 
 **Decision card rule.** If prep exits with `status: needs_decision`, render its `decision` as one
 `AskUserQuestion` card (per [`../_shared/asking-the-user.md`](../_shared/asking-the-user.md)), act on the
 answer, and re-run prep. This is the single universal handler for every closed-set code (`AUTH_REQUIRED`,
-`AMBIGUOUS`, …).
+`AMBIGUOUS`, …). A re-run mints a **fresh `facts.scratch`** in new mode — stage to the latest value.
 
 **Newly-detected OQ lookup.** When you spot an open question in the feedback/grounding text that prep's
 body-driven `open_question_candidates` never searched (new mode has no target body; a grounding-doc OQ
@@ -85,19 +83,21 @@ stop: rewriting the body here without cutting the stories would leave an Epic wi
 Universal across every route:
 
 - **Nothing is filed without the Step-6 gate.** No exceptions: the Epic batch's gate-skip retired with
-  the batch itself (#16), so every route now files exactly one issue behind one confirmation.
-  Silence, a tweak request, or "Other" all count as keep-iterating. "Filed issues are annoying to clean
-  up; a 10-second confirmation prevents that."
+  the batch itself (#16), so every route files exactly one issue behind one confirmation. Silence, a
+  tweak request, or "Other" all count as keep-iterating. "Filed issues are annoying to clean up; a
+  10-second confirmation prevents that."
 - **Staged-body writes.** Every GitHub write goes through `${CLAUDE_PLUGIN_ROOT}/scripts/gh_persist.py`
-  via Bash: stage the verbatim body to `facts.scratch` (`/tmp/gh-drafter-<issue-or-"new">/…`) and pass the
-  **path**. The script gates empty bodies (`EMPTY_BODY_FILE`) and returns `body_sha256` — the #626/#627
-  empty-body race fix (the body never travels through a dispatch prompt). The drafter has **no** scriptless
+  via Bash: stage the verbatim body to `facts.scratch` and pass the **path** — `/tmp/gh-drafter-<issue>/…`,
+  or `/tmp/gh-drafter-new-<pid>/…` in new mode (per-process, so one proxy-filed follow-up batch's
+  concurrent drafters never clobber each other's staged body). The script gates empty bodies
+  (`EMPTY_BODY_FILE`) and returns `body_sha256` — the #626/#627 empty-body race fix (the body never
+  travels through a dispatch prompt). The drafter has **no** scriptless
   raw-`gh` executor; if a real op doesn't fit a subcommand, that's a gap to report, not a raw call to roll.
 - **Successful write is self-confirming.** A zero exit with a URL *is* the confirmation; never re-read the
   issue to check it landed.
 - **Never silently freeze an untracked OQ.** An OQ that gates a build issue's scope gets a Step-3.5
   disposition + a tracked companion (matched or filed) before it enters the body — the falsifiable rule in
-  [`playbooks/draft-spine.md`](playbooks/draft-spine.md). Absorbing an untracked OQ silently is a defect.
+  [`playbooks/draft-spine.md`](playbooks/draft-spine.md); absorbing one silently is a defect.
 - **Never touch the plan comment.** Revise mode reads the `<!-- implementation-plan:v1 -->` pointer to
   preserve it verbatim; it never edits or deletes the comment — that's the planner's artifact.
 - **Anti-fabrication, durable anchors.** Never invent reproduction steps, error messages, behaviors,
@@ -130,7 +130,7 @@ of its own indented code line. Fill the snapshot from data in hand — the `crea
 issue/Epic/story numbers and titles; `plan: ✗` is always correct (the drafter never authors plans). The
 `Why:` line is yours. The forward route is the `planner` (`/github-pipeline:planner`) — except a freshly
 filed **Epic**, which forwards to `/github-pipeline:slicer <N>` to cut its stories, because an epic plan
-pins cross-story contracts and needs them to exist first. An OQ deferral
-points at `/github-pipeline:question-sweep`. A `question`'s handoff is **terminal** — a human answers it,
+pins cross-story contracts and needs them to exist first. An OQ deferral points at
+`/github-pipeline:question-sweep`. A `question`'s handoff is **terminal** — a human answers it,
 not a downstream skill. The handoff is the only signal; the user runs the next command in a fresh session
 (session-per-skill is the context-isolation choice).

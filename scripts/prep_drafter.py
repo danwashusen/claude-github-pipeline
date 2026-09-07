@@ -50,8 +50,11 @@ Usage::
 
 ``--root`` defaults to ``.`` (the project root — architecture.md §6's read-only trust vantage).
 ``--issue`` selects revise mode (any already-filed target, epic included — the target's type is read
-mechanically from its own labels/title, never from operator intent); omitting it selects new mode. ``--scratch-dir`` defaults to ``/tmp/gh-drafter-<issue-or-"new">`` (CLAUDE.md's
-``/tmp/gh-<skill>-<N>/`` convention) when omitted — this IS "staging conventions" from this step's
+mechanically from its own labels/title, never from operator intent); omitting it selects new mode. ``--scratch-dir`` defaults to ``/tmp/gh-drafter-<issue>`` in revise mode and
+``/tmp/gh-drafter-new-<pid>`` in new mode (CLAUDE.md's ``/tmp/gh-<skill>-<N>/`` convention — ``<N>``
+is the session's key: the issue number, or the process id when no issue exists yet, so the
+concurrently-spawned proxy-filed drafters of one follow-up batch never share a staging dir and so
+never clobber each other's staged body) when omitted — this IS "staging conventions" from this step's
 Work list: prep establishes and creates the directory every staged draft/revised body gets written
 under at flow time (docs/specs/drafter.md "Artifacts written"); prep itself stages nothing, since no draft exists
 yet at session start. ``--oq-query`` mirrors `prep_planner.py`'s identical one-shot flag (see
@@ -161,6 +164,7 @@ silently dropped.
 
 import argparse
 import json
+import os
 import re
 import sys
 from pathlib import Path
@@ -488,7 +492,19 @@ def build_facts(repo, issue=None, root=".", scratch_dir=None, cwd=None):
     """
     root = str(Path(root).resolve())
     if scratch_dir is None:
-        scratch_dir = "/tmp/gh-drafter-%s" % (issue if issue else "new")
+        # New mode has no issue number to key on, so the process id stands in as <N>: a follow-up
+        # batch spawns its proxy drafters concurrently, and a shared dir would let one run's staged
+        # body clobber another's before gh_persist reads it.
+        #
+        # The separation this buys is strong but NOT absolute, and the difference matters if you
+        # ever lean on it harder. THIS process exits in about a second; the directory it names stays
+        # in use for the minutes until the session stages its body and gh_persist reads the path. So
+        # the key is unique against every prep alive at the same moment (which is what a concurrent
+        # batch is), not against one whose pid the OS has since recycled — a wrap of the pid space
+        # inside that window (macOS wraps at 99999; older Linux at pid_max 32768) would re-issue it.
+        # Reaching for a stronger key would mean a collision-resistant token instead of the pid, at
+        # the cost of the `/tmp/gh-<skill>-<N>/` shape every other prep follows.
+        scratch_dir = "/tmp/gh-drafter-%s" % (issue if issue else "new-%d" % os.getpid())
     Path(scratch_dir).mkdir(parents=True, exist_ok=True)
 
     root_sha = _root_sha(root)
@@ -644,7 +660,8 @@ def main(argv):
     parser.add_argument(
         "--scratch-dir",
         default=None,
-        help="scratch dir for spilled sections (default: /tmp/gh-drafter-<issue-or-\"new\">)",
+        help="scratch dir for spilled sections (default: /tmp/gh-drafter-<issue>, or "
+        "/tmp/gh-drafter-new-<pid> in new mode)",
     )
     parser.add_argument(
         "--cwd",
