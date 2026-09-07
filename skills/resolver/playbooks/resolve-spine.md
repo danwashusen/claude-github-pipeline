@@ -313,6 +313,8 @@ issue routes through the drafter proxy in [`../../_shared/follow-up-filing.md`](
 
 ## Return to the routed playbook
 
+Capture the run's pushed range for the handoff's `Changes:` link: `facts.workspace.sha` (the session-entry HEAD) → `git rev-parse HEAD` in `facts.workspace.path`, read **after** the review loop settles — its fix rounds push commits of their own, so a HEAD read before the loop exits names a range that stops short of what this run actually shipped.
+
 Multi-phase last-planned-phase shipped: flip the PR draft → ready with
 `gh pr ready <N> --repo <owner/repo>` **immediately before** the handoff (without the flip the
 evaluator's draft-PR guard deadlocks the handoff). Then continue in the routed playbook (`standard.md`

@@ -13,7 +13,11 @@ here" carrier — see `_shared/handoff-format.md`) substitute `<workspace-path>`
 worktree (→ evaluator, → resolver continue, → planner revise **with** a draft PR, whose plan
 grounds on the PR head); on a planner revise **without** a PR the planner grounds on `main`,
 so render `**Workspace:** any clean main checkout — not this worktree` instead; omitted on
-drafter re-routes and terminals (checkout-agnostic). **The `PR:` line's `review:`/`health:`/`merge:` markers are
+drafter re-routes and terminals (checkout-agnostic).
+
+**`Changes:` lines** (the reviewable link to what *this run* pushed — see `_shared/handoff-format.md`) appear on every shape whose run pushed at least one commit, and are omitted on the no-push exits (the drafter re-routes, both terminals, and a PR-less planner re-route). Substitute the entry SHA from `facts.workspace.sha`, the head SHA from `git rev-parse HEAD` run in `facts.workspace.path` **after the review loop settles** (its fix rounds push commits of their own, so a HEAD read before the loop exits stops short of what the run shipped), and the PR url from `facts.prior_pr.url` (continue mode) or the `create-pr` envelope's `url` (fresh mode); SHAs are 7-char, matching `dod-annotations.md`. Render the range form `<pr-url>/files/<entry-sha>..<head-sha>` whenever the entry SHA is a commit **in** the PR (the usual continue-mode case). Render the whole-PR form `<pr-url>/files` when it isn't — the entry SHA is the PR's base commit, which GitHub 404s on the range form (the usual fresh-run case, where the whole PR is this run's changes), or an epic run's drift rebase rewrote it out of the history.
+
+**The `PR:` line's `review:`/`health:`/`merge:` markers are
 `not run` on every resolver-authored handoff whose PR hasn't reached the evaluator yet — forward exits
 AND every re-route (including a mid-phases continue-mode re-route back to the resolver itself).** Per
 `_shared/handoff-format.md`'s closed set, `review:` is the **evaluator's** posted GitHub review verdict
@@ -34,6 +38,7 @@ The default code-change outcome. For a story PR under an open epic, the `Issue:`
 
 **Issue:** #142 — Add CSV export · open · feature · plan: ✓
 **PR:** #287 — Add CSV export (#142) · open · base main · review: not run · health: not run · merge: not run
+**Changes:** 4 commits (the whole PR — opened this run) — https://github.com/owner/repo/pull/287/files
 **Workspace:** <workspace-path> — start the next session here
 
 **Next:** evaluate the PR in a fresh session.
@@ -53,6 +58,7 @@ next session continues the same multi-phase resolution.
 
 **Issue:** #640 — Spike: Mitigate Gemini thinking-token truncation · open · feature · plan: ✓ (multi-phase: 2 of 4 phases shipped)
 **PR:** #649 — feat(llm): #640 spike harness · draft · base main · review: not run · health: not run · merge: not run
+**Changes:** 3 commits, 4c1d80f..9f0a112 — https://github.com/owner/repo/pull/649/files/4c1d80f..9f0a112
 **Workspace:** <workspace-path> — start the next session here
 
 **Next:** continue with the next phase in a fresh session.
@@ -72,6 +78,7 @@ action; surface it verbatim from the plan's `deliverable` so whoever runs it doe
 
 **Issue:** #640 — Spike: Mitigate Gemini thinking-token truncation · open · feature · plan: ✓ (multi-phase: 2 of 4 phases shipped)
 **PR:** #649 — feat(llm): #640 spike harness · draft · base main · review: not run · health: not run · merge: not run
+**Changes:** 3 commits, 4c1d80f..9f0a112 — https://github.com/owner/repo/pull/649/files/4c1d80f..9f0a112
 **Workspace:** <workspace-path> — start the follow-up resolver session here
 
 **Next:** run the operator phase, then return to the resolver.
@@ -104,6 +111,7 @@ post-flip state.
 
 **Issue:** #640 — Spike: Mitigate Gemini thinking-token truncation · open · feature · plan: ✓ (multi-phase: 4 of 4 phases shipped)
 **PR:** #649 — feat(llm): #640 spike harness · open · base main · review: not run · health: not run · merge: not run
+**Changes:** 2 commits, 7b3e5a0..9f0a112 — https://github.com/owner/repo/pull/649/files/7b3e5a0..9f0a112
 
 **Phases:** all 4 planned phases shipped at 9f0a112; PR flipped to ready for the evaluator (`gh pr ready 649`).
 **Workspace:** <workspace-path> — start the next session here
@@ -129,6 +137,7 @@ open PR's author to the `Why:` when it isn't yours.
 **Epic:** #150 — Chat & session UX polish · open · epic · plan: ✓
 **Stories:** 3 of 5 closed
 **PR:** #300 — Chat & session UX polish (epic #150) · draft · base main · review: not run · health: not run · merge: not run
+**Changes:** 1 commit, 5e2af41..c0d19b6 — https://github.com/owner/repo/pull/300/files/5e2af41..c0d19b6
 **Workspace:** <workspace-path> — the next story's plan grounds here
 
 **Next:** plan the next story in a fresh session.
@@ -150,6 +159,7 @@ what the evaluator will do differently.
 **Epic:** #150 — Chat & session UX polish · open · epic · plan: ✓
 **Stories:** 5 of 5 closed
 **PR:** #300 — Chat & session UX polish (epic #150) · open · base main · review: not run · health: not run · merge: not run
+**Changes:** 2 commits, 5e2af41..c0d19b6 — https://github.com/owner/repo/pull/300/files/5e2af41..c0d19b6
 **Workspace:** <workspace-path> — start the next session here
 
 **Next:** evaluate the Epic integration PR in a fresh session.
@@ -172,6 +182,7 @@ branch after the plan is refreshed.
 
 **Issue:** #142 — Add CSV export · open · feature · plan: stale
 **PR:** #287 — Add CSV export (#142) · draft · base main · review: not run · health: ❌ at abc1234 · merge: not run
+**Changes:** 2 commits, 9d41c0e..abc1234 — https://github.com/owner/repo/pull/287/files/9d41c0e..abc1234
 **Workspace:** <workspace-path> — the plan revise grounds on this PR's head; start the planner session here
 
 **Next:** revise the plan in a fresh session — implementation revealed a locked decision is unbuildable.
@@ -181,7 +192,7 @@ branch after the plan is refreshed.
 **Why:** the plan's `## Architecture decisions` line "<quoted decision>" assumed <X>, but `<path:line>` reveals <Y>. The plan-currency check failed (alternatively: the plan-invalidation gate fired mid-implementation). Refresh the plan against today's surface before resuming. The draft PR stays open; re-run the resolver in continue mode after the plan revise lands.
 ```
 
-If no PR was opened yet, omit the PR line entirely, render `**Workspace:** any clean main
+If no PR was opened yet, omit the PR and `Changes:` lines entirely, render `**Workspace:** any clean main
 checkout — not this worktree` (a PR-less revise grounds on `main`), and the resolver continues
 with `/github-pipeline:resolver #142` instead of `continue #287`.
 
