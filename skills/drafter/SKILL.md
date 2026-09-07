@@ -8,12 +8,10 @@ description: Drafts well-structured GitHub issues from informal developer feedba
 The first stage of the pipeline: informal feedback in → **one** filed/revised, template-conformant issue
 (bug / incomplete / feature / story / Epic), or a filed/revised `question`-type issue — always ending in
 a single `## Handoff`. One issue per run, an Epic's body included: the drafter **decomposes nothing** —
-cutting an Epic into stories, or an issue into slices, is the slicer's at either altitude (#16). It files;
-planner researches and attaches the plan later, the resolver builds it. One drafting attempt, one
-session; nothing survives between runs except what is persisted to GitHub. Read this router, run prep,
-route to exactly one playbook, then hand off. Scripts own the mechanical I/O; your judgment is the
-classification, the PRD-tension calls, the drafting, the open-question dispositions, the review
-verdicts, and the handoff `Why:`.
+cutting an Epic into stories, or an issue into slices, is the slicer's at either altitude (#16). One
+drafting attempt, one session. Read this router, run prep, route to exactly one playbook, then hand off.
+Scripts own the mechanical I/O; your judgment is the classification, the PRD-tension calls, the drafting,
+the open-question dispositions, the review verdicts, and the handoff `Why:`.
 
 ## 1. Prep
 
@@ -85,19 +83,21 @@ stop: rewriting the body here without cutting the stories would leave an Epic wi
 Universal across every route:
 
 - **Nothing is filed without the Step-6 gate.** No exceptions: the Epic batch's gate-skip retired with
-  the batch itself (#16), so every route now files exactly one issue behind one confirmation.
-  Silence, a tweak request, or "Other" all count as keep-iterating. "Filed issues are annoying to clean
-  up; a 10-second confirmation prevents that."
+  the batch itself (#16), so every route files exactly one issue behind one confirmation. Silence, a
+  tweak request, or "Other" all count as keep-iterating. "Filed issues are annoying to clean up; a
+  10-second confirmation prevents that."
 - **Staged-body writes.** Every GitHub write goes through `${CLAUDE_PLUGIN_ROOT}/scripts/gh_persist.py`
-  via Bash: stage the verbatim body to `facts.scratch` (`/tmp/gh-drafter-<issue-or-"new">/…`) and pass the
-  **path**. The script gates empty bodies (`EMPTY_BODY_FILE`) and returns `body_sha256` — the #626/#627
-  empty-body race fix (the body never travels through a dispatch prompt). The drafter has **no** scriptless
+  via Bash: stage the verbatim body to `facts.scratch` and pass the **path** — `/tmp/gh-drafter-<issue>/…`,
+  or `/tmp/gh-drafter-new-<pid>/…` in new mode (per-process, so one proxy-filed follow-up batch's
+  concurrent drafters never clobber each other's staged body). The script gates empty bodies
+  (`EMPTY_BODY_FILE`) and returns `body_sha256` — the #626/#627 empty-body race fix (the body never
+  travels through a dispatch prompt). The drafter has **no** scriptless
   raw-`gh` executor; if a real op doesn't fit a subcommand, that's a gap to report, not a raw call to roll.
 - **Successful write is self-confirming.** A zero exit with a URL *is* the confirmation; never re-read the
   issue to check it landed.
 - **Never silently freeze an untracked OQ.** An OQ that gates a build issue's scope gets a Step-3.5
   disposition + a tracked companion (matched or filed) before it enters the body — the falsifiable rule in
-  [`playbooks/draft-spine.md`](playbooks/draft-spine.md). Absorbing an untracked OQ silently is a defect.
+  [`playbooks/draft-spine.md`](playbooks/draft-spine.md); absorbing one silently is a defect.
 - **Never touch the plan comment.** Revise mode reads the `<!-- implementation-plan:v1 -->` pointer to
   preserve it verbatim; it never edits or deletes the comment — that's the planner's artifact.
 - **Anti-fabrication, durable anchors.** Never invent reproduction steps, error messages, behaviors,
@@ -130,7 +130,7 @@ of its own indented code line. Fill the snapshot from data in hand — the `crea
 issue/Epic/story numbers and titles; `plan: ✗` is always correct (the drafter never authors plans). The
 `Why:` line is yours. The forward route is the `planner` (`/github-pipeline:planner`) — except a freshly
 filed **Epic**, which forwards to `/github-pipeline:slicer <N>` to cut its stories, because an epic plan
-pins cross-story contracts and needs them to exist first. An OQ deferral
-points at `/github-pipeline:question-sweep`. A `question`'s handoff is **terminal** — a human answers it,
+pins cross-story contracts and needs them to exist first. An OQ deferral points at
+`/github-pipeline:question-sweep`. A `question`'s handoff is **terminal** — a human answers it,
 not a downstream skill. The handoff is the only signal; the user runs the next command in a fresh session
 (session-per-skill is the context-isolation choice).

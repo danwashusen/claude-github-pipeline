@@ -10,9 +10,21 @@ registry / timing / URL-weaving rules; this file is only the filing round-trip t
 
 ## Protocol — sub-agent proxy-confirms via the drafter
 
-For each item the caller's own gate has approved for filing (the resolver's user, the evaluator's
-residual step, the planner's seam-disposition answer), spawn a `general-purpose` sub-agent with this
-prompt (substitute the placeholders at call time):
+For the items the caller's own gate has approved at one filing moment (the resolver's user at the
+end-of-loop checkpoint or a retry-ladder / review-loop deferral, the evaluator's residual step, the
+planner's seam-disposition answer), spawn one `general-purpose` sub-agent per item with this prompt
+(substitute the placeholders at call time) — **all in one message**, so the batch runs concurrently.
+The items are independent, and spawning them one after another costs the drafter's full round-trip
+each in series (an observed resolver run filed 3 follow-ups in ~30 minutes that way).
+
+**The one exception:** `revise-existing` items that share a target issue go one at a time — they
+stage to the same `/tmp/gh-drafter-<N>/revised.md` and would race each other's `edit-body`. Every
+other combination is safe to spawn together: a new-mode drafter stages under its own
+`/tmp/gh-drafter-new-<pid>/`, so concurrent runs never clobber a staged body.
+
+Wait for the whole batch to return before weaving URLs. An item that returns `error: <reason>` does
+not hold up the others — weave the URLs that came back, and report the errored items to the operator
+as not filed, with the reason.
 
 ```
 You are filing one GitHub follow-up issue on behalf of the calling skill
@@ -92,6 +104,6 @@ Do NOT file an issue yourself with `gh issue create`. The drafter does
 this inside its own flow. Your role is to invoke, proxy-confirm, return.
 ```
 
-The sub-agent isolates the drafter's verbose work (PRD reading, classification questioning, nested
-sub-agent review loop) from the caller's main context. The caller sees one round-trip per item: input
-brief → output URL.
+The sub-agents isolate the drafter's verbose work (PRD reading, classification questioning, nested
+sub-agent review loop) from the caller's main context. The caller sees one batched round-trip: N
+briefs in, N results out.

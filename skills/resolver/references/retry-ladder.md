@@ -172,7 +172,8 @@ via `AskUserQuestion` (`header: "Tests red"`, options **Push with reds** / **Def
    decide whether any of the reds are blocking. Best when the failures look like CI/timing flakiness or
    genuinely separate edge cases that don't block the headline change.
 2. **Defer the failing tests with linked issues.** File one follow-up issue per failure (or one umbrella
-   issue if the failures share a root cause) via the sub-agent protocol in "Follow-up issue tracking" —
+   issue if the failures share a root cause), spawned in one message, via the sub-agent protocol in
+   "Follow-up issue tracking" —
    urgency `file-now`, type `deferred-test`. The filed URLs become `// TODO(#NNN)` markers and skip
    annotations (`XCTSkip("Deferred to #NNN — <reason>")`, Minitest/RSpec `skip "..."`) before push. Push
    the rest green. Best when the failure is a real structural problem that needs more design than fits this

@@ -28,6 +28,7 @@ Coverage matrix (S14 DoD):
 
 import json
 import os
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -701,6 +702,58 @@ class PureHelperUnitTests(unittest.TestCase):
             "target issue #9 is closed — resolve the 'Closed issue' gate before revising"
         ])
         self.assertEqual(prep_drafter._build_attention([], target, "new"), [])
+
+
+class ScratchDirTests(PrepDrafterSandboxTestCase):
+    """The default `facts.scratch` — `/tmp/gh-<skill>-<N>/` (architecture.md §9), where `<N>` is the
+    session's key. Revise mode keys on the issue number; new mode has none, so it keys on the process
+    id: a follow-up batch spawns its proxy-filed drafters concurrently, and a shared new-mode dir
+    would let one run's staged body clobber another's before `gh_persist.py` reads it. These call the
+    script WITHOUT `--scratch-dir` (which `_envelope` always passes), so prep really does mkdir the
+    emitted path — hence the cleanups."""
+
+    def _default_scratch(self, args, fixture_case):
+        """Cleanup is registered ONLY for a dir this run created. The revise-mode default is a fixed
+        path (`/tmp/gh-drafter-300`), so an unconditional rmtree would delete a real drafter session's
+        staged body if an operator happened to be revising that issue while the suite ran."""
+        preexisting = os.path.isdir(self._predicted_path(args))
+        result = self._run([a for a in args], fixture_case=fixture_case)
+        self.assertEqual(result.returncode, 0, msg="stderr: %s" % result.stderr)
+        scratch = _parse_one_envelope(result.stdout)["scratch"]
+        if not preexisting:
+            self.addCleanup(shutil.rmtree, scratch, ignore_errors=True)
+        return scratch
+
+    @staticmethod
+    def _predicted_path(args):
+        """The revise-mode default only; new mode is PID-keyed to this run's own subprocess, so it
+        can never pre-exist."""
+        if "--issue" in args:
+            return "/tmp/gh-drafter-%s" % args[args.index("--issue") + 1]
+        return ""
+
+    def test_new_mode_default_is_keyed_on_the_process(self):
+        scratch = self._default_scratch(
+            ["octo/widgets", "--root", str(self.root)], "prep_drafter_new_happy"
+        )
+        self.assertRegex(scratch, r"^/tmp/gh-drafter-new-\d+$")
+
+    def test_two_concurrent_new_mode_runs_never_share_a_staging_dir(self):
+        """The whole point: two drafters filing one follow-up batch stage to different paths."""
+        first = self._default_scratch(
+            ["octo/widgets", "--root", str(self.root)], "prep_drafter_new_happy"
+        )
+        second = self._default_scratch(
+            ["octo/widgets", "--root", str(self.root)], "prep_drafter_new_happy"
+        )
+        self.assertNotEqual(first, second)
+
+    def test_revise_mode_default_is_keyed_on_the_issue(self):
+        scratch = self._default_scratch(
+            ["octo/widgets", "--root", str(self.root), "--issue", "300"],
+            "prep_drafter_revise_standard",
+        )
+        self.assertEqual(scratch, "/tmp/gh-drafter-300")
 
 
 class UsageErrorTests(unittest.TestCase):

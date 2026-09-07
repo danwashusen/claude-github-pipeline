@@ -67,16 +67,18 @@ the registry to the user:
 > *[list each item: title hint, type, one-sentence description]*
 
 The user batch-approves, edits the list, or drops items. Only after batch approval do you spawn the
-sub-agents (one per item). Then weave URLs back into the handoff.
+sub-agents — one per item, all in one message per the shared protocol. Then, once the whole batch has
+returned, weave URLs back into the handoff.
 
 ## Filing protocol — sub-agent proxy-confirms via the drafter
 
 The drafter-proxy filing round-trip is shared with the evaluator (its post-merge residual-filing step),
 so it lives in [`../../_shared/follow-up-filing.md`](../../_shared/follow-up-filing.md) — the single
 source of truth for the `general-purpose` sub-agent prompt, the three proxy-confirm checks, and the URL
-return. For each item the user has approved at the checkpoint, spawn one sub-agent per that file's protocol
-(substitute the placeholders at call time). The sub-agent isolates the drafter's verbose work from the
-resolver's main context: the resolver sees one round-trip per item, input brief → output URL.
+return. For the items the user has approved at the checkpoint, spawn one sub-agent per item, all in one
+message, per that file's protocol (substitute the placeholders at call time). The sub-agents isolate the
+drafter's verbose work from the resolver's main context: the resolver sees one batched round-trip, N
+briefs in → N URLs out, and an errored item never blocks the others' weaving.
 
 ## URL weaving — close the loop
 
