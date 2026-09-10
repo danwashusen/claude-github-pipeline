@@ -94,13 +94,27 @@ Apply to every listed item:
    only the entry's repeat count bumped. On its **third** occurrence in one run render the `Review loop`
    card with the refutation standing in for the prior fix — the reviewer's persistence is evidence the
    citation may not answer it.
-4. **Fix** every Addressable and Cheap-fix-override item. Apply `common-pitfalls.md`'s three
-   fix-discipline bullets to each fix *before* writing it — "Don't fix the instance when the finding names
-   a class", "Don't conform code to a stated invariant a finding contradicts", "Don't split an atomic call
-   without naming its implicit properties". A retro found fix rounds carrying several times the defect
-   density of the code they corrected; those three are what that bought. File every Explicitly-deferred
-   item via the follow-up filing protocol (urgency `file-now`, type per the reviewer's framing) and capture
-   the returned URLs. Never file a Grounding-violation item.
+4. **Fix plan, then fix.** Before the first edit, list every Addressable and Cheap-fix-override item's
+   intended change as text in this conversation — not in the PR reply, not in a file; one line per item:
+   `<item> — <file>:<function> — siblings: <the sites sharing the concept, the class per the first
+   fix-discipline bullet> — interacts with: <other items this round: same file, same function, or a fix
+   that alters another's premise> — plan: <any `## Architecture decisions` / `## UI decisions` /
+   `## Deviations from project docs` bullet it touches, or none>`. Then check the list as a set, and only
+   then edit:
+   - Two fixes that cannot both hold → one change that satisfies both, or name which premise wins and
+     drop the other from this round's edits (it stays listed; the PR reply says why).
+   - A fix that reverses a plan decision → that item is not a fix: reclassify it Decision-required and
+     render step 2's `Decision` card now, before any edit, its paths the decision as it stands (the item
+     settles Plan-settled, citing it) and **Re-plan**.
+   An empty list (no Addressable or Cheap-fix-override item) needs no plan — step 5 owns that round.
+   Then fix every item the check left standing, applying `common-pitfalls.md`'s three fix-discipline
+   bullets to each fix *before* writing it — "Don't fix the instance when the finding names a class",
+   "Don't conform code to a stated invariant a finding contradicts", "Don't split an atomic call without
+   naming its implicit properties". A retro found fix rounds carrying several times the defect density of
+   the code they corrected, and a later run had three of eleven findings introduced by the loop's own
+   fixes: the disciplines catch defects inside one fix, the fix plan catches the ones between fixes. File
+   every Explicitly-deferred item via the follow-up filing protocol (urgency `file-now`, type per the
+   reviewer's framing) and capture the returned URLs. Never file a Grounding-violation item.
 5. **No edits** (zero Addressable, zero Cheap-fix-override items — every item Explicitly-deferred or
    settled) → this round is complete. Skip steps 6–7 and step 8's commit and push; post step 8's reply
    only when this round settled a **new** item or was fed by the cold read (the `Settled (not
@@ -165,7 +179,8 @@ Don't try to satisfy a re-route inside the round; there is nothing here that can
   defer** (stop fixing it, file the item as a deferred follow-up), **Abort loop**.
 - **Decision required.** The verdict flags an architectural choice, an API break, or a scope-change
   tradeoff. Don't guess. `header: "Decision"`, with one option per candidate path the reviewer named, each
-  `description` carrying the reviewer's framing for that path.
+  `description` carrying the reviewer's framing for that path — or, when step 4's fix plan raised it, the
+  plan decision as it stands and **Re-plan**.
 - **Verification failure.** The retry ladder ran 3 times and the gate is still red. `header: "Tests red"`,
   options: **Push with reds** / **Defer the tests** / **Restructure**, per the retry-ladder Escalation
   section.

@@ -202,10 +202,10 @@ Loop until `review` approves with zero Addressable / Cheap-fix-override items:
    instead of a real verdict). Its verdict text is this round's input.
 2. Run one **fix round** on it per the reference, in this conversation: classify every listed item
    (iteration 1 also folds in human PR comments and reviews, and seeds the refuted-items list from prior
-   rounds' `Settled (not addressed):` blocks), deadlock-check against both lists, fix every Addressable +
-   Cheap-fix-override item, defect-inject every new or changed assertion, run the §10.6 pre-push gate
-   (the same retry ladder as §8, test-selection diff-base override = HEAD), commit, push, reply on the
-   PR. "Approved" is **not** the exit condition — you re-classify every listed item; soft politeness
+   rounds' `Settled (not addressed):` blocks), deadlock-check against both lists, list the **fix plan**
+   for every Addressable + Cheap-fix-override item and check it as a set before the first edit, fix
+   them, defect-inject every new or changed assertion, run the §10.6 pre-push gate (the same retry
+   ladder as §8, test-selection diff-base override = HEAD), commit, push, reply on the PR. "Approved" is **not** the exit condition — you re-classify every listed item; soft politeness
    ("not blocking") does not move an item out of Addressable. A guard rail (deadlock / architectural /
    verification failure / grounding violation) is a direct `AskUserQuestion` card per the reference,
    rendered at the point it fires. A **grounding-violation** item is never filed as a follow-up — the
@@ -220,9 +220,9 @@ Loop until `review` approves with zero Addressable / Cheap-fix-override items:
    - Settled and the cold read has **not** run this run — nor, per step 4's PR record, on this phase
      at this HEAD → step 4. Settled and it **has** → S5.1 is done; go to S6.
 
-   After `review`'s verdict text lands, your next emissions are **operational tool calls** (the
-   classification, the edits, the gate), not more prose — stopping at the verdict text is the PR
-   #416/#653 missing-handoff failure mode. Cap the outer loop — **one** cap across the whole of S5.1:
+   After `review`'s verdict text lands, your next emissions are the round's **operational beats** (the
+   classification, the fix plan, the edits, the gate), not a recap — stopping at the verdict text is
+   the PR #416/#653 missing-handoff failure mode. Cap the outer loop — **one** cap across the whole of S5.1:
    `review` runs at most **2** times on a non-final phase and **4** times on the final phase before the
    cold read; step 4 owns what follows it. On the cap ask (`header: "Iter cap"`): **Continue**
    (free-text count) / **Accept current** (exit S5.1 as pushed, the cold read skipped when it has not

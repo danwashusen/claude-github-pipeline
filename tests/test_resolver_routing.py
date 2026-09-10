@@ -1120,6 +1120,35 @@ class MainLoopReviewFixRoundTests(unittest.TestCase):
         # Deferred-by-plan files nothing (Explicitly-deferred is the bucket that files).
         self.assertIn("file nothing", text)
 
+    def test_the_fix_round_plans_its_edits_as_a_set_before_the_first_one(self):
+        """4.16.0: step 4 lists every intended change and checks the set before editing.
+
+        A real run had three of eleven findings introduced by the loop's own fixes: step 4 was a
+        single imperative, so a literal reader started editing item one with no view of how the
+        fixes interact or whether one reverses a locked plan decision.
+        """
+        raw = self.reference.read_text(encoding="utf-8")
+        reference = " ".join(raw.split())
+        pitfalls = " ".join(
+            (REFERENCES_DIR / "common-pitfalls.md").read_text(encoding="utf-8").split()
+        )
+        self.assertIn(
+            "Before the first edit, list every Addressable and Cheap-fix-override item's intended change",
+            reference,
+        )
+        self.assertIn("check the list as a set, and only then edit", reference)
+        # A fix that undoes a locked decision re-enters step 2's card; it is never edited in.
+        self.assertIn("reclassify it Decision-required and render step 2's `Decision` card", reference)
+        # The three descriptions of the round name the beat the same way.
+        for text, where in ((self.flat, "spine"), (reference, "reference"), (pitfalls, "pitfalls")):
+            self.assertIn("fix plan", text, "%s must name the fix plan beat" % where)
+        # The beat is prose, so the turn-boundary rule must not read as forbidding it.
+        self.assertNotIn("operational tool calls", self.flat)
+        self.assertIn("the classification, the fix plan, the edits, the gate", self.flat)
+        # Steps 5-9 are cross-referenced by number from the spine and the pitfalls: no renumbering.
+        steps = re.findall(r"^\d+\. \*\*", raw, flags=re.MULTILINE)
+        self.assertEqual(len(steps), 9, "review-fix-round.md must keep exactly steps 1-9")
+
 
 class PhaseScopedReviewTests(unittest.TestCase):
     """4.13.0: a non-final phase reviews its own delta at `medium`; the final phase reviews the
