@@ -22,6 +22,23 @@ drift rectification, bootstrap, legacy recovery) are in
 [`../references/epic-flow.md`](../references/epic-flow.md) — **read that file before any bootstrap or
 rectification step**.
 
+## S0 — Plan summary
+
+Render the `## Plan summary` block per
+[`../../_shared/plan-summary.md`](../../_shared/plan-summary.md) before touching the branch, at `focus`:
+the integration state — the story set with what each delivers, and the epic plan's
+`## Integration strategy`. An epic plan carries no `## Phases`, so that section is omitted. Source it
+from the staged plan-marker path in `facts.sections`; skip the whole step when `facts.plan.present` is
+false.
+
+This route runs no state-distiller, so the digest is the plan **as posted** — unlike the spine's, which
+is sourced from the distiller's thread-reconciled view. That is correct here and not a gap to close.
+
+This is the one step that reads the epic plan on this route. It is also the route whose whole subject is
+that plan's `## Story contracts` and `## Integration strategy` — the integration branch, the baseline,
+and the PR body all exist to carry them — so the operator sees what convergence this run is driving
+toward before it starts moving refs.
+
 ## S1 — Resolve the integration branch
 
 `facts.epic.match_count` classifies the branch state:

@@ -8,8 +8,9 @@ Planner-bound and terminal shapes omit the line (a `main`-ref planner run is che
 
 Every clean run of the planner ends with a single `## Handoff` block. The schema, omission rules, and
 closed-set state-marker vocabulary are owned by [`../../_shared/handoff-format.md`](../../_shared/handoff-format.md);
-this file holds the planner's worked rendering shapes, the footer rule, and the open-question line. Match
-the run's outcome to a shape and fill the snapshot from the data in hand.
+this file holds the planner's worked rendering shapes, the footer rule, the open-question line, and the
+`## Plan summary` block that precedes the handoff. Match the run's outcome to a shape and fill the
+snapshot from the data in hand.
 
 These shapes compose along **independent axes** — the structural shape (single-issue / epic / story /
 composite epic+story) and whether any posted plan carries open questions. A real run's handoff combines
@@ -47,6 +48,36 @@ Format (free-form, not a state marker): `**Open questions:** #<N> | (not filed) 
 `recorded-blocked` / `provisional-default` — never the drafter's set), `(not filed)` in place of `#<N>`
 only when the tracker search (spine S6) found no candidate or an existing one was explicitly rejected.
 The trailing summary is the planner's pointer, `see the plan's ## Open questions`.
+
+## The `## Plan summary` block (precedes the handoff)
+
+Render the human-readable plan digest defined in
+[`../../_shared/plan-summary.md`](../../_shared/plan-summary.md) immediately **before** the `## Handoff`
+block, at `focus`: none — the whole plan, at the altitude it was authored. That file owns the section
+set, the sourcing, the conciseness bars, the invitation's three points, and the read-only rule that
+governs the discussion after it; do not restate any of it here.
+
+**Predicate: this session posted or refreshed a plan.** Not `plan: ✓` — the two differ, and the
+difference is the HARD-revise *Start fresh* exit, whose `plan:` marker still points at the **superseded**
+comment while this session deliberately ran no persist (`playbooks/revise.md`). Summarising there would
+digest a plan that is about to be re-grounded on a different branch. A SOFT-revise **Cancel** is the same
+case.
+
+- **Carries the block:** single-issue plan posted; epic plan posted (stories JIT); just-in-time story
+  plan posted; the epic-plus-story composite; epic plan posted with stories not filed; plan posted with
+  planned-around OQs; revise — plan refreshed.
+- **Carries no block:** trivial change — declined to plan; knowledge gap → researcher; epic-shaped abort
+  → slicer; too large → slicer; OQ blocks the whole plan; HARD-revise *Start fresh*. Nothing was posted
+  this session, so there is no digest to render and the `Why:` line is the whole carrier.
+
+**The composite epic+story session emits ONE block, not two** — same rule as the `**Open questions:**`
+line, and for the same reason. Render it at the **story plan's** altitude, with the epic's
+`## Story contracts` filling `**Seams & integration points:**`: that is precisely what a reader of a
+just-in-time story plan needs, and a second epic-altitude block would restate the contracts the first
+one already cited.
+
+`**What changed:**` renders on the **revise — plan refreshed** shape only, carrying the reconciliation
+`playbooks/revise.md` already computed.
 
 ## Renderings
 

@@ -100,7 +100,8 @@ Universal across every route:
 - **A tracked open question is a human's call** — never resolved from precedent or the decision gate.
   Record it in `## Open questions`; if the whole plan is gated, re-route rather than post a hollow plan.
 - **Handoff on clean exit** (§4). One `## Handoff` block ends every clean run — the seam gate's
-  epic-shaped abort included (comment posted, no plan, no label); it replaces any bullet-list summary.
+  epic-shaped abort included (comment posted, no plan, no label); it replaces any ad-hoc narration. Its one sanctioned companion is the
+  `## Plan summary` block ([`../_shared/plan-summary.md`](../_shared/plan-summary.md)) — rendered immediately before it whenever this session posted or refreshed a plan, and **read-only after it**: answer from what is in hand, write nothing.
 
 ## 4. Handoff
 

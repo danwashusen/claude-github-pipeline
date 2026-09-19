@@ -112,9 +112,9 @@ or the cap, show the plan + a "Review notes" block and gate (`header: "Review no
 
 ## S8 — Show + persist
 
-On a **clean verify exit**, show the plan's full body and auto-post — no confirmation gate on the
-common path (unless the user said "don't post yet"; `revise.md` adds its diff-show + reconciliation
-confirm first). Restage the approved body (marker line first) to `<facts.scratch>/plan.md`, re-validate it per S7 — the gate's "Fix manually" can reintroduce a break — and post:
+On a **clean verify exit**, auto-post — no confirmation gate and no full-body dump on the common path; the operator reads the `## Plan summary` the handoff step renders.
+Show the **full body** only when the user said "don't post yet" — nothing is posted, so they need the exact text to approve (`revise.md` adds its diff-show + reconciliation confirm first).
+Restage the approved body (marker line first) to `<facts.scratch>/plan.md`, re-validate it per S7 — the gate's "Fix manually" can reintroduce a break — and post:
 
 ```bash
 ${CLAUDE_PLUGIN_ROOT}/scripts/gh_persist.py comment <owner/repo> issue <issue> \

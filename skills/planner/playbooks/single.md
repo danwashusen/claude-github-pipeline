@@ -34,7 +34,8 @@ matching handoff instead.
 
 ## Handoff
 
-Read [`../references/handoff-renderings.md`](../references/handoff-renderings.md) and match the outcome:
+Read [`../references/handoff-renderings.md`](../references/handoff-renderings.md): render the
+`## Plan summary` block per its predicate at `focus: none`, then match the outcome:
 
 - **Single-issue plan posted** (default): `Issue:` line (`plan: ✓ (<url>)`) + `Grounding:` (`read at
   <plan-ref>@<short-sha> · <docs>` — `origin/main` here) + `**Open questions:**` when the plan carries

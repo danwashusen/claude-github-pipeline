@@ -72,7 +72,7 @@ first, then `type`). Read **exactly one** playbook.
 | `type: story`, **or** any type with `story.branch_facts.branch` set | `playbooks/story.md` | reads the shared spine (base = epic branch, `audit_ref` = parent epic); `Story:`/`Epic:` handoff |
 | `type: epic` | `playbooks/epic.md` | epic-as-target: branch bootstrap / drift rectification / canonical baseline / early draft integration PR + ready flip |
 
-`standard.md` and `story.md` open by reading the shared spine `playbooks/resolve-spine.md` (audit →
+`standard.md` and `story.md` open by reading the shared spine `playbooks/resolve-spine.md` (plan summary → audit →
 plan-gate → doc grounding → code in the workspace → §review loop → per-phase push + DoD projection →
 handoff); the type differences (base ref, audit ref, handoff shape) are **facts**, never branches.
 `comment-only.md` and `epic.md` are distinct action flows and do **not** read the spine. The story row is keyed on
@@ -126,9 +126,10 @@ Universal across every route:
   `AskUserQuestion`; it returns its typed result (a §3 decision code or its verdict) to this loop, which
   asks.
 - **Faithful reporting.** Lead with the outcome; report failures verbatim with evidence; declare
-  skipped work. Print each judgment sub-agent's rationale before acting on it.
-- **Handoff on clean exit** (§4). One `## Handoff` block ends every clean run; it replaces any
-  bullet-list summary.
+  skipped work. Print each judgment sub-agent's rationale before acting on it — the plan summary is one
+  such print, compressing the state-distiller's effective plan rather than restating its raw output.
+- **Handoff on clean exit** (§4). One `## Handoff` block ends every clean run; it replaces any ad-hoc narration. Separate from it, and at session **start** rather than exit, the code-shipping routes render the
+  `## Plan summary` block ([`../_shared/plan-summary.md`](../_shared/plan-summary.md)) — the digest of the plan this run is about to build, focused on the phase it will ship.
 
 ## 4. Handoff
 

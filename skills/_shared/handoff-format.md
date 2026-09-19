@@ -26,6 +26,8 @@ This file is the single source of truth for the schema, the omission rules, and 
 
 The block is always present on a clean exit. Lines are omitted (not blanked, not stubbed) when they don't apply.
 
+**The `## Plan summary` block is not part of this one.** Where a skill's own contract calls for the human-readable plan digest defined in [`plan-summary.md`](plan-summary.md), it is emitted as a separate block — the planner renders it immediately before `## Handoff`, the resolver at session start — and the schema above is unchanged by it: no new field, no reordering, and nothing from the summary inside the block.
+
 ## Omission rules
 
 - **`Issue:` / `Epic:` / `Story:`** — exactly one is always present. Which one depends on the work shape:
@@ -49,7 +51,8 @@ The block is always present on a clean exit. Lines are omitted (not blanked, not
 Use these exact words. Don't invent synonyms. The field names and block structure in each skill's handoff
 renderings are contract exactly like the marker values: emit the applicable shape verbatim, substituting
 only the values — never rename a field, drop a segment, restructure, or add a block the shape doesn't
-carry.
+carry. (The separate `## Plan summary` block above is not an exception — it sits outside `## Handoff`,
+it is not a segment of it.)
 
 | Field | Values |
 |---|---|

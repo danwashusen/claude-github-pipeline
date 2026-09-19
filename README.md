@@ -54,9 +54,9 @@ tracked files (`setup`, `question-sweep`, `doc-reviewer`) stage their edits in a
 the landing (commit + push + PR) as one final gate — decline it and nothing is committed, with the
 workspace path and ready-to-run commands printed instead.
 
-`skills/_shared/` holds the cross-skill contracts (handoff schema, Definition-of-done annotations,
-the epic → story → slice hierarchy, the open-question contracts, the worktree hook-block format and
-the doc-catalogue format); `scripts/` holds the Python scripts
+`skills/_shared/` holds the cross-skill contracts (handoff schema, the plan-summary block,
+Definition-of-done annotations, the epic → story → slice hierarchy, the open-question contracts, the
+worktree hook-block format and the doc-catalogue format); `scripts/` holds the Python scripts
 the skills invoke — the `gh`/git executors, `workspace.py`, `branching.py`,
 `parse.py`, and one `prep_*.py` state-assembly script per skill.
 
