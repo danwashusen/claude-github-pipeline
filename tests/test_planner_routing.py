@@ -1590,5 +1590,136 @@ class EpicPlanGrowthBoundTests(unittest.TestCase):
         self.assertIn("would let the resolver believe something false", flat)
 
 
+class PlanSummaryBlockTests(unittest.TestCase):
+    """The `## Plan summary` block: a human-readable digest of the posted plan, rendered immediately
+    before the `## Handoff`.
+
+    Three things make it a contract rather than a style note, and each is asserted here:
+
+    1. The shared file is the single source of truth (`_shared/plan-summary.md`) and the planner
+       *cites* it rather than restating its section set — the render-don't-restate rule.
+    2. The old invariant "it replaces any bullet-list summary" would have a literal-following model
+       SUPPRESS the block, so its removal is asserted, not just the new wording's presence.
+    3. The carrying predicate is "this session posted or refreshed a plan", NOT `plan: ✓`. The two
+       differ exactly on the HARD-revise Start-fresh exit, whose `plan:` marker points at the
+       superseded comment while the session ran no persist.
+    """
+
+    SUMMARY = SHARED_DIR / "plan-summary.md"
+    RENDERINGS = REFERENCES_DIR / "handoff-renderings.md"
+    HANDOFF_FORMAT = SHARED_DIR / "handoff-format.md"
+
+    def setUp(self):
+        self.summary = self.SUMMARY.read_text(encoding="utf-8")
+        self.renderings = self.RENDERINGS.read_text(encoding="utf-8")
+        self.router = ROUTER.read_text(encoding="utf-8")
+
+    def test_the_shared_contract_exists_and_names_the_block(self):
+        self.assertTrue(self.SUMMARY.is_file(), "skills/_shared/plan-summary.md must exist")
+        self.assertIn("## Plan summary", self.summary)
+
+    def test_the_section_set_is_fixed_and_complete(self):
+        for label in (
+            "**Approach:**",
+            "**What changed:**",
+            "**Architecture decisions:**",
+            "**Seams & integration points:**",
+            "**Phases:**",
+            "**Watch for:**",
+        ):
+            self.assertIn(label, self.summary, label)
+
+    def test_focus_is_the_one_parameter_that_varies(self):
+        # "Parameterize before you playbook" (CLAUDE.md): planner-vs-resolver is a VALUE, not a branch.
+        flat = " ".join(self.summary.split())
+        self.assertIn("`focus` parameter", flat)
+        self.assertIn("one rendering and no branch", flat)
+
+    def test_the_block_is_never_part_of_the_handoff(self):
+        flat = " ".join(self.summary.split())
+        self.assertIn("never part of `## Handoff`", flat)
+        shared = " ".join(self.HANDOFF_FORMAT.read_text(encoding="utf-8").split())
+        self.assertIn("The `## Plan summary` block is not part of this one", shared)
+        # The closed-set preamble's "never ... add a block the shape doesn't carry" must not read as a
+        # ban on this one, or a literal-following model emits neither.
+        self.assertIn("it sits outside `## Handoff`", shared)
+
+    def test_the_invitation_names_the_revise_command_not_an_in_session_edit(self):
+        flat = " ".join(self.summary.split())
+        self.assertIn("/github-pipeline:planner", flat)
+        self.assertIn("revise mode because the plan is present", flat)
+
+    def test_discussion_after_the_handoff_is_read_only(self):
+        # Load-bearing: the in-place plan-comment update op is already named in revise.md /
+        # story-jit.md, and planner SKILL.md §3's "only write surface is the plan comment" PERMITS the
+        # write. Without this rule the invitation invites an unverified in-session plan edit.
+        flat = " ".join(self.summary.split())
+        self.assertIn("Discussion after the handoff is read-only", flat)
+        self.assertIn("no GitHub write, no re-draft, and no reviewer re-run", flat)
+
+    def test_router_sanctions_the_block_and_drops_the_suppressing_phrasing(self):
+        flat = " ".join(self.router.split())
+        self.assertNotIn("replaces any bullet-list summary", flat)
+        self.assertIn("`## Plan summary` block", flat)
+        self.assertIn("../_shared/plan-summary.md", flat)
+        self.assertIn("read-only after it", flat)
+
+    def test_renderings_owns_the_render_and_cites_the_shared_file(self):
+        # One home for the instruction, the same mechanism `Grounding:` and `Open questions:` use: the
+        # spine never mentions them either.
+        flat = " ".join(self.renderings.split())
+        self.assertIn("../../_shared/plan-summary.md", flat)
+        self.assertIn("do not restate any of it here", flat)
+        spine = (PLAYBOOKS_DIR / SPINE).read_text(encoding="utf-8")
+        self.assertNotIn("plan-summary.md", spine)
+
+    def test_the_predicate_is_posted_or_refreshed_not_plan_tick(self):
+        flat = " ".join(self.renderings.split())
+        self.assertIn("Predicate: this session posted or refreshed a plan", flat)
+        self.assertIn("HARD-revise *Start fresh*", flat)
+        self.assertIn("ran no persist", flat)
+
+    def test_the_non_carrying_shapes_are_enumerated(self):
+        flat = " ".join(self.renderings.split())
+        for shape in (
+            "trivial change",
+            "knowledge gap",
+            "epic-shaped abort",
+            "too large",
+            "OQ blocks the whole plan",
+        ):
+            self.assertIn(shape, flat, shape)
+
+    def test_the_composite_session_emits_one_block(self):
+        # Same hazard as the frozen bug-(b) `Open questions:` requirement: a composite run matching one
+        # structural example and doubling up (or dropping) the other.
+        flat = " ".join(self.renderings.split())
+        self.assertIn("composite epic+story session emits ONE block, not two", flat)
+        self.assertIn("at the **story plan's** altitude", flat)
+
+    def test_every_routable_playbook_names_the_block_in_its_handoff_section(self):
+        # The routed playbook's `## Handoff` section is the operative ending instruction. Naming the
+        # block in only one of them lets a literal reader of single.md — the commonest path — infer it
+        # is revise-specific.
+        for name in sorted(ROUTABLE_PLAYBOOKS):
+            body = (PLAYBOOKS_DIR / name).read_text(encoding="utf-8")
+            tail = body[body.index("## Handoff"):]
+            self.assertIn("`## Plan summary` block", tail, name)
+
+    def test_revise_carries_the_reconciliation_it_already_computed(self):
+        flat = " ".join((PLAYBOOKS_DIR / "revise.md").read_text(encoding="utf-8").split())
+        self.assertIn("**What changed:**", flat)
+        self.assertIn("Carry it; never re-derive it", flat)
+        # The plan BODY's no-history-layer ban is unrelated to session output; saying so keeps a later
+        # editor from deleting the section as a banned history layer.
+        self.assertIn("governs the body, not this session's output", flat)
+
+    def test_spine_drops_the_full_body_dump_but_keeps_the_opt_in_show(self):
+        flat = " ".join((PLAYBOOKS_DIR / SPINE).read_text(encoding="utf-8").split())
+        self.assertIn("no full-body dump on the common path", flat)
+        # The scope qualifier: with nothing posted, the operator still needs the exact text.
+        self.assertIn('Show the **full body** only when the user said "don\'t post yet"', flat)
+
+
 if __name__ == "__main__":
     unittest.main()

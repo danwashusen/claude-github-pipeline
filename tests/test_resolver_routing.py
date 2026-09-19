@@ -1376,6 +1376,97 @@ class ChangesLinkHandoffTests(unittest.TestCase):
         )
 
 
+class PlanSummaryStepTests(unittest.TestCase):
+    """S1.5 — the `## Plan summary` the resolver renders BEFORE it starts work.
+
+    Two traps this pins, both of which produce a summary that quietly disagrees with what the session
+    actually builds:
+
+    1. **Source.** The digest must come from the state-distiller's `## Effective plan` (already in
+       hand from S1), not the raw plan comment. The distiller reports `thread-vs-plan: confirms |
+       refines`, so a thread can REFINE a plan without raising `THREAD_SUPERSEDED_PLAN` — digesting the
+       posted text would show the operator the plan as posted while the resolver builds it as amended.
+    2. **Cursor.** In continue mode the phase named at S1.5 is provisional; S4's tracker reconciliation
+       is authoritative and may move it.
+    """
+
+    SHARED = REPO_ROOT / "skills" / "_shared" / "plan-summary.md"
+
+    def setUp(self):
+        self.spine = (PLAYBOOKS_DIR / SPINE).read_text(encoding="utf-8")
+        self.epic = (PLAYBOOKS_DIR / "epic.md").read_text(encoding="utf-8")
+        self.router = ROUTER.read_text(encoding="utf-8")
+
+    def test_the_spine_has_the_step_and_cites_the_shared_contract(self):
+        self.assertIn("## S1.5 — Plan summary", self.spine)
+        self.assertIn("../../_shared/plan-summary.md", self.spine)
+        self.assertTrue(self.SHARED.is_file())
+
+    def test_the_step_is_numbered_so_no_existing_anchor_moves(self):
+        # S2..S7 are cross-referenced from standard.md, story.md, SKILL.md and the references; a
+        # renumbering would dangle every one of them. S1.5 is the §6.5 precedent in the planner spine.
+        for anchor in ("## S2 —", "## S3 —", "## S4 —", "## S5 —", "## S6 —", "## S7 —"):
+            self.assertIn(anchor, self.spine, anchor)
+
+    def test_the_step_skips_when_no_plan_exists(self):
+        flat = " ".join(self.spine.split())
+        self.assertIn("Skip the whole step when `facts.plan.present` is false", flat)
+        self.assertIn("S3 plan gate owns that case", flat)
+
+    def test_the_source_is_the_distillers_effective_plan_never_a_refetch(self):
+        flat = " ".join(self.spine.split())
+        self.assertIn("the distiller's `## Effective plan` from S1, already in hand — never a re-fetch",
+                      flat)
+        self.assertIn("thread-vs-plan: confirms | refines", flat)
+        self.assertIn("without raising `THREAD_SUPERSEDED_PLAN`", flat)
+
+    def test_the_cursor_is_provisional_and_s4_is_authoritative(self):
+        flat = " ".join(self.spine.split())
+        # The fresh-mode cursor was never written down before this step existed.
+        self.assertIn("the head phase — the one whose `depends-on` is `(none)`", flat)
+        self.assertIn("S4's tracker reconciliation is authoritative", flat)
+        self.assertIn("a preview, not a commitment", flat)
+
+    def test_rendering_precedes_the_audit_dispatch(self):
+        flat = " ".join(self.spine.split())
+        self.assertIn("before S2 dispatches", flat)
+        self.assertIn("Nothing about how the audit is dispatched changes", flat)
+        self.assertLess(
+            self.spine.index("## S1.5 — Plan summary"),
+            self.spine.index("## S2 — Fitness-to-implement audit"),
+            "S1.5 must sit before S2 or the operator reads the plan after the audit it was meant to "
+            "overlap with",
+        )
+
+    def test_s1_no_longer_prints_the_effective_plan_verbatim(self):
+        flat = " ".join(self.spine.split())
+        self.assertNotIn("Print the distilled state.", flat)
+        self.assertIn("Print `## Current state` and `## Classification`", flat)
+        # §3 asks for each sub-agent's rationale; say WHY the narrowing is not a violation of it.
+        self.assertIn("the rationale, not the raw output", flat)
+
+    def test_the_epic_route_renders_it_at_integration_altitude(self):
+        flat = " ".join(self.epic.split())
+        self.assertIn("../../_shared/plan-summary.md", flat)
+        self.assertIn("## Integration strategy", flat)
+        self.assertIn("carries no `## Phases`", flat)
+        self.assertLess(
+            self.epic.index("## S0 — Plan summary"),
+            self.epic.index("## S1 — Resolve the integration branch"),
+            "the epic route must summarise before it starts moving refs",
+        )
+
+    def test_router_sanctions_the_block_and_drops_the_suppressing_phrasing(self):
+        flat = " ".join(self.router.split())
+        self.assertNotIn("replaces any bullet-list summary", flat)
+        self.assertIn("`## Plan summary` block", flat)
+        self.assertIn("../_shared/plan-summary.md", flat)
+        self.assertIn("at session **start** rather than exit", flat)
+
+    def test_the_spine_flow_line_names_the_new_step(self):
+        # The intro's flow line is what a reader skims before deciding which section to read.
+        self.assertIn("distill state → plan summary → audit → plan-gate →", self.spine)
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -374,9 +374,16 @@ now the same rule everything else follows rather than an exception.
   full round-trip each in series; same-target `revise-existing` items are the one exception.
 - `asking-the-user.md` — the `AskUserQuestion` card shape, and the rule that a sub-agent returns a
   §3 decision code instead of asking.
+- `plan-summary.md` — the `## Plan summary` block: the human-readable digest of an implementation
+  plan, its fixed section set, its sourcing from the plan schema, the one `focus` parameter that
+  varies between callers, and the planner-only invitation plus the **read-only after the handoff**
+  rule that keeps a posted plan reviewer-verified. Rendered by the **planner** (before its
+  `## Handoff`, whenever the session posted or refreshed a plan) and by the **resolver** (at session
+  start, focused on the phase this run ships). It is never part of the `## Handoff` block.
 
-When changing behavior that touches handoffs, DoD annotations, the worktree block format, the epic
-delivery log, or the open-question contracts, edit the `_shared` file (the single source of truth)
+When changing behavior that touches handoffs, the plan summary, DoD annotations, the worktree block
+format, the epic delivery log, or the open-question contracts, edit the `_shared` file (the single
+source of truth)
 and keep the per-skill renderings consistent with it — **render, don't restate**.
 
 ### Coupling to a consuming repo is convention-driven

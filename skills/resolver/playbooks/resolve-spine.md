@@ -1,6 +1,6 @@
 # Resolve spine — shared across the standard and story routes
 
-The code-shipping flow both `standard.md` and `story.md` run: distill state → audit → plan-gate →
+The code-shipping flow both `standard.md` and `story.md` run: distill state → plan summary → audit → plan-gate →
 doc grounding → code in the workspace → review loop → per-phase push + DoD projection → hand back to
 the routed playbook for its handoff. Type differences here are **facts** (`audit_ref`, the work
 workspace's `base_ref`, the handoff shape), never branches — the routed playbook (`standard.md` /
@@ -17,8 +17,11 @@ Dispatch the **state-distiller** `Explore` sub-agent per
 `distiller_bundle` staged paths (`issue_body_path`, `thread_path`, `plan_marker_path`), `facts.target`
 labels, and `facts.audit_ref` as the informational integration-target name. It reads only the issue's
 own text (never code), and returns `## Current state` + `## Effective plan` + `## Classification`, or a
-typed exception (`THREAD_SUPERSEDED_PLAN` / `PHASES_MALFORMED` / `AMBIGUOUS`). Print the distilled
-state. Act on an exception per SKILL.md §1's decision-card rule: `THREAD_SUPERSEDED_PLAN` → re-route to
+typed exception (`THREAD_SUPERSEDED_PLAN` / `PHASES_MALFORMED` / `AMBIGUOUS`). Print `## Current state`
+and `## Classification`, plus any exception — S1.5 renders the plan digest **from** `## Effective plan`,
+so printing that section verbatim here as well is duplication, and the sub-agent's reasoning still
+reaches the operator (SKILL.md §3 asks for the rationale, not the raw output). Act on an exception per
+SKILL.md §1's decision-card rule: `THREAD_SUPERSEDED_PLAN` → re-route to
 the planner (the thread moved past a locked decision); `AMBIGUOUS` → read the raw thread yourself and
 proceed; `PHASES_MALFORMED` → re-route to the planner. Lift the distiller's `## Doc grounding` citations
 verbatim — that is your S3 grounding, so the main loop never re-reads project docs.
@@ -30,6 +33,30 @@ record of which phases **shipped**. It is not authoritative for which phases *ex
 `## Phases` (`facts.phases`) owns the row set, and S4 reconciles the two before anything is built.
 Reconcile the issue-body DoD ticks against it per S6 before shipping the next phase. Skip the
 S2 audit on continue mode (the audit is a fresh-implementation-start gate, not a per-push gate).
+
+## S1.5 — Plan summary
+
+Render the `## Plan summary` block per
+[`../../_shared/plan-summary.md`](../../_shared/plan-summary.md) — the operator's view of the plan this
+session is about to build, before any of it is built. Skip the whole step when `facts.plan.present` is
+false; the S3 plan gate owns that case.
+
+Rendering here, rather than after the audit, is deliberate: the summary is on screen before S2 dispatches
+the fitness-audit sub-agent, so the operator reads the plan while the audit runs. Nothing about how the
+audit is dispatched changes.
+
+**Source: the distiller's `## Effective plan` from S1, already in hand — never a re-fetch.** It is the
+*thread-reconciled* plan, and the distiller reports `thread-vs-plan: confirms | refines`. A thread can
+**refine** a plan without raising `THREAD_SUPERSEDED_PLAN`, so digesting the raw plan comment instead
+would show the operator the plan as posted while this session builds the plan as amended. On `refines`,
+say so in the summary and name the refinement. The staged plan-marker path in `facts.sections` fills only
+what the distiller does not carry — the approach, the seams, the risks, and the open questions.
+
+**Focus: the phase this session will ship.** `facts.phases` owns the row set. On a fresh start the
+current phase is the head phase — the one whose `depends-on` is `(none)`. In `continue` mode it is
+**provisional**: the first unticked `facts.tracker.rows` entry whose `depends-on` is satisfied. Say that
+it is provisional — S4's tracker reconciliation is authoritative and may move the cursor, and a phase
+named here is a preview, not a commitment.
 
 ## S2 — Fitness-to-implement audit (fresh start only)
 

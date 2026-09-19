@@ -39,7 +39,8 @@ Everything below runs only after the spine returns.
 
 ## Handoff
 
-Read [`../references/handoff-renderings.md`](../references/handoff-renderings.md). After the epic plan
+Read [`../references/handoff-renderings.md`](../references/handoff-renderings.md) and render the
+`## Plan summary` block per its predicate at `focus: none`. After the epic plan
 posts, route on `facts.epic.stories_filed`:
 
 - **Stories filed** (`facts.epic.stories` carries numbers — the epic's sub-issues, or a legacy

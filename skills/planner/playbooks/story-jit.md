@@ -66,7 +66,8 @@ Everything below runs only after the spine returns; on a re-route exit, emit the
 
 ## Handoff
 
-Read [`../references/handoff-renderings.md`](../references/handoff-renderings.md):
+Read [`../references/handoff-renderings.md`](../references/handoff-renderings.md): render the
+`## Plan summary` block per its predicate at `focus: none`, then match the outcome:
 
 - **Just-in-time story plan posted**: `Story:` line (`plan: ✓ (<url>)`) + parent `Epic:` line (progress
   count) + `Grounding:` (`read at <facts.plan_ref>@<short-sha>` — the epic branch, this story's own
