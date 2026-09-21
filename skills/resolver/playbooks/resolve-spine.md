@@ -190,9 +190,9 @@ open). Then run the **review loop** (S5.1).
 
 Read [`../references/review-fix-round.md`](../references/review-fix-round.md) at loop entry: the
 classification rubric (with its two plan-settled buckets), the fix-round steps, and the guard-rail cards
-live there; this section is the control flow. Keep an **addressed-items list** and a **refuted-items
-list** (one-line summaries, appended every round — the deadlock check reads both) alongside the
-follow-up registry.
+live there; this section is the control flow. Record HEAD as the **loop-entry SHA**; keep an
+**addressed-items list** and a **refuted-items list** (one-line summaries, appended every round — the
+deadlock check reads both) alongside the follow-up registry.
 
 **Scope.** The phase under review is **final** when the issue is single-phase, or when it is the last
 unshipped `kind: code-shipping` entry of `facts.phases` after S4 reconciliation — a trailing operator /
@@ -230,7 +230,8 @@ Loop until `review` approves with zero Addressable / Cheap-fix-override items:
 2. Run one **fix round** on it per the reference, in this conversation: classify every listed item
    (iteration 1 also folds in human PR comments and reviews, and seeds the refuted-items list from prior
    rounds' `Settled (not addressed):` blocks), deadlock-check against both lists, list the **fix plan**
-   for every Addressable + Cheap-fix-override item and check it as a set before the first edit, fix
+   for every Addressable + Cheap-fix-override item (the **fix-design** sub-agent designs a hot seam's
+   lines) and check it as a set before the first edit, fix
    them, defect-inject every new or changed assertion, run the §10.6 pre-push gate (the same retry
    ladder as §8, test-selection diff-base override = HEAD), commit, push, reply on the PR. "Approved" is **not** the exit condition — you re-classify every listed item; soft politeness
    ("not blocking") does not move an item out of Addressable. A guard rail (deadlock / architectural /

@@ -91,7 +91,9 @@ its §review-loop, its S6 DoD projection) that carry the same numbering v1 used,
   review finding's — enumerate every site sharing the defect's concept (grep the module/concept, list
   the sites), then fix them all together or record why the siblings differ. A finding names an instance;
   the unit of fix is the class — partial application is how the same defect ships round after round,
-  sometimes re-introduced by the very commit fixing it elsewhere.
+  sometimes re-introduced by the very commit fixing it elsewhere. Reading this bullet did not stop it in
+  practice, so on a seam the loop has already changed the fix round hands the design to the fix-design
+  sub-agent (`review-fix-round.md` step 4) — structure, not vigilance.
 - **Don't conform code to a stated invariant a finding contradicts.** An invariant the code states (a
   comment, doc line, or assertion message) that a review finding contradicts is a hypothesis, not a
   target — re-derive whether it is right before routing code through it. Narrowing the statement ("the
