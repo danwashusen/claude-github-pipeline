@@ -21,6 +21,10 @@ This is **not** a sub-agent prompt: no placeholders, no JSON return, and every g
   `facts.audit_ref` (bare) as the integration target.
 - **Workspace**: `facts.workspace.path` — the cwd for every command you run.
 - **Iteration number** — the 1-based index in S5.1's outer loop.
+- **Loop-entry SHA** — HEAD recorded at S5.1 entry. `git diff --name-only <loop-entry sha>...HEAD` in the
+  workspace is the set of files this loop's own fixes have changed — the **hot seam** step 4's fix-design
+  trigger reads. It scopes that dispatch only; it is not provenance tagging and never gates the cold read
+  (4.11.0 removed that machinery deliberately).
 - **The addressed-items list** — one-line summaries of what you fixed in every prior round this run. You
   append to it in step 9; the deadlock check in step 3 reads it.
 - **The refuted-items list** — one line per Plan-settled / Deferred-by-plan item with its citation, from
@@ -95,7 +99,8 @@ Apply to every listed item:
    card with the refutation standing in for the prior fix — the reviewer's persistence is evidence the
    citation may not answer it.
 4. **Fix plan, then fix.** Before the first edit, list every Addressable and Cheap-fix-override item's
-   intended change as text in this conversation — not in the PR reply, not in a file; one line per item:
+   intended change as text in this conversation — not in the PR reply, not in a file (on a hot seam, the
+   fix-design dispatch below comes first and supplies those items' lines); one line per item:
    `<item> — <file>:<function> — siblings: <the sites sharing the concept, the class per the first
    fix-discipline bullet> — interacts with: <other items this round: same file, same function, or a fix
    that alters another's premise> — plan: <any `## Architecture decisions` / `## UI decisions` /
@@ -107,12 +112,32 @@ Apply to every listed item:
      render step 2's `Decision` card now, before any edit, its paths the decision as it stands (the item
      settles Plan-settled, citing it) and **Re-plan**.
    An empty list (no Addressable or Cheap-fix-override item) needs no plan — step 5 owns that round.
+
+   **Fix design on a hot seam.** Before writing the fix plan, dispatch the fix-design `Explore`
+   sub-agent per [`fix-design-prompt.md`](fix-design-prompt.md) when any Addressable or
+   Cheap-fix-override item names a file in the hot seam (Loop-entry SHA — a cold-read-fed round
+   included); dispatch it after writing the plan when the set check finds two fixes that cannot both
+   hold or one that alters another's premise. At most once per round. Stage the scope diff to
+   `<facts.scratch>/fix-design-diff.patch` (`git diff <base>...HEAD` in the workspace, `<base>` per
+   S5.1's scope rule) and fill `<<loop_files>>` with the hot-seam file list, `<<findings>>` with those
+   items verbatim, `<<addressed_items>>` with the addressed-items list's surfaces only (no reasoning),
+   `<<plan_decisions>>` with the plan's decision bullets, and `<<phase_context>>` as for the cold read.
+   Print its `## Seam` and `## Change set`, then adopt the change set as the plan lines for those items
+   (main's own lines stand for the rest, and the set check runs over the union); a `## Plan conflicts`
+   entry is Decision-required — render step 2's `Decision` card, as for a fix that reverses a plan
+   decision; an `## Out of reach` entry keeps
+   your own plan line. `code: AMBIGUOUS` → repair the staging and re-dispatch once, else proceed on your
+   own plan and say so. The sub-agent designs; you edit. It exists because a loop's own fixes kept
+   creating findings on the seam they touched: each changed a guard, and nobody re-derived the sibling
+   properties sharing it.
+
    Then fix every item the check left standing, applying `common-pitfalls.md`'s three fix-discipline
    bullets to each fix *before* writing it — "Don't fix the instance when the finding names a class",
    "Don't conform code to a stated invariant a finding contradicts", "Don't split an atomic call without
    naming its implicit properties". A retro found fix rounds carrying several times the defect density of
    the code they corrected, and a later run had three of eleven findings introduced by the loop's own
-   fixes: the disciplines catch defects inside one fix, the fix plan catches the ones between fixes. File
+   fixes: the disciplines catch defects inside one fix, the fix plan catches the ones between fixes, and
+   the fix design catches the ones between a fix and the seam it lands in. File
    every Explicitly-deferred item via the follow-up filing protocol (urgency `file-now`, type per the
    reviewer's framing) and capture the returned URLs. Never file a Grounding-violation item.
 5. **No edits** (zero Addressable, zero Cheap-fix-override items — every item Explicitly-deferred or
@@ -154,7 +179,9 @@ Apply to every listed item:
    `(×<repeats>)` is omitted on a first occurrence; carrying it is what lets the count survive a phase
    boundary.
 
-   A round fed by the cold read (S5.1 step 4) also carries the `Cold read: phase <N> @ <sha>` line.
+   A round fed by the cold read (S5.1 step 4) also carries the `Cold read: phase <N> @ <sha>` line. A
+   round that dispatched the fix design names the seam it re-derived in one line, so a reviewer sees why a
+   fix reached past the finding's own site.
 9. **Record.** Append this round's one-line item summaries to the addressed-items list and its settled
    items, with citations, to the refuted-items list. Hold the filed
    follow-up URLs for the PR body and the handoff. Carry any **procedural note** (something the next

@@ -1149,6 +1149,48 @@ class MainLoopReviewFixRoundTests(unittest.TestCase):
         steps = re.findall(r"^\d+\. \*\*", raw, flags=re.MULTILINE)
         self.assertEqual(len(steps), 9, "review-fix-round.md must keep exactly steps 1-9")
 
+    def test_a_hot_seam_gets_a_fix_design_before_the_edit(self):
+        """4.18.0: a real run had 7 of 24 loop items created by the loop's own fixes, five on one
+        seam where each fix changed a guard without re-deriving its siblings. A fix round whose
+        findings land on a file the loop already changed (or whose fix plan fails its set check)
+        dispatches a context-blind fix-design sub-agent before the first edit; main still edits.
+        """
+        raw = self.reference.read_text(encoding="utf-8")
+        reference = " ".join(raw.split())
+        prompt = " ".join(
+            (REFERENCES_DIR / "fix-design-prompt.md").read_text(encoding="utf-8").split()
+        )
+        # The trigger is file-level against what the loop itself changed, scoped by the loop-entry SHA.
+        self.assertIn("**Loop-entry SHA**", reference)
+        self.assertIn("git diff --name-only <loop-entry sha>...HEAD", reference)
+        self.assertIn("never gates the cold read", reference)
+        self.assertIn("**Fix design on a hot seam.**", reference)
+        self.assertIn("fix-design-prompt.md", reference)
+        self.assertIn("At most once per round", reference)
+        self.assertIn("The sub-agent designs; you edit.", reference)
+        # A design that reverses a locked plan decision re-enters the existing Decision card.
+        self.assertIn("a `## Plan conflicts` entry is Decision-required", reference)
+        self.assertIn("fix-design", self.flat)
+        self.assertIn("**loop-entry SHA**", self.flat)
+        # The prompt is unanchored: no loop history, surfaces only, and it never edits.
+        self.assertIn("Do not include the review-loop history", prompt)
+        self.assertIn("Do not edit anything.", prompt)
+        for placeholder in (
+            "<<workspace_path>>",
+            "<<diff_path>>",
+            "<<loop_files>>",
+            "<<findings>>",
+            "<<addressed_items>>",
+            "<<plan_decisions>>",
+            "<<phase_context>>",
+        ):
+            self.assertIn(placeholder, prompt)
+        # The fix round fills every placeholder it owns (workspace and diff follow the cold read's).
+        for placeholder in ("<<loop_files>>", "<<findings>>", "<<addressed_items>>", "<<plan_decisions>>"):
+            self.assertIn(placeholder, reference)
+        for section in ("## Seam", "## Change set", "## Plan conflicts", "## Out of reach"):
+            self.assertIn(section, prompt)
+
 
 class PhaseScopedReviewTests(unittest.TestCase):
     """4.13.0: a non-final phase reviews its own delta at `medium`; the final phase reviews the

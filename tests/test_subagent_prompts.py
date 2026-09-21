@@ -188,6 +188,7 @@ class PromptDiscoveryTests(unittest.TestCase):
             "resolver/references/state-distiller-prompt.md",
             "resolver/references/issue-audit-prompt.md",
             "resolver/references/cold-read-audit-prompt.md",
+            "resolver/references/fix-design-prompt.md",
             "resolver/references/test-selection-sub-agent.md",
         ):
             self.assertIn(expected, found, "discovery must include %r" % expected)

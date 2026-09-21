@@ -433,6 +433,7 @@ result or a typed §3 decision code, cannot call `AskUserQuestion`, and never wr
 | research validator | researcher | dossier draft | findings by dimension |
 | test-selection | resolver, evaluator | diff scope + the ambient checkout's test config | `COMMAND:` + `RATIONALE:` |
 | cold-read audit | resolver | staged scope diff (path — the phase delta on a non-final phase, cumulative on the final) + workspace + the plan's phase list | whole-diff findings verdict |
+| fix design | resolver | a fix round's findings on a seam the review loop already changed + staged scope diff (path) + workspace + the loop-changed file list + the plan's decision bullets and phase list | seam map + class-level change set (plan conflicts, out-of-reach items); the main loop edits |
 | question-status reader | question-sweep, question-resolver | question thread (path) | status or `AMBIGUOUS` |
 
 Skill frontmatter carries no `model:` or `effort:` keys — every skill inherits the invoking
