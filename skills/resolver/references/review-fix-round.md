@@ -17,7 +17,8 @@ This is **not** a sub-agent prompt: no placeholders, no JSON return, and every g
 
 - **The verdict text** — this round's `review` output, or the cold read's `## Findings` when S5.1 step 4
   fed you one. Classify it; act on it.
-- **PR** number, URL, and `<owner/repo>`; the originating issue and its parent epic (or none);
+- **PR** number, URL, and `<owner/repo>` in continue mode — in fresh mode the PR does not exist until
+  S5.2 and you hold the staged `<facts.scratch>/pr.md` instead; the originating issue and its parent epic (or none);
   `facts.audit_ref` (bare) as the integration target.
 - **Workspace**: `facts.workspace.path` — the cwd for every command you run.
 - **Iteration number** — the 1-based index in S5.1's outer loop.
@@ -41,7 +42,7 @@ This is **not** a sub-agent prompt: no placeholders, no JSON return, and every g
   and [`../../_shared/follow-up-filing.md`](../../_shared/follow-up-filing.md) for the drafter-proxy filing
   protocol. Apply them as written.
 - **Resume hint** — this loop may be picking up mid-flow (a prior resolver run was interrupted, or a human
-  reviewer commented between invocations). On **iteration 1 only**, before classifying, re-read the
+  reviewer commented between invocations). On **iteration 1 only**, when a PR exists, before classifying, re-read the
   accumulated PR comments and reviews (`gh pr view --comments`, plus the `pulls/<N>/reviews` and
   `pulls/<N>/comments` REST endpoints via `gh api`) and treat any human reviewer comment as additional
   Addressable input alongside the verdict. Seed the refuted-items list from every `Settled (not
@@ -141,7 +142,7 @@ Apply to every listed item:
    every Explicitly-deferred item via the follow-up filing protocol (urgency `file-now`, type per the
    reviewer's framing) and capture the returned URLs. Never file a Grounding-violation item.
 5. **No edits** (zero Addressable, zero Cheap-fix-override items — every item Explicitly-deferred or
-   settled) → this round is complete. Skip steps 6–7 and step 8's commit and push; post step 8's reply
+   settled) → this round is complete. Skip steps 6–7 and step 8's commit; stage step 8's reply
    only when this round settled a **new** item or was fed by the cold read (the `Settled (not
    addressed):` block and/or the `Cold read:` line alone). Then step 9,
    then back to S5.1 step 3, whose "addressed nothing" branch settles the loop — whether or not the
@@ -159,14 +160,16 @@ Apply to every listed item:
    test, not the diff, and do not count against the retry ladder's 3-run cap (`retry-ladder.md`).
 7. **Run the §10.6 pre-push verification gate** (static checks → test-selection sub-agent → test
    execution). Dispatch the test-selection sub-agent with its **diff-base override** set to current HEAD
-   (`git rev-parse HEAD` in the workspace): your commits wait for step 8, so HEAD is still the last pushed,
+   (`git rev-parse HEAD` in the workspace): your commits wait for step 8, so HEAD is still the last committed,
    gate-verified state and your fixes are working-tree-only — the override scopes selection to what this
    round actually changed. Scope rationale and its accepted gap: `retry-ladder.md`'s "§10.6 selection
    scope". The retry ladder caps a single visit at 3 runs with a forced research breakpoint between cheap
    and deep fixes. On escalation, render the `Tests red` card.
-8. **Commit. Push. Reply on the PR**, briefly describing what changed in response to which points of
-   feedback. That per-round comment is the GitHub-side record — how a reviewer, and the next session,
-   follows what this loop did without replaying the conversation. When the round settled anything new,
+8. **Commit. Stage the reply** — append this round's section to `<facts.scratch>/loop-comment.md`,
+   briefly describing what changed in response to which points of feedback. Nothing is pushed or posted
+   here: S5.2 pushes once and posts the whole file as the loop comment, because every per-round push
+   started CI on code the next round was about to change. That comment is the GitHub-side record — how
+   a reviewer, and the next session, follows what this loop did without replaying the conversation. When the round settled anything new,
    the reply ends with this fixed block — the next session's resume re-read seeds its refuted-items list
    from it (each phase is a fresh session; this comment is the only carrier):
 
@@ -197,7 +200,8 @@ Two kinds of answer, and the difference is load-bearing. A **continuing** answer
 Accept + defer, Push with reds, Defer the tests, a named architectural path) is acted on inside this
 round, which then finishes normally. A **terminating** answer — **Re-plan** and **Restructure** (re-route
 to the planner), **Abort** and **Abort loop** — ends the round *and* S5.1 on the spot: stop fixing, run no
-further gate, and hand back to the routed playbook for its handoff, quoting the trigger in the `Why:`.
+further gate, and hand back to S5.2 (it pushes what is committed) and then the routed playbook's
+handoff, quoting the trigger in the `Why:`.
 Don't try to satisfy a re-route inside the round; there is nothing here that can.
 
 - **Same-feedback-twice deadlock.** The current verdict flags an item matching the addressed-items list.

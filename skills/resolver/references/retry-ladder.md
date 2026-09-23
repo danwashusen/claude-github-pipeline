@@ -1,7 +1,7 @@
 # Retry ladder for the verification gate
 
-The pre-push verification gate (the spine's §8 gate before the first push, and the review loop's §10.6
-re-push gate after each round of review feedback) treats "tests must be green before push" as a goal, not
+The pre-push verification gate (the spine's §8 gate before the review loop starts, and the review loop's
+§10.6 gate after each round of review feedback — both ahead of the phase's single S5.2 push) treats "tests must be green before push" as a goal, not
 a license to retry indefinitely. Without a cap, a complex integration-test failure can spiral into a
 sequence of small fixes — tweak, re-run a slow (10–20 minute) integration suite, tweak, re-run, repeat —
 that burns hours of wall-clock time and produces nothing the review loop couldn't have surfaced in the
@@ -115,10 +115,10 @@ small-fix spiral this ladder exists to prevent.
 ## §10.6 selection scope
 
 At §8 nothing on the branch is gate-verified, so the selection diff is the cumulative
-`git diff <integration-target>...HEAD`. At §10.6 the branch was verified green at the last push and only
+`git diff <integration-target>...HEAD`. At §10.6 the branch was verified green at its last commit and only
 this iteration's fix edits have changed since — so runs 1 and 3 pass the sub-agent a **diff-base
 override**: HEAD at the start of the fix round (`git rev-parse HEAD` before the first fix edit). Commits wait until after the gate, so that HEAD
-is the last pushed state and the fix is working-tree-only; the override diff therefore reads the working
+is the last gate-verified commit and the fix is working-tree-only; the override diff therefore reads the working
 tree (`git diff <sha>`, not `<sha>...HEAD`, which would come back empty and select nothing).
 
 This is run 2's narrowing argument one level up, with the same accepted gap and the same safety net: a

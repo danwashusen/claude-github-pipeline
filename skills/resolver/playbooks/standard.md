@@ -4,7 +4,7 @@ Route for `vector.type == standard` (a regular bug / feature / refactor; audit r
 both `main`). A single-issue resolution that lands directly on `main` via its PR.
 
 **Run the spine first.** Read [`resolve-spine.md`](resolve-spine.md) and execute it end to end
-(distill → audit → plan-gate → doc grounding → phases → code + review loop → per-phase push + DoD
+(distill → audit → plan-gate → doc grounding → phases → code + review loop → one push per phase + DoD
 projection → follow-ups). `facts.audit_ref` is `main`; the work workspace's `base_ref` is `main`; there
 is no read workspace beyond the audit one (prep omits `read_workspaces` when `audit_ref == main` and no
 second view is needed). Everything below runs only after the spine returns; on a re-route exit, emit the

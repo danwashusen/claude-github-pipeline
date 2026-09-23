@@ -1,7 +1,7 @@
 # Resolve spine — shared across the standard and story routes
 
 The code-shipping flow both `standard.md` and `story.md` run: distill state → plan summary → audit → plan-gate →
-doc grounding → code in the workspace → review loop → per-phase push + DoD projection → hand back to
+doc grounding → code in the workspace → review loop → one push per phase + DoD projection → hand back to
 the routed playbook for its handoff. Type differences here are **facts** (`audit_ref`, the work
 workspace's `base_ref`, the handoff shape), never branches — the routed playbook (`standard.md` /
 `story.md`) reads this spine first, then emits its own handoff shape.
@@ -148,8 +148,8 @@ Read [`../references/common-pitfalls.md`](../references/common-pitfalls.md) befo
 review work (anti-patterns extracted so they don't consume the load budget). Implement the current
 phase's `ships` in the workspace, iterating at unit-test granularity locally.
 
-**§8 pre-push verification gate** (mandatory before the **first** push of the run — the only test
-invocation before the PR exists; `review` runs no tests). Run static checks (`facts.config.static_checks`,
+**§8 pre-push verification gate** (mandatory before the loop's **first** `review`, and so before the
+phase's single push — the only test invocation before the loop starts; `review` runs no tests). Run static checks (`facts.config.static_checks`,
 in order, first-failure short-circuit), then dispatch the **test-selection** `Explore` sub-agent per
 [`../references/test-selection-sub-agent.md`](../references/test-selection-sub-agent.md) (inputs:
 `facts.workspace.path`, `facts.audit_ref` as the integration target, `facts.config.test_target_raw`);
@@ -164,8 +164,9 @@ skip) / **Restructure** (re-route to the planner). Never run the **full** canoni
 — targeted selection is the whole cost model (the full suite runs only in the epic baseline flow, in
 CI, and in the evaluator).
 
-**Open or continue the PR + push the phase.** Fresh-mode first push: stage the body to
-`<facts.scratch>/pr.md`. The body's **first line must be `Fixes #<issue-number>` (or `Closes
+**Stage the PR, commit, then loop — nothing is pushed until S5.2.** Commit the phase's work in the
+workspace. Fresh mode: stage the body to `<facts.scratch>/pr.md` now (it gains sections during the
+loop) and open the PR only at S5.2. The body's **first line must be `Fixes #<issue-number>` (or `Closes
 #<issue-number>`)** — mandatory, not optional prose — so GitHub auto-links and auto-closes the issue
 on merge; without it the issue never auto-closes and the evaluator's "No closingIssuesReferences" gate
 trips on a PR that should have linked cleanly. Then carry `## Doc grounding` + the `## Plan` link +
@@ -173,18 +174,15 @@ trips on a PR that should have linked cleanly. Then carry `## Doc grounding` + t
 `## Predecessor` when the branch is a `-vN` (predecessor PR detected). Title is `Fix: <summary>
 (#<issue-number>)` (mandatory shape — `<summary>` is a short present-tense description of the fix; the
 evaluator's later squash-subject derivation reads a Conventional-Commits-prefixed title, so a
-consistently-shaped fresh-PR title keeps that derivation clean). Open the PR through the single write
-path:
+consistently-shaped fresh-PR title keeps that derivation clean). Continue mode stages nothing here: the
+PR exists, and its closing keyword and title were set at fresh-PR open. Then run the **review loop**
+(S5.1).
 
-```bash
-${CLAUDE_PLUGIN_ROOT}/scripts/gh_persist.py create-pr <owner/repo> "<facts.scratch>/pr.md" \
-  --title "Fix: <summary> (#<issue-number>)" --base "<facts.workspace.base_ref>" \
-  --head "<facts.workspace.branch>" [--draft]   # --draft only for a multi-phase issue (S4)
-```
-
-`--base`/`--head` are always explicit facts from the workspace (never inferred from cwd). Continue-mode:
-push onto the existing branch (no PR create; the closing keyword and title were already set at fresh-PR
-open). Then run the **review loop** (S5.1).
+**Interrupted prior run.** `facts.workspace.unpushed_commits` > 0 (either mode) means an earlier run
+stopped before its S5.2 push (workspace-open or the prior session's S5.2 pushed the branch, so the count
+is exactly that run's commits): they are its work — review them, don't rebuild them. When `<facts.scratch>/loop-comment.md`
+survives from it, seed the refuted-items list and any `Cold read:` record from it and keep it as the
+comment's opening section.
 
 ### S5.1 — Review loop
 
@@ -197,8 +195,9 @@ deadlock check reads both) alongside the follow-up registry.
 **Scope.** The phase under review is **final** when the issue is single-phase, or when it is the last
 unshipped `kind: code-shipping` entry of `facts.phases` after S4 reconciliation — a trailing operator /
 decision-only phase ships no commits and never enters S5.1, so the last code phase carries the cumulative
-pass and is the one whose shipping flips the PR ready ("Return to the routed playbook"). Final → `review`'s target is the PR's **cumulative diff**, what
-`Skill(skill="review")` on the PR naturally reads: a correct-but-partial class fix reads as correct every
+pass and is the one whose shipping flips the PR ready ("Return to the routed playbook"). Final → `review`'s target is the PR's **cumulative diff**, read from the
+local branch as `origin/<facts.workspace.base_ref>...HEAD` — nothing is pushed until S5.2, so the PR on
+GitHub still shows the last session's state: a correct-but-partial class fix reads as correct every
 round when only the delta since the last fix is re-read, so a delta-scoped loop converges on its own
 blind spot instead of on the code. Non-final → the **phase delta**: base = `facts.tracker.last_shipped.
 commit_sha` when `reachable` (the shipped phase nearest HEAD — phases ship in `depends-on` order, not
@@ -209,17 +208,20 @@ cross-phase defect reaches the final phase's cumulative pass, its cold read, and
 narrows the adversarial review only — the §8 / §10.6 gates and defect injection run at full strength on
 every phase.
 
-**Invocation.** `Skill(skill="review", args="<level> [<base>...HEAD] <context>")`: level `medium` on a
+**Invocation.** `Skill(skill="review", args="<level> <base>...HEAD <context>")`: level `medium` on a
 non-final phase, `high` on the final one (`review` inherits whatever level the operator last typed when
-none is passed); the three-dot range on non-final phases only; `<context>` on every phase =
+none is passed); the three-dot range on **every** phase — the scope rule's `<base>`, the cumulative
+range on the final one — because a `review` left to find its own target reads the stale PR, or only the
+commits since upstream; `<context>` on every phase =
 `facts.phases` with the current phase marked, plus the plan's `## Architecture decisions` /
 `## UI decisions` / `## Deviations from project docs` bullets, so the reviewer can read a half-wired
 seam as deferred and a locked decision as locked. Assemble `<context>` once at loop entry and reuse it
 verbatim every round; only the current-phase marker differs between phases. Range and context are
 best-effort — an argument the skill does not honour is appended to its prompt as text — and the fix
 round's settled buckets are the floor whether or not they reached the reviewer. A verdict that read
-nothing (no file named, an approve with no evidence of the diff) is not a verdict: re-invoke with the PR
-number as the target.
+nothing (no file named, an approve with no evidence of the diff) — or that cites hunks absent from the
+local range — is not a verdict: stage `git diff <base>...HEAD` to `<facts.scratch>/review-diff.patch`
+and re-invoke naming that path.
 
 Loop until `review` approves with zero Addressable / Cheap-fix-override items:
 
@@ -233,39 +235,43 @@ Loop until `review` approves with zero Addressable / Cheap-fix-override items:
    for every Addressable + Cheap-fix-override item (the **fix-design** sub-agent designs a hot seam's
    lines) and check it as a set before the first edit, fix
    them, defect-inject every new or changed assertion, run the §10.6 pre-push gate (the same retry
-   ladder as §8, test-selection diff-base override = HEAD), commit, push, reply on the PR. "Approved" is **not** the exit condition — you re-classify every listed item; soft politeness
+   ladder as §8, test-selection diff-base override = HEAD), commit, and stage the round's reply — the
+push and the reply both wait for S5.2. "Approved" is **not** the exit condition — you re-classify every listed item; soft politeness
    ("not blocking") does not move an item out of Addressable. A guard rail (deadlock / architectural /
    verification failure / grounding violation) is a direct `AskUserQuestion` card per the reference,
    rendered at the point it fires. A **grounding-violation** item is never filed as a follow-up — the
    hard block exists to stop the ship.
 3. Branch on what the round did, not on the verdict's approval line alone:
-   - **The round addressed items** (it pushed) → re-run step 1.
+   - **The round addressed items** (it committed) → re-run step 1.
    - **The round addressed nothing** — an approved verdict with zero Addressable / Cheap-fix-override
      items, *or* a non-approving verdict whose every item classified as Explicitly-deferred (filed),
      Plan-settled, or Deferred-by-plan — → the loop has **settled**. Nothing the loop can do moves an
      unchanged PR, so a reviewer that never approves must not spin it: on the second shape, name the
-     outstanding items with their follow-up URLs or plan citations in the PR body before settling.
+     outstanding items with their follow-up URLs or plan citations in the PR body (fresh mode: the staged
+     `pr.md`) before settling.
    - Settled and the cold read has **not** run this run — nor, per step 4's PR record, on this phase
-     at this HEAD → step 4. Settled and it **has** → S5.1 is done; go to S6.
+     at this HEAD → step 4. Settled and it **has** → S5.1 is done; go to S5.2.
 
    After `review`'s verdict text lands, your next emissions are the round's **operational beats** (the
    classification, the fix plan, the edits, the gate), not a recap — stopping at the verdict text is
    the PR #416/#653 missing-handoff failure mode. Cap the outer loop — **one** cap across the whole of S5.1:
    `review` runs at most **2** times on a non-final phase and **4** times on the final phase before the
    cold read; step 4 owns what follows it. On the cap ask (`header: "Iter cap"`): **Continue**
-   (free-text count) / **Accept current** (exit S5.1 as pushed, the cold read skipped when it has not
+   (free-text count) / **Accept current** (exit S5.1 as committed, the cold read skipped when it has not
    run yet; every still-open Addressable item becomes a `file-now` follow-up and the PR body records
    the override) / **Abort**.
 
    **A guard rail's answer can end the run.** **Re-plan** and **Restructure** re-route to the planner,
    **Abort** / **Abort loop** stop the run: each leaves S5.1 immediately — no further `review`, no cold
-   read — and goes straight to the routed playbook's handoff, whose `Why:` quotes what triggered it. Only
+   read — pushes what it has committed via S5.2 (in fresh mode that opens the PR; the remote ends where
+today's per-round pushes left it), then goes to the routed playbook's handoff, whose `Why:` quotes what
+triggered it. Only
    the continuing answers (**Try another angle**, **Accept + defer**, **Push with reds**, **Defer the
    tests**, a named architectural path) resume this loop.
 4. **Cold-read audit — once per phase, after settle.** The PR is the record: the round reply carries
    `Cold read: phase <N> @ <sha>` (`<N>` the phase number, `1` for a single-phase issue; `<sha>` HEAD at
-   dispatch), surfaced by the iteration-1 re-read. A prior record for this phase whose `<sha>` **is**
-   HEAD → nothing pushed since; skip it, S5.1 is done. A record whose `<sha>` is an ancestor of HEAD →
+   dispatch — a local commit S5.2 pushes unchanged), surfaced by the iteration-1 re-read. A prior record for this phase whose `<sha>` **is**
+   HEAD → nothing committed since; skip it, S5.1 is done. A record whose `<sha>` is an ancestor of HEAD →
    the audit covered the branch up to it: run the cold read with `<base>` = that sha, so no commit is
    cold-read twice, and the new reply carries the updated line. No record → `<base>` per the scope rule
    above. Stage the scope diff to `<facts.scratch>/cold-read-diff.patch` (`git diff <base>...HEAD` in
@@ -276,17 +282,43 @@ Loop until `review` approves with zero Addressable / Cheap-fix-override items:
    **final state** against their invariants and cross-site consistency — the cross-file shape a
    per-finding conversation reaches only rounds later, if at all — never the round-by-round history.
    `code: AMBIGUOUS` (missing or empty staged diff) → repair the staging and re-dispatch, or surface the
-   failure to the operator; never read it as "no findings". An empty `## Findings` → post one PR comment
-   carrying the `Cold read: phase <N> @ <sha>` line; S5.1 is done. Findings → run one fix round (step 2,
+   failure to the operator; never read it as "no findings". An empty `## Findings` → stage the
+   `Cold read: phase <N> @ <sha>` line into the loop comment; S5.1 is done. Findings → run one fix round (step 2,
    those findings as the verdict; its reply carries the `Cold read:` line), then **re-run step 1**
    exactly once as the confirming review. That round classifies but does not fix: settled items settle
    it, and any Addressable item goes straight to the `Iter cap` card (**Continue** resumes steps 1–3 for
    the count given) — the cold read is never dispatched twice in one run. `review` stays the terminal
    gate; the cold read supplements the reviewer, never substitutes for it.
 
+### S5.2 — Push the phase, once
+
+Every exit from S5.1 lands here — settle, **Accept current**, or a terminating guard-rail answer — and
+this is the phase's **only** push: the loop commits locally and never pushes, because each per-round
+push started CI on code the next round was about to change. Uncommitted edits are never pushed. Push
+from the workspace:
+
+```bash
+git -C "<facts.workspace.path>" push -u origin "<facts.workspace.branch>"
+```
+
+Fresh mode: open the PR from the staged `pr.md` through the single write path:
+
+```bash
+${CLAUDE_PLUGIN_ROOT}/scripts/gh_persist.py create-pr <owner/repo> "<facts.scratch>/pr.md" \
+  --title "Fix: <summary> (#<issue-number>)" --base "<facts.workspace.base_ref>" \
+  --head "<facts.workspace.branch>" [--draft]   # --draft only for a multi-phase issue (S4)
+```
+
+`--base`/`--head` are always explicit facts from the workspace (never inferred from cwd). Continue mode:
+when the loop added PR-body items (outstanding settled items, an `Iter cap` override, `## Known
+failures`), stage the updated body and apply it with `edit-pr-body`. Then post the loop comment — every
+round's staged reply, in order, one `comment` on the PR; a `BODY_TOO_LONG` decision splits it one
+comment per round. It is the GitHub-side record the next session's resume re-read seeds from. Delete
+`<facts.scratch>/loop-comment.md` once it is posted.
+
 ## S6 — DoD projection on the push that shipped the phase
 
-On every push that ships a phase (and on re-entry reconciliation), project the shipped phase's
+After the S5.2 push (and on re-entry reconciliation), project the shipped phase's
 `closes-dod` onto the issue body's `## Definition of done` per
 [`../references/dod-projection-rule.md`](../references/dod-projection-rule.md). Compute
 `expected_set − (currently_ticked_set ∪ rejected_set)` from the PR's `## Phase tracker` (ticked
@@ -341,7 +373,7 @@ issue routes through the drafter proxy in [`../../_shared/follow-up-filing.md`](
 
 ## Return to the routed playbook
 
-Capture the run's pushed range for the handoff's `Changes:` link: `facts.workspace.sha` (the session-entry HEAD) → `git rev-parse HEAD` in `facts.workspace.path`, read **after** the review loop settles — its fix rounds push commits of their own, so a HEAD read before the loop exits names a range that stops short of what this run actually shipped.
+Capture the run's pushed range for the handoff's `Changes:` link: `facts.workspace.sha` (the session-entry HEAD) → `git rev-parse HEAD` in `facts.workspace.path`, read **after** the review loop settles and S5.2 has pushed — its fix rounds commit on top of the phase's work, so a HEAD read before the loop exits names a range that stops short of what this run actually shipped.
 
 Multi-phase last-planned-phase shipped: flip the PR draft → ready with
 `gh pr ready <N> --repo <owner/repo>` **immediately before** the handoff (without the flip the
