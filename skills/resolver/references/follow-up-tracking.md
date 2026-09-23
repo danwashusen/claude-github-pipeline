@@ -51,7 +51,7 @@ commits (TODO markers, skip-annotation reasons, PR-body cross-links).
 
 | Source of follow-up | Urgency | When to file |
 |---|---|---|
-| Defer-by-retry (retry-ladder escalation option 2) | `file-now` | Before pushing the iteration's commits — the `// TODO(#NNN)` markers and skip-annotation reasons (`XCTSkip(...)`, `skip "..."`) need real issue numbers in the same push. Filing after-the-fact and amending the markers in a follow-up commit clutters history and risks the markers being missed. |
+| Defer-by-retry (retry-ladder escalation option 2) | `file-now` | Before committing the iteration's fix (the phase pushes once, at S5.2) — the `// TODO(#NNN)` markers and skip-annotation reasons (`XCTSkip(...)`, `skip "..."`) need real issue numbers in the same commit. Filing after-the-fact and amending the markers in a follow-up commit clutters history and risks the markers being missed. |
 | Defer-by-review (review-loop deferred items) | `file-now` | Same reason — review-deferred items often include test changes that need real issue numbers before the iteration's commit. |
 | Epic baseline-failure detour | `file-now` | Before resuming the original work — the detour PR resolves the filed issue, and the original PR's body will cite the detour. |
 | Planning-time discoveries (doc grounding turned up adjacent work) | `file-at-checkpoint` | End of the review loop, after review approval, before the handoff — batched. These don't gate any commit, so deferring to one moment is cleaner than interrupting the planning phase. |
@@ -86,7 +86,7 @@ Once an item is filed, the resolver does three things with the URL:
 
 1. **Replace temporary `// TODO(?)` markers** in code with `// TODO(#NNN)` referencing the filed issue.
    Same for skip annotations — rewrite the test framework's skip reason (`XCTSkip("Deferred to ?…")`,
-   Minitest/RSpec `skip "?…"`) to reference `#NNN`. Don't push the iteration without this rewrite; markers
+   Minitest/RSpec `skip "?…"`) to reference `#NNN`. Don't commit the iteration without this rewrite; markers
    without real numbers age into noise.
 2. **Update the PR body's `## Follow-ups` section** with a list item per filed issue (stage the updated
    body and `edit-body` the PR). Add the section if it doesn't exist. Putting follow-up links in the body

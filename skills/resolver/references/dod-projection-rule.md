@@ -37,8 +37,8 @@ decide routing — only to compute the diff between expected and current state.
 
 **Single-phase fallback.** When the plan has no `## Phases` section (single-phase issue), or `## Phases`
 contains a single entry with no `closes-dod`, fall back to "tick every top-level DoD bullet" on the
-**first push of the run** only. Subsequent re-pushes within the same run do not re-tick (the projection
-already landed). Re-entry reconciliation re-applies if the first push's `edit-body` failed.
+run's **one push** (spine S5.2) only. Re-entry reconciliation re-applies if that push's `edit-body`
+failed.
 
 **Operator-phase hybrid detection.** Operator and decision-only phases (`kind: operator` |
 `decision-only`) ship no commits — the resolver doesn't run them. On a re-entry where the next phase is

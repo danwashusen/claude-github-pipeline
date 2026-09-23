@@ -73,7 +73,7 @@ first, then `type`). Read **exactly one** playbook.
 | `type: epic` | `playbooks/epic.md` | epic-as-target: branch bootstrap / drift rectification / canonical baseline / early draft integration PR + ready flip |
 
 `standard.md` and `story.md` open by reading the shared spine `playbooks/resolve-spine.md` (plan summary → audit →
-plan-gate → doc grounding → code in the workspace → §review loop → per-phase push + DoD projection →
+plan-gate → doc grounding → code in the workspace → §review loop → one push per phase + DoD projection →
 handoff); the type differences (base ref, audit ref, handoff shape) are **facts**, never branches.
 `comment-only.md` and `epic.md` are distinct action flows and do **not** read the spine. The story row is keyed on
 the **branch fact, not the label** (#31): a sub-issue labelled by kind of work (`bug`, `tech-debt`)

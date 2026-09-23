@@ -1089,7 +1089,7 @@ class MainLoopReviewFixRoundTests(unittest.TestCase):
 
     def test_the_cold_read_is_dispatched_at_most_once(self):
         self.assertIn("the cold read has **not** run this run", self.flat)
-        self.assertIn("Settled and it **has** → S5.1 is done; go to S6", self.flat)
+        self.assertIn("Settled and it **has** → S5.1 is done; go to S5.2", self.flat)
         self.assertIn("never dispatched twice in one run", self.flat)
 
     def test_terminating_guard_rail_answers_leave_the_loop(self):
@@ -1233,7 +1233,8 @@ class PhaseScopedReviewTests(unittest.TestCase):
         # code-shipping phase, or the PR ships with no cumulative pass at all.
         self.assertIn("last unshipped `kind: code-shipping` entry of `facts.phases`", self.flat)
         # Finding 4: the base can be a branch name (base_ref fallback), so the range is three-dot.
-        self.assertIn('args="<level> [<base>...HEAD] <context>"', self.flat)
+        # 4.19.0: the range is mandatory on every phase (no brackets) — an omitted range reads the stale PR.
+        self.assertIn('args="<level> <base>...HEAD <context>"', self.flat)
         self.assertNotIn("<base>..HEAD", self.flat)
         self.assertIn("the fix round's settled buckets are the floor", self.flat)
         # Finding 6: last_shipped is computed before S4 can un-tick a row.
@@ -1412,10 +1413,60 @@ class ChangesLinkHandoffTests(unittest.TestCase):
         )
         self.assertIn(
             "after** the review loop settles", text,
-            "the spine must place the HEAD read after the loop settles — its fix rounds push commits, "
+            "the spine must place the HEAD read after the loop settles — its fix rounds add commits, "
             "so an earlier read names a range that stops short of what the run shipped. (4.11.0 "
             "retired the review-loop sub-agent, so there is no final_pushed_sha to warn off any more.)",
         )
+
+
+class PushOnceAfterSettleTests(unittest.TestCase):
+    """4.19.0: the review loop commits locally and the phase pushes ONCE, at S5.2, after S5.1 exits.
+
+    Every fix round used to push, so one phase started CI up to six times on code the next round was
+    about to change. Deferring the push makes the PR stale during the loop, which is why every phase
+    now hands `review` an explicit local range: a `review` left to find its own target reads the
+    stale PR and approves the previous session's diff, with real file names in the verdict.
+    """
+
+    def setUp(self):
+        self.flat = " ".join((PLAYBOOKS_DIR / SPINE).read_text(encoding="utf-8").split())
+        self.reference = " ".join(
+            (REFERENCES_DIR / "review-fix-round.md").read_text(encoding="utf-8").split()
+        )
+
+    def test_the_spine_has_one_push_step(self):
+        self.assertIn("### S5.2 — Push the phase, once", self.flat)
+        self.assertIn("this is the phase's **only** push", self.flat)
+        # The create-pr call lives in S5.2, after the loop, not in S5 before it.
+        s52 = self.flat.index("### S5.2")
+        self.assertGreater(self.flat.index("gh_persist.py create-pr"), s52)
+        self.assertIn("nothing is pushed until S5.2", self.flat)
+
+    def test_the_fix_round_commits_but_never_pushes(self):
+        self.assertIn("8. **Commit. Stage the reply**", self.reference)
+        self.assertNotIn("Commit. Push.", self.reference)
+        self.assertIn("<facts.scratch>/loop-comment.md", self.reference)
+        self.assertNotIn("commit, push, reply on the PR", self.flat)
+
+    def test_every_phase_reviews_an_explicit_local_range(self):
+        self.assertIn("`origin/<facts.workspace.base_ref>...HEAD`", self.flat)
+        self.assertIn("the three-dot range on **every** phase", self.flat)
+        self.assertNotIn("the three-dot range on non-final phases only", self.flat)
+        self.assertNotIn("PR number as the target", self.flat)
+        self.assertIn("<facts.scratch>/review-diff.patch", self.flat)
+
+    def test_every_loop_exit_reaches_the_push(self):
+        # Terminating answers push what is committed, so the remote ends where it used to.
+        self.assertIn("pushes what it has committed via S5.2", self.flat)
+        self.assertIn("hand back to S5.2", self.reference)
+        self.assertIn("exit S5.1 as committed", self.flat)
+
+    def test_the_resume_record_survives_an_interrupted_loop(self):
+        self.assertIn("`facts.workspace.unpushed_commits` > 0", self.flat)
+        self.assertIn("seed the refuted-items list and any `Cold read:` record from it", self.flat)
+        self.assertIn("a `BODY_TOO_LONG` decision splits it one comment per round", self.flat)
+        # The settled-block format the next session parses is unchanged.
+        self.assertIn("Settled (not addressed):", self.reference)
 
 
 class PlanSummaryStepTests(unittest.TestCase):

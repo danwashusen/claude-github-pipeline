@@ -37,7 +37,7 @@ Inputs:
 - Test-target config (verbatim from the project's COMMANDS.md / CLAUDE.md):
   <contents of the <!-- issue-resolver-test-target --> block = facts.config.test_target_raw>
 - Diff-base override: <a SHA, or empty. Set only by the review loop's §10.6
-  re-push gate: HEAD at the start of the fix round, i.e. the last pushed,
+  gate: HEAD at the start of the fix round, i.e. the last committed,
   gate-verified state.>
 
 Steps:

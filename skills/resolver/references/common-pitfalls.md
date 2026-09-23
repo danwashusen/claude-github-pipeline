@@ -42,9 +42,10 @@ its §review-loop, its S6 DoD projection) that carry the same numbering v1 used,
   scope of this issue, surface them — don't fold the fix in without telling the user. It scope-creeps the
   PR and obscures what your change actually did.
 - **Don't push code without running the §8 pre-push verification gate.** The test gate runs at §8 (before
-  the first push) AND at §10.6 (after addressing review feedback). Both are mandatory pre-push gates. On a
+  the review loop starts) AND at §10.6 (after addressing review feedback), both ahead of the phase's one
+  S5.2 push. Both are mandatory pre-push gates. On a
   clean first-pass review approval, §10.6 never fires — the §8 gate is the only test invocation that runs
-  before the PR is opened. Skipping §8's tests on the assumption that "review will catch it" or "the
+  before the push that opens (or updates) the PR. Skipping §8's tests on the assumption that "review will catch it" or "the
   evaluator will catch it" is a bug: the `review` skill is a code-quality reviewer that does not run tests,
   and the evaluator runs at PR-readiness time *after* the PR is already open with possibly-broken code on
   the branch.
@@ -168,7 +169,7 @@ its §review-loop, its S6 DoD projection) that carry the same numbering v1 used,
   verdict text reads like a finished deliverable, but `/review`'s job is only to emit the verdict, not to
   close the loop. Your next beats in the same turn are the classification, the fix plan, and the fix
   edits — or, on a settled verdict, staging the scope diff and dispatching the cold read per S5.1 step 4. (b) **After the fix round's
-  push** — the next beat is re-invoking `Skill(skill="review")` with S5.1's Invocation arguments, not a recap of what you fixed. (c) **After
+  commit** — the next beat is re-invoking `Skill(skill="review")` with S5.1's Invocation arguments, not a recap of what you fixed. (c) **After
   the cold-read sub-agent returns** — the next beat is a fix round on its findings, or S6 when it found
   nothing. Treat every one of these as a step inside S5.1, not the end of it.
 - **Don't post review feedback on the issue.** Review feedback on a PR goes on the PR, not on the
