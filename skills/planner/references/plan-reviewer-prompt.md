@@ -82,7 +82,7 @@ failure mode; do not flag a plan for leaving line-level mechanics to the impleme
   Dimension 7's slice-coverage check reads this and never fetches the panel itself.
 - **Shipped-phase records**: `<<shipped_paths>>` — absolute paths to the staged
   `<!-- implementation-plan-shipped:v1:phase:<N> -->` records this revise relocated, one per line, or
-  empty. Each holds one shipped phase's `## Changes (file-level)` / `## Data model / schema impact` /
+  empty (every non-revise review, and a revise that relocated nothing). Each holds one shipped phase's `## Changes (file-level)` / `## Data model / schema impact` /
   `## Test plan` entries, moved **verbatim** out of the plan (`plan_shipped.py check` already proved the
   move); the plan's pointer bullet (`- Phases … shipped on #<PR>: entries in the shipped-phase records.`)
   stands in for them. The plan is the main body **plus** these records: Dimensions 3 and 10 count their

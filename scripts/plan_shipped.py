@@ -23,7 +23,7 @@ Two surfaces:
   to fix before persisting (the ``PHASES_MALFORMED`` posture) — ``ok`` always, no decision code.
 
 Usage:
-    plan_shipped.py check <prior-plan> <new-main> [<record> ...]
+    plan_shipped.py check <prior-plan> <new-main> [<record> ...] [--pr <open-PR>]
 """
 
 import argparse
@@ -48,7 +48,12 @@ _MARKER_RE = re.compile(re.escape(MARKER_PREFIX) + r"(\d+)" + re.escape(MARKER_S
 
 # Line 2 carries the rest of the key. The PR number scopes a record to the PR its phase shipped on:
 # a HARD Start-fresh closes that PR, and its records go inert without any delete.
-_SHIPPED_ON_RE = re.compile(r"^\*\*Shipped on:\*\*\s+#(\d+)\s+·\s+Phase\s+(\d+)\s+—\s+(\S.*?)\s*$")
+# The separators are the template's `·` and `—`, but an ASCII `-` / `|` or an en dash reads the same:
+# a record that fails to key is invisible to every reader, so the grammar is lenient on punctuation
+# and strict only on what carries the key (the PR and phase numbers).
+_SHIPPED_ON_RE = re.compile(
+    r"^\*\*Shipped on:\*\*\s+#(\d+)\s+[·|\-–—]\s+Phase\s+(\d+)\s+[—–\-:]\s+(\S.*?)\s*$"
+)
 
 # The main plan's pointer bullet — it stands in for the moved entries and keeps an emptied heading
 # parseable. No `@<sha>` in it: `_extract_plan_sha` is an unanchored first-match search.
@@ -85,6 +90,44 @@ def parse_head(body):
     if shipped_on is None or int(shipped_on.group(2)) != phase:
         return phase, None, None
     return phase, int(shipped_on.group(1)), shipped_on.group(3)
+
+
+def pointer_prs(plan_body):
+    """The distinct PR numbers the plan's pointer bullets name, sorted. A plan relocated on one PR
+    names exactly one; none means nothing was ever relocated."""
+    prs = set()
+    for line in (plan_body or "").split("\n"):
+        match = _POINTER_RE.match(line.rstrip())
+        if match:
+            prs.add(int(match.group(1)))
+    return sorted(prs)
+
+
+def records_pr(plan_body, current_pr):
+    """Which PR's records a reader should read, and a note when that is not ``current_pr``.
+
+    The plan's pointer bullets are the authority: they name the PR whose records hold the entries the
+    plan no longer carries. That is normally the open PR, but not after the PR closed (a HARD
+    Start-fresh, a hand-closed PR): then the records are the ONLY copy of those entries, and reading
+    by open PR alone would silently drop them. Returns ``(pr, note)``; ``note`` is ``None`` when the
+    pointer and ``current_pr`` agree or the plan has no pointer.
+    """
+    named = pointer_prs(plan_body)
+    if not named:
+        return current_pr, None
+    if len(named) > 1:
+        return current_pr, (
+            "the plan's pointer bullets name more than one PR (%s); reading records for %s"
+            % (", ".join("#%d" % n for n in named), "#%s" % current_pr if current_pr else "none")
+        )
+    pointed = named[0]
+    if current_pr is not None and int(current_pr) == pointed:
+        return pointed, None
+    return pointed, (
+        "the plan points at shipped-phase records on #%d, which is not the %s — those records are the "
+        "only copy of their entries; a revise restores them into the plan (skills/_shared/"
+        "plan-shipped-phases.md)" % (pointed, "open PR #%s" % current_pr if current_pr else "open PR (none)")
+    )
 
 
 def comment_rest_id(comment):
@@ -245,8 +288,10 @@ def _is_parent(blocks, index):
     return index + 1 < len(blocks) and blocks[index + 1][0] > blocks[index][0]
 
 
-def check(prior_text, main_text, records):
-    """The staging facts for one revise. ``records`` is ``[(path, text)]``.
+def check(prior_text, main_text, records, pr=None):
+    """The staging facts for one revise. ``records`` is ``[(path, text)]``; ``pr`` is the open PR the
+    records belong to (``None`` when there is none — then every pointer in main is foreign, because
+    a plan with no open PR has nothing shipped to point at).
 
     Returns the payload dict. ``clean`` is true only when every finding list is empty and every body
     fits the cap.
@@ -260,6 +305,7 @@ def check(prior_text, main_text, records):
         "not_verbatim": [],
         "still_in_main": [],
         "missing_pointer": [],
+        "foreign_pointer": [],
         "record_over_limit": [],
     }
     record_facts = []
@@ -268,11 +314,11 @@ def check(prior_text, main_text, records):
 
     for path, text in records:
         head = parse_head(text)
-        phase, pr = (head[0], head[1]) if head else (None, None)
-        if head is None or pr is None:
+        phase, record_pr = (head[0], head[1]) if head else (None, None)
+        if head is None or record_pr is None:
             findings["malformed_head"].append(path)
         else:
-            record_prs.add(pr)
+            record_prs.add(record_pr)
         chars = len(text)
         if chars > BODY_CHAR_LIMIT:
             findings["record_over_limit"].append(path)
@@ -299,15 +345,19 @@ def check(prior_text, main_text, records):
                     findings["not_verbatim"].append({"path": path, "section": key, "line": body[0]})
                 elif body in main_blocks and not (key == "test_plan" and _is_parent(record_blocks, index)):
                     findings["still_in_main"].append({"path": path, "section": key, "line": body[0]})
-        record_facts.append({"path": path, "phase": phase, "pr": pr, "chars": chars, "units": units})
+        record_facts.append({"path": path, "phase": phase, "pr": record_pr, "chars": chars, "units": units})
 
     for key, pattern in SECTIONS:
         if key not in moved_sections:
             continue
         section = _section_lines(main_lines, pattern) or []
-        pointer_prs = {int(m.group(1)) for m in (_POINTER_RE.match(l.rstrip()) for l in section) if m}
-        if not pointer_prs or (record_prs and not record_prs <= pointer_prs):
+        section_prs = {int(m.group(1)) for m in (_POINTER_RE.match(l.rstrip()) for l in section) if m}
+        if not section_prs or (record_prs and not record_prs <= section_prs):
             findings["missing_pointer"].append(key)
+
+    for named in pointer_prs(main_text):
+        if pr is None or named != int(pr):
+            findings["foreign_pointer"].append(named)
 
     main_chars = len(main_text)
     over_limit = main_chars > BODY_CHAR_LIMIT
@@ -339,6 +389,7 @@ def main(argv):
     p_check.add_argument("prior_plan")
     p_check.add_argument("new_main")
     p_check.add_argument("records", nargs="*")
+    p_check.add_argument("--pr", type=int, default=None, help="the open PR the records belong to")
     if not argv:
         parser.print_usage(sys.stderr)
         sys.exit(EXIT_USAGE_ERROR)
@@ -350,6 +401,7 @@ def main(argv):
         _read_or_die(args.prior_plan),
         _read_or_die(args.new_main),
         [(path, _read_or_die(path)) for path in args.records],
+        pr=args.pr,
     )
     emit_ok(payload=payload)
     sys.exit(EXIT_OK)

@@ -844,7 +844,7 @@ class ShippedRecordFactsTests(PrepPlannerSandboxTestCase):
     PR, the shape a Start-fresh leaves behind.
     """
 
-    def _shipped_envelope(self):
+    def _shipped_envelope(self, fixture_case="prep_planner_shipped_records"):
         _git(["fetch", "origin"], self.root)
         _git(["checkout", "-b", "201-fix-gadget"], self.root)
         _write(self.root / "gadget.txt", "fixed\n")
@@ -853,7 +853,7 @@ class ShippedRecordFactsTests(PrepPlannerSandboxTestCase):
         _git(["push", "origin", "201-fix-gadget"], self.root)
         _git(["checkout", "main"], self.root)
         return self._envelope(
-            issue="201", fixture_case="prep_planner_shipped_records", ambient="201-fix-gadget"
+            issue="201", fixture_case=fixture_case, ambient="201-fix-gadget"
         )
 
     def test_records_are_read_for_the_open_pr_only(self):
@@ -867,6 +867,20 @@ class ShippedRecordFactsTests(PrepPlannerSandboxTestCase):
 
     def test_to_relocate_is_ticked_code_shipping_without_a_record(self):
         self.assertEqual(self._shipped_envelope()["plan"]["shipped"]["to_relocate"], [3])
+
+    def test_a_closed_prs_records_are_offered_for_restore(self):
+        # The plan's pointer names #40 — a PR that is not the open one (#55): a Start-fresh or a
+        # hand-closed PR. #40's records are the only copy of their entries, so prep stages them.
+        envelope = self._shipped_envelope(fixture_case="prep_planner_shipped_restore")
+        restore = envelope["plan"]["shipped"]["restore"]
+        self.assertEqual(restore["pr"], 40)
+        self.assertEqual([e["phase"] for e in restore["entries"]], [1])
+        self.assertIn("shipped on #40", Path(restore["body_path"]).read_text(encoding="utf-8").replace(
+            "**Shipped on:** #40", "shipped on #40"))
+        self.assertTrue(any("only copy" in line for line in envelope["attention"]))
+
+    def test_no_restore_when_the_pointer_names_the_open_pr_or_nothing(self):
+        self.assertNotIn("restore", self._shipped_envelope()["plan"]["shipped"])
 
     def test_an_inline_prior_plan_is_still_staged_to_a_path(self):
         plan = self._shipped_envelope()["plan"]

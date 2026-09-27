@@ -85,7 +85,7 @@ reason** (record `Audit override: <reason>` for the PR body's `## Audit override
 **Plan gate.** `facts.plan.present` says whether a `<!-- implementation-plan:v1 -->` plan exists.
 - Plan present → consume it: implement its **locked decisions** (`## Architecture decisions`,
   `## Changes`, `## Data model / schema impact`, `## Test plan` — a shipped phase's entries may live in its
-  shipped-phase record, `facts.plan.shipped`, per [`../../_shared/plan-shipped-phases.md`](../../_shared/plan-shipped-phases.md)),
+  shipped-phase record, staged at `facts.plan.shipped.body_path`, per [`../../_shared/plan-shipped-phases.md`](../../_shared/plan-shipped-phases.md)),
   do not re-derive the approach. If the
   fitness audit's dimension 7 flagged plan-vs-code drift, or the distiller raised
   `THREAD_SUPERSEDED_PLAN`, re-route to the planner in revise mode rather than patching around

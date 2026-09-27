@@ -21,8 +21,9 @@ checked `PR author == current_user`.)
 
 `facts.sections` carries the PR body / thread / reviews (spilled to paths when large — read from the
 `*_path`). Each closing issue's `<!-- implementation-plan:v1 -->` plan is `facts.plans[<issue>]` (prep
-fetched it per `closingIssuesReferences`; `body_path` always, `present: false` when there is none), with
-that plan's shipped-phase records for **this** PR in `.shipped` (`body_path` when `present`) — a revise
+fetched it per `closingIssuesReferences`; `body_path` always, `present: false` when there is none, and
+`ambiguous: true` with no body when the issue carries two — judge adherence without it and say so), with
+its shipped-phase records in `.shipped` (`body_path` when `present`; read for the PR the plan's pointer names) — a revise
 moves a shipped phase's `## Changes` / `## Data model / schema impact` / `## Test plan` entries there
 ([`../../_shared/plan-shipped-phases.md`](../../_shared/plan-shipped-phases.md)). Read the PR body, the
 plan and its records, and any reviews before forming a verdict — the thread carries decisions the diff doesn't show. When the diff

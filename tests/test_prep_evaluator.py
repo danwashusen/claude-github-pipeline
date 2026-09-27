@@ -417,6 +417,16 @@ class PlanFactsTests(PrepEvaluatorSandboxTestCase):
         self.assertEqual(shipped["entries"][0]["comment_id"], 7002)
         self.assertIn("`gadget.rb`", Path(shipped["body_path"]).read_text(encoding="utf-8"))
 
+    def test_a_duplicated_plan_degrades_to_a_notice_never_a_stop(self):
+        # Adherence is one judgment among the merge gates: two plan comments (the #34 class) must not
+        # stop an evaluation that ignored the plan entirely before `facts.plans` existed.
+        envelope = self._envelope(fixture_case="prep_evaluator_plan_duplicate")
+        self.assertEqual(envelope["status"], "ok")
+        plan = envelope["plans"]["42"]
+        self.assertTrue(plan["ambiguous"])
+        self.assertEqual(plan["comment_ids"], [7001, 7009])
+        self.assertTrue(any("2 plan comments" in n for n in envelope["notices"]))
+
 
 class CiRollupClassificationTests(PrepEvaluatorSandboxTestCase):
     """Four CI states — S6 DoD: "Fixtures: four CI states.\""""

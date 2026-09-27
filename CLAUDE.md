@@ -263,9 +263,10 @@ per [architecture.md §7](docs/architecture.md)'s mapping table).
   `to_relocate` (ticked code-shipping phases with no record — the revise's move list, a prep fact),
   composed by prep_planner / prep_resolver / prep_evaluator; CLI `check <prior> <main> [<record>…]`,
   which reports `main.headroom_chars` and whether every relocated entry is a verbatim, pointer-replaced
-  move. Always `ok` — findings are the planner's to fix, no decision code. `prep_evaluator` also reads
-  the closing issue's plan through it (`facts.plans`); before this, nothing gave the evaluator the plan
-  its "Plan adherence" step checks.
+  move. Always `ok` — findings are the planner's to fix, no decision code. `prep_evaluator` also
+  thread-scans the closing issue's plan itself (`facts.plans`) — before this, nothing gave the evaluator
+  the plan its "Plan adherence" step checks — and degrades a duplicated plan or record to a notice,
+  never a stop, as it does for the delivery log.
 
 Every executor exposes a **pure, non-emitting core** — `build_*(...) -> (payload, notices,
 decision | None)` — with `main()` as a thin emit wrapper. A prep calls those cores directly and
@@ -363,9 +364,11 @@ now the same rule everything else follows rather than an exception.
   sections move **verbatim** into its own `<!-- implementation-plan-shipped:v1:phase:<N> -->` comment,
   keyed (PR, phase), with a pointer bullet left in each section. `## Phases` and every decision section
   never move (the tracker join and the resolver's verbatim Plan-settled citations need them), nor does
-  an entry an unshipped phase still builds on. Records are immutable (editing one is HARD), posted
-  **before** the main plan's `edit-comment`, and go inert with no delete when a Start-fresh closes
-  their PR. The **planner** writes them (`skills/planner/references/shipped-phase-relocation.md`); the
+  an entry an unshipped phase still builds on. Records are immutable (editing one is HARD) and posted
+  **before** the main plan's `edit-comment`. Readers follow the PR the plan's pointer bullets name,
+  not only the open one: after a Start-fresh closes that PR its records are the only copy of their
+  entries, so prep offers them as `facts.plan.shipped.restore` and the next revise puts them back —
+  only then do they go inert (never deleted). The **planner** writes them (`skills/planner/references/shipped-phase-relocation.md`); the
   **resolver** (distiller bundle) and **evaluator** (`facts.plans`) read them. A separate marker
   family, so no plan `startswith` lookup matches one.
 - `open-question-detection.md` — how to **find** an open question in any project doc (the

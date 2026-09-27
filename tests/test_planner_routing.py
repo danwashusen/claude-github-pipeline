@@ -704,6 +704,18 @@ class ShippedPhaseRecordTests(unittest.TestCase):
     def test_check_runs_through_the_script(self):
         text = (REFERENCES_DIR / "shipped-phase-relocation.md").read_text(encoding="utf-8")
         self.assertIn("${CLAUDE_PLUGIN_ROOT}/scripts/plan_shipped.py check", text)
+        self.assertIn("--pr <facts.plan.shipped.pr>", text)
+
+    def test_a_closed_prs_records_are_restored(self):
+        # After a Start-fresh the closed PR's records are the only copy of their entries; both revise
+        # routes must reach the restore step, not only the relocation.
+        text = (REFERENCES_DIR / "shipped-phase-relocation.md").read_text(encoding="utf-8")
+        self.assertIn("## Restoring a closed PR's records", text)
+        for playbook in ("revise.md", "story-jit.md"):
+            self.assertIn(".restore", (PLAYBOOKS_DIR / playbook).read_text(encoding="utf-8"), playbook)
+
+    def test_reviewer_placeholder_is_passed_by_the_spine(self):
+        self.assertIn("`shipped_paths`", (PLAYBOOKS_DIR / "plan-spine.md").read_text(encoding="utf-8"))
 
     def test_relocation_is_not_a_hard_edit_but_editing_a_record_is(self):
         flat = " ".join((REFERENCES_DIR / "revise-reconciliation.md").read_text(encoding="utf-8").split())

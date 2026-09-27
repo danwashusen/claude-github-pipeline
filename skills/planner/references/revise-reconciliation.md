@@ -43,7 +43,8 @@ offering "Start fresh" on a borderline-SOFT case the user can decline.
 
 **Relocation is not an edit.** An entry that `plan_shipped.py check` confirms moved verbatim into a
 shipped-phase record ([`shipped-phase-relocation.md`](shipped-phase-relocation.md)) left `## Changes` /
-`## Test plan` unchanged in substance, so it never counts toward the `## Changes` judgment call above.
+`## Test plan` unchanged in substance, so it never counts toward the **Judgment call** rule's `## Changes`
+block text edits.
 Judge only the entries whose text changed.
 
 ### Inserting a phase after work has shipped

@@ -101,9 +101,42 @@ class MarkerTests(unittest.TestCase):
     def test_a_marker_below_the_first_line_is_not_a_record(self):
         self.assertIsNone(plan_shipped.parse_head("quoted:\n" + record(3)))
 
+    def test_ascii_separators_still_key(self):
+        body = record(3, title="Schema").replace(" · ", " - ").replace(" — ", " - ")
+        self.assertEqual(plan_shipped.parse_head(body), (3, 903, "Schema"))
+
     def test_line_two_naming_another_phase_is_unkeyed(self):
         body = record(3).replace("Phase 3 —", "Phase 4 —")
         self.assertEqual(plan_shipped.parse_head(body), (3, None, None))
+
+
+class PointerPrTests(unittest.TestCase):
+    """The plan's pointer bullets name whose records hold its missing entries — the authority a
+    reader uses once the PR that shipped them has closed."""
+
+    POINTED = "## Changes (file-level)\n- Phases 1–6 shipped on #903: entries in the shipped-phase records.\n"
+
+    def test_pointer_prs(self):
+        self.assertEqual(plan_shipped.pointer_prs(self.POINTED), [903])
+        self.assertEqual(plan_shipped.pointer_prs(PRIOR), [])
+
+    def test_agreeing_pointer_reads_the_open_pr_quietly(self):
+        self.assertEqual(plan_shipped.records_pr(self.POINTED, 903), (903, None))
+
+    def test_a_closed_prs_records_are_still_read(self):
+        pr, note = plan_shipped.records_pr(self.POINTED, None)
+        self.assertEqual(pr, 903)
+        self.assertIn("only copy", note)
+        self.assertEqual(plan_shipped.records_pr(self.POINTED, 950)[0], 903)
+
+    def test_no_pointer_falls_back_to_the_open_pr(self):
+        self.assertEqual(plan_shipped.records_pr(PRIOR, 950), (950, None))
+
+    def test_two_pointed_prs_fall_back_with_a_note(self):
+        body = self.POINTED + self.POINTED.replace("#903", "#904")
+        pr, note = plan_shipped.records_pr(body, 950)
+        self.assertEqual(pr, 950)
+        self.assertIn("more than one PR", note)
 
 
 class CollectTests(unittest.TestCase):
@@ -184,7 +217,7 @@ class CheckTests(unittest.TestCase):
 
     def test_a_clean_relocation(self):
         main, rec = self.good()
-        payload = plan_shipped.check(PRIOR, main, [("r1.md", rec)])
+        payload = plan_shipped.check(PRIOR, main, [("r1.md", rec)], pr=903)
         self.assertTrue(payload["clean"], payload["findings"])
         self.assertEqual(payload["main"]["headroom_chars"], BODY_CHAR_LIMIT - len(main))
         self.assertEqual(payload["records"][0]["phase"], 1)
@@ -248,6 +281,15 @@ class CheckTests(unittest.TestCase):
         self.assertTrue(payload["main"]["over_limit"])
         self.assertFalse(payload["clean"])
 
+    def test_a_pointer_to_a_pr_that_is_not_open_is_foreign(self):
+        # After a Start-fresh there is no open PR: a surviving pointer names records nobody reads
+        # for the new PR, so the restore step must have removed it.
+        main, rec = self.good()
+        self.assertEqual(plan_shipped.check(PRIOR, main, [("r1.md", rec)])["findings"]["foreign_pointer"], [903])
+        self.assertEqual(
+            plan_shipped.check(PRIOR, main, [("r1.md", rec)], pr=950)["findings"]["foreign_pointer"], [903]
+        )
+
     def test_no_records_reports_size_only(self):
         payload = plan_shipped.check(PRIOR, PRIOR, [])
         self.assertTrue(payload["clean"])
@@ -262,7 +304,7 @@ class CheckTests(unittest.TestCase):
                 path.write_text(text, encoding="utf-8")
                 paths.append(str(path))
             result = subprocess.run(
-                [str(SCRIPTS_DIR / "plan_shipped.py"), "check"] + paths,
+                [str(SCRIPTS_DIR / "plan_shipped.py"), "check"] + paths + ["--pr", "903"],
                 capture_output=True,
                 text=True,
             )

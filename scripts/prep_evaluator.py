@@ -79,8 +79,9 @@ import delivery_log  # noqa: E402  (in-process composition, not a subprocess cha
 # gh_pr_gather's marker-comment lookup so the health check needs no second fetch.
 HEALTH_CACHE_MARKER = "<!-- pr-evaluator-health-cache:v1 -->"
 
-# The closing issue's plan (skills/planner/references/plan-schema.md) — located by gh_gather's own
-# marker lookup, for the S3 "Plan adherence" judgment. Its shipped-phase records are thread-scanned.
+# The closing issue's plan (skills/planner/references/plan-schema.md), for the S3 "Plan adherence"
+# judgment. Located by a thread scan like its shipped-phase records, never a `marker_prefix` gather:
+# a duplicate must degrade to a notice here, not stop the merge (see `_build_plan_facts`).
 PLAN_MARKER = "<!-- implementation-plan:v1 -->"
 
 # The epic delivery log (skills/_shared/epic-delivery-log.md) — the evaluator is its SOLE writer.
@@ -390,50 +391,77 @@ _load_thread = load_thread
 
 def _build_plan_facts(issue_envelope, scratch_dir, issue_number, pr_number):
     """``facts.plans[<issue>]`` — the closing issue's plan comment plus its shipped-phase records
-    for THIS PR (skills/_shared/plan-shipped-phases.md). Plan adherence (evaluate-spine.md S3 step 5)
-    judges the whole PR diff, and a shipped phase's `## Changes` / `## Data model / schema impact` /
+    (skills/_shared/plan-shipped-phases.md). Plan adherence (evaluate-spine.md S3 step 5) judges the
+    whole PR diff, and a shipped phase's `## Changes` / `## Data model / schema impact` /
     `## Test plan` entries live in its record once a revise has relocated them — so the evaluator
     needs both, as paths, always.
 
-    Returns ``(facts, notices)``. A duplicated record degrades to a notice rather than stopping the
-    run: the merge gates do not depend on it, and the record's phase is simply left unread.
+    Both are located by scanning the thread the gather already returned — never a ``marker_prefix``
+    gather, whose second match is a hard ``MARKER_AMBIGUOUS``. Adherence is one judgment among the
+    merge gates, so a duplicated plan or record DEGRADES to a notice rather than stopping the run —
+    the delivery log's posture in this same prep, for the same reason.
+
+    Records are read for the PR the plan's pointer bullets name (normally this PR; after a
+    Start-fresh the closed PR's records are still the only copy of their entries).
+
+    Returns ``(facts, notices)``.
     """
-    if not issue_envelope.get("marker_comment_present"):
+    thread = _load_thread(issue_envelope)
+    plans = [c for c in thread if (c.get("body") or "").startswith(PLAN_MARKER)]
+    if not plans:
         return {"present": False}, []
-    body_path = issue_envelope.get("marker_comment_path")
-    if issue_envelope.get("marker_comment_mode") != "path":
-        target = Path(scratch_dir) / ("issue-%s-marker.md" % issue_number)
-        target.parent.mkdir(parents=True, exist_ok=True)
-        target.write_text(issue_envelope.get("marker_comment_body") or "", encoding="utf-8")
-        body_path = str(target)
-    records, decision = plan_shipped.collect(_load_thread(issue_envelope), pr_number)
+    if len(plans) > 1:
+        return {
+            "present": True,
+            "ambiguous": True,
+            "comment_ids": [plan_shipped.comment_rest_id(c) for c in plans],
+            "comment_urls": [c.get("url") for c in plans],
+        }, [
+            "closing issue #%s carries %d plan comments — plan adherence cannot pick one; judge "
+            "without it and say so in the review" % (issue_number, len(plans))
+        ]
+    plan_body = plans[0].get("body") or ""
     notices = []
+    records_pr, note = plan_shipped.records_pr(plan_body, pr_number)
+    if note is not None:
+        notices.append("closing issue #%s: %s" % (issue_number, note))
+    records, decision = plan_shipped.collect(thread, records_pr)
     if decision is not None:
         notices.append(
             "%s — plan adherence cannot read phase(s) %s from a record; judge them against the "
             "plan comment alone and say so (skills/_shared/plan-shipped-phases.md)"
             % (decision["summary"], ", ".join(str(p) for p in records["duplicated_phases"]))
         )
+    if records["unkeyed"]:
+        notices.append(
+            "closing issue #%s: %d shipped-phase record(s) cannot be keyed (line 2 unreadable) — "
+            "their entries are missing from the plan adherence reads" % (issue_number, len(records["unkeyed"]))
+        )
     shipped = {
         "present": records["present"],
         "pr": records["pr"],
         "entries": records["entries"],
+        "unkeyed": records["unkeyed"],
     }
     if records["present"]:
-        shipped.update(
-            spill_bytes(
-                records["text"].encode("utf-8"),
-                "body",
-                scratch_dir,
-                force_path=True,
-                filename="issue-%s-plan-shipped.md" % issue_number,
-            )
-        )
+        shipped["body_path"] = spill_bytes(
+            records["text"].encode("utf-8"),
+            "body",
+            scratch_dir,
+            force_path=True,
+            filename="issue-%s-plan-shipped.md" % issue_number,
+        )["body_path"]
     return {
         "present": True,
-        "comment_id": issue_envelope.get("marker_comment_id"),
-        "comment_url": issue_envelope.get("marker_comment_url"),
-        "body_path": body_path,
+        "comment_id": plan_shipped.comment_rest_id(plans[0]),
+        "comment_url": plans[0].get("url"),
+        "body_path": spill_bytes(
+            plan_body.encode("utf-8"),
+            "body",
+            scratch_dir,
+            force_path=True,
+            filename="issue-%s-marker.md" % issue_number,
+        )["body_path"],
         "shipped": shipped,
     }, notices
 
@@ -918,11 +946,7 @@ def build_facts(pr_number, repo, root=".", scratch_dir=None, refresh=False, cwd=
         if issue_number is None:
             continue
         issue_exit, issue_envelope = gh_gather.run(
-            str(issue_number),
-            repo,
-            marker_prefix=PLAN_MARKER,
-            scratch_dir=scratch_dir,
-            stream=_DiscardStream(),
+            str(issue_number), repo, scratch_dir=scratch_dir, stream=_DiscardStream()
         )
         if issue_envelope is not None and issue_envelope.get("status") == "needs_decision":
             if _forward_decision(issue_envelope["decision"], notices=issue_envelope.get("notices")):

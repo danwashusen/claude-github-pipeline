@@ -25,7 +25,7 @@ The fix is the delivery log's (#41, [`epic-delivery-log.md`](epic-delivery-log.m
 
 An `operator` / `decision-only` phase has no entries to move and never gets a record.
 
-**The unit that moves is one top-level bullet**, with its continuation lines and sub-bullets. `## Test plan` is grouped by kind (`Unit:` / `UI / integration:`), so there the unit is a sub-bullet under a kind line, and the record repeats the kind line.
+**The unit that moves is one top-level bullet**, with its continuation lines and sub-bullets. `## Test plan` is grouped by kind (`Unit:` / `UI / integration:`), so there the unit is a sub-bullet under a kind line, and the record repeats the kind line. A single-line kind bullet listing several phases' suites (`- Unit: a_spec, b_spec`) is a shared entry and cannot move — so a multi-phase plan writes one sub-bullet per suite under each kind line, which the schema's `<suites to add/extend>` placeholder permits.
 
 ## Format
 
@@ -49,7 +49,9 @@ No other section appears in a record. The phase in line 2 must match the marker'
 
 **The marker is a separate family, on purpose.** `<!-- implementation-plan-shipped:` never starts with `<!-- implementation-plan:v1 -->`, so every existing plan lookup (`startswith` in the gathers and the resolver audit) stays blind to records, and a record can never make the plan itself `MARKER_AMBIGUOUS`. `:phase:1 -->` is not a prefix of `:phase:10 -->` — the trailing ` -->` terminates the match.
 
-**Key = (PR, phase).** A record belongs to the PR its phase shipped on. Shipped phases keep their numbers (`revise-reconciliation.md`'s renumbering rule), so the key is stable across revises. A HARD Start-fresh closes the PR; its records then go **inert** — every reader filters to the PR it is working on — so nothing is ever deleted. Two records with the same (PR, phase) are a genuine duplicate: `MARKER_AMBIGUOUS`.
+**Key = (PR, phase).** A record belongs to the PR its phase shipped on. Shipped phases keep their numbers (`revise-reconciliation.md`'s renumbering rule), so the key is stable across revises. Two records with the same (PR, phase) are a genuine duplicate: `MARKER_AMBIGUOUS`.
+
+**The plan's pointer names whose records to read.** Every reader reads the records on the PR the plan's pointer bullets name — normally the open PR. When that PR has closed (a HARD Start-fresh, a hand-closed PR), its records are the **only** copy of the entries the pointer stands in for, so readers still read them and flag the mismatch, and the next revise restores them into the plan and drops the pointer. After that the closed PR's records are **inert**: nothing points at them, and nothing is ever deleted.
 
 **The pointer.** Each main-plan section that lost entries carries one bullet in their place:
 
@@ -72,9 +74,9 @@ The procedure is [`../planner/references/shipped-phase-relocation.md`](../planne
 
 ## Reading (resolver, evaluator)
 
-Prep does the read — a thread scan by `scripts/plan_shipped.py collect`, zero extra `gh` calls — and stages the records for the reader's PR as one path:
+Prep does the read — a thread scan by `scripts/plan_shipped.py collect`, zero extra `gh` calls, for the PR the plan's pointer names — and stages the records as one path. A pointer naming a PR other than the reader's own rides in `attention` / `notices`; so does a record whose line 2 cannot be keyed (`unkeyed`), which no reader can place:
 
-- **resolver** (continue mode): `facts.plan.shipped` and `distiller_bundle.plan_shipped_path`. The distiller's `locked decisions` summary includes the record entries, labelled by phase.
-- **evaluator**: `facts.plans[<issue>].shipped` (`body_path`). Plan adherence reads a shipped phase's `## Changes` / `## Data model / schema impact` / `## Test plan` from its record.
+- **resolver** (any mode): `facts.plan.shipped.body_path`, which is also `distiller_bundle.plan_shipped_path`. The distiller's `locked decisions` summary includes the record entries, labelled by phase.
+- **evaluator**: `facts.plans[<issue>].shipped.body_path`. Plan adherence reads a shipped phase's `## Changes` / `## Data model / schema impact` / `## Test plan` from its record. A duplicated plan or record degrades to a notice, never a stop: adherence is one judgment among the merge gates.
 
 A main-plan pointer bullet is never itself a locked entry; the records it names are.

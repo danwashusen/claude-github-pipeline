@@ -102,7 +102,7 @@ dimensions are semantic and structurally cannot catch a grammar break; the resol
 parser two stages later, on a comment nobody may hand-edit. Then dispatch the isolated, context-blind
 plan-reviewer `Explore` sub-agent per [`../references/plan-reviewer-prompt.md`](../references/plan-reviewer-prompt.md)
 with that path, `mode`, `facts.target`, `facts.grounding.path` (sole code/doc source — never a ref),
-`facts.grounding_docs`, `external_sources`, the routed playbook's `dimensions` **plus Dimension 10 whenever
+`facts.grounding_docs`, `external_sources`, `shipped_paths` (empty unless a revise staged records), the routed playbook's `dimensions` **plus Dimension 10 whenever
 the plan has an `## Open questions` section**, and (story-under-epic only) the epic plan + delivery-log staged paths; it
 returns findings by dimension. Loop up to 3 passes, **restaging `plan.md` before each** (findings are
 applied to the plan directly — its own artifact to fix — so a pass re-reading the prior file re-reports

@@ -31,8 +31,8 @@ this route supplies:
   decision-shaped lines (a choice made, a constraint accepted, an alternative rejected); confirm each has
   a home in `## Architecture decisions`, `## Changes` or `## Risks & watchpoints`; promote the ones that
   don't, **then** drop. Skip it and dropping is a judgment call whose safe answer is to keep everything.
-- **Relocate shipped phases** — mechanical, after the promotion check, whenever
-  `facts.plan.shipped.to_relocate` is non-empty: run [`../references/shipped-phase-relocation.md`](../references/shipped-phase-relocation.md)
+- **Relocate shipped phases** — mechanical, after the promotion check, whenever `facts.plan.shipped.to_relocate`
+  is non-empty or `.restore` is present: run [`../references/shipped-phase-relocation.md`](../references/shipped-phase-relocation.md)
   (it owns the record-first persist order). A shipped-phase record is live plan content, not a history layer.
 - **Epic revise: compress merged stories' contracts** — and everything else a story leaves behind when it
   merges. `plan-schema.md`'s "Retirement" rule owns what compacts and to what; run it per merged story,

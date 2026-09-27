@@ -1010,44 +1010,67 @@ def _stage_comment_body(comment, scratch_dir, filename):
     return spill_bytes(body.encode("utf-8"), "body", scratch_dir, filename=filename)
 
 
-def _read_shipped_records(thread_list, revise_facts, plan_body, scratch_dir, issue_number):
-    """``facts.plan.shipped`` — the shipped-phase records for the open PR, resolved by
-    ``plan_shipped.collect``, plus ``to_relocate``: the ticked code-shipping phases with no record
-    yet, which is exactly what this revise moves (skills/_shared/plan-shipped-phases.md). With no
-    open PR nothing has shipped, so there is nothing to read or relocate.
-
-    Returns ``(facts, decision)``. A duplicated record is ``MARKER_AMBIGUOUS``, forwarded: an unknown
-    shape for a shipped phase's entries is what a revise must not re-author around.
-    """
-    open_pr = (revise_facts or {}).get("open_pr")
-    if not open_pr:
-        return {"present": False, "pr": None, "entries": [], "to_relocate": []}, None
-    records, decision = plan_shipped.collect(thread_list, open_pr["number"])
-    try:
-        prior_phases = parse.parse_phases(plan_body) if plan_body else None
-    except parse._PhasesMalformed:  # noqa: SLF001 — best-effort, as the slices diff reads it
-        prior_phases = None
+def _stage_records(records, scratch_dir, filename):
+    """The keys every reader's shipped-record fact carries: which PR, which phases, and the records'
+    text staged to one PATH (always — the reader passes it to `check` or a sub-agent)."""
     facts = {
-        "present": records["present"],
         "pr": records["pr"],
         "entries": records["entries"],
-        "other_pr_entries": records["other_pr_entries"],
         "unkeyed": records["unkeyed"],
-        "to_relocate": plan_shipped.to_relocate(
-            prior_phases, revise_facts.get("phase_tracker"), records["phases"]
-        ),
     }
     if records["present"]:
-        facts.update(
-            spill_bytes(
-                records["text"].encode("utf-8"),
-                "body",
-                scratch_dir,
-                force_path=True,
-                filename="issue-%s-plan-shipped.md" % issue_number,
-            )
+        facts["body_path"] = spill_bytes(
+            records["text"].encode("utf-8"), "body", scratch_dir, force_path=True, filename=filename
+        )["body_path"]
+    return facts
+
+
+def _read_shipped_records(thread_list, revise_facts, plan_body, prior_phases, scratch_dir, issue_number):
+    """``facts.plan.shipped`` (skills/_shared/plan-shipped-phases.md). Returns ``(facts, notes,
+    decision)``.
+
+    Two record sets, because a record is keyed to the PR its phase shipped on:
+
+    - the **open PR's** records, plus ``to_relocate`` — its ticked code-shipping phases with no
+      record yet, which is exactly what this revise moves;
+    - ``restore`` — records on the PR the plan's pointer bullets name, when that is **not** the open
+      PR (a HARD Start-fresh or a hand-closed PR). Those records are the only copy of entries the
+      plan no longer carries, and no reader for a new PR will look at them, so the revise puts them
+      back into the plan. Omitted when there is nothing to restore.
+
+    A duplicated record in either set is ``MARKER_AMBIGUOUS``, forwarded: an unknown shape for a
+    shipped phase's entries is what a revise must not re-author around.
+    """
+    open_pr = (revise_facts or {}).get("open_pr")
+    open_number = open_pr["number"] if open_pr else None
+    notes = []
+    facts = {"present": False, "pr": open_number, "entries": [], "unkeyed": [], "to_relocate": []}
+    if open_number is not None:
+        records, decision = plan_shipped.collect(thread_list, open_number)
+        if decision is not None:
+            return None, notes, decision
+        facts = _stage_records(records, scratch_dir, "issue-%s-plan-shipped.md" % issue_number)
+        facts["present"] = records["present"]
+        facts["other_pr_entries"] = records["other_pr_entries"]
+        facts["to_relocate"] = plan_shipped.to_relocate(
+            prior_phases, revise_facts.get("phase_tracker"), records["phases"]
         )
-    return facts, decision
+    pointed, note = plan_shipped.records_pr(plan_body, open_number)
+    if note is not None:
+        notes.append(note)
+    if pointed is not None and pointed != open_number:
+        stale, decision = plan_shipped.collect(thread_list, pointed)
+        if decision is not None:
+            return None, notes, decision
+        facts["restore"] = _stage_records(
+            stale, scratch_dir, "issue-%s-plan-shipped-pr%s.md" % (issue_number, pointed)
+        )
+    if facts.get("unkeyed"):
+        notes.append(
+            "%d shipped-phase record(s) on #%s cannot be keyed (line 2 unreadable) — no reader sees "
+            "their entries" % (len(facts["unkeyed"]), issue_number)
+        )
+    return facts, notes, None
 
 
 def _read_delivery_log(thread_list, scratch_dir, epic_number):
@@ -1466,11 +1489,15 @@ def build_facts(issue_number, repo, root=".", scratch_dir=None, refresh=False, c
         elif plan_body is not None:
             # Staged even when small enough to ride inline: a revise's `plan_shipped.py check` takes
             # the prior plan as a PATH, and a named source beats the model improvising one from
-            # `sections.marker_comment_body` (skills/_shared/plan-shipped-phases.md).
-            target = Path(scratch_dir) / ("issue-%s-marker.md" % issue_number)
-            target.parent.mkdir(parents=True, exist_ok=True)
-            target.write_text(plan_body, encoding="utf-8")
-            plan_facts["body_path"] = str(target)
+            # `sections.marker_comment_body` (skills/_shared/plan-shipped-phases.md). Same file name
+            # gh_gather spills a large marker to, so the path is uniform whichever mode applied.
+            plan_facts["body_path"] = spill_bytes(
+                plan_body.encode("utf-8"),
+                "body",
+                scratch_dir,
+                force_path=True,
+                filename="issue-%s-marker.md" % issue_number,
+            )["body_path"]
         # #38: how close the LIVE plan already is to the platform's per-body cap, knowable before
         # the session invests in grounding and drafting. Both units, because the cap is measured in
         # CHARACTERS while the write receipts report bytes — forwarding gh_gather's
@@ -1481,6 +1508,28 @@ def build_facts(issue_number, repo, root=".", scratch_dir=None, refresh=False, c
             plan_facts["body_chars"] = len(plan_body)
             plan_facts["body_bytes"] = len(plan_body.encode("utf-8"))
             plan_facts["body_limit_chars"] = BODY_CHAR_LIMIT
+
+    # The prior plan's `## Phases` is parsed BEST-EFFORT — never `PHASES_MALFORMED`. A revise run
+    # exists to *repair* a bad plan, so hard-failing here would mean the one tool that can rewrite the
+    # section refuses to start because the section is broken, and the plan footer forbids
+    # hand-editing. prep_resolver DOES hard-fail on the identical body (it executes the plan and
+    # cannot ship a phase it cannot read), so a malformed plan stays re-plannable but never
+    # executable. Same best-effort posture as `_parse_phase_tracker`. Parsed ONCE here: the slices
+    # diff and the shipped-phase relocation both read it.
+    prior_phases = None
+    prior_phases_parsed = True
+    prior_phases_error = None
+    if plan_present and plan_body:
+        try:
+            prior_phases = parse.parse_phases(plan_body)
+        except parse._PhasesMalformed as exc:  # noqa: SLF001 (mirrors prep_resolver's use)
+            prior_phases = None
+            prior_phases_parsed = False
+            prior_phases_error = {
+                "reason": exc.reason,
+                "line_number": exc.line_number,
+                "raw_line": exc.raw_line,
+            }
 
     # 3) Research dossier — scan the ALREADY-fetched thread (no second gh call).
     thread_list = _load_thread(issue_envelope)
@@ -1751,27 +1800,8 @@ def build_facts(issue_number, repo, root=".", scratch_dir=None, refresh=False, c
         else:
             rescope_basis = "updated_at"
 
-        # The prior plan's `## Phases` is parsed BEST-EFFORT — never `PHASES_MALFORMED`. A revise
-        # run exists to *repair* a bad plan, so hard-failing here would mean the one tool that can
-        # rewrite the section refuses to start because the section is broken, and the plan footer
-        # forbids hand-editing. prep_resolver DOES hard-fail on the identical body (it executes the
-        # plan and cannot ship a phase it cannot read), so a malformed plan stays re-plannable but
-        # never executable. Same best-effort posture as `_parse_phase_tracker`.
-        prior_phases = None
-        prior_phases_parsed = True
-        prior_phases_error = None
-        if plan_present and plan_body:
-            try:
-                prior_phases = parse.parse_phases(plan_body)
-            except parse._PhasesMalformed as exc:  # noqa: SLF001 (mirrors prep_resolver's use)
-                prior_phases = None
-                prior_phases_parsed = False
-                prior_phases_error = {
-                    "reason": exc.reason,
-                    "line_number": exc.line_number,
-                    "raw_line": exc.raw_line,
-                }
-
+        # `prior_phases` / `prior_phases_parsed` / `prior_phases_error`: parsed once, best-effort, at
+        # step 2 — the shipped-phase relocation reads the same parse.
         slices_facts = {
             "detail_available": detail_available,
             "source": "sub_issues_rest" if detail_available else "sub_issues_node",
@@ -1846,6 +1876,7 @@ def build_facts(issue_number, repo, root=".", scratch_dir=None, refresh=False, c
 
     # 8) Revise facts (mode == "revise" only).
     revise_facts = None
+    shipped_attention = []
     if mode == "revise":
         revise_facts, revise_notices, revise_decision = _build_revise_facts(
             issue_envelope,
@@ -1859,12 +1890,13 @@ def build_facts(issue_number, repo, root=".", scratch_dir=None, refresh=False, c
         if _forward_decision(revise_decision, notices=notices):
             return None
         _merge_notices(notices, revise_notices)
-        shipped_facts, shipped_decision = _read_shipped_records(
-            thread_list, revise_facts, plan_body, scratch_dir, issue_number
+        shipped_facts, shipped_notes, shipped_decision = _read_shipped_records(
+            thread_list, revise_facts, plan_body, prior_phases, scratch_dir, issue_number
         )
         if _forward_decision(shipped_decision, notices=notices):
             return None
         plan_facts["shipped"] = shipped_facts
+        shipped_attention = shipped_notes
 
     suggested_playbook = _suggested_playbook(issue_type, mode, parent_epic_open)
     vector = {"type": issue_type, "mode": mode, "plan_ref_row": plan_ref_row}
@@ -1914,6 +1946,7 @@ def build_facts(issue_number, repo, root=".", scratch_dir=None, refresh=False, c
         facts["story"] = story_facts
     if revise_facts is not None:
         facts["revise"] = revise_facts
+    facts["attention"].extend(shipped_attention)
     if slices_facts is not None:
         # Named `slices`, not `sub_issues`: `target.sub_issues` already carries the raw relation
         # nodes, and a second top-level key by that name would be a genuine confusion hazard. A
