@@ -1092,6 +1092,41 @@ class SingleInvocationBudgetTests(PrepResolverSandboxTestCase):
         self.assertEqual(len(manifest), 5)
 
 
+class ShippedRecordFactsTests(PrepResolverSandboxTestCase):
+    """`facts.plan.shipped` + `distiller_bundle.plan_shipped_path`
+    (skills/_shared/plan-shipped-phases.md). Once a revise has relocated a shipped phase's entries,
+    the plan comment alone is no longer the whole locked plan, so the distiller gets the records for
+    the continuing PR — and never another PR's, which a Start-fresh left behind.
+    """
+
+    ambient_default = "100-fix-the-widget"
+
+    def test_continue_mode_stages_this_prs_records_for_the_distiller(self):
+        envelope = self._envelope(fixture_case="prep_resolver_plan_shipped")
+        shipped = envelope["plan"]["shipped"]
+        self.assertEqual(shipped["pr"], 55)
+        self.assertEqual([e["phase"] for e in shipped["entries"]], [1])
+        text = Path(envelope["distiller_bundle"]["plan_shipped_path"]).read_text(encoding="utf-8")
+        self.assertEqual(shipped["body_path"], envelope["distiller_bundle"]["plan_shipped_path"])
+        self.assertIn(":phase:1 -->", text)
+        self.assertNotIn(":phase:2 -->", text)
+
+    def test_records_follow_the_plans_pointer_not_the_continuing_pr(self):
+        # The plan's pointer names #31 while the resolver continues #55 — the records on #31 are the
+        # only copy of phase 2's entries, so they are read, and the mismatch is surfaced.
+        envelope = self._envelope(fixture_case="prep_resolver_plan_shipped_pointer")
+        shipped = envelope["plan"]["shipped"]
+        self.assertEqual(shipped["pr"], 31)
+        self.assertEqual([e["phase"] for e in shipped["entries"]], [2])
+        self.assertEqual(envelope["distiller_bundle"]["plan_shipped_path"], shipped["body_path"])
+        self.assertTrue(any("only copy" in line for line in envelope["attention"]))
+
+    def test_no_records_leaves_the_bundle_path_empty(self):
+        envelope = self._envelope(fixture_case="prep_resolver_tracker_clean")
+        self.assertFalse(envelope["plan"]["shipped"]["present"])
+        self.assertIsNone(envelope["distiller_bundle"]["plan_shipped_path"])
+
+
 class TrackerFactTests(PrepResolverSandboxTestCase):
     """#46: `facts.tracker` — the PR's `## Phase tracker` row set diffed against the plan's phases.
 

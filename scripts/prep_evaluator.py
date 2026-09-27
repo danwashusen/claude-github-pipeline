@@ -65,17 +65,24 @@ import config_block  # noqa: E402  (import after sys.path setup, by necessity; i
 import gh_gather  # noqa: E402
 import gh_pr_gather  # noqa: E402
 import parse  # noqa: E402
+import plan_shipped  # noqa: E402  (the shipped-phase records a relocated plan's detail lives in)
 import workspace  # noqa: E402
 from pipelib import process  # noqa: E402
 from pipelib.decisions import AMBIGUOUS, needs_decision  # noqa: E402
 from pipelib.envelope import EXIT_OK, EXIT_USAGE_ERROR, emit_needs_decision, emit_ok  # noqa: E402
 from pipelib.spill import spill_bytes  # noqa: E402
+from pipelib.thread import load_thread  # noqa: E402
 
 import delivery_log  # noqa: E402  (in-process composition, not a subprocess chain)
 
 # Health-cache marker comment prefix (docs/specs/evaluator.md "Artifacts written") — self-read by
 # gh_pr_gather's marker-comment lookup so the health check needs no second fetch.
 HEALTH_CACHE_MARKER = "<!-- pr-evaluator-health-cache:v1 -->"
+
+# The closing issue's plan (skills/planner/references/plan-schema.md), for the S3 "Plan adherence"
+# judgment. Located by a thread scan like its shipped-phase records, never a `marker_prefix` gather:
+# a duplicate must degrade to a notice here, not stop the merge (see `_build_plan_facts`).
+PLAN_MARKER = "<!-- implementation-plan:v1 -->"
 
 # The epic delivery log (skills/_shared/epic-delivery-log.md) — the evaluator is its SOLE writer.
 # The markers, tier resolution and `log_source` classification live in `delivery_log.py`, shared
@@ -378,17 +385,65 @@ def _parse_stories_checklist(epic_body):
     return entries
 
 
-def _load_thread(envelope):
-    """Parse `envelope`'s `thread` field (inline text or path-mode file) back into the list of
-    normalized comment dicts `gh_gather.run` produced. Never re-fetches — the delivery log's entries
-    are scanned out of the thread this gather already returned."""
-    if envelope.get("thread_mode") == "path":
-        text = Path(envelope["thread_path"]).read_text(encoding="utf-8")
-    else:
-        text = envelope.get("thread")
-    if not text:
-        return []
-    return json.loads(text)
+# The thread read-back lives in `pipelib.thread` (three preps scan threads; one home).
+_load_thread = load_thread
+
+
+def _build_plan_facts(issue_envelope, scratch_dir, issue_number, pr_number):
+    """``facts.plans[<issue>]`` — the closing issue's plan comment plus its shipped-phase records
+    (skills/_shared/plan-shipped-phases.md). Plan adherence (evaluate-spine.md S3 step 5) judges the
+    whole PR diff, and a shipped phase's `## Changes` / `## Data model / schema impact` /
+    `## Test plan` entries live in its record once a revise has relocated them — so the evaluator
+    needs both, as paths, always.
+
+    Both are located by scanning the thread the gather already returned — never a ``marker_prefix``
+    gather, whose second match is a hard ``MARKER_AMBIGUOUS``. Adherence is one judgment among the
+    merge gates, so a duplicated plan or record DEGRADES to a notice rather than stopping the run —
+    the delivery log's posture in this same prep, for the same reason.
+
+    Records are read for the PR the plan's pointer bullets name (normally this PR; after a
+    Start-fresh the closed PR's records are still the only copy of their entries).
+
+    Returns ``(facts, notices)``.
+    """
+    thread = _load_thread(issue_envelope)
+    plans = [c for c in thread if (c.get("body") or "").startswith(PLAN_MARKER)]
+    if not plans:
+        return {"present": False}, []
+    if len(plans) > 1:
+        return {
+            "present": True,
+            "ambiguous": True,
+            "comment_ids": [plan_shipped.comment_rest_id(c) for c in plans],
+            "comment_urls": [c.get("url") for c in plans],
+        }, [
+            "closing issue #%s carries %d plan comments — plan adherence cannot pick one; judge "
+            "without it and say so in the review" % (issue_number, len(plans))
+        ]
+    plan_body = plans[0].get("body") or ""
+    notices = []
+    records, notes, decision = plan_shipped.read_pointed(thread, plan_body, pr_number)
+    notices += ["closing issue #%s: %s" % (issue_number, note) for note in notes]
+    if decision is not None:
+        notices.append(
+            "%s — plan adherence cannot read phase(s) %s from a record; judge them against the "
+            "plan comment alone and say so (skills/_shared/plan-shipped-phases.md)"
+            % (decision["summary"], ", ".join(str(p) for p in records["duplicated_phases"]))
+        )
+    shipped = plan_shipped.staged_fact(records, scratch_dir, "issue-%s-plan-shipped.md" % issue_number)
+    return {
+        "present": True,
+        "comment_id": plan_shipped.comment_rest_id(plans[0]),
+        "comment_url": plans[0].get("url"),
+        "body_path": spill_bytes(
+            plan_body.encode("utf-8"),
+            "body",
+            scratch_dir,
+            force_path=True,
+            filename="issue-%s-marker.md" % issue_number,
+        )["body_path"],
+        "shipped": shipped,
+    }, notices
 
 
 def _build_delivery_log_facts(envelope, scratch_dir, epic_number, story_numbers):
@@ -864,6 +919,7 @@ def build_facts(pr_number, repo, root=".", scratch_dir=None, refresh=False, cwd=
     dod_by_issue = {}
     blocked_by_by_issue = {}
     deps_available_by_issue = {}
+    plans_by_issue = {}
     issue_gather_notices = []
     for closing_issue in closing_issues:
         issue_number = closing_issue.get("number")
@@ -895,6 +951,11 @@ def build_facts(pr_number, repo, root=".", scratch_dir=None, refresh=False, cwd=
         # evaluator playbook (not prep) decides the soft-reject, prep only surfaces the fact.
         blocked_by_by_issue[str(issue_number)] = issue_envelope.get("blocked_by") or []
         deps_available_by_issue[str(issue_number)] = issue_envelope.get("deps_available")
+        plan_facts, plan_notices = _build_plan_facts(
+            issue_envelope, scratch_dir, issue_number, pr_envelope["number"]
+        )
+        plans_by_issue[str(issue_number)] = plan_facts
+        issue_gather_notices.extend(plan_notices)
 
     # 4b) The parent epic's story set, for a story PR (`facts.epic`). The story route needs it to
     #     decide whether progress projection has anything to write and to route on whether siblings
@@ -975,6 +1036,7 @@ def build_facts(pr_number, repo, root=".", scratch_dir=None, refresh=False, cwd=
         "dod": dod_by_issue,
         "blocked_by": blocked_by_by_issue,
         "deps_available": deps_available_by_issue,
+        "plans": plans_by_issue,
         "attention": _build_attention(workspace_envelope, pr_envelope, blocked_by_by_issue)
         + config_attention,
         "notices": list(config_notices) + list(issue_gather_notices),

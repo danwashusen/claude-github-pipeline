@@ -664,6 +664,71 @@ class PlanSchemaByteCompatTests(unittest.TestCase):
         self.assertEqual(body_lines[0], "<!-- implementation-plan:v1 -->")
 
 
+class ShippedPhaseRecordTests(unittest.TestCase):
+    """Shipped-phase records (skills/_shared/plan-shipped-phases.md). A story or single-issue plan only
+    grows on revise and cannot retire a shipped phase (the evaluator judges the whole PR against its
+    `## Changes` / `## Test plan`), so each revise moves shipped entries verbatim into per-phase
+    records. These pin the template to its example capture, and the rules that are prose-only: every
+    revise route reaches the procedure, records post before the main edit, and a relocation is never
+    read as a HARD `## Changes` edit.
+    """
+
+    MARKER_PREFIX = "<!-- implementation-plan-shipped:v1:phase:"
+
+    @staticmethod
+    def _fences(text):
+        return re.findall(r"^```\n(.*?)^```$", text, re.S | re.M)
+
+    def test_record_template_byte_identical_to_example(self):
+        shared = (SHARED_DIR / "plan-shipped-phases.md").read_text(encoding="utf-8")
+        ours = next((b for b in self._fences(shared) if b.startswith(self.MARKER_PREFIX)), None)
+        self.assertIsNotNone(ours, "the record template must be present in the shared contract")
+        example = (REPO_ROOT / "docs" / "specs" / "examples" / "implementation-plan-shipped-phase.md")
+        theirs = self._fences(example.read_text(encoding="utf-8"))[0]
+        self.assertEqual(ours, theirs, "record template drifted from its example capture")
+
+    def test_record_marker_is_a_separate_family(self):
+        self.assertFalse(self.MARKER_PREFIX.startswith("<!-- implementation-plan:v1 -->"))
+
+    def test_both_revise_routes_reach_the_procedure(self):
+        for playbook in ("revise.md", "story-jit.md"):
+            text = (PLAYBOOKS_DIR / playbook).read_text(encoding="utf-8")
+            self.assertIn("references/shipped-phase-relocation.md", text, playbook)
+            self.assertIn("facts.plan.shipped.to_relocate", text, playbook)
+
+    def test_records_post_before_the_main_edit(self):
+        flat = " ".join((REFERENCES_DIR / "shipped-phase-relocation.md").read_text(encoding="utf-8").split())
+        self.assertIn("post each new record **before** the main plan's `edit-comment`", flat)
+        self.assertIn("On **HARD Start-fresh**, post nothing here", flat)
+
+    def test_check_runs_through_the_script(self):
+        text = (REFERENCES_DIR / "shipped-phase-relocation.md").read_text(encoding="utf-8")
+        self.assertIn("${CLAUDE_PLUGIN_ROOT}/scripts/plan_shipped.py check", text)
+        self.assertIn("--pr <facts.plan.shipped.pr>", text)
+        self.assertIn('--restored "<facts.plan.shipped.restore.body_path>"', text)
+
+    def test_a_closed_prs_records_are_restored(self):
+        # After a Start-fresh the closed PR's records are the only copy of their entries; both revise
+        # routes must reach the restore step, not only the relocation.
+        text = (REFERENCES_DIR / "shipped-phase-relocation.md").read_text(encoding="utf-8")
+        self.assertIn("## Restoring a closed PR's records", text)
+        for playbook in ("revise.md", "story-jit.md"):
+            self.assertIn(".restore", (PLAYBOOKS_DIR / playbook).read_text(encoding="utf-8"), playbook)
+
+    def test_reviewer_placeholder_is_passed_by_the_spine(self):
+        self.assertIn("`shipped_paths`", (PLAYBOOKS_DIR / "plan-spine.md").read_text(encoding="utf-8"))
+
+    def test_relocation_is_not_a_hard_edit_but_editing_a_record_is(self):
+        flat = " ".join((REFERENCES_DIR / "revise-reconciliation.md").read_text(encoding="utf-8").split())
+        self.assertIn("**Relocation and restoration are not edits.**", flat)
+        self.assertIn("A posted shipped-phase record", flat)
+
+    def test_reviewer_treats_records_as_read_only(self):
+        flat = " ".join((REFERENCES_DIR / "plan-reviewer-prompt.md").read_text(encoding="utf-8").split())
+        self.assertIn("`<<shipped_paths>>`", flat)
+        self.assertIn("They are **read-only**", flat)
+
+
 class SectionOwnershipAndSizeTests(unittest.TestCase):
     """#38 Phase 1. A 266 KB plan body could not be posted; measured, retained revise narration was 8%
     of it and ~90% was the SAME fact restated across six-to-ten sections. The schema bounded exactly one

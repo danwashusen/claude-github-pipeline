@@ -20,9 +20,13 @@ checked `PR author == current_user`.)
 ## S2 — Read the PR, issue, plan, and prior review
 
 `facts.sections` carries the PR body / thread / reviews (spilled to paths when large — read from the
-`*_path`). The closing issue's body/thread and its `<!-- implementation-plan:v1 -->` plan marker are
-in the facts (prep fetched them per `closingIssuesReferences`). Read the PR body, the plan, and any
-reviews before forming a verdict — the thread carries decisions the diff doesn't show. When the diff
+`*_path`). Each closing issue's `<!-- implementation-plan:v1 -->` plan is `facts.plans[<issue>]` (prep
+fetched it per `closingIssuesReferences`; `body_path` always, `present: false` when there is none, and
+`ambiguous: true` with no body when the issue carries two — judge adherence without it and say so), with
+its shipped-phase records in `.shipped` (`body_path` when `present`; read for the PR the plan's pointer names) — a revise
+moves a shipped phase's `## Changes` / `## Data model / schema impact` / `## Test plan` entries there
+([`../../_shared/plan-shipped-phases.md`](../../_shared/plan-shipped-phases.md)). Read the PR body, the
+plan and its records, and any reviews before forming a verdict — the thread carries decisions the diff doesn't show. When the diff
 is needed, read it in **bounded slices**: enumerate changed files first (`grep '^diff --git ' <path>`
 against the spilled diff), then read only the implicated hunks — never load a 100 KB diff whole.
 
@@ -164,7 +168,9 @@ copy.
    doc section and the deferred-to issue; genuinely out-of-scope/future work → note, don't block.
 5. **Plan adherence.** With a `<!-- implementation-plan:v1 -->` plan present, check the diff against
    its **locked decisions** (`## Architecture decisions`, `## Changes`, `## Data model / schema
-   impact`, `## Test plan`) in targeted slices. The plan locks decisions, not lines — harmless
+   impact`, `## Test plan`) in targeted slices — for a shipped phase the plan points at with `- Phases …
+   shipped on #<PR>: entries in the shipped-phase records.`, those entries are in `.shipped`, and they
+   bind exactly as the plan's own do. The plan locks decisions, not lines — harmless
    in-spirit detail is fine. An **undisclosed reversal** of a locked decision (not flagged in the
    plan's `## Deviations`, not a `## Plan override` in the PR body) → soft-reject, quoting the decision
    and diverging diff. No plan → note "adherence not evaluated," don't hard-block.

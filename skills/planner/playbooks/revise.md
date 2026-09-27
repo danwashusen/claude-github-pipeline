@@ -31,6 +31,9 @@ this route supplies:
   decision-shaped lines (a choice made, a constraint accepted, an alternative rejected); confirm each has
   a home in `## Architecture decisions`, `## Changes` or `## Risks & watchpoints`; promote the ones that
   don't, **then** drop. Skip it and dropping is a judgment call whose safe answer is to keep everything.
+- **Relocate shipped phases** — mechanical, after the promotion check, whenever `facts.plan.shipped.to_relocate`
+  is non-empty or `.restore` is present: run [`../references/shipped-phase-relocation.md`](../references/shipped-phase-relocation.md)
+  (it owns the record-first persist order). A shipped-phase record is live plan content, not a history layer.
 - **Epic revise: compress merged stories' contracts** — and everything else a story leaves behind when it
   merges. `plan-schema.md`'s "Retirement" rule owns what compacts and to what; run it per merged story,
   mechanically, after the promotion check. A plan is immutable, so this is the only site it can run at.
@@ -52,9 +55,8 @@ this route supplies:
 - **Reviewer dimensions (spine S7).** The same set the issue's fresh route would pass, keyed on
   `facts.vector.type` (a bug adds 9; multi-phase adds 7 — passing `<<live_slices>>` from `facts.slices`;
   an epic uses 1, 2, 3, 5, 6), plus 10 when the plan carries `## Open questions`.
-- **Off-ramp (spine S4).** Keyed on `facts.vector.type` like the dimension set: `offered` for a
-  standalone issue, `not offered` for an epic revise. On "Split as epic" the superseded plan comment
-  stays put — the promoted Epic's own re-plan supersedes it in place, per the persist bullet.
+- **Off-ramp (spine S4).** Keyed on `facts.vector.type`: `offered` for a standalone issue, `not offered`
+  for an epic revise. On "Split as epic" the superseded plan comment stays put — the Epic's re-plan supersedes it in place.
 - **Show + confirm (spine S8 variant).** Show the diff-style plan update **and** the proposed body-edit
   diff together, then gate: SOFT → **Apply** / **Cancel**; HARD → **Start fresh (recommended)** /
   **Apply in place anyway** / **Cancel**. **SOFT-Apply** runs the spine's persist immediately as written

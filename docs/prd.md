@@ -259,6 +259,7 @@ an artifact written by a v1 skill is consumed correctly by its v2 counterpart, a
 | Artifact | Where it lives |
 |---|---|
 | `<!-- implementation-plan:v1 -->` plan comment | issue comment |
+| `<!-- implementation-plan-shipped:v1:phase:<N> -->` shipped-phase record, one comment per shipped phase, keyed (PR, phase); a plan written before it carries none until its next revise (no backfill) | issue comment |
 | `<!-- issue-research:v1 -->` dossier comment | issue comment |
 | `<!-- epic-delivery-log:v2:story:<N> -->` delivery-log entry, one comment per shipped story | epic issue comment |
 | `<!-- epic-delivery-log:v1 -->` delivery log (legacy tier — read forever, never written again; no backfill) | epic issue comment |

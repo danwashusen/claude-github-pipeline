@@ -37,6 +37,7 @@ The body, thread, and plan are each handed to you as a **scratch-file path** (pr
 - **Issue body**: `<<issue_body_path>>` — a scratch-file path (`distiller_bundle.issue_body_path`).
 - **Comment thread**: `<<thread_path>>` — a scratch-file path (`distiller_bundle.thread_path`); the comments are a JSON array (`author`, `body`, `createdAt` per comment), or empty (`[]`) when there are none.
 - **Implementation plan**: `<<plan_marker_path>>` — the durable plan comment (the planner's `<!-- implementation-plan:v1 -->` comment) as a scratch-file path (`distiller_bundle.plan_marker_path`), or the literal `(absent)` when no plan exists.
+- **Shipped-phase records**: `<<plan_shipped_path>>` — a scratch-file path (`distiller_bundle.plan_shipped_path`), or the literal `(absent)`. Each record (`<!-- implementation-plan-shipped:v1:phase:<N> -->`, then `**Shipped on:** #<PR> · Phase <N> — <title>`) holds a shipped phase's `## Changes (file-level)` / `## Data model / schema impact` / `## Test plan` entries, moved verbatim out of the plan; the plan's `- Phases … shipped on #<PR>: entries in the shipped-phase records.` pointer bullet stands in for them. They are part of the plan's locked decisions, not history.
 - **Labels**: `<<labels>>` — the issue's labels, for the type signal (`epic`, `story`, `bug`, …).
 - **Integration target**: `<<audit_ref>>` — the **bare** branch name the plan targets (`main`, or an epic branch). **Informational only — do not run `git` or read code against it.** Code/doc verification is the fitness audit's job, deliberately kept out of this agent. Use the ref only to name the plan's target and to reason about whether the thread references work that postdates the plan.
 
@@ -74,7 +75,7 @@ Emit ONE of two shapes.
 ## Effective plan
 plan: present | absent
 thread-vs-plan: confirms | refines        (omit when plan: absent)
-locked decisions: <faithful summary of the plan's ## Architecture decisions / ## Changes / ## Data model / ## Test plan>   (omit when plan: absent)
+locked decisions: <faithful summary of the plan's ## Architecture decisions / ## Changes / ## Data model / ## Test plan — including each shipped-phase record's entries, labelled `(phase <N>, shipped)`>   (omit when plan: absent)
 doc grounding: <faithful copy of the plan's ## Doc grounding citations — e.g. [architecture.md §3.2], [precedent: <file>:<line>] — or `none` if the plan has no ## Doc grounding>   (omit when plan: absent)
 planned at: <sha the plan records, if any>   (omit when plan: absent)
 
