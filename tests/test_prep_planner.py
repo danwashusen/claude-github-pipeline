@@ -836,6 +836,46 @@ class ReviseFactsTests(PrepPlannerSandboxTestCase):
         self.assertNotIn("revise", envelope)
 
 
+class ShippedRecordFactsTests(PrepPlannerSandboxTestCase):
+    """`facts.plan.shipped` (skills/_shared/plan-shipped-phases.md): the open PR's shipped-phase
+    records, and `to_relocate` — the ticked code-shipping phases with no record yet, which is exactly
+    what the revise moves. The fixture's tracker ticks phases 1 (code, recorded on this PR),
+    2 (operator — never relocated) and 3 (code, unrecorded); a second phase-1 record names another
+    PR, the shape a Start-fresh leaves behind.
+    """
+
+    def _shipped_envelope(self):
+        _git(["fetch", "origin"], self.root)
+        _git(["checkout", "-b", "201-fix-gadget"], self.root)
+        _write(self.root / "gadget.txt", "fixed\n")
+        _git(["add", "gadget.txt"], self.root)
+        _git(["commit", "-m", "fix gadget"], self.root)
+        _git(["push", "origin", "201-fix-gadget"], self.root)
+        _git(["checkout", "main"], self.root)
+        return self._envelope(
+            issue="201", fixture_case="prep_planner_shipped_records", ambient="201-fix-gadget"
+        )
+
+    def test_records_are_read_for_the_open_pr_only(self):
+        shipped = self._shipped_envelope()["plan"]["shipped"]
+        self.assertTrue(shipped["present"])
+        self.assertEqual(shipped["pr"], 55)
+        self.assertEqual([e["phase"] for e in shipped["entries"]], [1])
+        self.assertEqual(shipped["entries"][0]["comment_id"], 9003)
+        self.assertEqual(shipped["other_pr_entries"], 1)
+        self.assertTrue(Path(shipped["body_path"]).is_file())
+
+    def test_to_relocate_is_ticked_code_shipping_without_a_record(self):
+        self.assertEqual(self._shipped_envelope()["plan"]["shipped"]["to_relocate"], [3])
+
+    def test_an_inline_prior_plan_is_still_staged_to_a_path(self):
+        plan = self._shipped_envelope()["plan"]
+        self.assertEqual(plan["body_mode"], "inline")
+        self.assertTrue(
+            Path(plan["body_path"]).read_text(encoding="utf-8").startswith("<!-- implementation-plan:v1 -->")
+        )
+
+
 class DecisionCodeTests(PrepPlannerSandboxTestCase):
     def test_auth_required_on_first_gh_call(self):
         result = self._run(

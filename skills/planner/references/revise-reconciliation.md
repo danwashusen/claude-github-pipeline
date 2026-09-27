@@ -21,6 +21,9 @@ LLM judgment, bounded by structural rules:
 - A code-shipping phase ticked in the tracker is removed entirely from the new plan.
 - A top-level `## Definition of done` bullet's text was edited between the two plan runs **and** that
   bullet was ticked under the old plan.
+- A posted shipped-phase record (`<!-- implementation-plan-shipped:v1:phase:<N> -->`) would change. A
+  record is immutable: editing one rewrites what a shipped phase delivered
+  ([`../../_shared/plan-shipped-phases.md`](../../_shared/plan-shipped-phases.md)).
 
 **Always SOFT:**
 
@@ -37,6 +40,11 @@ LLM judgment, bounded by structural rules:
 still match the new wording?); DoD bullet wording adjustments without structural change. **Lean HARD
 when ambiguous** — surprising a visible-progress regression on a SOFT misclassification is worse than
 offering "Start fresh" on a borderline-SOFT case the user can decline.
+
+**Relocation is not an edit.** An entry that `plan_shipped.py check` confirms moved verbatim into a
+shipped-phase record ([`shipped-phase-relocation.md`](shipped-phase-relocation.md)) left `## Changes` /
+`## Test plan` unchanged in substance, so it never counts toward the `## Changes` judgment call above.
+Judge only the entries whose text changed.
 
 ### Inserting a phase after work has shipped
 

@@ -395,6 +395,29 @@ class HappyPathFactsSchemaTests(PrepEvaluatorSandboxTestCase):
         )
 
 
+class PlanFactsTests(PrepEvaluatorSandboxTestCase):
+    """`facts.plans[<issue>]` — the closing issue's plan plus its shipped-phase records for THIS PR
+    (skills/_shared/plan-shipped-phases.md). Plan adherence judges the whole PR diff, and a relocated
+    shipped phase's entries live only in its record. Before this fact existed the evaluator's
+    prompt claimed the plan was in the facts while no code put it there.
+    """
+
+    def test_no_plan_is_a_fact_not_a_gap(self):
+        self.assertEqual(self._envelope()["plans"], {"42": {"present": False}})
+
+    def test_plan_and_this_prs_records_are_staged(self):
+        plan = self._envelope(fixture_case="prep_evaluator_plan_shipped")["plans"]["42"]
+        self.assertTrue(plan["present"])
+        self.assertTrue(
+            Path(plan["body_path"]).read_text(encoding="utf-8").startswith("<!-- implementation-plan:v1 -->")
+        )
+        shipped = plan["shipped"]
+        self.assertEqual(shipped["pr"], 88)
+        self.assertEqual([e["phase"] for e in shipped["entries"]], [1])
+        self.assertEqual(shipped["entries"][0]["comment_id"], 7002)
+        self.assertIn("`gadget.rb`", Path(shipped["body_path"]).read_text(encoding="utf-8"))
+
+
 class CiRollupClassificationTests(PrepEvaluatorSandboxTestCase):
     """Four CI states — S6 DoD: "Fixtures: four CI states.\""""
 

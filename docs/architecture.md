@@ -425,9 +425,9 @@ result or a typed §3 decision code, cannot call `AskUserQuestion`, and never wr
 
 | Sub-agent | Caller | Consumes | Returns |
 |---|---|---|---|
-| state-distiller | resolver | issue thread + plan text (paths) | current-state / effective-plan brief |
+| state-distiller | resolver | issue thread + plan text + the continuing PR's shipped-phase records (paths) | current-state / effective-plan brief |
 | fitness audit | resolver | read workspace + issue + plan | findings by dimension (incl. plan-vs-code currency) |
-| plan reviewer | planner | plan draft + the asserted grounding checkout | findings by dimension |
+| plan reviewer | planner | plan draft + this revise's staged shipped-phase records (read-only) + the asserted grounding checkout | findings by dimension |
 | issue reviewer | drafter | draft + repo context | findings by dimension |
 | cut reviewer | slicer | parent body (path) + proposed children + repo root | findings by dimension |
 | research validator | researcher | dossier draft | findings by dimension |
@@ -513,7 +513,7 @@ census greps.
 - A v1 skill directory is deleted only after its v2 replacement passes the parity protocol
   ([prd.md §9.5](prd.md)).
 - `_shared/` files defining **external** artifacts (handoff format, DoD annotations,
-  open-question links/detection, question-issue, epic-delivery-log, worktree block formats) are
+  open-question links/detection, question-issue, epic-delivery-log, plan-shipped-phases, worktree block formats) are
   preserved; **internal** coordination files are superseded per §3 (`subagent-decision-signal.md`,
   removed at S20) and §6 (`worktree-lifecycle.md`'s mechanics folded into `workspace.py` at S20 —
   the file now carries only the consuming-repo block format; the ownership rules live here).
@@ -536,6 +536,7 @@ not a deviation.
 | Spill threshold on verbatim sections | context blowout | `pipelib` spill + tests |
 | Capability-gated degradation (native deps; native parent/sub-issues) with a per-relation notice | consuming repos and `gh` versions vary, and the two relations have different fallbacks | `gh_persist.py`/`gh_gather.py` ladders + tests |
 | Epic↔story hierarchy is the native parent/sub-issue relation, written only by the slicer — at filing time via `create --parent`, or after the fact via `add-parent` when an epic adopts an already-filed issue; readers fall back to a legacy `## Stories` checklist and never gate on the relation's absence | GitHub's sub-issue panel, progress rollup, and a Project's Sub-issues progress field are driven by the relation, not by markdown a checklist can't self-tick; and no backfill path exists, so pre-relation epics must keep working | [`skills/_shared/epic-story-hierarchy.md`](../skills/_shared/epic-story-hierarchy.md) + `create --parent` + prep two-tier reads + tests |
+| A story or single-issue plan's shipped detail lives in per-phase records (`<!-- implementation-plan-shipped:v1:phase:<N> -->`), keyed (PR, phase), written only by the planner on revise, moved **verbatim** from the plan and never edited after posting; `## Phases` and every decision section stay in the plan comment | a shipped phase is pushed but not yet evaluated, and the evaluator judges the whole PR against `## Changes` / `## Data model / schema impact` / `## Test plan`, so its entries can be moved but never dropped — while a plan that only ever grows reaches the per-body character limit by construction (#690: 53.6k → 63.9k in one revise). The PR in the key makes a Start-fresh's records inert with no delete; the separate marker family keeps every plan `startswith` lookup blind to them | [`skills/_shared/plan-shipped-phases.md`](../skills/_shared/plan-shipped-phases.md) + `plan_shipped.py` (read model + `check`) + prep reads in planner/resolver/evaluator + tests |
 | The epic delivery log is one comment per shipped story (`<!-- epic-delivery-log:v2:story:<N> -->`), written only by the evaluator; readers resolve it across two tiers, union by story number with the per-story entry winning, and never gate on a tier's absence | a single accumulating comment is bounded by the per-body character limit and an epic reaches it by construction — past that point no story merge can be recorded at all, with no compaction path and no owner but the append (#41). The story number in the marker is what keeps one-marker-one-comment, so a genuine duplicate is still detectable; and no backfill path exists, so pre-#41 epics must keep working | [`skills/_shared/epic-delivery-log.md`](../skills/_shared/epic-delivery-log.md) + `delivery_log.py` + prep two-tier reads + tests |
 | The default branch changes only via PR; a session never commits outside its own asserted workspace; the landing tools treat their starting checkout as read-only | trust topology (§6) | `workspace.py` decisions + prompt invariant |
 | Hook and gate config are read from the working tree of the checkout the command runs in — committed or not — and every read reports its source (checkout, branch, SHA, dirty) as `setup.source` / `teardown.source` / `config.source`; no path gates on that source, and none inspects or writes the operator's checkout | the operator chooses the checkout and it is trusted; the retired `origin/main` pin made the consuming repo's own config untestable before merge, and reporting rather than a per-entry confirmation card is the compensating control (§6 rule 1 — a reversal of the v3 "a PR must not weaken its own gates" invariant, made deliberately) | prep scripts + `workspace.py` + tests |

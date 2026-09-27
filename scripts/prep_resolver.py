@@ -98,10 +98,12 @@ import gh_gather  # noqa: E402
 import gh_pr_gather  # noqa: E402  (continue mode only: the prior PR's body, for the tracker diff)
 import branching  # noqa: E402  (shared branch/type/prior-PR cores; aliased below)
 import parse  # noqa: E402
+import plan_shipped  # noqa: E402  (the shipped-phase records a relocated plan's detail lives in)
 import workspace  # noqa: E402
 from pipelib import process  # noqa: E402
 from pipelib.decisions import AMBIGUOUS, PLAN_MISSING, needs_decision  # noqa: E402
 from pipelib.envelope import EXIT_OK, EXIT_USAGE_ERROR, emit_needs_decision, emit_ok  # noqa: E402
+from pipelib.thread import load_thread  # noqa: E402
 
 # The implementation-plan marker (skills/planner/references/plan-schema.md;
 # docs/specs/resolver.md "Artifacts read") — the plan comment is always the first marker_prefix
@@ -894,6 +896,25 @@ def build_facts(issue_number, repo, root=".", scratch_dir=None, refresh=False, c
     else:
         tracker, tracker_notices = _absent_tracker(), []
 
+    # 4c) Shipped-phase records (skills/_shared/plan-shipped-phases.md) — continue mode only: a
+    #     record is keyed to the PR its phase shipped on, and fresh mode has no PR. A revise moves a
+    #     shipped phase's `## Changes` / `## Data model / schema impact` / `## Test plan` entries
+    #     into its record, so the plan comment alone no longer carries the whole locked plan.
+    shipped_text = ""
+    plan_facts["shipped"] = {"present": False, "pr": None, "entries": []}
+    if mode == MODE_CONTINUE and plan_present and prior_pr_fact and prior_pr_fact.get("number"):
+        records, shipped_decision = plan_shipped.collect(
+            load_thread(issue_envelope), prior_pr_fact["number"]
+        )
+        if _forward_decision(shipped_decision):
+            return None
+        plan_facts["shipped"] = {
+            "present": records["present"],
+            "pr": records["pr"],
+            "entries": records["entries"],
+        }
+        shipped_text = records["text"]
+
     # 5) DoD facts (parse.parse_dod_bullets, pure core) — over the ISSUE body (the resolver
     #    projects ticks onto the issue's own DoD, distinct from prep_evaluator's per-closing-issue
     #    keying since the resolver has exactly one target issue, not a PR's closing-issue set).
@@ -1137,6 +1158,11 @@ def build_facts(issue_number, repo, root=".", scratch_dir=None, refresh=False, c
     # 10) Distiller input bundle — staged PATHS only (never above-threshold inline bytes; this
     #     step's DoD box). Reuses gh_gather's own spill files rather than re-writing copies.
     distiller_bundle = _build_distiller_bundle(issue_envelope, scratch_dir, issue_number)
+    distiller_bundle["plan_shipped_path"] = None
+    if shipped_text:
+        target = Path(scratch_dir) / ("issue-%s-plan-shipped.md" % issue_number)
+        target.write_text(shipped_text, encoding="utf-8")
+        distiller_bundle["plan_shipped_path"] = str(target)
 
     suggested_playbook = _suggested_playbook(issue_type, comment_only, epic_branch_for_audit)
 

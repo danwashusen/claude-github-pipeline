@@ -80,6 +80,16 @@ failure mode; do not flag a plan for leaving line-level mechanics to the impleme
   orchestrator flagged it as edited since the plan comment was posted). A non-epic target's
   sub-issues are its **deliverable slices** by construction. Empty when the target has none.
   Dimension 7's slice-coverage check reads this and never fetches the panel itself.
+- **Shipped-phase records**: `<<shipped_paths>>` — absolute paths to the staged
+  `<!-- implementation-plan-shipped:v1:phase:<N> -->` records this revise relocated, one per line, or
+  empty. Each holds one shipped phase's `## Changes (file-level)` / `## Data model / schema impact` /
+  `## Test plan` entries, moved **verbatim** out of the plan (`plan_shipped.py check` already proved the
+  move); the plan's pointer bullet (`- Phases … shipped on #<PR>: entries in the shipped-phase records.`)
+  stands in for them. The plan is the main body **plus** these records: Dimensions 3 and 10 count their
+  entries as the plan's. They are **read-only** — shipped code already exists, so never raise a finding
+  against a record's entries, never ask to edit one, and skip them in Dimension 2 entirely (a symbol a
+  record introduces exists because it shipped, and its `path:line` anchors moved as they stood).
+  Records posted by an earlier revise are not staged here; the thread fetch shows them, read-only too.
 
 ## Dimensions
 
@@ -95,7 +105,8 @@ Run only the dimensions named in the inputs.
    change (cite both the plan claim and the doc section).
 
 2. **Codebase coherence.** For every path, type, symbol, method, signature, identifier, or behaviour the
-   plan names as **existing** (in `## Changes`, `## Architecture decisions`, `[precedent: …]`), verify it
+   plan names as **existing** (in `## Changes`, `## Architecture decisions`, `[precedent: …]` — never a
+   shipped-phase record's entries, per Inputs), verify it
    in the workspace: `grep -rn "<symbol>" <<grounding_workspace>>/<src-dir>`; `ls
    <<grounding_workspace>>/<path>`; `Read <<grounding_workspace>>/<path>`. A `[precedent: path:line]`
    citation pointing at a symbol/line that doesn't exist is a BLOCKER — it's the plan's evidence base. For

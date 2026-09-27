@@ -14,7 +14,8 @@ dir is `facts.scratch`. Your workspace is `facts.workspace.path`.
 
 Dispatch the **state-distiller** `Explore` sub-agent per
 [`../references/state-distiller-prompt.md`](../references/state-distiller-prompt.md), substituting the
-`distiller_bundle` staged paths (`issue_body_path`, `thread_path`, `plan_marker_path`), `facts.target`
+`distiller_bundle` staged paths (`issue_body_path`, `thread_path`, `plan_marker_path`, `plan_shipped_path` —
+`(absent)` when null), `facts.target`
 labels, and `facts.audit_ref` as the informational integration-target name. It reads only the issue's
 own text (never code), and returns `## Current state` + `## Effective plan` + `## Classification`, or a
 typed exception (`THREAD_SUPERSEDED_PLAN` / `PHASES_MALFORMED` / `AMBIGUOUS`). Print `## Current state`
@@ -83,7 +84,9 @@ reason** (record `Audit override: <reason>` for the PR body's `## Audit override
 
 **Plan gate.** `facts.plan.present` says whether a `<!-- implementation-plan:v1 -->` plan exists.
 - Plan present → consume it: implement its **locked decisions** (`## Architecture decisions`,
-  `## Changes`, `## Data model / schema impact`, `## Test plan`), do not re-derive the approach. If the
+  `## Changes`, `## Data model / schema impact`, `## Test plan` — a shipped phase's entries may live in its
+  shipped-phase record, `facts.plan.shipped`, per [`../../_shared/plan-shipped-phases.md`](../../_shared/plan-shipped-phases.md)),
+  do not re-derive the approach. If the
   fitness audit's dimension 7 flagged plan-vs-code drift, or the distiller raised
   `THREAD_SUPERSEDED_PLAN`, re-route to the planner in revise mode rather than patching around
   staleness. A `## Plan` link (`Implements the plan on #<N>: <plan-comment-url>`) goes in the PR body.

@@ -222,6 +222,7 @@ import doc_catalogue  # noqa: E402  (the consuming repo's declared grounding doc
 import gh_gather  # noqa: E402
 import gh_pr_gather  # noqa: E402
 import oq_tracker  # noqa: E402
+import plan_shipped  # noqa: E402  (the shipped-phase records: read model + to_relocate)
 import parse  # noqa: E402  (the prior plan's `## Phases` parse for the sub-issue diff — best-effort,
 # see step 4.5; also keeps `prep_planner.parse` resolving for tests/test_prep_planner.py's direct
 # `prep_planner.parse.parse_oq_links(...)` call, per the S14-promotion's "tests unmodified" bar.
@@ -239,6 +240,7 @@ from pipelib.decisions import (  # noqa: E402
 from pipelib.envelope import EXIT_OK, EXIT_USAGE_ERROR, emit_needs_decision, emit_ok  # noqa: E402
 from pipelib.limits import BODY_CHAR_LIMIT  # noqa: E402
 from pipelib.spill import spill_bytes  # noqa: E402
+from pipelib.thread import load_thread  # noqa: E402
 
 import delivery_log  # noqa: E402  (in-process composition, not a subprocess chain)
 
@@ -949,16 +951,8 @@ _parse_phase_tracker = parse.parse_phase_tracker
 # ---------------------------------------------------------------------------
 
 
-def _load_thread(envelope):
-    """Parse `envelope`'s `thread` field (inline text or path-mode file) back into the list of
-    normalized comment dicts `gh_gather.run` produced. Never re-fetches."""
-    if envelope.get("thread_mode") == "path":
-        text = Path(envelope["thread_path"]).read_text(encoding="utf-8")
-    else:
-        text = envelope.get("thread")
-    if not text:
-        return []
-    return json.loads(text)
+# The thread read-back lives in `pipelib.thread` (three preps scan threads; one home).
+_load_thread = load_thread
 
 
 def _marker_comment_id(comment):
@@ -1014,6 +1008,46 @@ def _stage_comment_body(comment, scratch_dir, filename):
     section it is."""
     body = (comment.get("body") or "") if comment is not None else ""
     return spill_bytes(body.encode("utf-8"), "body", scratch_dir, filename=filename)
+
+
+def _read_shipped_records(thread_list, revise_facts, plan_body, scratch_dir, issue_number):
+    """``facts.plan.shipped`` — the shipped-phase records for the open PR, resolved by
+    ``plan_shipped.collect``, plus ``to_relocate``: the ticked code-shipping phases with no record
+    yet, which is exactly what this revise moves (skills/_shared/plan-shipped-phases.md). With no
+    open PR nothing has shipped, so there is nothing to read or relocate.
+
+    Returns ``(facts, decision)``. A duplicated record is ``MARKER_AMBIGUOUS``, forwarded: an unknown
+    shape for a shipped phase's entries is what a revise must not re-author around.
+    """
+    open_pr = (revise_facts or {}).get("open_pr")
+    if not open_pr:
+        return {"present": False, "pr": None, "entries": [], "to_relocate": []}, None
+    records, decision = plan_shipped.collect(thread_list, open_pr["number"])
+    try:
+        prior_phases = parse.parse_phases(plan_body) if plan_body else None
+    except parse._PhasesMalformed:  # noqa: SLF001 — best-effort, as the slices diff reads it
+        prior_phases = None
+    facts = {
+        "present": records["present"],
+        "pr": records["pr"],
+        "entries": records["entries"],
+        "other_pr_entries": records["other_pr_entries"],
+        "unkeyed": records["unkeyed"],
+        "to_relocate": plan_shipped.to_relocate(
+            prior_phases, revise_facts.get("phase_tracker"), records["phases"]
+        ),
+    }
+    if records["present"]:
+        facts.update(
+            spill_bytes(
+                records["text"].encode("utf-8"),
+                "body",
+                scratch_dir,
+                force_path=True,
+                filename="issue-%s-plan-shipped.md" % issue_number,
+            )
+        )
+    return facts, decision
 
 
 def _read_delivery_log(thread_list, scratch_dir, epic_number):
@@ -1429,6 +1463,14 @@ def build_facts(issue_number, repo, root=".", scratch_dir=None, refresh=False, c
         plan_facts["body_mode"] = issue_envelope.get("marker_comment_mode")
         if issue_envelope.get("marker_comment_mode") == "path":
             plan_facts["body_path"] = issue_envelope.get("marker_comment_path")
+        elif plan_body is not None:
+            # Staged even when small enough to ride inline: a revise's `plan_shipped.py check` takes
+            # the prior plan as a PATH, and a named source beats the model improvising one from
+            # `sections.marker_comment_body` (skills/_shared/plan-shipped-phases.md).
+            target = Path(scratch_dir) / ("issue-%s-marker.md" % issue_number)
+            target.parent.mkdir(parents=True, exist_ok=True)
+            target.write_text(plan_body, encoding="utf-8")
+            plan_facts["body_path"] = str(target)
         # #38: how close the LIVE plan already is to the platform's per-body cap, knowable before
         # the session invests in grounding and drafting. Both units, because the cap is measured in
         # CHARACTERS while the write receipts report bytes — forwarding gh_gather's
@@ -1817,6 +1859,12 @@ def build_facts(issue_number, repo, root=".", scratch_dir=None, refresh=False, c
         if _forward_decision(revise_decision, notices=notices):
             return None
         _merge_notices(notices, revise_notices)
+        shipped_facts, shipped_decision = _read_shipped_records(
+            thread_list, revise_facts, plan_body, scratch_dir, issue_number
+        )
+        if _forward_decision(shipped_decision, notices=notices):
+            return None
+        plan_facts["shipped"] = shipped_facts
 
     suggested_playbook = _suggested_playbook(issue_type, mode, parent_epic_open)
     vector = {"type": issue_type, "mode": mode, "plan_ref_row": plan_ref_row}

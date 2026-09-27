@@ -17,9 +17,10 @@ artifact and no package manager. The "source" is:
   open-question-links / phases), the twelve `prep_*.py`
   state-assembly scripts (including `prep_workspace_open.py` / `prep_workspace_close.py`, whose
   prep IS the tool's action), the `oq_tracker.py` and `doc_catalogue.py` helpers the preps compose
-  (the open-question tracker search; the consuming repo's declared grounding docs), and
+  (the open-question tracker search; the consuming repo's declared grounding docs), `plan_shipped.py`
+  (the shipped-phase records' read model + the planner's `check` staging gate), and
   `scripts/pipelib/` (envelope, spill, decision codes, platform limits, hashing, the locked-down subprocess
-  runner, the hook runner).
+  runner, the hook runner, the thread read-back).
 - **An offline test harness** — `tests/` (stdlib `unittest`, a fixture-replaying `gh` shim, a git
   sandbox); `python3 tests/run.py` is the one command.
 - **Shared contracts** — `skills/_shared/*.md`.
@@ -257,6 +258,14 @@ per [architecture.md §7](docs/architecture.md)'s mapping table).
   "child of #N" answer routes the handoff to a slicer adoption run.
 - `parse.py` — `dod` / `oq-links` / `phases`: the three contract parsers, each with a malformed
   decision code (`DOD_MALFORMED`, `PHASES_MALFORMED`).
+- `plan_shipped.py` — the shipped-phase records (`skills/_shared/plan-shipped-phases.md`). Import
+  core `collect(thread, pr)` (a thread scan, keyed (PR, phase), duplicate → `MARKER_AMBIGUOUS`) +
+  `to_relocate` (ticked code-shipping phases with no record — the revise's move list, a prep fact),
+  composed by prep_planner / prep_resolver / prep_evaluator; CLI `check <prior> <main> [<record>…]`,
+  which reports `main.headroom_chars` and whether every relocated entry is a verbatim, pointer-replaced
+  move. Always `ok` — findings are the planner's to fix, no decision code. `prep_evaluator` also reads
+  the closing issue's plan through it (`facts.plans`); before this, nothing gave the evaluator the plan
+  its "Plan adherence" step checks.
 
 Every executor exposes a **pure, non-emitting core** — `build_*(...) -> (payload, notices,
 decision | None)` — with `main()` as a thin emit wrapper. A prep calls those cores directly and
@@ -346,6 +355,19 @@ now the same rule everything else follows rather than an exception.
   shared read model is `scripts/delivery_log.py`, composed by both preps so the writer's view and
   the reader's cannot drift. It is *separate* from the verified `<!-- implementation-plan:v1 -->`
   epic plan precisely because it changes on every merge while the plan stays immutable.
+- `plan-shipped-phases.md` — the shipped-phase record contract, the #41 split applied to a story or
+  single-issue plan. Such a plan only grows (each revise adds a phase) and cannot retire a shipped
+  phase the way an epic retires a merged story, because a shipped phase is pushed but not yet
+  evaluated and the evaluator judges the **whole** PR against `## Changes` / `## Data model / schema
+  impact` / `## Test plan`. So on every revise each ticked code-shipping phase's entries in those three
+  sections move **verbatim** into its own `<!-- implementation-plan-shipped:v1:phase:<N> -->` comment,
+  keyed (PR, phase), with a pointer bullet left in each section. `## Phases` and every decision section
+  never move (the tracker join and the resolver's verbatim Plan-settled citations need them), nor does
+  an entry an unshipped phase still builds on. Records are immutable (editing one is HARD), posted
+  **before** the main plan's `edit-comment`, and go inert with no delete when a Start-fresh closes
+  their PR. The **planner** writes them (`skills/planner/references/shipped-phase-relocation.md`); the
+  **resolver** (distiller bundle) and **evaluator** (`facts.plans`) read them. A separate marker
+  family, so no plan `startswith` lookup matches one.
 - `open-question-detection.md` — how to **find** an open question in any project doc (the
   `<!-- drafter-open-question-markers -->` config-block hint + heuristic cues; OQs aren't
   centralized) and **match** it to a tracker issue (search before filing, `Read` to confirm).
@@ -410,7 +432,8 @@ the *consuming* repo provides — not by plugin config:
   recomputing the slug, per the #102 orphaned-commits incident); the resolver/evaluator classify
   Epic vs story PRs by this pattern.
 - **Durable marker comments** the skills post and read: `<!-- implementation-plan:v1 -->`
-  (planner), `<!-- issue-research:v1 -->` (researcher), `<!-- epic-delivery-log:v2:story:<N> -->`
+  (planner), `<!-- implementation-plan-shipped:v1:phase:<N> -->` (planner-written on revise,
+  resolver/evaluator-read), `<!-- issue-research:v1 -->` (researcher), `<!-- epic-delivery-log:v2:story:<N> -->`
   (evaluator-written, planner-read; `:v1` is its read-forever legacy tier), `<!-- pr-evaluator-health-cache:v1 -->` (evaluator, keyed on
   head SHA), `<!-- question-decision:v1 -->` (question-resolver-written; the tiered status read's
   Tier 1, so a marked question reads as resolved deterministically), and the

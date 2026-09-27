@@ -1092,6 +1092,30 @@ class SingleInvocationBudgetTests(PrepResolverSandboxTestCase):
         self.assertEqual(len(manifest), 5)
 
 
+class ShippedRecordFactsTests(PrepResolverSandboxTestCase):
+    """`facts.plan.shipped` + `distiller_bundle.plan_shipped_path`
+    (skills/_shared/plan-shipped-phases.md). Once a revise has relocated a shipped phase's entries,
+    the plan comment alone is no longer the whole locked plan, so the distiller gets the records for
+    the continuing PR — and never another PR's, which a Start-fresh left behind.
+    """
+
+    ambient_default = "100-fix-the-widget"
+
+    def test_continue_mode_stages_this_prs_records_for_the_distiller(self):
+        envelope = self._envelope(fixture_case="prep_resolver_plan_shipped")
+        shipped = envelope["plan"]["shipped"]
+        self.assertEqual(shipped["pr"], 55)
+        self.assertEqual([e["phase"] for e in shipped["entries"]], [1])
+        text = Path(envelope["distiller_bundle"]["plan_shipped_path"]).read_text(encoding="utf-8")
+        self.assertIn(":phase:1 -->", text)
+        self.assertNotIn(":phase:2 -->", text)
+
+    def test_no_records_leaves_the_bundle_path_empty(self):
+        envelope = self._envelope(fixture_case="prep_resolver_tracker_clean")
+        self.assertFalse(envelope["plan"]["shipped"]["present"])
+        self.assertIsNone(envelope["distiller_bundle"]["plan_shipped_path"])
+
+
 class TrackerFactTests(PrepResolverSandboxTestCase):
     """#46: `facts.tracker` — the PR's `## Phase tracker` row set diffed against the plan's phases.
 

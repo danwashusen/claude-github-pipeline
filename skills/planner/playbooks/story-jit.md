@@ -47,6 +47,10 @@ this route supplies:
   before redrafting `## Phases`: it owns the SOFT/HARD classification, the DoD-annotation
   reconciliation, and the renumbering rule for work landing between a shipped phase and an unshipped
   one (the shipped prefix keeps its numbers). Keyed on the fact — no prior plan, nothing to reconcile.
+- **Relocate shipped phases.** Whenever `facts.plan.shipped.to_relocate` is non-empty, run
+  [`../references/shipped-phase-relocation.md`](../references/shipped-phase-relocation.md) after the
+  reconciliation above — every revise, not only a large one. It owns the record-first persist order, so
+  the records post before the persist bullet's `edit-comment`.
 - **Schema sections.** The standard single-issue schema plus the `**Epic:** #<epic-#> — <epic title>`
   backlink as the **first line after** the marker (never above it) and a `## Epic contract` section —
   `Delivers` (matching the epic's `## Story contracts`) and `Consumes` (each already in the delivery
