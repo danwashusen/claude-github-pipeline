@@ -11,15 +11,16 @@ Run after the revise's "Promote before you drop" step, on the redrafted body in 
 1. **Attribute entries to each phase in `to_relocate`.** For each phase, read its shipped diff in `facts.grounding.path` (the open PR head), using the tracker's `(commit <sha>)` as the phase's commit map — `git log --reverse` then `git diff <start>..<end>`, the same extraction the evaluator uses. Then, for each entry in `## Changes (file-level)`, `## Data model / schema impact` and `## Test plan`, decide whether it belongs to that phase. This is judgment: an entry belongs to the phase whose diff delivered it.
 2. **Apply the shared-entry rule.** An entry any **unshipped** phase still builds on stays in the main plan, whole. Never split an entry to separate its shipped half. When in doubt, keep it: a kept entry costs characters, a wrongly moved one removes a locked decision from a phase the resolver still has to build.
 3. **Stage one record per phase** to `<facts.scratch>/shipped-phase-<N>.md`, in the contract's format: marker line, the `**Shipped on:** #<facts.plan.shipped.pr> · Phase <N> — <title>` line, then the moved entries **byte-for-byte** as they stood in the prior plan under their original headings. A `## Test plan` sub-bullet carries its kind line (`- Unit:`) with it. Omit a heading the phase moved nothing from.
-4. **Replace them in the main plan** with the pointer bullet, one per section that lost entries: `- Phases <list> shipped on #<PR>: entries in the shipped-phase records.` The list names every phase with a record on this PR, including records posted by an earlier revise. On a later revise, rewrite the existing pointer rather than adding a second one.
+4. **Replace them in the main plan** with the pointer bullet, one per section that lost entries: `- Phases <list> shipped on #<PR>: entries in the shipped-phase records.` The list names every phase with a record on this PR, including records posted by an earlier revise. On a later revise, rewrite the existing pointer rather than adding a second one — and change only its phase list: every reader finds records through this exact text.
 5. **Check it:**
 
    ```bash
    ${CLAUDE_PLUGIN_ROOT}/scripts/plan_shipped.py check "<facts.plan.body_path>" "<facts.scratch>/plan.md" \
-     "<facts.scratch>/shipped-phase-<N>.md" ... --pr <facts.plan.shipped.pr>
+     "<facts.scratch>/shipped-phase-<N>.md" ... --pr <facts.plan.shipped.pr> \
+     --restored "<facts.plan.shipped.restore.body_path>"
    ```
 
-   Omit `--pr` only when there is no open PR (`facts.plan.shipped.pr` null). It always exits `ok`. Read `findings` and fix every entry before continuing: `not_verbatim` (a moved entry was reworded — restore the prior text), `still_in_main` (copied, not moved), `missing_pointer`, `foreign_pointer` (a pointer naming a PR other than the open one — see "Restoring a closed PR's records"), `malformed_head`, `unexpected_sections`. `main.headroom_chars` is the size fact; never count characters yourself. Re-run after every restage, alongside the spine's `parse.py phases`.
+   Omit `--pr` only when there is no open PR (`facts.plan.shipped.pr` null), and `--restored` when there is no `facts.plan.shipped.restore`. It always exits `ok`. Read `findings` and fix every entry before continuing: `not_verbatim` (a moved entry was reworded — restore the prior text), `still_in_main` (copied, not moved), `missing_pointer`, `foreign_pointer` (a pointer naming a PR other than the open one — see "Restoring a closed PR's records"), `malformed_pointer` (a pointer reworded away from the template — rewrite it exactly), `not_restored` (a restored entry dropped or reworded), `malformed_head`, `unexpected_sections`. `main.headroom_chars` is the size fact; never count characters yourself. Re-run after every restage, alongside the spine's `parse.py phases`.
 6. **Review.** Pass the staged record paths to the plan reviewer as `<<shipped_paths>>` (spine S7), alongside the main plan. The records are read-only to the reviewer: a finding can never ask to edit one.
 
 ## Restoring a closed PR's records
@@ -30,7 +31,7 @@ Run after the revise's "Promote before you drop" step, on the redrafted body in 
 2. Delete the pointer bullets naming that PR. The phases they covered are no longer shipped on any open PR; a later revise relocates them again once they ship on the new one.
 3. Leave the closed PR's record comments alone. They are inert, and immutable like every record.
 
-Run `check` without `--pr` when there is no open PR: `foreign_pointer` must come back empty.
+Pass the restore path as `--restored` and run `check` without `--pr` when there is no open PR: `foreign_pointer` and `not_restored` must both come back empty. When a PR is open and some restored phases also ship on it in this same revise, relocate them again as usual — `--restored` makes the restored text a valid verbatim source.
 
 ## Persist order
 

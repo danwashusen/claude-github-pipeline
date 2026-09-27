@@ -23,7 +23,7 @@ Two surfaces:
   to fix before persisting (the ``PHASES_MALFORMED`` posture) — ``ok`` always, no decision code.
 
 Usage:
-    plan_shipped.py check <prior-plan> <new-main> [<record> ...] [--pr <open-PR>]
+    plan_shipped.py check <prior-plan> <new-main> [<record> ...] [--pr <open-PR>] [--restored <record> ...]
 """
 
 import argparse
@@ -36,6 +36,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 from pipelib.decisions import MARKER_AMBIGUOUS, needs_decision  # noqa: E402
 from pipelib.envelope import EXIT_OK, EXIT_USAGE_ERROR, emit_ok  # noqa: E402
 from pipelib.limits import BODY_CHAR_LIMIT  # noqa: E402
+from pipelib.spill import spill_bytes  # noqa: E402
 
 # A distinct marker FAMILY, deliberately: `<!-- implementation-plan-shipped:` never starts with
 # `<!-- implementation-plan:v1 -->`, so every existing plan lookup (gh_gather's `startswith`, the
@@ -57,9 +58,16 @@ _SHIPPED_ON_RE = re.compile(
 
 # The main plan's pointer bullet — it stands in for the moved entries and keeps an emptied heading
 # parseable. No `@<sha>` in it: `_extract_plan_sha` is an unanchored first-match search.
+#
+# Two grammars, deliberately. The pointer is how every reader finds a CLOSED PR's records, so READING
+# is lenient: any bullet saying "shipped on #<N>" and naming shipped-phase records counts, and a
+# pointer reworded on some later revise still resolves. WRITING is strict: `check` reports a pointer
+# that matches the lenient form but not the template as `malformed_pointer`, so drift is caught at the
+# staging gate instead of silently hiding records later.
 _POINTER_RE = re.compile(
     r"^- Phases? [0-9][0-9, –-]*(?: and [0-9]+)? shipped on #(\d+): entries in the shipped-phase records\.$"
 )
+_POINTER_LOOSE_RE = re.compile(r"^\s*[-*]\s.*\bshipped on #(\d+)\b.*shipped-phase record", re.IGNORECASE)
 
 # The three sections whose entries move. Everything else stays in the main plan.
 SECTIONS = (
@@ -93,41 +101,99 @@ def parse_head(body):
 
 
 def pointer_prs(plan_body):
-    """The distinct PR numbers the plan's pointer bullets name, sorted. A plan relocated on one PR
-    names exactly one; none means nothing was ever relocated."""
+    """The distinct PR numbers the plan's pointer bullets name, sorted — read with the lenient
+    grammar. A plan relocated on one PR names exactly one; none means nothing was ever relocated."""
     prs = set()
     for line in (plan_body or "").split("\n"):
-        match = _POINTER_RE.match(line.rstrip())
+        match = _POINTER_LOOSE_RE.match(line.rstrip())
         if match:
             prs.add(int(match.group(1)))
     return sorted(prs)
 
 
-def records_pr(plan_body, current_pr):
-    """Which PR's records a reader should read, and a note when that is not ``current_pr``.
+def read_prs(thread_list, prs):
+    """:func:`collect` merged across ``prs``. Returns ``(records, decision)``: ``records`` adds
+    ``prs`` and gives each entry its ``pr``; ``pr`` is set only when exactly one PR was read.
+    ``decision`` is the first ``MARKER_AMBIGUOUS`` any PR produced."""
+    merged = {
+        "present": False,
+        "pr": prs[0] if len(prs) == 1 else None,
+        "prs": list(prs),
+        "entries": [],
+        "phases": [],
+        "duplicated_phases": [],
+        # PR-agnostic: an unkeyed record has no PR, so every collect reports the same set.
+        "unkeyed": collect(thread_list, None)[0]["unkeyed"],
+        "text": "",
+    }
+    decision = None
+    texts = []
+    for pr in prs:
+        records, pr_decision = collect(thread_list, pr)
+        decision = decision or pr_decision
+        merged["entries"] += [dict(entry, pr=pr) for entry in records["entries"]]
+        merged["phases"] += records["phases"]
+        merged["duplicated_phases"] += records["duplicated_phases"]
+        if records["text"]:
+            texts.append(records["text"])
+    merged["present"] = bool(merged["entries"])
+    merged["text"] = "\n\n".join(texts)
+    merged["text_chars"] = len(merged["text"])
+    return merged, decision
 
-    The plan's pointer bullets are the authority: they name the PR whose records hold the entries the
-    plan no longer carries. That is normally the open PR, but not after the PR closed (a HARD
-    Start-fresh, a hand-closed PR): then the records are the ONLY copy of those entries, and reading
-    by open PR alone would silently drop them. Returns ``(pr, note)``; ``note`` is ``None`` when the
-    pointer and ``current_pr`` agree or the plan has no pointer.
+
+def read_pointed(thread_list, plan_body, current_pr):
+    """Every record a reader of this plan needs, and the notes a reader surfaces about them.
+
+    The plan's pointer bullets are the authority: they name the PR(s) whose records hold the entries
+    the plan no longer carries. That is normally the open PR, but not after it closed (a HARD
+    Start-fresh, a hand-closed PR) — then those records are the ONLY copy of their entries, so they
+    are read anyway. Every named PR is read, never one chosen among several: a half-restored plan
+    naming a closed PR and the open one needs both. With no pointer, ``current_pr``'s records are read.
+
+    Returns ``(records, notes, decision)`` — :func:`read_prs`'s records plus ``foreign_prs`` (the
+    PRs read that are not ``current_pr``).
     """
     named = pointer_prs(plan_body)
-    if not named:
-        return current_pr, None
-    if len(named) > 1:
-        return current_pr, (
-            "the plan's pointer bullets name more than one PR (%s); reading records for %s"
-            % (", ".join("#%d" % n for n in named), "#%s" % current_pr if current_pr else "none")
+    prs = named or ([int(current_pr)] if current_pr is not None else [])
+    records, decision = read_prs(thread_list, prs)
+    records["foreign_prs"] = [pr for pr in prs if current_pr is None or pr != int(current_pr)]
+
+    notes = []
+    if records["foreign_prs"]:
+        notes.append(
+            "the plan points at shipped-phase records on %s, not the %s — those records are the only "
+            "copy of their entries; a revise restores them into the plan (skills/_shared/"
+            "plan-shipped-phases.md)"
+            % (
+                ", ".join("#%d" % pr for pr in records["foreign_prs"]),
+                "open PR #%s" % current_pr if current_pr is not None else "open PR (there is none)",
+            )
         )
-    pointed = named[0]
-    if current_pr is not None and int(current_pr) == pointed:
-        return pointed, None
-    return pointed, (
-        "the plan points at shipped-phase records on #%d, which is not the %s — those records are the "
-        "only copy of their entries; a revise restores them into the plan (skills/_shared/"
-        "plan-shipped-phases.md)" % (pointed, "open PR #%s" % current_pr if current_pr else "open PR (none)")
-    )
+    if records["unkeyed"]:
+        notes.append(
+            "%d shipped-phase record(s) cannot be keyed (line 2 unreadable) — no reader sees their "
+            "entries" % len(records["unkeyed"])
+        )
+    return records, notes, decision
+
+
+def staged_fact(records, scratch_dir, filename):
+    """The one shape every prep's shipped-record fact takes: ``present``, ``pr`` (single PR or
+    ``None``), ``prs``, ``entries``, ``unkeyed``, and — when any record was read — the records' text
+    staged to ``body_path`` (always a path: it goes to ``check`` or a sub-agent)."""
+    fact = {
+        "present": records["present"],
+        "pr": records.get("pr"),
+        "prs": records.get("prs", [records["pr"]] if records.get("pr") is not None else []),
+        "entries": records["entries"],
+        "unkeyed": records["unkeyed"],
+    }
+    if records["present"]:
+        fact["body_path"] = spill_bytes(
+            records["text"].encode("utf-8"), "body", scratch_dir, force_path=True, filename=filename
+        )["body_path"]
+    return fact
 
 
 def comment_rest_id(comment):
@@ -288,10 +354,13 @@ def _is_parent(blocks, index):
     return index + 1 < len(blocks) and blocks[index + 1][0] > blocks[index][0]
 
 
-def check(prior_text, main_text, records, pr=None):
+def check(prior_text, main_text, records, pr=None, restored=()):
     """The staging facts for one revise. ``records`` is ``[(path, text)]``; ``pr`` is the open PR the
     records belong to (``None`` when there is none — then every pointer in main is foreign, because
-    a plan with no open PR has nothing shipped to point at).
+    a plan with no open PR has nothing shipped to point at). ``restored`` is ``[(path, text)]`` — the
+    closed-PR records this revise put back into the plan: they are a verbatim source like the prior
+    plan (an entry restored and then relocated again in the same revise is still a move), and every
+    one of their entries must land somewhere (``not_restored``).
 
     Returns the payload dict. ``clean`` is true only when every finding list is empty and every body
     fits the cap.
@@ -306,8 +375,11 @@ def check(prior_text, main_text, records, pr=None):
         "still_in_main": [],
         "missing_pointer": [],
         "foreign_pointer": [],
+        "malformed_pointer": [],
+        "not_restored": [],
         "record_over_limit": [],
     }
+    restored_lines = [(path, text.split("\n")) for path, text in restored]
     record_facts = []
     moved_sections = set()
     record_prs = set()
@@ -338,6 +410,8 @@ def check(prior_text, main_text, records, pr=None):
                 continue
             moved_sections.add(key)
             prior_blocks = {body for _, body, _ in _blocks(_section_lines(prior_lines, pattern))}
+            for _, lines_r in restored_lines:
+                prior_blocks |= {body for _, body, _ in _blocks(_section_lines(lines_r, pattern))}
             main_blocks = {body for _, body, _ in _blocks(_section_lines(main_lines, pattern))}
             for index, (_, body, number) in enumerate(record_blocks):
                 units += 1
@@ -358,6 +432,26 @@ def check(prior_text, main_text, records, pr=None):
     for named in pointer_prs(main_text):
         if pr is None or named != int(pr):
             findings["foreign_pointer"].append(named)
+    for line in main_lines:
+        if _POINTER_LOOSE_RE.match(line.rstrip()) and not _POINTER_RE.match(line.rstrip()):
+            findings["malformed_pointer"].append(line.strip())
+
+    # Every restored entry must be back in the plan or moved on into a new record — a restore that
+    # drops or rewords one loses the only copy of it.
+    record_lines = [text.split("\n") for _, text in records]
+    for path, lines_r in restored_lines:
+        for key, pattern in SECTIONS:
+            restored_blocks = _blocks(_section_lines(lines_r, pattern))
+            if not restored_blocks:
+                continue
+            landed = {body for _, body, _ in _blocks(_section_lines(main_lines, pattern))}
+            for lines_n in record_lines:
+                landed |= {body for _, body, _ in _blocks(_section_lines(lines_n, pattern))}
+            for index, (_, body, _) in enumerate(restored_blocks):
+                if key == "test_plan" and _is_parent(restored_blocks, index):
+                    continue
+                if body not in landed:
+                    findings["not_restored"].append({"path": path, "section": key, "line": body[0]})
 
     main_chars = len(main_text)
     over_limit = main_chars > BODY_CHAR_LIMIT
@@ -390,6 +484,9 @@ def main(argv):
     p_check.add_argument("new_main")
     p_check.add_argument("records", nargs="*")
     p_check.add_argument("--pr", type=int, default=None, help="the open PR the records belong to")
+    p_check.add_argument(
+        "--restored", action="append", default=[], help="a closed-PR record this revise restored"
+    )
     if not argv:
         parser.print_usage(sys.stderr)
         sys.exit(EXIT_USAGE_ERROR)
@@ -402,6 +499,7 @@ def main(argv):
         _read_or_die(args.new_main),
         [(path, _read_or_die(path)) for path in args.records],
         pr=args.pr,
+        restored=[(path, _read_or_die(path)) for path in args.restored],
     )
     emit_ok(payload=payload)
     sys.exit(EXIT_OK)

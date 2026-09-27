@@ -259,11 +259,13 @@ per [architecture.md §7](docs/architecture.md)'s mapping table).
 - `parse.py` — `dod` / `oq-links` / `phases`: the three contract parsers, each with a malformed
   decision code (`DOD_MALFORMED`, `PHASES_MALFORMED`).
 - `plan_shipped.py` — the shipped-phase records (`skills/_shared/plan-shipped-phases.md`). Import
-  core `collect(thread, pr)` (a thread scan, keyed (PR, phase), duplicate → `MARKER_AMBIGUOUS`) +
-  `to_relocate` (ticked code-shipping phases with no record — the revise's move list, a prep fact),
+  core `collect(thread, pr)` (a thread scan, keyed (PR, phase), duplicate → `MARKER_AMBIGUOUS`),
+  `read_pointed` (every PR the plan's pointer bullets name — read leniently, so a reworded pointer
+  still finds a closed PR's records) + `to_relocate` (ticked code-shipping phases with no record — the
+  revise's move list, a prep fact),
   composed by prep_planner / prep_resolver / prep_evaluator; CLI `check <prior> <main> [<record>…]`,
-  which reports `main.headroom_chars` and whether every relocated entry is a verbatim, pointer-replaced
-  move. Always `ok` — findings are the planner's to fix, no decision code. `prep_evaluator` also
+  which reports `main.headroom_chars`, whether every relocated entry is a verbatim, pointer-replaced
+  move, and (`--restored`) whether every restored entry landed. Always `ok` — findings are the planner's to fix, no decision code. `prep_evaluator` also
   thread-scans the closing issue's plan itself (`facts.plans`) — before this, nothing gave the evaluator
   the plan its "Plan adherence" step checks — and degrades a duplicated plan or record to a notice,
   never a stop, as it does for the delivery log.
@@ -365,7 +367,7 @@ now the same rule everything else follows rather than an exception.
   keyed (PR, phase), with a pointer bullet left in each section. `## Phases` and every decision section
   never move (the tracker join and the resolver's verbatim Plan-settled citations need them), nor does
   an entry an unshipped phase still builds on. Records are immutable (editing one is HARD) and posted
-  **before** the main plan's `edit-comment`. Readers follow the PR the plan's pointer bullets name,
+  **before** the main plan's `edit-comment`. Readers follow every PR the plan's pointer bullets name,
   not only the open one: after a Start-fresh closes that PR its records are the only copy of their
   entries, so prep offers them as `facts.plan.shipped.restore` and the next revise puts them back —
   only then do they go inert (never deleted). The **planner** writes them (`skills/planner/references/shipped-phase-relocation.md`); the

@@ -103,7 +103,6 @@ import workspace  # noqa: E402
 from pipelib import process  # noqa: E402
 from pipelib.decisions import AMBIGUOUS, PLAN_MISSING, needs_decision  # noqa: E402
 from pipelib.envelope import EXIT_OK, EXIT_USAGE_ERROR, emit_needs_decision, emit_ok  # noqa: E402
-from pipelib.spill import spill_bytes  # noqa: E402
 from pipelib.thread import load_thread  # noqa: E402
 
 # The implementation-plan marker (skills/planner/references/plan-schema.md;
@@ -904,35 +903,17 @@ def build_facts(issue_number, repo, root=".", scratch_dir=None, refresh=False, c
     #     a fresh run after that PR closed the records are the ONLY copy of those entries, and reading
     #     by the continuing PR alone would drop them silently.
     shipped_attention = []
-    plan_facts["shipped"] = {"present": False, "pr": None, "entries": [], "unkeyed": []}
+    plan_facts["shipped"] = {"present": False, "pr": None, "prs": [], "entries": [], "unkeyed": []}
     if plan_present:
         current_pr = prior_pr_fact.get("number") if (mode == MODE_CONTINUE and prior_pr_fact) else None
-        records_pr, records_note = plan_shipped.records_pr(plan_body, current_pr)
-        if records_note is not None:
-            shipped_attention.append(records_note)
-        if records_pr is not None:
-            records, shipped_decision = plan_shipped.collect(load_thread(issue_envelope), records_pr)
-            if _forward_decision(shipped_decision):
-                return None
-            plan_facts["shipped"] = {
-                "present": records["present"],
-                "pr": records["pr"],
-                "entries": records["entries"],
-                "unkeyed": records["unkeyed"],
-            }
-            if records["present"]:
-                plan_facts["shipped"]["body_path"] = spill_bytes(
-                    records["text"].encode("utf-8"),
-                    "body",
-                    scratch_dir,
-                    force_path=True,
-                    filename="issue-%s-plan-shipped.md" % issue_number,
-                )["body_path"]
-            if records["unkeyed"]:
-                shipped_attention.append(
-                    "%d shipped-phase record(s) on #%s cannot be keyed (line 2 unreadable) — their "
-                    "entries are not in the plan the distiller reads" % (len(records["unkeyed"]), issue_number)
-                )
+        records, shipped_attention, shipped_decision = plan_shipped.read_pointed(
+            load_thread(issue_envelope), plan_body, current_pr
+        )
+        if _forward_decision(shipped_decision):
+            return None
+        plan_facts["shipped"] = plan_shipped.staged_fact(
+            records, scratch_dir, "issue-%s-plan-shipped.md" % issue_number
+        )
 
     # 5) DoD facts (parse.parse_dod_bullets, pure core) — over the ISSUE body (the resolver
     #    projects ticks onto the issue's own DoD, distinct from prep_evaluator's per-closing-issue

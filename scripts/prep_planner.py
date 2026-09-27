@@ -1010,65 +1010,43 @@ def _stage_comment_body(comment, scratch_dir, filename):
     return spill_bytes(body.encode("utf-8"), "body", scratch_dir, filename=filename)
 
 
-def _stage_records(records, scratch_dir, filename):
-    """The keys every reader's shipped-record fact carries: which PR, which phases, and the records'
-    text staged to one PATH (always — the reader passes it to `check` or a sub-agent)."""
-    facts = {
-        "pr": records["pr"],
-        "entries": records["entries"],
-        "unkeyed": records["unkeyed"],
-    }
-    if records["present"]:
-        facts["body_path"] = spill_bytes(
-            records["text"].encode("utf-8"), "body", scratch_dir, force_path=True, filename=filename
-        )["body_path"]
-    return facts
-
-
 def _read_shipped_records(thread_list, revise_facts, plan_body, prior_phases, scratch_dir, issue_number):
     """``facts.plan.shipped`` (skills/_shared/plan-shipped-phases.md). Returns ``(facts, notes,
-    decision)``.
+    decision)``. One shape whether or not a PR is open (`plan_shipped.staged_fact` plus
+    ``other_pr_entries`` / ``to_relocate``), so no reader keys on which branch built it.
 
     Two record sets, because a record is keyed to the PR its phase shipped on:
 
     - the **open PR's** records, plus ``to_relocate`` — its ticked code-shipping phases with no
-      record yet, which is exactly what this revise moves;
-    - ``restore`` — records on the PR the plan's pointer bullets name, when that is **not** the open
-      PR (a HARD Start-fresh or a hand-closed PR). Those records are the only copy of entries the
-      plan no longer carries, and no reader for a new PR will look at them, so the revise puts them
-      back into the plan. Omitted when there is nothing to restore.
+      record yet, which is exactly what this revise moves (empty with no open PR);
+    - ``restore`` — records on every PR the plan's pointer bullets name that is **not** the open PR
+      (a HARD Start-fresh, a hand-closed PR). Those records are the only copy of entries the plan no
+      longer carries, and no reader for a new PR follows them, so the revise puts them back.
+      Omitted when there is nothing to restore.
 
     A duplicated record in either set is ``MARKER_AMBIGUOUS``, forwarded: an unknown shape for a
     shipped phase's entries is what a revise must not re-author around.
     """
     open_pr = (revise_facts or {}).get("open_pr")
     open_number = open_pr["number"] if open_pr else None
-    notes = []
-    facts = {"present": False, "pr": open_number, "entries": [], "unkeyed": [], "to_relocate": []}
-    if open_number is not None:
-        records, decision = plan_shipped.collect(thread_list, open_number)
-        if decision is not None:
-            return None, notes, decision
-        facts = _stage_records(records, scratch_dir, "issue-%s-plan-shipped.md" % issue_number)
-        facts["present"] = records["present"]
-        facts["other_pr_entries"] = records["other_pr_entries"]
-        facts["to_relocate"] = plan_shipped.to_relocate(
-            prior_phases, revise_facts.get("phase_tracker"), records["phases"]
-        )
-    pointed, note = plan_shipped.records_pr(plan_body, open_number)
-    if note is not None:
-        notes.append(note)
-    if pointed is not None and pointed != open_number:
-        stale, decision = plan_shipped.collect(thread_list, pointed)
-        if decision is not None:
-            return None, notes, decision
-        facts["restore"] = _stage_records(
-            stale, scratch_dir, "issue-%s-plan-shipped-pr%s.md" % (issue_number, pointed)
-        )
-    if facts.get("unkeyed"):
-        notes.append(
-            "%d shipped-phase record(s) on #%s cannot be keyed (line 2 unreadable) — no reader sees "
-            "their entries" % (len(facts["unkeyed"]), issue_number)
+    records, decision = plan_shipped.collect(thread_list, open_number)
+    if decision is not None:
+        return None, [], decision
+    records["prs"] = [open_number] if open_number is not None else []
+    facts = plan_shipped.staged_fact(records, scratch_dir, "issue-%s-plan-shipped.md" % issue_number)
+    facts["other_pr_entries"] = records["other_pr_entries"]
+    facts["to_relocate"] = (
+        plan_shipped.to_relocate(prior_phases, revise_facts.get("phase_tracker"), records["phases"])
+        if open_number is not None
+        else []
+    )
+    pointed, notes, decision = plan_shipped.read_pointed(thread_list, plan_body, open_number)
+    if decision is not None:
+        return None, notes, decision
+    if pointed["foreign_prs"]:
+        foreign, _ = plan_shipped.read_prs(thread_list, pointed["foreign_prs"])
+        facts["restore"] = plan_shipped.staged_fact(
+            foreign, scratch_dir, "issue-%s-plan-shipped-restore.md" % issue_number
         )
     return facts, notes, None
 

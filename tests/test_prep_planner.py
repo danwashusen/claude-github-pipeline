@@ -875,12 +875,18 @@ class ShippedRecordFactsTests(PrepPlannerSandboxTestCase):
         restore = envelope["plan"]["shipped"]["restore"]
         self.assertEqual(restore["pr"], 40)
         self.assertEqual([e["phase"] for e in restore["entries"]], [1])
-        self.assertIn("shipped on #40", Path(restore["body_path"]).read_text(encoding="utf-8").replace(
-            "**Shipped on:** #40", "shipped on #40"))
+        body = Path(restore["body_path"]).read_text(encoding="utf-8")
+        self.assertIn("**Shipped on:** #40", body)
+        self.assertIn("`gadget.rb` — fixes the gadget", body)
         self.assertTrue(any("only copy" in line for line in envelope["attention"]))
 
     def test_no_restore_when_the_pointer_names_the_open_pr_or_nothing(self):
         self.assertNotIn("restore", self._shipped_envelope()["plan"]["shipped"])
+
+    def test_one_fact_shape_with_or_without_an_open_pr(self):
+        shipped = self._shipped_envelope()["plan"]["shipped"]
+        for key in ("present", "pr", "prs", "entries", "unkeyed", "other_pr_entries", "to_relocate"):
+            self.assertIn(key, shipped)
 
     def test_an_inline_prior_plan_is_still_staged_to_a_path(self):
         plan = self._shipped_envelope()["plan"]

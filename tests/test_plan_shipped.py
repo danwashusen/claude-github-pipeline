@@ -110,33 +110,59 @@ class MarkerTests(unittest.TestCase):
         self.assertEqual(plan_shipped.parse_head(body), (3, None, None))
 
 
-class PointerPrTests(unittest.TestCase):
+class PointerTests(unittest.TestCase):
     """The plan's pointer bullets name whose records hold its missing entries — the authority a
-    reader uses once the PR that shipped them has closed."""
+    reader uses once the PR that shipped them has closed. Read leniently (a reworded pointer must not
+    hide a closed PR's records), written strictly (`check`'s `malformed_pointer`)."""
 
     POINTED = "## Changes (file-level)\n- Phases 1–6 shipped on #903: entries in the shipped-phase records.\n"
+
+    def thread(self):
+        return [
+            comment(11, record(1, pr=903)),
+            comment(12, record(2, pr=903)),
+            comment(13, record(4, pr=950)),
+        ]
 
     def test_pointer_prs(self):
         self.assertEqual(plan_shipped.pointer_prs(self.POINTED), [903])
         self.assertEqual(plan_shipped.pointer_prs(PRIOR), [])
 
+    def test_a_reworded_pointer_still_resolves(self):
+        body = "- Phases 1–3 shipped on #40; see the shipped-phase records for them.\n"
+        self.assertEqual(plan_shipped.pointer_prs(body), [40])
+
     def test_agreeing_pointer_reads_the_open_pr_quietly(self):
-        self.assertEqual(plan_shipped.records_pr(self.POINTED, 903), (903, None))
+        records, notes, decision = plan_shipped.read_pointed(self.thread(), self.POINTED, 903)
+        self.assertEqual(records["phases"], [1, 2])
+        self.assertEqual(records["foreign_prs"], [])
+        self.assertEqual((notes, decision), ([], None))
 
     def test_a_closed_prs_records_are_still_read(self):
-        pr, note = plan_shipped.records_pr(self.POINTED, None)
-        self.assertEqual(pr, 903)
-        self.assertIn("only copy", note)
-        self.assertEqual(plan_shipped.records_pr(self.POINTED, 950)[0], 903)
+        records, notes, _ = plan_shipped.read_pointed(self.thread(), self.POINTED, None)
+        self.assertEqual(records["pr"], 903)
+        self.assertEqual(records["foreign_prs"], [903])
+        self.assertIn("only copy", notes[0])
 
     def test_no_pointer_falls_back_to_the_open_pr(self):
-        self.assertEqual(plan_shipped.records_pr(PRIOR, 950), (950, None))
+        records, notes, _ = plan_shipped.read_pointed(self.thread(), PRIOR, 950)
+        self.assertEqual(records["phases"], [4])
+        self.assertEqual(notes, [])
 
-    def test_two_pointed_prs_fall_back_with_a_note(self):
-        body = self.POINTED + self.POINTED.replace("#903", "#904")
-        pr, note = plan_shipped.records_pr(body, 950)
-        self.assertEqual(pr, 950)
-        self.assertIn("more than one PR", note)
+    def test_every_pointed_pr_is_read(self):
+        # A half-restored plan naming a closed PR and the open one needs both, never one of them.
+        body = self.POINTED + self.POINTED.replace("#903", "#950")
+        records, notes, _ = plan_shipped.read_pointed(self.thread(), body, 950)
+        self.assertEqual(sorted((e["pr"], e["phase"]) for e in records["entries"]), [(903, 1), (903, 2), (950, 4)])
+        self.assertIsNone(records["pr"])
+        self.assertEqual(records["foreign_prs"], [903])
+        self.assertIn("#903", notes[0])
+
+    def test_unkeyed_records_are_noted_even_with_no_open_pr(self):
+        thread = self.thread() + [comment(14, record(5).replace("**Shipped on:**", "Shipped:"))]
+        records, notes, _ = plan_shipped.read_pointed(thread, self.POINTED, None)
+        self.assertEqual(records["unkeyed"][0]["comment_id"], 14)
+        self.assertTrue(any("cannot be keyed" in note for note in notes))
 
 
 class CollectTests(unittest.TestCase):
@@ -289,6 +315,27 @@ class CheckTests(unittest.TestCase):
         self.assertEqual(
             plan_shipped.check(PRIOR, main, [("r1.md", rec)], pr=950)["findings"]["foreign_pointer"], [903]
         )
+
+    def test_a_drifted_pointer_is_malformed(self):
+        main, rec = self.good()
+        main = main.replace(": entries in the shipped-phase records.", "; see the shipped-phase records.", 1)
+        payload = plan_shipped.check(PRIOR, main, [("r1.md", rec)], pr=903)
+        self.assertEqual(len(payload["findings"]["malformed_pointer"]), 1)
+
+    def test_restored_entries_are_a_verbatim_source(self):
+        # Restored from a closed PR's record and relocated again in the same revise: still a move.
+        restored = record(1, pr=800, changes=("- `a.rb` — adds A", "  continuing the A entry"))
+        prior = PRIOR.replace("- `a.rb` — adds A\n  continuing the A entry\n", "")
+        main, rec = self.good()
+        payload = plan_shipped.check(prior, main, [("r1.md", rec)], pr=903, restored=[("old.md", restored)])
+        self.assertEqual(payload["findings"]["not_verbatim"], [])
+        self.assertEqual(payload["findings"]["not_restored"], [])
+
+    def test_a_dropped_restored_entry_is_not_restored(self):
+        restored = record(1, pr=800, changes=("- `z.rb` — adds Z",))
+        main, rec = self.good()
+        payload = plan_shipped.check(PRIOR, main, [("r1.md", rec)], pr=903, restored=[("old.md", restored)])
+        self.assertEqual(payload["findings"]["not_restored"][0]["line"], "- `z.rb` — adds Z")
 
     def test_no_records_reports_size_only(self):
         payload = plan_shipped.check(PRIOR, PRIOR, [])

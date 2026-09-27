@@ -705,6 +705,7 @@ class ShippedPhaseRecordTests(unittest.TestCase):
         text = (REFERENCES_DIR / "shipped-phase-relocation.md").read_text(encoding="utf-8")
         self.assertIn("${CLAUDE_PLUGIN_ROOT}/scripts/plan_shipped.py check", text)
         self.assertIn("--pr <facts.plan.shipped.pr>", text)
+        self.assertIn('--restored "<facts.plan.shipped.restore.body_path>"', text)
 
     def test_a_closed_prs_records_are_restored(self):
         # After a Start-fresh the closed PR's records are the only copy of their entries; both revise
@@ -719,7 +720,7 @@ class ShippedPhaseRecordTests(unittest.TestCase):
 
     def test_relocation_is_not_a_hard_edit_but_editing_a_record_is(self):
         flat = " ".join((REFERENCES_DIR / "revise-reconciliation.md").read_text(encoding="utf-8").split())
-        self.assertIn("**Relocation is not an edit.**", flat)
+        self.assertIn("**Relocation and restoration are not edits.**", flat)
         self.assertIn("A posted shipped-phase record", flat)
 
     def test_reviewer_treats_records_as_read_only(self):

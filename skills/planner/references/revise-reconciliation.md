@@ -41,11 +41,11 @@ still match the new wording?); DoD bullet wording adjustments without structural
 when ambiguous** — surprising a visible-progress regression on a SOFT misclassification is worse than
 offering "Start fresh" on a borderline-SOFT case the user can decline.
 
-**Relocation is not an edit.** An entry that `plan_shipped.py check` confirms moved verbatim into a
-shipped-phase record ([`shipped-phase-relocation.md`](shipped-phase-relocation.md)) left `## Changes` /
-`## Test plan` unchanged in substance, so it never counts toward the **Judgment call** rule's `## Changes`
-block text edits.
-Judge only the entries whose text changed.
+**Relocation and restoration are not edits.** An entry that `plan_shipped.py check` confirms moved
+verbatim into a shipped-phase record, or restored verbatim from a closed PR's record (no `not_verbatim`,
+no `not_restored` — [`shipped-phase-relocation.md`](shipped-phase-relocation.md)), left `## Changes` /
+`## Test plan` unchanged in substance: it only changed which comment carries it. It never counts toward
+the **Judgment call** rule's `## Changes` block text edits. Judge only the entries whose text changed.
 
 ### Inserting a phase after work has shipped
 

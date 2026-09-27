@@ -51,7 +51,7 @@ No other section appears in a record. The phase in line 2 must match the marker'
 
 **Key = (PR, phase).** A record belongs to the PR its phase shipped on. Shipped phases keep their numbers (`revise-reconciliation.md`'s renumbering rule), so the key is stable across revises. Two records with the same (PR, phase) are a genuine duplicate: `MARKER_AMBIGUOUS`.
 
-**The plan's pointer names whose records to read.** Every reader reads the records on the PR the plan's pointer bullets name — normally the open PR. When that PR has closed (a HARD Start-fresh, a hand-closed PR), its records are the **only** copy of the entries the pointer stands in for, so readers still read them and flag the mismatch, and the next revise restores them into the plan and drops the pointer. After that the closed PR's records are **inert**: nothing points at them, and nothing is ever deleted.
+**The plan's pointer names whose records to read.** Every reader reads the records on **every** PR the plan's pointer bullets name — normally just the open PR. When that PR has closed (a HARD Start-fresh, a hand-closed PR), its records are the **only** copy of the entries the pointer stands in for, so readers still read them and flag the mismatch, and the next revise restores them into the plan and drops the pointer. After that the closed PR's records are **inert**: nothing points at them, and nothing is ever deleted.
 
 **The pointer.** Each main-plan section that lost entries carries one bullet in their place:
 
@@ -59,7 +59,7 @@ No other section appears in a record. The phase in line 2 must match the marker'
 - Phases 1–6 shipped on #903: entries in the shipped-phase records.
 ```
 
-It keeps an emptied heading present (the heading is parsed, and "never pad" is what one line satisfies). It carries no `@<sha>`: the plan's footer SHA is read with an unanchored first-match search.
+It keeps an emptied heading present (the heading is parsed, and "never pad" is what one line satisfies). It carries no `@<sha>`: the plan's footer SHA is read with an unanchored first-match search. Readers match it leniently (any bullet saying `shipped on #<PR>` and naming shipped-phase records), so a reworded pointer still leads to its records; the writer keeps it exact, and `check` reports any drift as `malformed_pointer`.
 
 ## Invariants
 

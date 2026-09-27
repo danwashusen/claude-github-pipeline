@@ -422,35 +422,15 @@ def _build_plan_facts(issue_envelope, scratch_dir, issue_number, pr_number):
         ]
     plan_body = plans[0].get("body") or ""
     notices = []
-    records_pr, note = plan_shipped.records_pr(plan_body, pr_number)
-    if note is not None:
-        notices.append("closing issue #%s: %s" % (issue_number, note))
-    records, decision = plan_shipped.collect(thread, records_pr)
+    records, notes, decision = plan_shipped.read_pointed(thread, plan_body, pr_number)
+    notices += ["closing issue #%s: %s" % (issue_number, note) for note in notes]
     if decision is not None:
         notices.append(
             "%s — plan adherence cannot read phase(s) %s from a record; judge them against the "
             "plan comment alone and say so (skills/_shared/plan-shipped-phases.md)"
             % (decision["summary"], ", ".join(str(p) for p in records["duplicated_phases"]))
         )
-    if records["unkeyed"]:
-        notices.append(
-            "closing issue #%s: %d shipped-phase record(s) cannot be keyed (line 2 unreadable) — "
-            "their entries are missing from the plan adherence reads" % (issue_number, len(records["unkeyed"]))
-        )
-    shipped = {
-        "present": records["present"],
-        "pr": records["pr"],
-        "entries": records["entries"],
-        "unkeyed": records["unkeyed"],
-    }
-    if records["present"]:
-        shipped["body_path"] = spill_bytes(
-            records["text"].encode("utf-8"),
-            "body",
-            scratch_dir,
-            force_path=True,
-            filename="issue-%s-plan-shipped.md" % issue_number,
-        )["body_path"]
+    shipped = plan_shipped.staged_fact(records, scratch_dir, "issue-%s-plan-shipped.md" % issue_number)
     return {
         "present": True,
         "comment_id": plan_shipped.comment_rest_id(plans[0]),
