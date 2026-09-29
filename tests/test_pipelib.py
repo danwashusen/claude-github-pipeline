@@ -23,7 +23,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from pipelib import decisions, envelope, hashing, hooks, process, spill
+from pipelib import decisions, envelope, hashing, hooks, limits, process, spill
 from tests.support import envelope_asserts, shimenv
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
@@ -898,6 +898,38 @@ class ToyScriptEndToEndTests(unittest.TestCase):
     def test_toy_script_ok_mode_requires_scratch_arg(self):
         result = self._run_toy(["--mode", "ok"])
         self.assertNotEqual(result.returncode, 0)
+
+
+class BodySizeTests(unittest.TestCase):
+    """`limits.body_size` — the one size shape `parse.py phases` and `plan_shipped.py check` both
+    emit, so two readers of one staged body cannot disagree with each other or with the write gate."""
+
+    def test_a_body_at_the_limit_still_writes(self):
+        # `>`, matching gh_persist's gate: a body exactly AT the limit posts.
+        self.assertEqual(
+            limits.body_size("x" * limits.BODY_CHAR_LIMIT),
+            {
+                "chars": limits.BODY_CHAR_LIMIT,
+                "limit_chars": limits.BODY_CHAR_LIMIT,
+                "headroom_chars": 0,
+                "over_limit": False,
+            },
+        )
+
+    def test_one_character_over_is_over(self):
+        size = limits.body_size("x" * (limits.BODY_CHAR_LIMIT + 1))
+        self.assertTrue(size["over_limit"])
+        self.assertEqual(size["headroom_chars"], -1)
+
+    def test_characters_not_bytes(self):
+        # Two UTF-8 bytes each: a byte count would put this body at twice the limit.
+        size = limits.body_size("é" * limits.BODY_CHAR_LIMIT)
+        self.assertEqual(size["chars"], limits.BODY_CHAR_LIMIT)
+        self.assertFalse(size["over_limit"])
+
+    def test_a_crlf_is_two_characters(self):
+        # Counted as given — the callers read untranslated, as the gate does.
+        self.assertEqual(limits.body_size("a\r\nb")["chars"], 4)
 
 
 class PipelibIsSkillAgnosticTests(unittest.TestCase):

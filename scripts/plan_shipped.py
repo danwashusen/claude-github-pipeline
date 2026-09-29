@@ -35,7 +35,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 from pipelib.decisions import MARKER_AMBIGUOUS, needs_decision  # noqa: E402
 from pipelib.envelope import EXIT_OK, EXIT_USAGE_ERROR, emit_ok  # noqa: E402
-from pipelib.limits import BODY_CHAR_LIMIT  # noqa: E402
+from pipelib.limits import body_size  # noqa: E402
 from pipelib.spill import spill_bytes  # noqa: E402
 
 # A distinct marker FAMILY, deliberately: `<!-- implementation-plan-shipped:` never starts with
@@ -365,6 +365,15 @@ def check(prior_text, main_text, records, pr=None, restored=()):
     Returns the payload dict. ``clean`` is true only when every finding list is empty and every body
     fits the cap.
     """
+    # Sizes are measured on the texts as read — untranslated, so a `\r\n` counts as the two characters
+    # `gh_persist`'s gate counts (`_read_or_die`). Everything structural below runs on
+    # newline-normalized copies, so a CRLF prior (a body fetched from GitHub) and an LF staged main
+    # still compare as the same verbatim entries.
+    main_size = body_size(main_text)
+    record_sizes = [body_size(text) for _, text in records]
+    prior_text, main_text = _lf(prior_text), _lf(main_text)
+    records = [(path, _lf(text)) for path, text in records]
+    restored = [(path, _lf(text)) for path, text in restored]
     prior_lines = prior_text.split("\n")
     main_lines = main_text.split("\n")
 
@@ -384,15 +393,15 @@ def check(prior_text, main_text, records, pr=None, restored=()):
     moved_sections = set()
     record_prs = set()
 
-    for path, text in records:
+    for (path, text), size in zip(records, record_sizes):
         head = parse_head(text)
         phase, record_pr = (head[0], head[1]) if head else (None, None)
         if head is None or record_pr is None:
             findings["malformed_head"].append(path)
         else:
             record_prs.add(record_pr)
-        chars = len(text)
-        if chars > BODY_CHAR_LIMIT:
+        chars = size["chars"]
+        if size["over_limit"]:
             findings["record_over_limit"].append(path)
         lines = text.split("\n")
         known = [re.compile(r"^##\s+" + pattern + r"\s*(?:\(.*\))?\s*$", re.IGNORECASE) for _, pattern in SECTIONS]
@@ -453,24 +462,27 @@ def check(prior_text, main_text, records, pr=None, restored=()):
                 if body not in landed:
                     findings["not_restored"].append({"path": path, "section": key, "line": body[0]})
 
-    main_chars = len(main_text)
-    over_limit = main_chars > BODY_CHAR_LIMIT
+    over_limit = main_size["over_limit"]
     return {
-        "main": {
-            "chars": main_chars,
-            "limit_chars": BODY_CHAR_LIMIT,
-            "headroom_chars": BODY_CHAR_LIMIT - main_chars,
-            "over_limit": over_limit,
-        },
+        "main": main_size,
         "records": record_facts,
         "findings": findings,
         "clean": not over_limit and not any(findings.values()),
     }
 
 
+def _lf(text):
+    """``text`` with every line ending as ``\n`` — what universal-newline reading would have produced."""
+    return text.replace("\r\n", "\n").replace("\r", "\n")
+
+
 def _read_or_die(path_str):
+    # `newline=""`, not `read_text()`: universal newlines would count a `\r\n` as one character, so
+    # `main.chars` would undercount a CRLF body against `gh_persist`'s gate and disagree with
+    # `parse.py phases`' `size` for the same file. The prior plan arrives from GitHub, so CRLF is real.
     try:
-        return Path(path_str).read_text(encoding="utf-8")
+        with open(path_str, "r", encoding="utf-8", newline="") as fh:
+            return fh.read()
     except (OSError, UnicodeDecodeError) as exc:
         sys.stderr.write("plan_shipped: cannot read %s: %s\n" % (path_str, exc))
         sys.exit(EXIT_USAGE_ERROR)

@@ -29,7 +29,7 @@ SCRIPTS_DIR = REPO_ROOT / "scripts"
 sys.path.insert(0, str(SCRIPTS_DIR))
 
 import plan_shipped  # noqa: E402
-from pipelib.limits import BODY_CHAR_LIMIT  # noqa: E402
+from pipelib.limits import BODY_CHAR_LIMIT, body_size  # noqa: E402
 
 PLAN_MARKER = "<!-- implementation-plan:v1 -->"
 
@@ -359,6 +359,39 @@ class CheckTests(unittest.TestCase):
         envelope = json.loads(result.stdout)
         self.assertEqual(envelope["status"], "ok")
         self.assertTrue(envelope["clean"])
+
+    def test_main_is_the_shared_size_fact(self):
+        main, rec = self.good()
+        self.assertEqual(plan_shipped.check(PRIOR, main, [("r1.md", rec)], pr=903)["main"], body_size(main))
+
+    def test_a_crlf_plan_measures_the_same_in_both_size_reads(self):
+        # Both CLIs must read untranslated, or `check` counts `\r\n` as one character and
+        # undercounts against gh_persist's gate (which decodes the raw bytes) and against
+        # `parse.py phases` for the same file. The in-process test above cannot see this: both
+        # sides get the same string there. A CRLF prior (a body from GitHub) against an LF staged
+        # main must still relocate clean — normalization is for comparison only.
+        main, rec = self.good()
+        with tempfile.TemporaryDirectory() as tmp:
+            prior_path, main_path, rec_path = (Path(tmp) / n for n in ("prior.md", "plan.md", "r1.md"))
+            prior_path.write_bytes(PRIOR.replace("\n", "\r\n").encode("utf-8"))
+            main_path.write_bytes(main.replace("\n", "\r\n").encode("utf-8"))
+            rec_path.write_bytes(rec.encode("utf-8"))
+            shipped = subprocess.run(
+                [str(SCRIPTS_DIR / "plan_shipped.py"), "check", str(prior_path), str(main_path), str(rec_path), "--pr", "903"],
+                capture_output=True,
+                text=True,
+            )
+            parsed = subprocess.run(
+                [str(SCRIPTS_DIR / "parse.py"), "phases", str(main_path)], capture_output=True, text=True
+            )
+            gate_chars = len(main_path.read_bytes().decode("utf-8"))
+        self.assertEqual(shipped.returncode, 0, shipped.stderr)
+        self.assertEqual(parsed.returncode, 0, parsed.stderr)
+        check_env, phases_env = json.loads(shipped.stdout), json.loads(parsed.stdout)
+        self.assertGreater(gate_chars, len(main))
+        self.assertEqual(check_env["main"]["chars"], gate_chars)
+        self.assertEqual(phases_env["size"]["chars"], gate_chars)
+        self.assertTrue(check_env["clean"], check_env["findings"])
 
     def test_cli_usage_error_exits_2(self):
         result = subprocess.run(

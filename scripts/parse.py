@@ -66,6 +66,12 @@ Subcommands, each `<subcommand> <body-file>`:
         dedicated `## Story breakdown` / `## Integration strategy` sections"), so an absent
         section is not itself malformed; only a **present-but-broken** section is.
 
+        The `ok` payload also carries `size` — `pipelib.limits.body_size` of the whole body
+        (`chars`, `limit_chars`, `headroom_chars`, `over_limit`). It is the one non-grammar fact
+        here, carried because this is the call the planner already runs after every staging, fresh
+        draft included: a separate size call is one the session forgets, and then hand-counts.
+        Size is never a decision — an over-cap body is still `ok`, and fixing it is the planner's.
+
         A malformed `## Phases` section (a numbered entry missing a required structured key, an
         entry whose `kind:` value is outside the closed set, non-sequential/duplicate phase
         numbers, a `closes-dod`/`depends-on` value that isn't `(none)` and doesn't parse as the
@@ -93,6 +99,7 @@ from pipelib.envelope import (  # noqa: E402
     emit_needs_decision,
     emit_ok,
 )
+from pipelib.limits import body_size  # noqa: E402
 
 # ============================================================================================
 # Shared file-reading helper
@@ -1008,7 +1015,7 @@ def run_phases(args):
         emit_needs_decision(decision)
         sys.exit(EXIT_OK)
 
-    emit_ok(payload={"phases": phases})
+    emit_ok(payload={"phases": phases, "size": body_size(body_text)})
     sys.exit(EXIT_OK)
 
 
