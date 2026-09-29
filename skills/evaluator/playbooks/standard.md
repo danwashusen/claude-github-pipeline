@@ -29,7 +29,8 @@ it at merge time would create a second writer for one fact.
 
 File the **residual non-blocking** work this run surfaced but hasn't filed: a finding from your own
 review, a `## Follow-ups` *Procedural notes* item that warrants an issue, or a `## Polish` ledger entry
-S5.5 left as `file` (polish groups file as `incomplete-feature`). **De-duplicate** against
+S5.5 left as `file` (polish groups file as `incomplete-feature`, one issue per recorded `group:`, each
+briefed from its item and note — `polish-ledger.md` "Rules"). **De-duplicate** against
 issues already linked in the PR body's `## Follow-ups` *Filed* entries — never re-file those. (In-scope
 grounding violations never reach here — they soft-reject pre-merge and take the no-merge exit.)
 

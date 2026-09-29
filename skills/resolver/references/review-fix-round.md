@@ -167,8 +167,9 @@ nothing else does.
    card only if that check leaves it standing — the reviewer's persistence is evidence the citation may
    not answer it.
 4. **Fix plan, then fix.** Before the first edit, list the intended change of every item you will fix
-   (each defect-tier Addressable item, each evaluator `apply` item, and each polish item you fix on
-   merit) as text in this conversation — not in the PR reply, not in a file (on a hot seam, the
+   (each defect-tier Addressable item, each evaluator `apply` item — built to its note's `intent:` when
+   it carries one — and each polish item you fix on merit) as text in this conversation — not in the
+   PR reply, not in a file (on a hot seam, the
    fix-design dispatch below comes first and supplies those items' lines); one line per item:
    `<item> — <file>:<function> — siblings: <the sites sharing the concept, the class per the first
    fix-discipline bullet> — interacts with: <other items this round: same file, same function, or a fix

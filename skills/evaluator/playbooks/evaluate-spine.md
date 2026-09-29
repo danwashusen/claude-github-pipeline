@@ -222,15 +222,15 @@ evidently met by the accumulated diff (surface before approval).
 
 ## S5.5 — Polish ledger
 
-When `facts.polish` carries an `open` entry or an unfixed `apply` one (the resolver's unfixed polish —
+When `facts.polish` carries an `open`, unfixed `apply`, or `file` entry (the resolver's unfixed polish —
 [`../../_shared/polish-ledger.md`](../../_shared/polish-ledger.md)), adjudicate it per
 [`../references/polish-adjudication.md`](../references/polish-adjudication.md) **before S7's post
-timing** — under `auto` an APPROVE posts and merges at once. Re-check each entry at head and propose
-`apply` / `file` / `drop` with a reason (an unfixed `apply` from an earlier run is re-proposed, so the
-operator can release it). **Every** `apply` needs the operator's confirmation, on any
-verdict — the reference's `Polish` card, folded into the S7-gate card only under `ask` with an
-otherwise-APPROVE verdict — and a confirmed apply makes the verdict COMMENT, routed to
-`resolver continue` or, when applying it changes the plan, `planner revise`.
+timing** — under `auto` an APPROVE posts and merges at once. Re-check each entry's claim at head and
+propose `apply` / re-plan / `file` / `drop` with a reason (an unfixed `apply` from an earlier run is
+re-proposed, so the operator can release it). The operator decides **every** entry, on any verdict and
+under either policy — the reference's `Polish` card, one question per group, asked before the S7-gate
+card, which never carries the ledger. An answer that applies an entry makes the verdict COMMENT, routed
+to `resolver continue` or — on a re-plan, or when applying it changes the plan — `planner revise`.
 Write the final dispositions once — after any answer, before the review posts — with
 `gh_persist.py edit-pr-body`; `file` entries are filed after the merge by the playbook's residual step.
 
@@ -302,8 +302,7 @@ canonical state). The self-approval downgrade is the exception: it stays ready f
    + strategy recap. Fixed option set: **Approve** (for epic-integration, split into **Approve (merge
    commit)** / **Approve (squash)** to capture the mode); **Needs Revision**; **Reject**. The tool's
    "Other" covers "approve but merge manually later." The operator's decision is authoritative and may
-   override the verdict. When S5.5 left `apply` entries, the `question` lists them: **Needs Revision**
-   applies them and **Approve** drops them (S5.5's write follows this answer).
+   override the verdict. The polish ledger is already decided (S5.5); the card does not re-ask it.
 3. **Post the review as the operator's decision** — the deferred S7-post, with an operator-attribution
    header prepended per [`../references/review-comment.md`](../references/review-comment.md) (mirrors
    the `operator action <ISO-date>` form). Post with `--review-action approve` on Approve (or `comment`
@@ -311,8 +310,7 @@ canonical state). The self-approval downgrade is the exception: it stays ready f
 4. **Route:** Approve + mergeable → merge (S7-merge). Approve but `mergeStateStatus ∈ {DIRTY, BLOCKED}`
    or the "Other" deferred-merge → S7-skip (print the command, no merge). Needs Revision / Reject →
    flip to draft (`gh pr ready <PR> --undo`) and take the soft-reject path (no merge; review already
-   posted as `comment` in step 3) — routed to `planner revise` when the revision is a polish `apply`
-   that changes the plan (S5.5).
+   posted as `comment` in step 3).
 
 **S7-merge** (APPROVE, mergeable). Before invoking, confirm the PR is still `open` and mergeable (the
 `ask`/epic path already refreshed in S7-gate step 1; on the `auto` path, run `--refresh` now and stop

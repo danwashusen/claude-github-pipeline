@@ -390,8 +390,9 @@ class SliceBackstopTests(unittest.TestCase):
 
 
 class PolishAdjudicationTests(unittest.TestCase):
-    """S5.5: the evaluator decides the resolver's `## Polish` ledger (skills/_shared/polish-ledger.md)
-    — apply / file / drop — before S7's post timing, because `auto` merges on the APPROVE post."""
+    """S5.5: the evaluator proposes and the operator decides the resolver's `## Polish` ledger
+    (skills/_shared/polish-ledger.md) — apply / re-plan / file / drop — before S7's post timing,
+    because `auto` merges on the APPROVE post."""
 
     def setUp(self):
         self.spine = re.sub(r"\s+", " ", (PLAYBOOKS_DIR / "evaluate-spine.md").read_text(encoding="utf-8"))
@@ -404,33 +405,113 @@ class PolishAdjudicationTests(unittest.TestCase):
         self.assertLess(self.spine.index("## S5.5 — Polish ledger"), self.spine.index("**Post timing.**"))
         self.assertIn("an operator-confirmed polish `apply` (S5.5)", self.spine)
 
-    def test_an_apply_is_operator_confirmed_under_either_policy(self):
+    def test_the_operator_decides_every_entry_on_its_own_card(self):
+        # The #959 run (PR #1000): only `apply` got a card, and under `ask` it folded into the Approve
+        # card — 17 file/drop entries reached the operator as one line, with no way to re-plan one.
         self.assertIn('`header: "Polish"`', self.reference)
-        for option in ("**Apply**", "**File instead**", "**Merge anyway**"):
+        self.assertIn("the operator decides **every** entry §1 proposed a disposition for", self.reference)
+        self.assertIn("`file` and `drop` included, on any verdict and under either merge policy", self.reference)
+        for option in ("**File as follow-up**", "**Apply in this PR**", "**Re-plan**", "**Drop**"):
             self.assertIn(option, self.reference)
-        # Under `ask` it folds into the gate card rather than asking twice.
-        self.assertIn("fold it into the S7-gate `Approve PR` card", self.reference)
-        self.assertIn("**Needs Revision** applies them and **Approve** drops them", self.spine)
+            # The reference owns the labels; the spine and CLAUDE.md point at the card, never restate it.
+            self.assertNotIn(option, self.spine)
+        claude_md = (REPO_ROOT / "CLAUDE.md").read_text(encoding="utf-8")
+        self.assertNotIn("File / Apply in this PR / Re-plan / Drop", claude_md)
+        self.assertIn("the evaluator's proposal first and marked recommended", self.reference)
+        self.assertIn("one question per group — at most 4 questions per card", self.reference)
+        self.assertNotIn("ride along", self.reference)
+        self.assertNotIn("ride along", self.spine)
         # The operator's card is the only bound on polish round-trips — never a counter.
         self.assertIn("deliberately an operator decision, not a counter", self.reference)
+
+    def test_the_polish_card_precedes_the_approve_card_which_never_carries_the_ledger(self):
+        self.assertIn("Ask **before** the S7-gate `Approve PR` card and before any S7-post", self.reference)
+        self.assertIn("asked before the S7-gate card, which never carries the ledger", self.spine)
+        self.assertIn("The polish ledger is already decided (S5.5); the card does not re-ask it.", self.spine)
+        for retired in ("fold it into the S7-gate", "**Needs Revision** applies them", "**File instead**",
+                        "**Merge anyway**"):
+            self.assertNotIn(retired, self.reference)
+            self.assertNotIn(retired, self.spine)
 
     def test_an_unfixed_apply_is_rechecked_not_skipped(self):
         # A revision run can leave a confirmed `apply` unfixed (Accept current / abort); skipping it
         # on the next run would merge past the operator's decision.
-        self.assertIn("an `open` entry or an unfixed `apply` one", self.spine)
+        self.assertIn("an `open`, unfixed `apply`, or `file` entry", self.spine)
         # PR #62 review: forcing it with no card left no way to release it — it is re-proposed.
         self.assertIn("marked `confirmed on a prior run, left unfixed`", self.reference)
         self.assertNotIn("no new card", self.reference)
-        self.assertIn("**Merge anyway** on a re-proposed one writes `drop`", self.reference)
+        self.assertIn("the operator may re-apply, file it instead, or drop it", self.reference)
         self.assertIn("`resolved otherwise at <short-sha>`", self.reference)
 
-    def test_every_apply_is_confirmed_even_on_a_comment_verdict(self):
-        # An unfixed `apply` stays binding on the next run, so an `apply` the operator never saw
-        # would block the merge on the evaluator's say-so. No ride-along without a card.
-        self.assertIn("**Every** proposed `apply` — on any verdict", self.reference)
-        self.assertNotIn("ride along", self.reference)
-        self.assertNotIn("ride along", self.spine)
-        self.assertIn("**Every** `apply` needs the operator's confirmation, on any verdict", self.spine)
+    def test_the_recheck_verifies_the_claim_not_only_the_anchor(self):
+        # PR #1000's P1.1 described what the code already did; the filed follow-up carried it.
+        self.assertIn("check the entry's **claim**, not only that the anchor still exists", self.reference)
+        self.assertIn("`premise false at head — <why>`", self.reference)
+        self.assertIn("`narrowed: <what holds>`", self.reference)
+        self.assertIn("Re-check each entry's claim at head", self.spine)
+
+    def test_a_file_entry_is_rechecked_after_a_revision(self):
+        # A `file` answered on a verdict that sent the PR back is still unfiled; the revision may fix it.
+        self.assertIn("Next, every `file` entry — decided on an earlier run whose verdict sent the PR back",
+                      self.reference)
+        self.assertIn("still true at head → keep it, not asked again; gone → `drop` with "
+                      "`resolved otherwise at <short-sha>`", self.reference)
+        self.assertIn("carries no `open`, unfixed `apply`, or `file` entry", self.reference)
+
+    def test_file_entries_carry_their_group_and_narrowed_claim_to_filing(self):
+        # PR #65 review: the card's groups and a `narrowed:` claim must survive to the residual filing.
+        self.assertIn("the note carrying `group: <the question's group label>`", self.reference)
+        ledger = re.sub(r"\s+", " ", (REPO_ROOT / "skills" / "_shared" / "polish-ledger.md").read_text(encoding="utf-8"))
+        self.assertIn("a `narrowed:` note supersedes the item's claim", ledger)
+        self.assertIn("one issue per recorded `group:`", ledger)
+        self.assertIn("never regrouped at filing", ledger)
+        for name in ("standard.md", "story.md", "epic-integration.md"):
+            text = re.sub(r"\s+", " ", (PLAYBOOKS_DIR / name).read_text(encoding="utf-8"))
+            self.assertIn("one issue per recorded `group:`, each briefed from its item and note", text, name)
+
+    def test_apply_on_a_two_intent_entry_records_the_chosen_intent(self):
+        self.assertIn("record the answer as `intent: <chosen>` in the note", self.reference)
+        ledger = re.sub(r"\s+", " ", (REPO_ROOT / "skills" / "_shared" / "polish-ledger.md").read_text(encoding="utf-8"))
+        self.assertIn("**An `apply` note's `intent:` is the operator's decision.**", ledger)
+        fix_round = re.sub(
+            r"\s+", " ",
+            (REPO_ROOT / "skills" / "resolver" / "references" / "review-fix-round.md").read_text(encoding="utf-8"),
+        )
+        self.assertIn("each evaluator `apply` item — built to its note's `intent:` when it carries one", fix_round)
+
+    def test_an_already_comment_verdict_keeps_its_own_marker_and_route(self):
+        # The rewrite had dropped this: the evaluator's own soft-reject is not the operator's decision.
+        self.assertIn("On a verdict that is **already** COMMENT", self.reference)
+        self.assertIn("the review keeps the evaluator's header and the `COMMENT (soft-reject)` marker", self.reference)
+        self.assertIn("except that a **Re-plan** answer routes to `planner revise` as an S4-untick does", self.reference)
+        self.assertIn("When the polish answer is what turned an APPROVE into COMMENT", self.reference)
+        rubric = re.sub(
+            r"\s+", " ", (SKILL_DIR / "references" / "handoff-renderings.md").read_text(encoding="utf-8")
+        )
+        self.assertIn("`COMMENT (soft-reject)` when the evaluator's own verdict was already COMMENT", rubric)
+        self.assertIn("on a Re-plan answer about an intent the plan leaves open, the two intents the note names", rubric)
+
+    def test_an_in_scope_entry_needing_a_decision_is_proposed_as_re_plan(self):
+        self.assertIn("- **re-plan** — the entry sits inside this PR's scope", self.reference)
+        # The DoD is `facts.dod`; `facts.plans` carries only plan comments.
+        self.assertIn("or the issue's Definition of done in `facts.dod`", self.reference)
+        self.assertIn("plus `facts.plans` and `facts.dod`", self.reference)
+        self.assertIn("a list of required behaviour is a minimum, a definition is not", self.reference)
+        self.assertIn("two fixes fit, each serving a different intent", self.reference)
+        # Out of scope files instead, carrying the open question to the follow-up's planner.
+        self.assertIn("An entry **outside** this PR's scope that also needs an intent decided files too",
+                      self.reference)
+        # A Re-plan answer is recorded as `apply` (the closed disposition set is unchanged) and forces
+        # the planner route.
+        self.assertIn("**Re-plan** → `apply`, the note prefixed `operator: re-plan —`", self.reference)
+        self.assertIn("the operator answered **Re-plan** on any entry", self.reference)
+        ledger = re.sub(r"\s+", " ", (REPO_ROOT / "skills" / "_shared" / "polish-ledger.md").read_text(encoding="utf-8"))
+        self.assertIn("**The operator decides every disposition.**", ledger)
+        planner = re.sub(
+            r"\s+", " ",
+            (REPO_ROOT / "skills" / "planner" / "references" / "revise-reconciliation.md").read_text(encoding="utf-8"),
+        )
+        self.assertIn("for an entry whose note leads `operator: re-plan`, settle the decision the note names", planner)
 
     def test_an_untick_soft_reject_routes_straight_to_the_planner(self):
         rubric = re.sub(

@@ -448,8 +448,9 @@ axis on purpose, and it is **not** the convergence machinery 4.11.0 removed (`fi
 severity decay, one-shot suppression): that decided *when to cold-read*, and the cold read is still
 unconditional once per phase; this decides *when the loop ends*, replacing a fixed 2/4 cap that could not
 tell a round of nits from a round of new bugs. Unfixed polish goes to the PR's `## Polish` ledger
-(`skills/_shared/polish-ledger.md`), which the **evaluator** adjudicates before merge — its one PR-body
-write, through `gh_persist.py edit-pr-body`.
+(`skills/_shared/polish-ledger.md`), which the **evaluator** re-checks and proposes a disposition for, and
+the **operator** decides entry by entry before merge — the evaluator's one PR-body write, through
+`gh_persist.py edit-pr-body`.
 
 ## §9 Skill anatomy
 

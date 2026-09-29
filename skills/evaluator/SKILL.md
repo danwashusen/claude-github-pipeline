@@ -103,7 +103,7 @@ schema, omission rules, and closed-set state-marker vocabulary are owned by
 worked shapes are in [`references/handoff-renderings.md`](references/handoff-renderings.md). **Read
 that reference before composing the handoff** and match the run's outcome to its rubric (terminal
 merge, story-merged, epic-integration terminal, soft-reject re-route to the resolver or — for a polish
-`apply` that changes the plan — the planner, approve-but-skipped). Fill the
+`apply` that changes the plan, or a Re-plan answer — the planner, approve-but-skipped). Fill the
 snapshot from data in hand (the prep facts + this run's verdict / cache SHA / merge outcome); the
 `Next:` action and `Why:` line are judgment. Next-command skills are namespaced `/github-pipeline:<name>`
 (`planner`, `resolver`). A re-route does **not** invoke the prior skill via the `Skill` tool — the
