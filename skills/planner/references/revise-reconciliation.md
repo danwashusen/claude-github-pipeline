@@ -49,11 +49,14 @@ the **Judgment call** rule's `## Changes` block text edits. Judge only the entri
 
 ### A polish re-route: the ledger's `apply` items become a phase
 
-When the evaluator sends a PR here because a confirmed polish item would reverse a locked plan decision
-(`../../_shared/polish-ledger.md`; its handoff `Why:` quotes the item and the decision), the work is in
-the open PR's ledger: every entry in `facts.revise.open_pr.polish` marked `apply`. Revise the decision
-the item reverses (quote the ledger id in the new `## Architecture decisions` / `## UI decisions` bullet
-so the change is traceable), then place the work by the PR's shape:
+When the evaluator sends a PR here because a confirmed polish item would reverse a locked plan decision,
+or because the operator answered **Re-plan** on it (`../../_shared/polish-ledger.md`; its handoff `Why:`
+quotes the item and the decision, or the decision the plan leaves open), the work is in the open PR's
+ledger: every entry in `facts.revise.open_pr.polish` marked `apply`. Revise the decision the item
+reverses — or, for an entry whose note leads `operator: re-plan`, settle the decision the note names,
+asking the operator when it names two intents — and quote the ledger id in the new or changed
+`## Architecture decisions` / `## UI decisions` bullet so the change is traceable. Then place the work by
+the PR's shape:
 
 - **Multi-phase** (`facts.revise.phase_tracker` carries rows) — add **one new phase after the shipped
   ones** whose `ships` / `deliverable` cover those entries by id. Every phase has shipped by the time the

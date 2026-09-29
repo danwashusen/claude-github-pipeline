@@ -1,8 +1,8 @@
 # Polish ledger — shared contract
 
 The **polish ledger** is the `## Polish` section of a PR body: the review findings the resolver's loop
-classified as **polish** and chose not to fix, carried on the PR so the evaluator can decide what
-happens to them. This file is the single source of truth for its format and ownership. Three skills
+classified as **polish** and chose not to fix, carried on the PR so the evaluator can propose, and the operator
+decide, what happens to them. This file is the single source of truth for its format and ownership. Three skills
 cite it: `resolver` (writer of `open` / `applied`), `evaluator` (writer of `apply` / `file` / `drop`),
 and `planner` (reader, on a revise the evaluator routed to it).
 
@@ -12,8 +12,8 @@ The review loop used to force every ≤ ~20-line fix (the retired Cheap-fix-over
 only on a round that changed nothing. With a `high`-effort reviewer that finds something new and small
 on every run, that produced an unbounded tail of polish rounds that only a fixed iteration cap ended.
 The loop now exits on **defect** progress alone (`resolve-spine.md` S5.1), and polish is decided once,
-by the skill that sees the whole PR and did not write it: the evaluator. The resolver still fixes polish
-on merit; only what it leaves lands here.
+before merge: proposed by the skill that sees the whole PR and did not write it — the evaluator — and
+answered by the operator. The resolver still fixes polish on merit; only what it leaves lands here.
 
 ## Format
 
@@ -48,7 +48,7 @@ example's paths mix Python, Ruby and Swift on purpose — the format is stack-ne
 | Disposition | Written by | Meaning |
 |---|---|---|
 | `open` | resolver, at the phase's S5.2 push | recorded, undecided |
-| `apply` | evaluator | must be fixed in this PR before it merges |
+| `apply` | evaluator | must be fixed in this PR before it merges (a note led by `operator: re-plan` routes it through a planner revise first) |
 | `file` | evaluator | becomes a follow-up (grouped per `follow-up-filing.md`) after the merge |
 | `drop` | evaluator | not worth doing, or no longer applies at head; the note says which |
 | `applied (commit <sha>)` | resolver | an `apply` item fixed in a revision run |
@@ -74,10 +74,13 @@ The single list of what makes polish **actively bad to merge** — the evaluator
   between the two skills indefinitely.
 - **Items are never deleted.** A dispositioned item stays as the record of the decision; a stale one is
   `drop`ped with its reason, not removed.
-- **The operator bounds the cycle.** Every `apply` is operator-confirmed, on any verdict
-  (`evaluator/references/polish-adjudication.md`) — which is what lets the evaluator treat one left
-  unfixed as still binding — and that confirmation is the only limit on how often a PR goes back for
-  polish. It is deliberately not a counter.
+- **The operator decides every disposition.** The evaluator proposes `apply` / `file` / `drop` (or a
+  re-plan, recorded as `apply`) with a reason; the operator answers each entry on the evaluator's
+  `Polish` card, on any verdict and under either merge policy
+  (`evaluator/references/polish-adjudication.md`), and the ledger records the answer. That is what
+  lets the evaluator treat an `apply` left unfixed as still binding, and it bounds the cycle: the
+  operator's answer is the only limit on how often a PR goes back for polish. It is deliberately not a
+  counter.
 - **Writes go through the single write path.** The resolver stages the section into `pr.md` (fresh
   mode) or rewrites it with `gh_persist.py edit-pr-body` (continue mode); the evaluator rewrites
   dispositions with `gh_persist.py edit-pr-body`. A body over the cap surfaces the existing

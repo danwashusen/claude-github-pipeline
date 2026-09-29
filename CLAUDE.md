@@ -419,8 +419,10 @@ now the same rule everything else follows rather than an exception.
   tiered as `polish` and chose not to fix (the loop exits on **defect** progress alone, so polish never
   keeps it running). One line per item with a stable `P<phase>.<seq>` id and a closed disposition set
   (`open` / `applied` resolver-written; `apply` / `file` / `drop` evaluator-written). The **evaluator**
-  adjudicates it before merge (operator-confirmed `apply` → soft-reject to the resolver, or to the
-  planner when applying it reverses a locked decision); an `apply` item is Addressable for the resolver
+  proposes a disposition per entry before merge and the **operator** answers every one on a `Polish`
+  card (File / Apply in this PR / Re-plan / Drop — never folded into the approval card); an `apply` →
+  soft-reject to the resolver, or to the planner on a Re-plan or when applying it reverses a locked
+  decision; an `apply` item is Addressable for the resolver
   whatever its tier, which is what stops a polish ping-pong. `parse.py`'s `scan_polish` reads it for
   three preps; it never raises.
 
