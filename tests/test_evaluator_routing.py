@@ -414,6 +414,13 @@ class PolishAdjudicationTests(unittest.TestCase):
         # The operator's card is the only bound on polish round-trips — never a counter.
         self.assertIn("deliberately an operator decision, not a counter", self.reference)
 
+    def test_an_unfixed_apply_is_rechecked_not_skipped(self):
+        # A revision run can leave a confirmed `apply` unfixed (Accept current / abort); skipping it
+        # on the next run would merge past the operator's decision.
+        self.assertIn("an `open` entry or an unfixed `apply` one", self.spine)
+        self.assertIn("the verdict is COMMENT with **no new card**", self.reference)
+        self.assertIn("`resolved otherwise at <short-sha>`", self.reference)
+
     def test_dispositions_are_written_once_after_the_answer(self):
         self.assertIn("gh_persist.py edit-pr-body", self.reference)
         self.assertIn("the ledger never records a decision the operator overrode", self.reference)

@@ -7,11 +7,17 @@ procedure. It runs **after the S5 verdict and before S7's post timing**, because
 policy an APPROVE posts and merges immediately — a ledger decided after that point could not stop the
 merge.
 
-Input: `facts.polish` (prep's scan of the PR body). Nothing to do when it is absent or carries no `open`
-entry. A line in `facts.polish.unparsed` is rewritten into grammar by this step's write, keeping its
+Input: `facts.polish` (prep's scan of the PR body). Nothing to do when it is absent or carries neither an
+`open` entry nor an unfixed `apply` entry. A line in `facts.polish.unparsed` is rewritten into grammar by this step's write, keeping its
 text; never silently dropped.
 
 ## 1. Re-check each `open` entry at head
+
+First, every entry still marked `apply` — confirmed on an earlier run, but the revision run left it
+unfixed (an **Accept current** on its stall card, an abort). Still present at head → it stays `apply` and
+the verdict is COMMENT with **no new card**: it was already confirmed, and skipping it would silently
+drop the operator's decision. Gone at head → `drop` with the note `resolved otherwise at <short-sha>`.
+Then the `open` entries:
 
 Read the entry's anchor in the workspace (`facts.workspace.path`, at `pr.headRefOid`) and propose one
 disposition, with a one-line reason as the entry's note:

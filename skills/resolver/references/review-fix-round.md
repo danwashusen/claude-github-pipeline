@@ -49,8 +49,9 @@ This is **not** a sub-agent prompt: no placeholders, no JSON return, and every g
 - **Resume hint** — this loop may be picking up mid-flow (a prior resolver run was interrupted, or a human
   reviewer commented between invocations). On **iteration 1 only**, when a PR exists, before classifying, re-read the
   accumulated PR comments and reviews (`gh pr view --comments`, plus the `pulls/<N>/reviews` and
-  `pulls/<N>/comments` REST endpoints via `gh api`) and treat any human reviewer comment as additional
-  Addressable input alongside the verdict. Seed the refuted-items list from every `Settled (not
+  `pulls/<N>/comments` REST endpoints via `gh api`) and treat any reviewer comment or review — the evaluator's soft-reject review included, though a
+  pipeline-authored `COMMENTED` review carries no operator header — as additional Addressable input
+  alongside the verdict. Seed the refuted-items list from every `Settled (not
   addressed):` block in prior round replies (step 8) — each phase is a fresh session, and that block is
   the only carrier of what earlier phases refuted — **except** a `deferred-by-plan` entry whose phase is
   the current phase or a ticked tracker row: its deferral has come due, and the finding classifies

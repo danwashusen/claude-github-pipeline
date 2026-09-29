@@ -222,7 +222,7 @@ evidently met by the accumulated diff (surface before approval).
 
 ## S5.5 — Polish ledger
 
-When `facts.polish` carries an `open` entry (the resolver's unfixed polish —
+When `facts.polish` carries an `open` entry or an unfixed `apply` one (the resolver's unfixed polish —
 [`../../_shared/polish-ledger.md`](../../_shared/polish-ledger.md)), adjudicate it per
 [`../references/polish-adjudication.md`](../references/polish-adjudication.md) **before S7's post
 timing** — under `auto` an APPROVE posts and merges at once. Re-check each entry at head and propose

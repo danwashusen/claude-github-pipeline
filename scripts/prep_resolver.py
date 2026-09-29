@@ -694,7 +694,9 @@ def build_revision(mode, phases, tracker, prior_pr_fact, dod, polish, reviewed_a
       - `polish_apply` — a `## Polish` ledger entry the evaluator marked `apply`;
       - `review_at_head` — a non-approving review posted on the current head.
 
-    A convenience fact: no decision, no notice, never raises.
+    A convenience fact: no decision, no notice, never raises. An epic target's plan carries no
+    `## Phases`, so it takes the single-phase branch and can read `active: True` — harmless, since
+    `epic.md` never reads this fact (only the standard/story spine does).
     """
     if mode != MODE_CONTINUE or not prior_pr_fact or not prior_pr_fact.get("number"):
         return _absent_revision()

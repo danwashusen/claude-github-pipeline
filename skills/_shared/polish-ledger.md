@@ -30,7 +30,10 @@ example's paths mix Python, Ruby and Swift on purpose — the format is stack-ne
 ```
 
 - **`P<phase>.<seq>`** — the stable id: the phase whose loop recorded it, then a per-phase sequence.
-  Both skills cite items by id; an id is never reused or renumbered.
+  A revision run ships no phase, so it records under the last `kind: code-shipping` phase's number
+  (`1` on a single-phase issue). `<seq>` continues from the highest existing seq for that phase, so a
+  re-entered session never mints a duplicate. Both skills cite items by id; an id is never reused or
+  renumbered.
 - **Disposition** — one word from the closed set below; `applied` alone carries `(commit <sha>)`.
 - **Item** — the finding in one line, in the reviewer's terms. It must not contain ` — ` (the field
   separator).
