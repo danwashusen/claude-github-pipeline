@@ -146,11 +146,13 @@ Prep computed the classification in `facts.tracker.diff`:
 Write the reconciled tracker with the same `edit-pr-body` S6 uses, then select the cursor
 from it. Never select a phase by row title.
 
-**Revision run** (`facts.revision.active`): every `kind: code-shipping` phase is ticked — single-phase,
-the PR exists — so the cursor selects nothing; an evaluator soft-reject lands exactly here.
+**Revision run** (`facts.revision.active`): every phase is ticked — operator ones too; a pending
+operator/decision-only phase is the operator-phase handoff above, not a revision — or, single-phase, the
+PR exists, so the cursor selects nothing; an evaluator soft-reject lands exactly here.
 `dod_rejected` in `facts.revision.reasons` → re-route to `/github-pipeline:planner revise #<issue>`
-before any code: a vetoed DoD bullet clears only by re-planning (S6's sticky veto). Otherwise no phase
-ships and S6 projects nothing: S5.1 runs at the **final** scope, iteration 1's input being the resume
+before any code: a veto no re-plan has reassigned (`facts.dod_vetoes[].reassigned_to` null) clears only by
+re-planning. Otherwise no phase ships and S6 projects only vetoes reassigned to phase 1 (single-phase —
+this push is that phase shipping): S5.1 runs at the **final** scope, iteration 1's input being the resume
 re-read (the evaluator's review) plus every `facts.polish` entry marked `apply`. There is no
 nothing-to-do shortcut — `reasons` only shapes that input; a first round that settles with nothing
 committed pushes nothing and hands off forward, as an aborted or accepted loop's re-entry must.
@@ -268,7 +270,7 @@ push and the reply both wait for S5.2. "Approved" is **not** the exit condition 
      must not spin an unchanged PR; name the outstanding items with their follow-up URLs or plan
      citations in the PR body — fresh mode: the staged `pr.md`). A round whose only fixes were polish
      first gets one **light re-review**: `review` at `medium` over that round's own commits
-     (`<pre-round HEAD>...HEAD`) — a defect it finds re-enters this loop at step 2; polish it finds goes
+     (`<round sha>^...HEAD` — the round's single step-8 commit) — a defect it finds re-enters this loop at step 2; polish it finds goes
      to the ledger unfixed.
    - **Progress** — the count fell from the previous round's, **or** none of its defects is
      **loop-induced** (the reference's test: on lines an earlier defect fix changed, or a sibling-site
@@ -291,11 +293,12 @@ push and the reply both wait for S5.2. "Approved" is **not** the exit condition 
    round's defect count and the churn share as evidence for you to judge: **Continue** (free-text count
    N: the stall check pauses for the next N `review` runs, then applies again; at the ceiling, Continue
    raises it by N) / **Accept current** (exit S5.1 as committed; every still-open defect becomes a
-   `file-now` follow-up, open polish goes to the ledger, and the PR body records the override — and on
-   the final phase or a revision run, when the cold read has not run on this phase, it runs once before
-   S5.2 with its findings **recorded, not fixed** (defects as `file-now` follow-ups, polish to the
-   ledger) and its `Cold read:` record written, so the stalling round never ships unread; say so in the
-   option's description) / **Abort**, plus **Re-plan** when churn fired. The
+   follow-up, open polish goes to the ledger, and the PR body records the override — and on the final
+   phase or a revision run, when the cold read has not run on this phase, it runs once before S5.2 with
+   its findings **recorded, not fixed** (defects as follow-ups, polish to the ledger) and its `Cold
+   read:` record written, so the stalling round never ships unread; these follow-ups are filed right
+   after S5.2's push — in fresh mode once `create-pr` returns the URL, so each has its parent PR; say so
+   in the option's description) / **Abort**, plus **Re-plan** when churn fired. The
    same card renders, marked "ceiling reached", at the **emergency ceiling**: 8 `review` runs in S5.1,
    light re-reviews and the post-cold-read run included. It is a backstop against a progress call the
    model makes on its own work, not a budget — reaching it means the rule misfired.
@@ -378,7 +381,8 @@ body this run last wrote (S5.2's, which carries the ledger), never prep's sessio
 replaces the whole body, so a stale base silently drops the other's sections. Never tick a bullet the
 phase's `closes-dod` doesn't claim (the resolver projects the planner's declaration, it doesn't infer).
 Never re-tick a bullet the evaluator rejected (`… evaluator rejected: …` is a **sticky veto** —
-resolve it by re-planning or a new phase, never by silent re-ticking). Never mark a multi-phase PR
+resolve it by re-planning or a new phase, never by silent re-ticking); a veto a re-plan reassigned
+(`facts.dod_vetoes[].reassigned_to`) is projected when that phase ships, per the projection rule. Never mark a multi-phase PR
 ready except at the last-phase handoff or a revision run's end ("Return to the routed playbook"), and never add `Closes #N` in reaction to shipping a phase — both
 are the evaluator's judgment. Projection failure does **not** abort the run (re-entry reconciliation is
 the backstop); log it and continue.

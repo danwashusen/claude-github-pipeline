@@ -30,9 +30,10 @@ This is **not** a sub-agent prompt: no placeholders, no JSON return, and every g
   polish rename; it is not provenance tagging and never gates the cold read (4.11.0 removed that
   machinery deliberately).
 - **The addressed-items list** — one-line summaries of what you fixed in every prior round this run,
-  each round's entries carrying that round's **commit SHA** and whether it **fixed a defect**. You
-  append to it in step 9; the deadlock check in step 3 reads it, and so does the rubric's
-  **loop-induced** test.
+  plus the **defect-fix record**: each round's `Defect fixes:` line (step 8) — its commit SHA and the
+  `<path>:<symbol>` site of every **defect** it fixed. The record also carries a prior session's lines on
+  this phase, seeded by the resume hint, so a re-entered phase keeps its history. You append to it in
+  step 9; the deadlock check in step 3 reads it, and so does the rubric's **loop-induced** test.
 - **The refuted-items list** — one line per Plan-settled / Deferred-by-plan / Refuted item with its
   citation or evidence, from
   every prior round this run and (seeded on iteration 1, below) from earlier phases' rounds. Appended in
@@ -59,7 +60,8 @@ This is **not** a sub-agent prompt: no placeholders, no JSON return, and every g
   addressed):` block in prior round replies (step 8) — each phase is a fresh session, and that block is
   the only carrier of what earlier phases refuted — **except** a `deferred-by-plan` entry whose phase is
   the current phase or a ticked tracker row: its deferral has come due, and the finding classifies
-  fresh. Note any `Cold read: phase <N> @ <sha>` line for the current phase and whether its `<sha>` is
+  fresh. Seed the defect-fix record from every `Defect fixes: phase <N>` line for the current phase. Note
+  any `Cold read: phase <N> @ <sha>` line for the current phase and whether its `<sha>` is
   HEAD or an ancestor of it (S5.1 step 4 reads both).
 
 ## Classification rubric
@@ -84,17 +86,18 @@ audited:
   right rather than taste; otherwise leave it for the `## Polish` ledger, which the evaluator
   adjudicates. A refactor touching a guard, a raise, or any fail-closed path is never cheap — a
   polish refactor that dropped a non-nil assertion turned a raising path fail-open, unnoticed by
-  review. **Always fix in-loop, never ledger**, polish matching the evaluator's `apply` criteria — a
-  comment, doc or message that states something false; a misleading name on a public or cross-module
-  surface; wrong user-visible copy — whatever it costs: parked, it only buys a revision session later.
+  review. **Always fix in-loop, never ledger**, polish matching the evaluator's `apply` criteria
+  ([`../../_shared/polish-ledger.md`](../../_shared/polish-ledger.md) "Apply criteria"), whatever it
+  costs: parked, it only buys a revision session later.
   Polish never keeps the loop open. (This replaced the Cheap-fix-override bucket, which forced every
   ≤ ~20-line fix and fed an unbounded tail of polish rounds.)
 
-A defect is **loop-induced** when its cited site falls inside `git diff <sha>^..<sha>` of an earlier
-round's defect-fix commit (the addressed-items list carries both) — within the hunks its **defect**
-fixes changed, since one round commit also carries that round's polish — or when it is the same change
-at a sibling site of a class fix already addressed — that fix was incomplete. A file touched only by
-polish or comment edits never makes a finding loop-induced. S5.1 step 3 reads this; nothing else does.
+A defect is **loop-induced** when its cited site is a `<path>:<symbol>` an earlier round's defect fix
+changed — a site in the defect-fix record, this session's or a prior session's on this phase — or when
+it is the same change at a sibling site of a class fix already addressed (that fix was incomplete). The
+record names defect-fix sites only, because one round commit also carries that round's polish. A file
+touched only by polish or comment edits never makes a finding loop-induced. S5.1 step 3 reads this;
+nothing else does.
 - **Explicitly-deferred** — routed elsewhere with a concrete tracking target (filed as #M, depends on an
   un-landed sibling, a citable PRD/scope exclusion): file it as a follow-up.
 - **Decision-required** — an architectural / API-break / scope-change tradeoff the reviewer named candidate
@@ -227,11 +230,16 @@ polish or comment edits never makes a finding loop-induced. S5.1 step 3 reads th
    `(×<repeats>)` is omitted on a first occurrence; carrying it is what lets the count survive a phase
    boundary.
 
+   A round that fixed a defect also carries one `Defect fixes: phase <N> @ <sha> — <path>:<symbol>;
+   <path>:<symbol>` line: the round's commit and every defect fix's site, never a polish site. `<N>` is
+   the phase number (in a revision run, the last code phase's — the ledger id rule), so the next
+   session's resume re-read finds it.
+
    A round fed by the cold read (S5.1 step 4) also carries the `Cold read: phase <N> @ <sha>` line. A
    round that dispatched the fix design names the seam it re-derived in one line, so a reviewer sees why a
    fix reached past the finding's own site.
-9. **Record.** Append this round's one-line item summaries to the addressed-items list, with the
-   round's commit SHA and whether it fixed a defect, and its settled items, with citations or
+9. **Record.** Append this round's one-line item summaries to the addressed-items list, and its
+   `Defect fixes:` line to the defect-fix record, and its settled items, with citations or
    evidence, to the refuted-items list; keep its defect count for the next round's comparison. Hold the filed
    follow-up URLs for the PR body and the handoff. Carry any **procedural note** (something the next
    session should know that is not worth an issue) as a capture-not-file item per

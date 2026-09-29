@@ -14,18 +14,19 @@ text; never silently dropped.
 ## 1. Re-check each `open` entry at head
 
 First, every entry still marked `apply` — confirmed on an earlier run, but the revision run left it
-unfixed (an **Accept current** on its stall card, an abort). Still present at head → it stays `apply` and
-the verdict is COMMENT with **no new card**: it was already confirmed, and skipping it would silently
-drop the operator's decision. Gone at head → `drop` with the note `resolved otherwise at <short-sha>`.
-Then the `open` entries:
+unfixed (an **Accept current** on its stall card, an abort). Still present at head → propose `apply`
+again and put it back in front of the operator at §2, marked `confirmed on a prior run, left unfixed`:
+skipping it would silently drop the operator's decision, and forcing it with no card would leave no way
+to release it once priorities change — the operator may re-apply, file it instead, or merge anyway. Gone
+at head → `drop` with the note `resolved otherwise at <short-sha>`. Then the `open` entries:
 
 Read the entry's anchor in the workspace (`facts.workspace.path`, at `pr.headRefOid`) and propose one
 disposition, with a one-line reason as the entry's note:
 
-- **`apply`** — the polish would be **actively bad to merge**: a name on a public or cross-module
-  surface that misleads, a comment / doc / message that now states something false, user-visible copy
-  that is wrong. This bucket is meant to be near-empty: the resolver fixes polish matching these
-  criteria in-loop and never ledgers it (`review-fix-round.md` "Classification rubric"), so an
+- **`apply`** — the polish would be **actively bad to merge**: it meets
+  [`../../_shared/polish-ledger.md`](../../_shared/polish-ledger.md) "Apply criteria". This bucket is
+  meant to be near-empty: the resolver fixes polish matching those criteria in-loop and never ledgers it
+  (`review-fix-round.md` "Classification rubric"), so an
   `apply`-criteria entry here is a **resolver miss** — name it as one in the review body. A PR sent back
   for polish costs a whole resolver session; if most entries want `apply`, the resolver's defect/polish
   line is misplaced — say so rather than sending the PR round again and again.
@@ -40,9 +41,10 @@ on the evidence), and the entry is `drop`ped with the note `reclassified: defect
 
 ## 2. Confirm an `apply` with the operator
 
-**Every** proposed `apply` — on any verdict. An `apply` is binding: the resolver must fix it, and
-§1 treats one left unfixed as already confirmed, so an `apply` the operator never saw would block the
-merge on the evaluator's say-so alone.
+**Every** proposed `apply` — on any verdict, a re-proposed one from §1 included (the card says it was
+confirmed before and left unfixed). An `apply` is binding: the resolver must fix it, so an `apply` the
+operator never saw would block the merge on the evaluator's say-so alone. **Merge anyway** on a
+re-proposed one writes `drop` with `operator: merge anyway`, exactly as on a fresh one.
 
 - **Default** — ask now (`header: "Polish"`), listing each `apply` entry (id, item, reason):
   **Apply** / **File instead** / **Merge anyway**. On a verdict that is already COMMENT (the PR goes

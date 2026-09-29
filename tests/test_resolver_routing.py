@@ -1117,13 +1117,42 @@ class MainLoopReviewFixRoundTests(unittest.TestCase):
             self.flat,
         )
 
-    def test_loop_induced_reads_defect_fix_commits_not_the_file_level_seam(self):
+    def test_loop_induced_reads_the_durable_defect_fix_record(self):
+        # PR #62 review: the per-round record lived only in the conversation (a re-entered phase lost
+        # it) and was hunk-level with nothing marking which hunks were defect fixes.
         text = " ".join(self.reference.read_text(encoding="utf-8").split())
-        self.assertIn("A defect is **loop-induced** when its cited site falls inside `git diff <sha>^..<sha>`", text)
+        self.assertIn(
+            "A defect is **loop-induced** when its cited site is a `<path>:<symbol>` an earlier round's defect fix changed",
+            text,
+        )
         self.assertIn("A file touched only by polish or comment edits never makes a finding loop-induced", text)
-        self.assertIn("each round's entries carrying that round's **commit SHA** and whether it **fixed a defect**", text)
+        self.assertIn("`Defect fixes: phase <N> @ <sha> — <path>:<symbol>;", text)
+        self.assertIn("never a polish site", text)
+        # Carried across sessions through the loop comment, like the refuted-items list.
+        self.assertIn("Seed the defect-fix record from every `Defect fixes: phase <N>` line for the current phase", text)
+        self.assertNotIn("git diff <sha>^..<sha>", text)
         # The file-level hot seam stays the fix-design trigger, where erring wide is safe.
         self.assertIn("It scopes that dispatch only", text)
+
+    def test_the_revision_run_waits_for_a_pending_operator_phase_and_reads_vetoes(self):
+        for phrase in (
+            "every phase is ticked — operator ones too; a pending operator/decision-only phase is the operator-phase handoff above, not a revision",
+            "a veto no re-plan has reassigned (`facts.dod_vetoes[].reassigned_to` null) clears only by re-planning",
+            "S6 projects only vetoes reassigned to phase 1",
+            "a veto a re-plan reassigned (`facts.dod_vetoes[].reassigned_to`) is projected when that phase ships",
+        ):
+            self.assertIn(phrase, self.flat)
+        rule = " ".join((REFERENCES_DIR / "dod-projection-rule.md").read_text(encoding="utf-8").split())
+        self.assertIn("`…; re-plan reassigned to phase Y, awaiting its ship`", rule)
+        replan = " ".join(
+            (REPO_ROOT / "skills" / "planner" / "references" / "revise-reconciliation.md").read_text(encoding="utf-8").split()
+        )
+        self.assertIn("append the re-plan mark inside the same annotation", replan)
+
+    def test_accept_current_files_after_the_pr_exists_and_the_light_base_is_stated(self):
+        self.assertIn("in fresh mode once `create-pr` returns the URL, so each has its parent PR", self.flat)
+        self.assertIn("(`<round sha>^...HEAD` — the round's single step-8 commit)", self.flat)
+        self.assertNotIn("<pre-round HEAD>", self.flat)
 
     def test_evidence_refuted_findings_are_a_settled_bucket(self):
         text = " ".join(self.reference.read_text(encoding="utf-8").split())

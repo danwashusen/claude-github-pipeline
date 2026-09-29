@@ -1298,6 +1298,9 @@ class RevisionAndPolishFactTests(PrepResolverSandboxTestCase):
         facts = self._envelope(fixture_case="prep_resolver_revision_ready")
         self.assertEqual(facts["revision"]["reasons"], ["polish_apply"])
 
+    def test_dod_vetoes_is_published(self):
+        self.assertEqual(self._envelope(fixture_case="prep_resolver_revision")["dod_vetoes"], [])
+
     def test_an_unshipped_phase_is_not_a_revision(self):
         facts = self._envelope(fixture_case="prep_resolver_tracker_clean")
         self.assertEqual(facts["revision"], {"active": False, "reasons": []})
@@ -1317,12 +1320,18 @@ class RevisionUnitTests(unittest.TestCase):
     def _revision(self, phases, rows, dod=(), polish=None, at_head=False, mode=None):
         return prep_resolver.build_revision(
             mode or prep_resolver.MODE_CONTINUE, phases, {"rows": rows}, {"number": 5},
-            list(dod), polish or parse.absent_polish(), at_head,
+            prep_resolver.dod_vetoes(list(dod)), polish or parse.absent_polish(), at_head,
         )
 
-    def test_a_trailing_operator_phase_does_not_block_the_revision(self):
+    def test_a_pending_trailing_operator_phase_blocks_the_revision(self):
+        # The #957 shape: the last code phase shipped, the operator phase has not. That is S4's
+        # operator-phase handoff; a revision run would flip the PR ready before the operator's work.
         phases = [self._phase(1), self._phase(2, kind="operator")]
-        self.assertTrue(self._revision(phases, [self._row(1), self._row(2, checked=False)])["active"])
+        self.assertFalse(self._revision(phases, [self._row(1), self._row(2, checked=False)])["active"])
+
+    def test_every_phase_ticked_including_the_operator_one_is_a_revision(self):
+        phases = [self._phase(1), self._phase(2, kind="operator")]
+        self.assertTrue(self._revision(phases, [self._row(1), self._row(2)])["active"])
 
     def test_an_unticked_code_phase_is_not_a_revision(self):
         phases = [self._phase(1), self._phase(2)]
@@ -1335,8 +1344,34 @@ class RevisionUnitTests(unittest.TestCase):
         self.assertFalse(self._revision([self._phase(1)], [], mode="fresh")["active"])
 
     def test_a_vetoed_dod_bullet_is_reason_dod_rejected(self):
-        dod = [{"annotation": {"form": "resolver-claimed-evaluator-rejected"}}]
+        dod = [{"annotation": {"form": "resolver-claimed-evaluator-rejected", "reason": "no export"}}]
         self.assertEqual(self._revision([self._phase(1)], [], dod=dod)["reasons"], ["dod_rejected"])
+
+    def test_a_veto_a_re_plan_reassigned_is_not_a_reason(self):
+        # The single-phase loop: without the re-plan's mark, every continue run re-routed to the
+        # planner, and the planner preserves the veto verbatim — planner -> resolver -> planner.
+        dod = [{"annotation": {
+            "form": "resolver-claimed-evaluator-rejected",
+            "reason": "no export; re-plan reassigned to phase 1, awaiting its ship",
+        }}]
+        self.assertEqual(self._revision([self._phase(1)], [], dod=dod)["reasons"], [])
+
+    def test_dod_vetoes_reads_the_re_plan_mark_and_the_annotation_still_parses(self):
+        body = (
+            "## Definition of done\n"
+            "- [ ] Export works (resolver claimed phase 1, commit abc1234; evaluator rejected: no export;"
+            " re-plan reassigned to phase 1, awaiting its ship)\n"
+            "- [ ] Import works (resolver claimed phase 1, commit abc1234; evaluator rejected: no import)\n"
+            "- [x] Docs (closed by commit abc1234)\n"
+        )
+        vetoes = prep_resolver.dod_vetoes(parse.parse_dod_bullets(body))
+        self.assertEqual(
+            vetoes,
+            [
+                {"index": 1, "commit_sha": "abc1234", "reassigned_to": 1},
+                {"index": 2, "commit_sha": "abc1234", "reassigned_to": None},
+            ],
+        )
 
     def test_review_at_head_reads_reviews_not_latest_reviews(self):
         head = "f" * 40

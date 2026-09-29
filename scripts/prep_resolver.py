@@ -689,14 +689,51 @@ def _absent_revision():
     return {"active": False, "reasons": []}
 
 
-def build_revision(mode, phases, tracker, prior_pr_fact, dod, polish, reviewed_at_head):
+# The re-plan's mark on a veto it absorbed (skills/planner/references/revise-reconciliation.md
+# "Evaluator-rejected bullet"): appended inside the evaluator's reason, so the veto stays un-ticked and
+# its evidence stays readable while the resolver can tell it has been re-planned.
+_VETO_REASSIGNED_RE = re.compile(r"re-plan reassigned to phase (\d+)")
+
+
+def dod_vetoes(dod):
+    """`facts.dod_vetoes` — one `{index, commit_sha, reassigned_to}` per evaluator-vetoed DoD bullet
+    (`resolver-claimed-evaluator-rejected`). `reassigned_to` is the phase a later re-plan assigned the
+    veto's fix to (the `re-plan reassigned to phase <Y>` mark), else `None`: a veto no re-plan has
+    touched yet.
+
+    String-level on purpose. A git probe ("is the vetoed commit an ancestor of the plan's SHA?") false-
+    positives on a plan revised for an unrelated reason after the PR opened — grounded on the PR head, it
+    "contains" a veto nobody re-planned. Only the re-plan's own mark says it re-planned. Never raises.
+    """
+    vetoes = []
+    for bullet in dod or []:
+        annotation = bullet.get("annotation") or {}
+        if annotation.get("form") != "resolver-claimed-evaluator-rejected":
+            continue
+        match = _VETO_REASSIGNED_RE.search(annotation.get("reason") or "")
+        vetoes.append(
+            {
+                "index": bullet.get("index"),
+                "commit_sha": annotation.get("sha"),
+                "reassigned_to": int(match.group(1)) if match else None,
+            }
+        )
+    return vetoes
+
+
+def build_revision(mode, phases, tracker, prior_pr_fact, vetoes, polish, reviewed_at_head):
     """`facts.revision` — whether this continue-mode run is a **revision run** (spine S4): the PR
     exists and no `kind: code-shipping` phase is left unshipped, so the S4 cursor ("the first
     unticked phase") selects nothing. Today's evaluator soft-reject re-entry lands exactly here.
 
+    Multi-phase, "shipped" means **every** phase's main tracker row is ticked — an operator /
+    decision-only phase included: a pending trailing operator phase is S4's operator-phase handoff, and
+    a revision run there would flip the PR ready before the operator's work exists.
+
     `reasons` (closed set, in this order) shape what iteration 1 reads and whether the run re-routes
     to the planner — they never short-circuit the loop:
-      - `dod_rejected` — a DoD bullet the evaluator un-ticked (sticky veto: only a re-plan clears it);
+      - `dod_rejected` — a veto (`dod_vetoes`) no re-plan has reassigned yet: only a re-plan clears it.
+        A reassigned veto is not a reason — the run builds its fix and the push projects it;
       - `polish_apply` — a `## Polish` ledger entry the evaluator marked `apply`;
       - `review_at_head` — a non-approving review posted on the current head of a **draft** PR (a
         soft-reject flips it to draft; the self-approval downgrade's COMMENTED review does not).
@@ -707,23 +744,19 @@ def build_revision(mode, phases, tracker, prior_pr_fact, dod, polish, reviewed_a
     """
     if mode != MODE_CONTINUE or not prior_pr_fact or not prior_pr_fact.get("number"):
         return _absent_revision()
-    code_phases = [p for p in phases or [] if (p.get("kind") or "code-shipping") == "code-shipping"]
     if len(phases or []) > 1:
         ticked = {
             row["phase"] for row in (tracker or {}).get("rows") or []
             if row.get("checked") and row.get("sub_label") is None
         }
-        active = all(p.get("number") in ticked for p in code_phases)
+        active = all(p.get("number") in ticked for p in phases)
     else:
         # Single-phase: the PR opens at the phase's one push (S5.2), so an existing PR means it shipped.
         active = True
     if not active:
         return _absent_revision()
     reasons = []
-    if any(
-        ((bullet.get("annotation") or {}).get("form")) == "resolver-claimed-evaluator-rejected"
-        for bullet in dod or []
-    ):
+    if any(veto.get("reassigned_to") is None for veto in vetoes or []):
         reasons.append("dod_rejected")
     if any(entry.get("disposition") == "apply" for entry in (polish or {}).get("entries") or []):
         reasons.append("polish_apply")
@@ -1300,10 +1333,11 @@ def build_facts(issue_number, repo, root=".", scratch_dir=None, refresh=False, c
         # (spine S4) — both read from the continue-mode PR fetch above, no extra call.
         "polish": pr_extras["polish"],
         "revision": build_revision(
-            mode, phases, tracker, prior_pr_fact, dod, pr_extras["polish"],
+            mode, phases, tracker, prior_pr_fact, dod_vetoes(dod), pr_extras["polish"],
             pr_extras["review_at_head"],
         ),
         "dod": dod,
+        "dod_vetoes": dod_vetoes(dod),
         "open_questions": open_questions,
         "open_questions_gate": open_questions_gate,
         "audit_ref": audit_ref,

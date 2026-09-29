@@ -418,7 +418,10 @@ class PolishAdjudicationTests(unittest.TestCase):
         # A revision run can leave a confirmed `apply` unfixed (Accept current / abort); skipping it
         # on the next run would merge past the operator's decision.
         self.assertIn("an `open` entry or an unfixed `apply` one", self.spine)
-        self.assertIn("the verdict is COMMENT with **no new card**", self.reference)
+        # PR #62 review: forcing it with no card left no way to release it — it is re-proposed.
+        self.assertIn("marked `confirmed on a prior run, left unfixed`", self.reference)
+        self.assertNotIn("no new card", self.reference)
+        self.assertIn("**Merge anyway** on a re-proposed one writes `drop`", self.reference)
         self.assertIn("`resolved otherwise at <short-sha>`", self.reference)
 
     def test_every_apply_is_confirmed_even_on_a_comment_verdict(self):
@@ -437,6 +440,16 @@ class PolishAdjudicationTests(unittest.TestCase):
         for name in ("standard.md", "story.md", "epic-integration.md"):
             text = re.sub(r"\s+", " ", (PLAYBOOKS_DIR / name).read_text(encoding="utf-8"))
             self.assertIn("S4-untick or a plan-changing polish `apply`", text, name)
+
+    def test_the_apply_criteria_have_one_owner(self):
+        # CLAUDE.md "render, don't restate": the list lives in the shared ledger contract only.
+        ledger = (REPO_ROOT / "skills" / "_shared" / "polish-ledger.md").read_text(encoding="utf-8")
+        self.assertIn("## Apply criteria", ledger)
+        self.assertIn('"Apply criteria"', self.reference)
+        for copy in ("wrong user-visible copy", "a misleading name on a public"):
+            self.assertNotIn(copy, self.reference)
+            fix_round = (REPO_ROOT / "skills" / "resolver" / "references" / "review-fix-round.md").read_text(encoding="utf-8")
+            self.assertNotIn(copy, fix_round)
 
     def test_an_apply_criteria_ledger_entry_is_a_resolver_miss(self):
         self.assertIn("an `apply`-criteria entry here is a **resolver miss**", self.reference)

@@ -63,7 +63,8 @@ so the change is traceable), then place the work by the PR's shape:
   **no** phase: fold the entries into the plan's one phase (its `## Changes`). A new phase here would
   turn the plan multi-phase with no tracker row recording that phase 1 shipped, so the resolver would
   rebuild it. A single-phase PR that exists is already a revision run (`facts.revision`), which applies
-  the `apply` entries as Addressable.
+  the `apply` entries as Addressable. A vetoed DoD bullet re-planned alongside folds the same way, with
+  the `re-plan reassigned to phase 1` mark (the "Evaluator-rejected bullet" rule).
 
 Either way the resolver marks each entry `applied (commit <sha>)`. Never edit the
 ledger yourself — it belongs to the resolver and the evaluator.
@@ -117,9 +118,16 @@ Walk the captured body annotations against the new plan's `closes-dod` mappings 
   the visible-progress regression the SOFT list exists to prevent.
 - **Orphaned bullet** (no phase claims this index) → un-tick with the same orphan annotation; surface as
   a Dimension-7 violation in the new plan's verify loop (a re-plan bug the new plan should have caught).
-- **Evaluator-rejected bullet** (`- [ ] … evaluator rejected: …`) → **preserve verbatim.** Surface it at
+- **Evaluator-rejected bullet** (`- [ ] … evaluator rejected: …`) → **preserve it.** Surface it at
   the S8 confirm so the user sees the rejection alongside the diff. **Do not auto-clear it** even when
-  the new plan reassigns the bullet — the rejection is evidence the prior code failed the bullet.
+  the new plan reassigns the bullet — the rejection is evidence the prior code failed the bullet. When
+  the new plan **does** assign the veto's fix to a phase — a new phase `Y`, or on a single-phase plan
+  its one phase (`Y` = `1`) — append the re-plan mark inside the same annotation, keeping the
+  evaluator's reason verbatim: `- [ ] <text> (resolver claimed phase X, commit <sha>; evaluator rejected:
+  <reason>; re-plan reassigned to phase Y, awaiting its ship)`. Still un-ticked, still a veto; the mark is
+  the resolver's only signal that the veto was re-planned (`facts.dod_vetoes`), and without it every
+  resolver run re-routes back here — a single-phase issue looped planner → resolver → planner forever. A
+  plan that does not re-plan the veto leaves the annotation untouched.
 
 Stage the reconciled body to `<facts.scratch>/issue-body-reconciled.md` and, after the user confirms at
 S8, apply it via the single write path:
