@@ -1,6 +1,6 @@
 # Handoff renderings
 
-The ten rendering shapes the resolver emits as the run's final `## Handoff` block. Pick the one that
+The eleven rendering shapes the resolver emits as the run's final `## Handoff` block. Pick the one that
 matches the run's outcome, copy the shape, and substitute the issue/PR/epic/SHA placeholders from the
 prep facts + this run's PR/review/push results. Schema, omission rules, and the closed-set state-marker
 vocabulary live in [`../../_shared/handoff-format.md`](../../_shared/handoff-format.md) — this file
@@ -121,6 +121,30 @@ post-flip state.
     /github-pipeline:evaluator #649
 
 **Why:** every phase in the plan's `## Phases` has been ticked on the PR's `## Phase tracker`, and each ticked phase's `closes-dod` bullets have been projected onto the issue body's `## Definition of done` as the phases shipped. The evaluator verifies each projected DoD tick against its attributed phase's diff (per-phase commit ranges from the Phase tracker), runs its branch-health gate and review against the plan's locked decisions, un-ticks any bullet whose attributed diff doesn't actually satisfy it (sticky soft-reject), and — on a clean APPROVE — merges. On a COMMENT (soft-reject) verdict, the evaluator flips the PR back to draft so this resolver can re-enter in continue mode and address the gaps without re-deadlocking on the draft guard.
+```
+
+## Forward — revision run (every phase already shipped)
+
+A continue-mode run whose `facts.revision.active` is true (spine S4): no phase shipped this run, so the
+`Issue:` line carries no phase count and nothing new was projected onto the DoD. The PR was flipped
+back to ready (`gh pr ready <N>`) immediately before this handoff, as on the last-phase shape. A
+revision run that found a vetoed DoD bullet (`dod_rejected`) does **not** use this shape — it re-routes
+before any code, rendering "Re-route → planner" with a `Why:` quoting the evaluator's
+`… evaluator rejected: …` annotation.
+
+```
+## Handoff
+
+**Issue:** #142 — Add CSV export · open · feature · plan: ✓
+**PR:** #287 — Add CSV export (#142) · open · base main · review: not run · health: not run · merge: not run
+**Changes:** 2 commits, 9f0a112..c3d4e5f — https://github.com/owner/repo/pull/287/files/9f0a112..c3d4e5f
+**Workspace:** <workspace-path> — start the next session here
+
+**Next:** re-evaluate the revised PR in a fresh session.
+
+    /github-pipeline:evaluator #287
+
+**Why:** a revision run on the evaluator's soft-reject: every planned phase had already shipped, so this run addressed the review's findings and the `## Polish` ledger's `apply` items (P2.3 → `applied (commit c3d4e5f)`) under the final-scope review loop, then flipped the PR back to ready. The evaluator re-runs its gate and review against the revised head.
 ```
 
 ## In progress — Epic integration draft PR open (stories remain)

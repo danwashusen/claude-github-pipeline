@@ -47,6 +47,28 @@ no `not_restored` — [`shipped-phase-relocation.md`](shipped-phase-relocation.m
 `## Test plan` unchanged in substance: it only changed which comment carries it. It never counts toward
 the **Judgment call** rule's `## Changes` block text edits. Judge only the entries whose text changed.
 
+### A polish re-route: the ledger's `apply` items become a phase
+
+When the evaluator sends a PR here because a confirmed polish item would reverse a locked plan decision
+(`../../_shared/polish-ledger.md`; its handoff `Why:` quotes the item and the decision), the work is in
+the open PR's ledger: every entry in `facts.revise.open_pr.polish` marked `apply`. Revise the decision
+the item reverses (quote the ledger id in the new `## Architecture decisions` / `## UI decisions` bullet
+so the change is traceable), then place the work by the PR's shape:
+
+- **Multi-phase** (`facts.revise.phase_tracker` carries rows) — add **one new phase after the shipped
+  ones** whose `ships` / `deliverable` cover those entries by id. Every phase has shipped by the time the
+  evaluator runs, so it takes k+1 with no renumbering — **SOFT** ("New phases added beyond what's
+  shipped"). The resolver builds it as the tracker's `missing` row in continue mode.
+- **Single-phase** (`facts.revise.phase_tracker` is empty — a single-phase PR carries no tracker) — add
+  **no** phase: fold the entries into the plan's one phase (its `## Changes`). A new phase here would
+  turn the plan multi-phase with no tracker row recording that phase 1 shipped, so the resolver would
+  rebuild it. A single-phase PR that exists is already a revision run (`facts.revision`), which applies
+  the `apply` entries as Addressable. A vetoed DoD bullet re-planned alongside folds the same way, with
+  the `re-plan reassigned to phase 1` mark (the "Evaluator-rejected bullet" rule).
+
+Either way the resolver marks each entry `applied (commit <sha>)`. Never edit the
+ledger yourself — it belongs to the resolver and the evaluator.
+
 ### Inserting a phase after work has shipped
 
 New work that must run *between* a shipped phase and an unshipped one is the case that produces
@@ -96,9 +118,16 @@ Walk the captured body annotations against the new plan's `closes-dod` mappings 
   the visible-progress regression the SOFT list exists to prevent.
 - **Orphaned bullet** (no phase claims this index) → un-tick with the same orphan annotation; surface as
   a Dimension-7 violation in the new plan's verify loop (a re-plan bug the new plan should have caught).
-- **Evaluator-rejected bullet** (`- [ ] … evaluator rejected: …`) → **preserve verbatim.** Surface it at
+- **Evaluator-rejected bullet** (`- [ ] … evaluator rejected: …`) → **preserve it.** Surface it at
   the S8 confirm so the user sees the rejection alongside the diff. **Do not auto-clear it** even when
-  the new plan reassigns the bullet — the rejection is evidence the prior code failed the bullet.
+  the new plan reassigns the bullet — the rejection is evidence the prior code failed the bullet. When
+  the new plan **does** assign the veto's fix to a phase — a new phase `Y`, or on a single-phase plan
+  its one phase (`Y` = `1`) — append the re-plan mark inside the same annotation, keeping the
+  evaluator's reason verbatim: `- [ ] <text> (resolver claimed phase X, commit <sha>; evaluator rejected:
+  <reason>; re-plan reassigned to phase Y, awaiting its ship)`. Still un-ticked, still a veto; the mark is
+  the resolver's only signal that the veto was re-planned (`facts.dod_vetoes`), and without it every
+  resolver run re-routes back here — a single-phase issue looped planner → resolver → planner forever. A
+  plan that does not re-plan the veto leaves the annotation untouched.
 
 Stage the reconciled body to `<facts.scratch>/issue-body-reconciled.md` and, after the user confirms at
 S8, apply it via the single write path:

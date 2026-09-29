@@ -25,7 +25,11 @@ outcome to its rubric:
   shapes still carries `review: not run · health: not run`** — the review loop and the §8 gate ran
   internally this session, but that is not what those two fields mean (they are the evaluator's,
   populated only once it acts); do not render an off-closed-set glyph for "ran internally."
-- **Re-route → planner** (plan drift / thread-supersedes-plan): `plan: stale`, `Next:
-  /github-pipeline:planner revise #<N>`; `Why:` quotes the locked decision + `file:line`.
+- **Revision run** (every phase already shipped — spine S4): PR flipped back to ready, no phase count,
+  `Next: /github-pipeline:evaluator #<PR>`; `Why:` names what the run revised (the review's findings,
+  the ledger's `apply` items).
+- **Re-route → planner** (plan drift / thread-supersedes-plan / a revision run's vetoed DoD bullet):
+  `plan: stale`, `Next: /github-pipeline:planner revise #<N>`; `Why:` quotes the locked decision +
+  `file:line`, or the `… evaluator rejected: …` annotation.
 - **Re-route → drafter** (audit blocker or doc conflict): `Next: /github-pipeline:drafter revise #<N>`;
   `Why:` names the dimension + quotes the evidence (or the doc section, for a doc conflict).

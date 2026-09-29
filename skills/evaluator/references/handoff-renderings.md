@@ -22,8 +22,9 @@ S1 capture, which stays in `docs/specs/` as the v2 historical record).
 | Story PR merged, more sibling stories pending | **Forward → `/github-pipeline:planner`** to plan the next story in dependency order just-in-time (it has no plan yet — the planner grounds it against the now-current epic HEAD, then the resolver implements it). Story / Epic / PR / Cleanup lines; Epic progress e.g. `open (2 of 5 stories closed)`. `review:` is `APPROVE` or `APPROVE (operator)`. |
 | Story PR merged, *last* sibling story | **Forward → `/github-pipeline:resolver`** on the Epic, in Epic-integration mode. Story / Epic / PR / Cleanup lines; Epic progress `open (5 of 5 stories closed)`. |
 | Epic integration PR merged — operator **Approve (merge commit / squash)** | **Terminal.** Epic line, PR line with `merge: merge → main@<sha>` (or `squash → main@<sha>`), Cleanup line; the fence carries `/github-pipeline:workspace-close <branch>`. `review:` is `APPROVE (operator)` (epic is always gated). |
-| Any PR, COMMENT verdict (soft-reject) — a real COMMENT verdict drove the `comment` action | **Re-route → `/github-pipeline:resolver continue #<N>`.** Issue / PR lines; PR line carries `state: draft` (S7-post flipped it back), `review: COMMENT (soft-reject)`, `merge: skipped (verdict)`. No Cleanup line. |
+| Any PR, COMMENT verdict (soft-reject) — a real COMMENT verdict drove the `comment` action | **Re-route → `/github-pipeline:resolver continue #<N>`.** Issue / PR lines; PR line carries `state: draft` (S7-post flipped it back), `review: COMMENT (soft-reject)`, `merge: skipped (verdict)`. No Cleanup line. **When the verdict included an S4-untick**, re-route to **`/github-pipeline:planner revise #<issue>`** instead — `plan: stale`, a `Workspace:` line (the revise grounds on this PR's head), and a `Why:` quoting each `… evaluator rejected: …` annotation: a vetoed bullet clears only through a re-plan (the planner reassigns it to a new phase — or, single-phase, to its one phase — and marks the veto `re-plan reassigned to phase <Y>`), so routing to the resolver would cost a session that only re-routes. |
 | Any PR, operator **Needs Revision** / **Reject** at the gate | **Re-route → `/github-pipeline:resolver continue #<N>`.** Same shape as the COMMENT-verdict row, but `review:` is `COMMENT (operator: needs-revision)` or `COMMENT (operator: reject)` and `merge: skipped (verdict)`. `state: draft` (the gate flipped it back). The `Why:` carries the operator's recorded rationale. For a **story PR**, this is **not** the forward-to-next-story route — no merge landed, so the story-route actions didn't run; the next story is deferred to a later run that actually merges this one. |
+| Operator-confirmed polish `apply` (S5.5) — **Apply** on the `Polish` card, or **Needs Revision** on a gate card that listed `apply` entries | **Re-route → `/github-pipeline:resolver continue #<N>`** when the items stay inside the plan — the Needs-Revision row's shape, `review: COMMENT (operator: needs-revision)`, with a `Why:` naming the ledger ids. When applying them changes the plan (`polish-adjudication.md` step 4): **Re-route → `/github-pipeline:planner revise #<issue>`** — Issue / PR lines, `plan: stale`, `state: draft`, `review: COMMENT (operator: needs-revision)`, `merge: skipped (verdict)`, a `Workspace:` line (the revise grounds on this PR's head), and a `Why:` quoting the ledger item **and** the plan decision it reverses. No Cleanup line. |
 | APPROVE but `mergeStateStatus ∈ {DIRTY, BLOCKED}` → skipped | **Terminal with manual command.** Issue / PR lines (PR line: `merge: skipped (DIRTY)` or `skipped (BLOCKED)`); no Cleanup. `Next:` quotes the recommended `gh pr merge` command verbatim and names the blocker; `Why:` names what the user does to clear it. |
 | Operator-deferred merge ("Other": approved, merge manually later) | **Same shape as the DIRTY/BLOCKED case** — terminal with the recommended `gh pr merge` command; `merge: skipped (deferred)`. `Why:` notes the operator approved but opted to merge manually. For a **story PR**, same nuance as the Needs-Revision/Reject row: the story-route actions didn't run, so this is terminal-with-command, not forward-to-next-story. |
 
@@ -169,4 +170,23 @@ not forward to the next one.)
     /github-pipeline:resolver continue #287
 
 **Why:** the automated evaluation passed, but the operator requested revision at the merge gate (recorded on the PR, <ISO-date>): "export should stream rather than buffer the whole file in memory for large datasets." The gate flipped the PR back to draft so the resolver's existing-PR check picks it up as in-progress work; the resolver's review loop addresses the note, re-pushes, and re-flips to ready before the next forward handoff.
+```
+
+**Polish soft-reject that changes the plan — re-route to planner.** The operator confirmed a polish
+`apply` (spine S5.5), and applying it would reverse a locked plan decision, so the resolver cannot
+absorb it as a fix. The planner's revise reads the ledger from the open PR and adds a phase for the
+`apply` items; the resolver then builds that phase in continue mode.
+
+```
+## Handoff
+
+**Issue:** #142 — Add CSV export · open · feature · plan: stale
+**PR:** #287 — Add CSV export (#142) · draft · base main · review: COMMENT (operator: needs-revision) · health: ✅ at abc1234 · merge: skipped (verdict)
+**Workspace:** <workspace-path> — the plan revise grounds on this PR's head; start the planner session here
+
+**Next:** revise the plan in a fresh session — a confirmed polish item reverses a locked decision.
+
+    /github-pipeline:planner revise #142
+
+**Why:** the operator confirmed ledger item P2.3 ("the export header row still uses the internal column keys") for this PR, but the plan's `## UI decisions` bullet "exported headers use the internal keys so re-import is lossless" locks the opposite; applying it is a re-plan, not a fix. The PR stays in draft; the planner adds a phase for the `apply` items and the resolver continues from there.
 ```

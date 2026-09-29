@@ -137,14 +137,16 @@ its §review-loop, its S6 DoD projection) that carry the same numbering v1 used,
   exceptions, no "this change is too small to review."
 - **Don't exit the loop just because the verdict says "approved".** Reviews routinely approve with
   `Medium`, `Low`, or `Nitpick` items — issues *and* suggestions — that the reviewer still expects fixed
-  (e.g., "Approved with minor fixes"). Exit only when `review`'s verdict is approved **and** your
-  re-classification finds zero Addressable or Cheap-fix-override items in that verdict. Items the reviewer
-  routes elsewhere with a **concrete tracking target** (filed as #N, depends on un-landed sibling, citable
-  PRD/scope exclusion) are deferred and filed as follow-ups. Soft politeness alone ("could be fast-follow",
-  "not blocking", "deferrable", "informational only", "future PR", "consider for a future change") is
-  **not** sufficient — re-classify per `review-fix-round.md`'s rubric, where the **default for any
-  concretely-named change is Addressable**. The Cheap-fix override addresses ≤ ~20-line fixes on
-  already-modified files even when the reviewer defers them. Nothing structural enforces this any more:
+  (e.g., "Approved with minor fixes"). The loop settles on the round's **defect count** — zero
+  defect-tier Addressable items after your re-classification (spine S5.1 step 3) — never on the approval
+  line. Items the reviewer routes elsewhere with a **concrete tracking target** (filed as #N, depends on
+  un-landed sibling, citable PRD/scope exclusion) are deferred and filed as follow-ups. Soft politeness
+  alone ("could be fast-follow", "not blocking", "deferrable", "informational only", "future PR",
+  "consider for a future change") is **not** sufficient — re-classify per `review-fix-round.md`'s rubric,
+  where the **default for any concretely-named change is Addressable**, then tier it: a real defect keeps
+  the loop open whatever the reviewer called it, while polish is fixed on merit or goes to the `## Polish`
+  ledger. Don't tier a defect as polish to settle sooner — the tier is recorded in the round reply so the
+  call can be audited. Nothing structural enforces this any more:
   the classify-and-act body used to sit behind a sub-agent boundary that made skipping it visible, and it
   now runs in the same conversation that just read the verdict. The rubric applied to every listed item is
   the only guard left, so the hazard this bullet exists for is fully live.
@@ -158,9 +160,10 @@ its §review-loop, its S6 DoD projection) that carry the same numbering v1 used,
   one it dispatches is the post-settle cold read, which never invokes `review`. Don't reintroduce a
   dispatched `review` thinking "this time stronger emphasis will work" — the constraint is the harness, not
   the model.
-- **Don't reach for Plan-settled or Deferred-by-plan without the citation the rubric requires.** The
-  buckets exist to stop re-litigation, not to dismiss findings; `review-fix-round.md`'s classification
-  rubric owns the rule and its escape hatches.
+- **Don't reach for Plan-settled, Deferred-by-plan or Refuted without the citation or evidence the
+  rubric requires.** The buckets exist to stop re-litigation, not to dismiss findings — a Refuted item
+  needs a cited code read or run, never a disagreement; `review-fix-round.md`'s classification rubric
+  owns the rule and its escape hatches.
 - **Don't scale down verification with the review scope.** Scope narrows the adversarial review only;
   the deterministic gates stay at full strength on every phase, per S5.1 "Scope".
 - **Don't stop at any turn-boundary beat in the review loop.** S5.1 has three beats where the

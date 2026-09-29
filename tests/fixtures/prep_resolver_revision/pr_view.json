@@ -1,0 +1,47 @@
+{
+  "number": 55,
+  "title": "Fix: the widget (#100)",
+  "body": "Fixes #100\n\n## Phase tracker\n- [x] Phase 1 — substrate (commit abc1111)\n- [x] Phase 2 — the login screen (commit abc2222)\n- [x] Phase 3 — the setup operations (commit abc3333)\n- [x] Phase 4 — the anchor read (commit abc4444)\n- [x] Phase 5 — the sole-factor login (commit abc5555)\n- [x] Phase 6 — end-to-end proof (commit abc6666)\n\n## Polish\n- P2.1 · apply — the error message still names the removed flag — lib/login.rb / LoginError#message — misleading to operators\n- P5.1 · open — rename `check` to say it asserts — src/login.py / check_factor\n- P5.2 · maybe — not a disposition — src/login.py / check_factor\n",
+  "state": "OPEN",
+  "isDraft": true,
+  "author": {
+    "login": "octocat"
+  },
+  "baseRefName": "main",
+  "headRefName": "100-fix-the-widget",
+  "commits": [],
+  "additions": 0,
+  "deletions": 0,
+  "changedFiles": 0,
+  "closingIssuesReferences": [
+    {
+      "number": 100
+    }
+  ],
+  "comments": [],
+  "reviews": [
+    {
+      "id": "PRR_1",
+      "author": {
+        "login": "octocat"
+      },
+      "authorAssociation": "OWNER",
+      "body": "soft-reject",
+      "submittedAt": "2026-09-01T00:00:00Z",
+      "includesCreatedEdit": false,
+      "reactionGroups": [],
+      "state": "COMMENTED",
+      "commit": {
+        "oid": "0000000000000000000000000000000000000000"
+      }
+    }
+  ],
+  "latestReviews": [],
+  "reviewDecision": "",
+  "mergeStateStatus": "CLEAN",
+  "mergeable": "MERGEABLE",
+  "statusCheckRollup": [],
+  "headRefOid": "0000000000000000000000000000000000000000",
+  "url": "https://github.com/octo/widgets/pull/55",
+  "labels": []
+}

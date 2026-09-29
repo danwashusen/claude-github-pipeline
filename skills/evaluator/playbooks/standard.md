@@ -28,12 +28,14 @@ it at merge time would create a second writer for one fact.
 ## After the merge — residual follow-ups
 
 File the **residual non-blocking** work this run surfaced but hasn't filed: a finding from your own
-review, or a `## Follow-ups` *Procedural notes* item, that warrants an issue. **De-duplicate** against
+review, a `## Follow-ups` *Procedural notes* item that warrants an issue, or a `## Polish` ledger entry
+S5.5 left as `file` (polish groups file as `incomplete-feature`). **De-duplicate** against
 issues already linked in the PR body's `## Follow-ups` *Filed* entries — never re-file those. (In-scope
 grounding violations never reach here — they soft-reject pre-merge and take the no-merge exit.)
 
-File each via the shared protocol in [`../../_shared/follow-up-filing.md`](../../_shared/follow-up-filing.md)
-— one `general-purpose` sub-agent per item, spawned together in one message, type from
+Group related items and file each group via the shared protocol in
+[`../../_shared/follow-up-filing.md`](../../_shared/follow-up-filing.md) ("Grouping") — one
+`general-purpose` sub-agent per group, spawned together in one message, type from
 `bug | incomplete-feature | deferred-test |
 revise-existing`, parent reference = this PR + the issue. After filing, post the URLs as a brief PR
 comment so they're durable (stage the list to `<facts.scratch>/followups.md`):
@@ -61,6 +63,8 @@ policy) or `APPROVE (operator)` (gate path). The issue closes via GitHub's auto-
 
 On a **no-merge** exit, emit the matching rubric shape instead — **soft-reject → re-route** to
 `/github-pipeline:resolver continue #<PR>` (COMMENT verdict or operator Needs-Revision / Reject; PR is
-back in draft, `merge: skipped (verdict)`, no Cleanup line), or **APPROVE-but-skipped** (DIRTY/BLOCKED
+back in draft, `merge: skipped (verdict)`, no Cleanup line) — or to `/github-pipeline:planner revise
+#<issue>` when the soft-reject carries an S4-untick or a plan-changing polish `apply`, since only a
+re-plan clears either — or **APPROVE-but-skipped** (DIRTY/BLOCKED
 or operator-deferred; `merge: skipped (DIRTY|BLOCKED|deferred)`, the `Next:` quotes the manual `gh pr
 merge` command).

@@ -29,7 +29,8 @@ labels/`blocked_by`/`blocking`), `vector` (`type` × `mode` × `prior_pr_row`, p
 row and `comment_only`), `suggested_playbook`, `prior_pr`, `plan` (present/SHA/comment-id/url),
 `phases` (parsed `## Phases`), `tracker` (continue mode: the prior PR's `## Phase tracker` rows plus
 `diff` — the row set reconciled against `phases`, with `diff.conflict` the gate — and `last_shipped`,
-the shipped phase nearest HEAD: the non-final review's diff base), `dod` (the issue's `## Definition of done` bullets, each with its
+the shipped phase nearest HEAD: the non-final review's diff base), `polish` (the PR's `## Polish`
+ledger), `revision` (`active` + `reasons`: the S4 revision run), `dod` (the issue's `## Definition of done` bullets, each with its
 annotation), `open_questions` + `open_questions_gate` (the hard gate), `audit_ref` (a **bare** branch
 name), `config` (the three gate-config blocks read from **this worktree's working tree**, uncommitted
 edits included; `config.source` names the checkout/branch/SHA and its dirty state), `distiller_bundle` (staged paths for the
@@ -121,7 +122,7 @@ Universal across every route:
   the comment/PR to check it landed (re-reads reintroduce races and burn context).
 - **Gates only for genuine decisions** (per [`../_shared/asking-the-user.md`](../_shared/asking-the-user.md)):
   the audit-blocker gate, the missing-plan gate, a doc conflict, an existing-PR contest, retry-ladder
-  escalation, review-loop guard rails, the iteration cap — never to confirm a fact prep derived. A
+  escalation, review-loop guard rails, the loop-stall card — never to confirm a fact prep derived. A
   judgment sub-agent (state-distiller, fitness audit, test-selection, cold-read audit) never calls
   `AskUserQuestion`; it returns its typed result (a §3 decision code or its verdict) to this loop, which
   asks.
@@ -136,9 +137,9 @@ Universal across every route:
 Every clean run ends with a single `## Handoff` block — the only bridge to the next session. The
 schema, omission rules, and closed-set state-marker vocabulary are owned by
 [`../_shared/handoff-format.md`](../_shared/handoff-format.md); the resolver's per-outcome rubric and
-ten worked shapes are in [`references/handoff-renderings.md`](references/handoff-renderings.md).
+eleven worked shapes are in [`references/handoff-renderings.md`](references/handoff-renderings.md).
 **Read that reference before composing the handoff** and match the run's outcome to its rubric
-(forward to the evaluator; multi-phase non-final / operator-phase / last-phase; epic-integration
+(forward to the evaluator; multi-phase non-final / operator-phase / last-phase; revision run; epic-integration
 draft-in-progress / epic-integration forward; re-route to planner / drafter; terminal non-PR). Fill the snapshot from data in hand (the
 prep facts + this run's PR/review/push results); the `Next:` action and `Why:` line are judgment. A
 re-route points `Next:` at a **prior** skill but does **not** invoke it via the `Skill` tool — the

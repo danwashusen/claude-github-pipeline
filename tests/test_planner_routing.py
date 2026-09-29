@@ -1786,5 +1786,17 @@ class PlanSummaryBlockTests(unittest.TestCase):
         self.assertIn('Show the **full body** only when the user said "don\'t post yet"', flat)
 
 
+
+class PolishReRouteTests(unittest.TestCase):
+    """An evaluator polish re-route (skills/_shared/polish-ledger.md): the ledger's `apply` entries
+    become a new phase on a multi-phase PR, but fold into the one phase on a single-phase PR — which
+    carries no `## Phase tracker`, so a new phase there would leave phase 1 unrecorded as shipped."""
+
+    def test_single_phase_folds_rather_than_adding_a_phase(self):
+        text = " ".join((REFERENCES_DIR / "revise-reconciliation.md").read_text(encoding="utf-8").split())
+        self.assertIn("### A polish re-route: the ledger's `apply` items become a phase", text)
+        self.assertIn("add **no** phase: fold the entries into the plan's one phase", text)
+        self.assertIn("add **one new phase after the shipped ones**", text)
+
 if __name__ == "__main__":
     unittest.main()

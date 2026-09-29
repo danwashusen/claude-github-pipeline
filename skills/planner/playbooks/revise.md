@@ -41,11 +41,11 @@ this route supplies:
   "<facts.scratch>/plan.md"` — a full replacement authored against the schema, never a delta appended to
   what is there. Ambiguous marker → `comment --delete-marker-id`, the only op that collapses a duplicate.
 - **Compute reconciliation** ([`../references/revise-reconciliation.md`](../references/revise-reconciliation.md)).
-  Diff old plan vs new plan, classify **SOFT** vs **HARD**, and compute the body-edit diff against
-  `facts.revise.phase_tracker`. When no draft PR exists this is a no-op (no projected ticks). An
-  evaluator-rejection annotation is preserved verbatim — never auto-cleared. New work landing *between*
-  a shipped phase and an unshipped one follows that reference's renumbering rule: the shipped prefix
-  keeps its numbers, the unshipped tail shifts up — never a `5c`.
+  Diff old plan vs new plan, classify **SOFT** vs **HARD**, and compute the body-edit diff against `facts.revise.phase_tracker`
+  (a no-op when no draft PR exists: no projected ticks). An evaluator-rejection annotation is preserved verbatim —
+  never auto-cleared. New work *between* a shipped and an unshipped phase follows that reference's renumbering rule:
+  the shipped prefix keeps its numbers, the unshipped tail shifts up — never a `5c`. `apply` entries in
+  `facts.revise.open_pr.polish` (an evaluator polish re-route) follow its polish rule: a new phase, or folded in when single-phase.
 - **Reconcile the phases against the live sub-issue set.** When `facts.slices` is present the target's
   sub-issues are its deliverable slices — an **input constraint** on the plan's shape, not an output of
   it. Read [`../references/sub-issue-reconciliation.md`](../references/sub-issue-reconciliation.md)

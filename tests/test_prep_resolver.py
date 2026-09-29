@@ -1269,6 +1269,119 @@ class TrackerFactTests(PrepResolverSandboxTestCase):
         self.assertEqual(tracker["diff"]["missing"], [7])
 
 
+class RevisionAndPolishFactTests(PrepResolverSandboxTestCase):
+    """`facts.polish` (skills/_shared/polish-ledger.md) and `facts.revision` (spine S4's revision
+    run): both come off the continue-mode PR fetch the tracker already makes, so neither costs a
+    call. The revision run exists because S4's cursor — "the first unticked phase" — selects nothing
+    once every code-shipping phase is ticked, which is exactly where an evaluator soft-reject lands.
+    """
+
+    ambient_default = "100-fix-the-widget"
+
+    def test_all_ticked_continue_run_is_a_revision_with_its_reasons(self):
+        facts = self._envelope(fixture_case="prep_resolver_revision")
+        self.assertEqual(
+            facts["revision"], {"active": True, "reasons": ["polish_apply", "review_at_head"]}
+        )
+
+    def test_the_polish_ledger_is_parsed_and_an_off_vocabulary_line_is_unparsed(self):
+        polish = self._envelope(fixture_case="prep_resolver_revision")["polish"]
+        self.assertTrue(polish["present"])
+        self.assertEqual([e["id"] for e in polish["entries"]], ["P2.1", "P5.1"])
+        self.assertEqual(polish["entries"][0]["disposition"], "apply")
+        self.assertEqual(polish["entries"][0]["note"], "misleading to operators")
+        self.assertEqual(len(polish["unparsed"]), 1)
+
+    def test_a_commented_review_on_a_ready_pr_is_not_a_soft_reject(self):
+        # The evaluator's self-approval downgrade posts an APPROVE as a COMMENTED review at head and
+        # leaves the PR ready; only a real soft-reject flips it to draft.
+        facts = self._envelope(fixture_case="prep_resolver_revision_ready")
+        self.assertEqual(facts["revision"]["reasons"], ["polish_apply"])
+
+    def test_dod_vetoes_is_published(self):
+        self.assertEqual(self._envelope(fixture_case="prep_resolver_revision")["dod_vetoes"], [])
+
+    def test_an_unshipped_phase_is_not_a_revision(self):
+        facts = self._envelope(fixture_case="prep_resolver_tracker_clean")
+        self.assertEqual(facts["revision"], {"active": False, "reasons": []})
+        self.assertFalse(facts["polish"]["present"])
+
+
+class RevisionUnitTests(unittest.TestCase):
+    """The pure cores behind `facts.revision`."""
+
+    def _phase(self, number, kind="code-shipping"):
+        return {"number": number, "title": "p%d" % number, "kind": kind}
+
+    def _row(self, phase, checked=True):
+        return {"checked": checked, "phase": phase, "title": "p", "sub_label": None,
+                "commit_sha": "abc1234" if checked else None, "annotation": None}
+
+    def _revision(self, phases, rows, dod=(), polish=None, at_head=False, mode=None):
+        return prep_resolver.build_revision(
+            mode or prep_resolver.MODE_CONTINUE, phases, {"rows": rows}, {"number": 5},
+            prep_resolver.dod_vetoes(list(dod)), polish or parse.absent_polish(), at_head,
+        )
+
+    def test_a_pending_trailing_operator_phase_blocks_the_revision(self):
+        # The #957 shape: the last code phase shipped, the operator phase has not. That is S4's
+        # operator-phase handoff; a revision run would flip the PR ready before the operator's work.
+        phases = [self._phase(1), self._phase(2, kind="operator")]
+        self.assertFalse(self._revision(phases, [self._row(1), self._row(2, checked=False)])["active"])
+
+    def test_every_phase_ticked_including_the_operator_one_is_a_revision(self):
+        phases = [self._phase(1), self._phase(2, kind="operator")]
+        self.assertTrue(self._revision(phases, [self._row(1), self._row(2)])["active"])
+
+    def test_an_unticked_code_phase_is_not_a_revision(self):
+        phases = [self._phase(1), self._phase(2)]
+        self.assertFalse(self._revision(phases, [self._row(1), self._row(2, checked=False)])["active"])
+
+    def test_single_phase_with_a_pr_is_a_revision(self):
+        self.assertTrue(self._revision([self._phase(1)], [])["active"])
+
+    def test_fresh_mode_is_never_a_revision(self):
+        self.assertFalse(self._revision([self._phase(1)], [], mode="fresh")["active"])
+
+    def test_a_vetoed_dod_bullet_is_reason_dod_rejected(self):
+        dod = [{"annotation": {"form": "resolver-claimed-evaluator-rejected", "reason": "no export"}}]
+        self.assertEqual(self._revision([self._phase(1)], [], dod=dod)["reasons"], ["dod_rejected"])
+
+    def test_a_veto_a_re_plan_reassigned_is_not_a_reason(self):
+        # The single-phase loop: without the re-plan's mark, every continue run re-routed to the
+        # planner, and the planner preserves the veto verbatim — planner -> resolver -> planner.
+        dod = [{"annotation": {
+            "form": "resolver-claimed-evaluator-rejected",
+            "reason": "no export; re-plan reassigned to phase 1, awaiting its ship",
+        }}]
+        self.assertEqual(self._revision([self._phase(1)], [], dod=dod)["reasons"], [])
+
+    def test_dod_vetoes_reads_the_re_plan_mark_and_the_annotation_still_parses(self):
+        body = (
+            "## Definition of done\n"
+            "- [ ] Export works (resolver claimed phase 1, commit abc1234; evaluator rejected: no export;"
+            " re-plan reassigned to phase 1, awaiting its ship)\n"
+            "- [ ] Import works (resolver claimed phase 1, commit abc1234; evaluator rejected: no import)\n"
+            "- [x] Docs (closed by commit abc1234)\n"
+        )
+        vetoes = prep_resolver.dod_vetoes(parse.parse_dod_bullets(body))
+        self.assertEqual(
+            vetoes,
+            [
+                {"index": 1, "commit_sha": "abc1234", "reassigned_to": 1},
+                {"index": 2, "commit_sha": "abc1234", "reassigned_to": None},
+            ],
+        )
+
+    def test_review_at_head_reads_reviews_not_latest_reviews(self):
+        head = "f" * 40
+        reviews = [{"state": "COMMENTED", "commit": {"oid": head}}]
+        self.assertTrue(prep_resolver.review_at_head(reviews, head))
+        self.assertFalse(prep_resolver.review_at_head(reviews, "e" * 40))
+        self.assertFalse(prep_resolver.review_at_head([{"state": "APPROVED", "commit": {"oid": head}}], head))
+        self.assertFalse(prep_resolver.review_at_head(reviews, None))
+
+
 class TrackerDiffUnitTests(unittest.TestCase):
     """Direct tests of `build_tracker_diff`, the pure classifier — no subprocess, no shim."""
 

@@ -1055,9 +1055,12 @@ class MainLoopReviewFixRoundTests(unittest.TestCase):
         self.assertIn("Run one **fix round** on it per the reference, in this conversation", self.flat)
         self.assertIn("Cold-read audit — once per phase, after settle", self.flat)
 
-    def test_the_iter_cap_card_lost_its_cold_read_option(self):
-        self.assertIn('header: "Iter cap"', self.flat)
-        for option in ("**Continue**", "**Accept current**", "**Abort**"):
+    def test_the_stall_card_replaced_the_iter_cap_card(self):
+        # 4.21.0: the fixed 2/4 cap and its `Iter cap` card are gone — the loop runs on defect-tier
+        # progress and asks only when it stops making it (or hits the emergency ceiling).
+        self.assertIn('header: "Loop stall"', self.flat)
+        self.assertNotIn('header: "Iter cap"', self.flat)
+        for option in ("**Continue**", "**Accept current**", "**Abort**", "**Re-plan** when churn fired"):
             self.assertIn(option, self.flat)
         self.assertNotIn("**Cold-read audit** /", self.flat)
 
@@ -1065,7 +1068,6 @@ class MainLoopReviewFixRoundTests(unittest.TestCase):
         text = self.reference.read_text(encoding="utf-8")
         for bucket in (
             "Addressable",
-            "Cheap-fix-override",
             "Explicitly-deferred",
             "Decision-required",
             "Grounding-violation",
@@ -1078,13 +1080,128 @@ class MainLoopReviewFixRoundTests(unittest.TestCase):
         self.assertIn("AskUserQuestion", text)
         self.assertNotIn("needs_decision", text)
 
+    def test_addressable_items_carry_a_defect_or_polish_tier(self):
+        # The tier replaces the Cheap-fix-override bucket: a defect keeps the loop open, polish is
+        # fixed on merit or left for the `## Polish` ledger the evaluator adjudicates.
+        text = " ".join(self.reference.read_text(encoding="utf-8").split())
+        self.assertIn("Every Addressable item also gets a **tier**", text)
+        self.assertIn("- **defect** — correctness, a broken contract or invariant", text)
+        self.assertIn("Fix it **on merit**", text)
+        self.assertIn("Polish never keeps the loop open", text)
+        self.assertNotIn("- **Cheap-fix-override** —", text)
+        self.assertNotIn("Cheap-fix-override", self.flat)
+        # Evaluator-directed items are decided: re-recording them would ping-pong the PR.
+        self.assertIn("marked `apply` is Addressable on iteration 1 whatever its tier", text)
+
+    def test_the_loop_runs_on_defect_progress_with_a_grace_round(self):
+        # The #957 replay: a falling count alone read one-new-defect-per-round (real progress) as a
+        # stall at round 3, and a file-level churn signal fired on files a polish rename made "hot".
+        for phrase in (
+            "the loop runs on the **defect count**",
+            "Plan-settled, Deferred-by-plan, Refuted and Explicitly-deferred never count",
+            "**Progress** — the count fell from the previous round's, **or** none of its defects is **loop-induced**",
+            "round 1, with nothing to compare, always counts as progress",
+            "**No progress** — the count did not fall **and** at least one defect is loop-induced",
+            "The first such round is a **grace round**",
+            "the second in a row renders the **stall card**",
+            "**Churn** — at least 2 defects, most of them loop-induced",
+            "does not also render the stall card",
+        ):
+            self.assertIn(phrase, self.flat)
+        self.assertNotIn("most of the round's defect items sit in the hot seam", self.flat)
+
+    def test_a_reopened_loop_starts_a_fresh_baseline(self):
+        self.assertIn(
+            "the next round counts as round 1 again: a fresh baseline and an unused grace round "
+            "(the ceiling's count carries on)",
+            self.flat,
+        )
+
+    def test_loop_induced_reads_the_durable_defect_fix_record(self):
+        # PR #62 review: the per-round record lived only in the conversation (a re-entered phase lost
+        # it) and was hunk-level with nothing marking which hunks were defect fixes.
+        text = " ".join(self.reference.read_text(encoding="utf-8").split())
+        self.assertIn(
+            "A defect is **loop-induced** when its cited site is a `<path>:<symbol>` an earlier round's defect fix changed",
+            text,
+        )
+        self.assertIn("A file touched only by polish or comment edits never makes a finding loop-induced", text)
+        self.assertIn("`Defect fixes: phase <N> @ <sha> — <path>:<symbol>;", text)
+        self.assertIn("never a polish site", text)
+        # Carried across sessions through the loop comment, like the refuted-items list.
+        self.assertIn("Seed the defect-fix record from every `Defect fixes: phase <N>` line for the current phase", text)
+        self.assertNotIn("git diff <sha>^..<sha>", text)
+        # The file-level hot seam stays the fix-design trigger, where erring wide is safe.
+        self.assertIn("It scopes that dispatch only", text)
+
+    def test_the_revision_run_waits_for_a_pending_operator_phase_and_reads_vetoes(self):
+        for phrase in (
+            "every phase is ticked — operator ones too; a pending operator/decision-only phase is the operator-phase handoff above, not a revision",
+            "a veto no re-plan has reassigned (`facts.dod_vetoes[].reassigned_to` null) clears only by re-planning",
+            "S6 projects only vetoes reassigned to phase 1",
+            "a veto a re-plan reassigned (`facts.dod_vetoes[].reassigned_to`) is projected when that phase ships",
+        ):
+            self.assertIn(phrase, self.flat)
+        rule = " ".join((REFERENCES_DIR / "dod-projection-rule.md").read_text(encoding="utf-8").split())
+        self.assertIn("`…; re-plan reassigned to phase Y, awaiting its ship`", rule)
+        replan = " ".join(
+            (REPO_ROOT / "skills" / "planner" / "references" / "revise-reconciliation.md").read_text(encoding="utf-8").split()
+        )
+        self.assertIn("append the re-plan mark inside the same annotation", replan)
+
+    def test_accept_current_files_after_the_pr_exists_and_the_light_base_is_stated(self):
+        self.assertIn("in fresh mode once `create-pr` returns the URL, so each has its parent PR", self.flat)
+        self.assertIn("(`<round sha>^...HEAD` — the round's single step-8 commit)", self.flat)
+        self.assertNotIn("<pre-round HEAD>", self.flat)
+
+    def test_evidence_refuted_findings_are_a_settled_bucket(self):
+        text = " ".join(self.reference.read_text(encoding="utf-8").split())
+        self.assertIn("- **Refuted** — the finding is factually wrong or unreachable, shown by evidence you cite", text)
+        self.assertIn("No evidence → not refuted", text)
+        self.assertIn("- refuted — <one-line item> — evidence: <what was read or run>", text)
+        self.assertIn("Plan-settled / Deferred-by-plan / Refuted item", text)
+        self.assertIn("Deferred-by-plan, Refuted, or polish → the loop has **settled**", self.flat)
+
+    def test_a_sibling_site_miss_is_fixed_not_carded(self):
+        text = " ".join(self.reference.read_text(encoding="utf-8").split())
+        self.assertIn("**sibling site** of a class fix you already made is not a match", text)
+        self.assertIn("fix it per the class discipline, and it counts as loop-induced", text)
+
+    def test_polish_tier_bounds_and_must_fix_list(self):
+        text = " ".join(self.reference.read_text(encoding="utf-8").split())
+        self.assertIn("cheap (no new spec file, no fix-design dispatch)", text)
+        self.assertIn("A refactor touching a guard, a raise, or any fail-closed path is never cheap", text)
+        self.assertIn("**Always fix in-loop, never ledger**, polish matching the evaluator's `apply` criteria", text)
+        self.assertIn("an unfinished `## Changes` entry of the phase being built", text)
+        self.assertIn("**Tie-break:** when defect-vs-polish is unclear, tier it defect", text)
+
+    def test_stall_card_continue_and_accept_current_semantics(self):
+        self.assertIn("the stall check pauses for the next N `review` runs, then applies again", self.flat)
+        self.assertIn("at the ceiling, Continue raises it by N", self.flat)
+        self.assertIn("with its findings **recorded, not fixed**", self.flat)
+        self.assertIn("so the stalling round never ships unread", self.flat)
+        self.assertIn("exit S5.1 as committed", self.flat)
+
+    def test_the_emergency_ceiling_counts_every_review_run(self):
+        self.assertIn("**emergency ceiling**: 8 `review` runs in S5.1", self.flat)
+        self.assertIn("light re-reviews and the post-cold-read run included", self.flat)
+
+    def test_a_polish_only_round_gets_one_light_re_review_and_no_chain(self):
+        self.assertIn("A round whose only fixes were polish first gets one **light re-review**", self.flat)
+        self.assertIn("polish it finds goes to the ledger unfixed", self.flat)
+
+    def test_the_ledger_is_written_at_the_phase_push(self):
+        self.assertIn("the `## Polish` ledger", self.flat)
+        self.assertIn("gains an `open` entry per polish item the loop left", self.flat)
+        self.assertIn("`applied (commit <sha>)` on each `apply` item it fixed", self.flat)
+
     def test_settle_covers_a_verdict_that_never_approves(self):
         """A reviewer that requests changes but names only deferrable items addresses nothing.
 
         Keying the exit on the approval line alone spins the loop on an unchanged PR until the cap;
         the retired sub-agent's exit keyed on "no items", which handled it.
         """
-        self.assertIn("The round addressed nothing", self.flat)
+        self.assertIn("the round addressed nothing that keeps the loop open", self.flat)
         self.assertIn("a non-approving verdict whose every item classified as Explicitly-deferred", self.flat)
 
     def test_the_cold_read_is_dispatched_at_most_once(self):
@@ -1107,7 +1224,7 @@ class MainLoopReviewFixRoundTests(unittest.TestCase):
         # loop settles instead of spinning an unchanged PR.
         self.assertIn(
             "a non-approving verdict whose every item classified as Explicitly-deferred (filed), "
-            "Plan-settled, or Deferred-by-plan",
+            "Plan-settled, Deferred-by-plan, Refuted, or polish",
             self.flat,
         )
         text = " ".join(self.reference.read_text(encoding="utf-8").split())
@@ -1133,7 +1250,7 @@ class MainLoopReviewFixRoundTests(unittest.TestCase):
             (REFERENCES_DIR / "common-pitfalls.md").read_text(encoding="utf-8").split()
         )
         self.assertIn(
-            "Before the first edit, list every Addressable and Cheap-fix-override item's intended change",
+            "Before the first edit, list the intended change of every item you will fix",
             reference,
         )
         self.assertIn("check the list as a set, and only then edit", reference)
@@ -1217,16 +1334,31 @@ class PhaseScopedReviewTests(unittest.TestCase):
         self.assertIn("level `medium` on a non-final phase, `high` on the final one", self.flat)
         self.assertIn('Skill(skill="review", args=', self.flat)
 
-    def test_the_cap_has_numbers(self):
-        self.assertIn(
-            "`review` runs at most **2** times on a non-final phase and **4** times on the final phase "
-            "before the cold read; step 4 owns what follows it",
-            self.flat,
-        )
-        self.assertIn('header: "Iter cap"', self.flat)
-        # The confirming review after the cold read classifies but never pushes: a push there would
-        # demand a review the cap forbids, with no card to land on.
-        self.assertIn("That round classifies but does not fix", self.flat)
+    def test_the_fixed_cap_is_retired_for_the_progress_rule(self):
+        # 4.21.0: the 2/4 cap could not tell a round of nits from a round of new bugs. Non-final
+        # phases run the same progress rule; the post-cold-read round is no longer a special
+        # classify-only round — its findings go through step 3 like any other.
+        self.assertNotIn("**2** times on a non-final phase", self.flat)
+        self.assertNotIn("That round classifies but does not fix", self.flat)
+        self.assertIn("then continue at step 1 under step 3's rules", self.flat)
+
+    def test_the_revision_run_is_defined_when_every_phase_shipped(self):
+        # S4's cursor ("the first unticked phase") selects nothing once every code-shipping phase is
+        # ticked — exactly where an evaluator soft-reject lands. The revision run fills the gap.
+        for phrase in (
+            "**Revision run** (`facts.revision.active`)",
+            "`dod_rejected` in `facts.revision.reasons` → re-route to `/github-pipeline:planner revise #<issue>` before any code",
+            "S5.1 runs at the **final** scope",
+            "There is no nothing-to-do shortcut",
+            "A revision run (S4) is final.",
+            "or a revision run (S4): flip the PR draft → ready",
+            "except at the last-phase handoff or a revision run's end",
+            "Then update the PR's `## Phase tracker` with `edit-pr-body`",
+            "Restage from the body this run last wrote",
+        ):
+            self.assertIn(phrase, self.flat)
+        router = " ".join(ROUTER.read_text(encoding="utf-8").split())
+        self.assertIn("`revision` (`active` + `reasons`: the S4 revision run)", router)
 
     def test_review_fixes_from_pr_55(self):
         # Finding 1: a trailing operator/decision-only phase must not steal "final" from the last

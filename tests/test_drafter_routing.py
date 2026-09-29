@@ -991,6 +991,26 @@ class ReviewTierAndAnchorRuleTests(unittest.TestCase):
         )
         self.assertIn("all in one message", tracking)
 
+    def test_follow_ups_file_one_issue_per_related_group(self):
+        """Related follow-ups file as ONE issue with one checkable bullet per item — one issue per
+        item flooded the tracker with findings one PR fixes together."""
+        self.assertIn("## Grouping — one issue per related group", self.filing)
+        for phrase in (
+            "Never mix types",
+            "A `bug` group only on a shared root cause",
+            "At most ~5 items",
+            "spawn one `general-purpose` sub-agent per group",
+            "with the item ids it covers",
+            "none dropped, none merged into another",
+            "one checkable bullet per item",
+        ):
+            self.assertIn(phrase, self.filing_flat)
+        # The drafter side: a grouped brief is one issue, never an epic to decompose.
+        self.assertIn("**Grouped follow-up**", self.templates)
+        self.assertIn("never an epic to decompose", self.templates_flat)
+        # The planner's seam follow-ups stay one per seam — each boundary bullet cites its own #M.
+        self.assertIn("seam-disposition follow-ups are not grouped", self.filing_flat)
+
     def test_router_names_the_per_process_new_mode_scratch(self):
         """Concurrent proxy-filed drafters must not share a staging dir (prep_drafter.py's default)."""
         self.assertIn("/tmp/gh-drafter-new-<pid>", ROUTER.read_text(encoding="utf-8"))

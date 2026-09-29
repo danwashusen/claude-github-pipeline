@@ -70,7 +70,7 @@ import workspace  # noqa: E402
 from pipelib import process  # noqa: E402
 from pipelib.decisions import AMBIGUOUS, needs_decision  # noqa: E402
 from pipelib.envelope import EXIT_OK, EXIT_USAGE_ERROR, emit_needs_decision, emit_ok  # noqa: E402
-from pipelib.spill import spill_bytes  # noqa: E402
+from pipelib.spill import read_section, spill_bytes  # noqa: E402
 from pipelib.thread import load_thread  # noqa: E402
 
 import delivery_log  # noqa: E402  (in-process composition, not a subprocess chain)
@@ -1072,6 +1072,11 @@ def build_facts(pr_number, repo, root=".", scratch_dir=None, refresh=False, cwd=
         if key.startswith(("body", "thread", "reviews", "marker_comment", "diff", "line_comments")):
             sections[key] = value
     facts["sections"] = sections
+
+    # The `## Polish` ledger (skills/_shared/polish-ledger.md) — the adjudication input
+    # (references/polish-adjudication.md). Scanned from the same PR body, so no extra call; the scan
+    # never raises (an unparseable line is `unparsed`, rewritten on the evaluator's disposition write).
+    facts["polish"] = parse.scan_polish(read_section(pr_envelope, "body"))
 
     return facts
 

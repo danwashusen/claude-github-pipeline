@@ -69,7 +69,8 @@ does not belong to the foundation slot.
 **Follow-up filing.** A "contract only" / "own issue" answer files its follow-up through the drafter
 proxy in [`../../_shared/follow-up-filing.md`](../../_shared/follow-up-filing.md) (type hint
 `feature`, parent reference `#<N>`) **before S5 drafts**, so every boundary bullet cites a real
-issue number — never a dangling "(to be filed)".
+issue number — never a dangling "(to be filed)". One issue per seam: that file's grouping does not
+apply here, because each boundary bullet cites its own `#M`.
 
 ## Residue (what lands in the plan)
 

@@ -14,7 +14,7 @@ re-inventing it in each touch point.
 ## The follow-up registry
 
 Maintain a working list — kept in your own conversation context, no file persistence needed — of
-follow-up items as they surface. Each entry has five fields:
+follow-up items as they surface. Each entry has six fields:
 
 - **Type** — `bug` | `incomplete-feature` | `deferred-test` | `revise-existing`. The drafter has a
   section template for each; classification matters because it determines the body structure.
@@ -28,6 +28,11 @@ follow-up items as they surface. Each entry has five fields:
 - **Parent reference** — the current PR URL or issue #, plus the parent epic # if applicable. Without
   this, the filed issue is orphaned.
 - **Urgency** — `file-now` or `file-at-checkpoint` (see "Hybrid timing" below).
+- **Group** — the related items it files together with, per
+  [`../../_shared/follow-up-filing.md`](../../_shared/follow-up-filing.md) "Grouping" (same type, same
+  seam, ≤ ~5; a lone item is a group of one). Group only items filed at the same moment: `file-now`
+  items group among themselves at their filing moment (state the grouping in the round reply — there is
+  no card), `file-at-checkpoint` items at the checkpoint.
 
 ## Filing vs. capturing — the decision rule
 
@@ -64,10 +69,10 @@ the registry to the user:
 
 > *"These follow-ups surfaced during this resolution but weren't filed in-flight. File them?"*
 >
-> *[list each item: title hint, type, one-sentence description]*
+> *[list each proposed group: title hint, type, then its items — one-sentence description each]*
 
-The user batch-approves, edits the list, or drops items. Only after batch approval do you spawn the
-sub-agents — one per item, all in one message per the shared protocol. Then, once the whole batch has
+The user batch-approves, edits the list, regroups (splits or merges groups), or drops items. Only after
+batch approval do you spawn the sub-agents — one per group, all in one message per the shared protocol. Then, once the whole batch has
 returned, weave URLs back into the handoff.
 
 ## Filing protocol — sub-agent proxy-confirms via the drafter
@@ -75,21 +80,22 @@ returned, weave URLs back into the handoff.
 The drafter-proxy filing round-trip is shared with the evaluator (its post-merge residual-filing step),
 so it lives in [`../../_shared/follow-up-filing.md`](../../_shared/follow-up-filing.md) — the single
 source of truth for the `general-purpose` sub-agent prompt, the three proxy-confirm checks, and the URL
-return. For the items the user has approved at the checkpoint, spawn one sub-agent per item, all in one
+return. For the groups the user has approved at the checkpoint, spawn one sub-agent per group, all in one
 message, per that file's protocol (substitute the placeholders at call time). The sub-agents isolate the
-drafter's verbose work from the resolver's main context: the resolver sees one batched round-trip, N
-briefs in → N URLs out, and an errored item never blocks the others' weaving.
+drafter's verbose work from the resolver's main context: the resolver sees one batched round-trip, one
+brief per group in → one URL per group out (with the item ids it covers), and an errored group never
+blocks the others' weaving.
 
 ## URL weaving — close the loop
 
-Once an item is filed, the resolver does three things with the URL:
+Once a group is filed, the resolver does three things with its URL — every item in the group shares it:
 
 1. **Replace temporary `// TODO(?)` markers** in code with `// TODO(#NNN)` referencing the filed issue.
    Same for skip annotations — rewrite the test framework's skip reason (`XCTSkip("Deferred to ?…")`,
    Minitest/RSpec `skip "?…"`) to reference `#NNN`. Don't commit the iteration without this rewrite; markers
    without real numbers age into noise.
-2. **Update the PR body's `## Follow-ups` section** with a list item per filed issue (stage the updated
-   body and `edit-body` the PR). Add the section if it doesn't exist. Putting follow-up links in the body
+2. **Update the PR body's `## Follow-ups` section** with a list item per filed issue — one per group, not
+   per item (stage the updated body and `edit-pr-body` the PR). Add the section if it doesn't exist. Putting follow-up links in the body
    (not a comment) makes them durable: comments scroll, the body persists.
 3. **Thread the URLs into the handoff** under a "Follow-ups filed" bullet, separate from the "Procedural
    notes" bullet that holds the capture-in-PR-body items.

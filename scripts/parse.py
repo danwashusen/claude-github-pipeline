@@ -1130,6 +1130,93 @@ def normalize_tracker_title(title):
 
 
 # ============================================================================================
+# `## Polish` ledger parsing (PR body) — import-only, NO subcommand and NO decision code
+# ============================================================================================
+#
+# The ledger (skills/_shared/polish-ledger.md) is, like the phase tracker, a rendering the pipeline
+# itself rebuilds: the resolver appends `open` / `applied` entries at each phase's push and the
+# evaluator rewrites dispositions. An unparseable line is a line to rewrite, never a run to fail —
+# so this follows `scan_phase_tracker`'s shape (never raises, `unparsed` collects row-like lines)
+# rather than `parse_oq_links`'s decision-raising one. Three preps read it: `prep_resolver`
+# (continue mode — evaluator-directed `apply` items and the revision-run reasons), `prep_evaluator`
+# (the adjudication input) and `prep_planner` (revise mode — the `apply` items a re-plan absorbs).
+
+# The closed disposition set (polish-ledger.md "Dispositions"). `applied` is the only form that
+# carries a parenthetical, `(commit <sha>)`, the resolver's record of the fix.
+POLISH_DISPOSITIONS = frozenset({"open", "apply", "file", "drop", "applied"})
+
+# `- P<phase>.<seq> · <disposition> — <item> — <anchor> [— <note>]`. The middle dot and the em
+# dashes are the field separators; `<item>` must not itself contain ` — ` (the contract says so), so
+# a split on that separator is exact. `<disposition>` is matched as a word and validated against
+# the closed set afterwards, so an off-vocabulary word lands in `unparsed` rather than silently
+# widening the set.
+_POLISH_ROW_RE = re.compile(
+    r"^-\s*P(\d+)\.(\d+)\s*·\s*([a-z]+)(?:\s*\(commit\s+([0-9a-f]{7,40})\))?\s*—\s*(.+)$"
+)
+_POLISH_ROWLIKE_RE = re.compile(r"^-\s*P\d")
+_POLISH_FIELD_SEP = " — "
+
+
+def scan_polish(pr_body_text):
+    """Scan a PR body's `## Polish` ledger. Returns `{"present", "entries", "unparsed"}`:
+
+      - `present` — the section exists (independent of whether any entry parsed).
+      - `entries` — `{"id", "phase", "seq", "disposition", "commit_sha", "item", "anchor", "note"}`
+        dicts in source order. `id` is `P<phase>.<seq>`, the stable handle both skills cite.
+        `commit_sha` is set only on `applied (commit <sha>)`; `note` is `None` when absent.
+      - `unparsed` — ledger-like lines (`- P<digit>…`) that did not parse, verbatim: a missing
+        anchor field, an off-vocabulary disposition, a `(commit …)` on anything but `applied`.
+
+    Never raises.
+    """
+    lines = (pr_body_text or "").splitlines()
+    found = _find_section(lines, r"Polish")
+    if found is None:
+        return absent_polish()
+    start, end = found
+
+    entries, unparsed = [], []
+    for raw_line in lines[start:end]:
+        stripped = raw_line.strip()
+        if not stripped:
+            continue
+        match = _POLISH_ROW_RE.match(stripped)
+        fields = match.group(5).split(_POLISH_FIELD_SEP) if match else []
+        disposition = match.group(3) if match else None
+        commit_sha = match.group(4) if match else None
+        valid = (
+            match is not None
+            and disposition in POLISH_DISPOSITIONS
+            and (commit_sha is None or disposition == "applied")
+            and len(fields) >= 2
+            and all(part.strip() for part in fields[:2])
+        )
+        if valid:
+            note = _POLISH_FIELD_SEP.join(fields[2:]).strip() or None
+            entries.append(
+                {
+                    "id": "P%s.%s" % (match.group(1), match.group(2)),
+                    "phase": int(match.group(1)),
+                    "seq": int(match.group(2)),
+                    "disposition": disposition,
+                    "commit_sha": commit_sha,
+                    "item": fields[0].strip(),
+                    "anchor": fields[1].strip(),
+                    "note": note,
+                }
+            )
+        elif _POLISH_ROWLIKE_RE.match(stripped):
+            unparsed.append(stripped)
+    return {"present": True, "entries": entries, "unparsed": unparsed}
+
+
+def absent_polish():
+    """The polish fact when there is no PR body to scan. A factory (fresh dicts per call) for the
+    same aliasing reason as `prep_resolver._absent_tracker`."""
+    return {"present": False, "entries": [], "unparsed": []}
+
+
+# ============================================================================================
 # Dispatch
 # ============================================================================================
 

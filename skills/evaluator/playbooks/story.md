@@ -127,9 +127,9 @@ second record for a story that already has one. Name the story you recorded in t
 ## Residual follow-ups + cleanup
 
 Then file residual non-blocking follow-ups (shared with the standard route): de-dup against the PR
-body's `## Follow-ups` *Filed* entries, file each via
-[`../../_shared/follow-up-filing.md`](../../_shared/follow-up-filing.md) (parent reference = this PR +
-the story issue + the parent epic), post the URLs as a brief PR comment. Then purge the scratch
+body's `## Follow-ups` *Filed* entries, fold in the `## Polish` ledger's `file` entries, and file
+each related group via [`../../_shared/follow-up-filing.md`](../../_shared/follow-up-filing.md)
+(parent reference = this PR + the story issue + the parent epic), post the URLs as a brief PR comment. Then purge the scratch
 dir only (`rm -rf "<facts.scratch>"`) — the worktree is **deliberately retained** (this session runs
 inside it); the handoff's Cleanup line hands the operator
 `/github-pipeline:workspace-close <facts.workspace.branch>` for the teardown + gated removal.
@@ -150,5 +150,6 @@ legacy epic):
 
 On a **no-merge** exit, Actions 1–3 did **not** run: emit the **soft-reject → re-route** shape to
 `/github-pipeline:resolver continue #<PR>` (not the forward-to-next-story route — no merge landed; the
-next story is deferred to a later run that actually merges this one), or the **APPROVE-but-skipped**
+next story is deferred to a later run that actually merges this one) — or to `/github-pipeline:planner
+revise #<issue>` when it carries an S4-untick or a plan-changing polish `apply` — or the **APPROVE-but-skipped**
 shape with the manual `gh pr merge` command.

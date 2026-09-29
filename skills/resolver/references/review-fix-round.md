@@ -21,19 +21,29 @@ This is **not** a sub-agent prompt: no placeholders, no JSON return, and every g
   S5.2 and you hold the staged `<facts.scratch>/pr.md` instead; the originating issue and its parent epic (or none);
   `facts.audit_ref` (bare) as the integration target.
 - **Workspace**: `facts.workspace.path` — the cwd for every command you run.
-- **Iteration number** — the 1-based index in S5.1's outer loop.
+- **Iteration number** — the 1-based index in S5.1's outer loop, and the **previous round's defect
+  count** (S5.1 step 3 compares this round's against it).
 - **Loop-entry SHA** — HEAD recorded at S5.1 entry. `git diff --name-only <loop-entry sha>...HEAD` in the
   workspace is the set of files this loop's own fixes have changed — the **hot seam** step 4's fix-design
-  trigger reads. It scopes that dispatch only; it is not provenance tagging and never gates the cold read
-  (4.11.0 removed that machinery deliberately).
-- **The addressed-items list** — one-line summaries of what you fixed in every prior round this run. You
-  append to it in step 9; the deadlock check in step 3 reads it.
-- **The refuted-items list** — one line per Plan-settled / Deferred-by-plan item with its citation, from
+  trigger reads. It scopes that dispatch only — the progress rule's **loop-induced** test reads the
+  defect-fix commits on the addressed-items list instead, since a file-level set turns hot on a mere
+  polish rename; it is not provenance tagging and never gates the cold read (4.11.0 removed that
+  machinery deliberately).
+- **The addressed-items list** — one-line summaries of what you fixed in every prior round this run,
+  plus the **defect-fix record**: each round's `Defect fixes:` line (step 8) — its commit SHA and the
+  `<path>:<symbol>` site of every **defect** it fixed. The record also carries a prior session's lines on
+  this phase, seeded by the resume hint, so a re-entered phase keeps its history. You append to it in
+  step 9; the deadlock check in step 3 reads it, and so does the rubric's **loop-induced** test.
+- **The refuted-items list** — one line per Plan-settled / Deferred-by-plan / Refuted item with its
+  citation or evidence, from
   every prior round this run and (seeded on iteration 1, below) from earlier phases' rounds. Appended in
   step 9; the deadlock check reads it too, and treats a match differently from an addressed match.
 - **The plan and the phase list** — the verified plan comment (`facts.plan.url`; its body is the
   `marker_comment_*` entry of `facts.sections`) and `facts.phases`, with the current phase's number
   (the S4 cursor) and its `depends-on`. The two settled buckets cite these.
+- **The polish ledger** — `facts.polish` ([`../../_shared/polish-ledger.md`](../../_shared/polish-ledger.md)).
+  Every entry the evaluator marked `apply` is Addressable on iteration 1 whatever its tier — it has
+  been decided; recording it as `open` again would bounce the PR between the two skills.
 - **Doc-grounding statement** (from S3) and any audit / plan overrides carried into the PR body — use them
   when defending an implementation choice in a PR reply.
 - **Test config**: `facts.config.static_checks` and `facts.config.test_target_raw`.
@@ -44,12 +54,14 @@ This is **not** a sub-agent prompt: no placeholders, no JSON return, and every g
 - **Resume hint** — this loop may be picking up mid-flow (a prior resolver run was interrupted, or a human
   reviewer commented between invocations). On **iteration 1 only**, when a PR exists, before classifying, re-read the
   accumulated PR comments and reviews (`gh pr view --comments`, plus the `pulls/<N>/reviews` and
-  `pulls/<N>/comments` REST endpoints via `gh api`) and treat any human reviewer comment as additional
-  Addressable input alongside the verdict. Seed the refuted-items list from every `Settled (not
+  `pulls/<N>/comments` REST endpoints via `gh api`) and treat any reviewer comment or review — the evaluator's soft-reject review included, though a
+  pipeline-authored `COMMENTED` review carries no operator header — as additional Addressable input
+  alongside the verdict. Seed the refuted-items list from every `Settled (not
   addressed):` block in prior round replies (step 8) — each phase is a fresh session, and that block is
   the only carrier of what earlier phases refuted — **except** a `deferred-by-plan` entry whose phase is
   the current phase or a ticked tracker row: its deferral has come due, and the finding classifies
-  fresh. Note any `Cold read: phase <N> @ <sha>` line for the current phase and whether its `<sha>` is
+  fresh. Seed the defect-fix record from every `Defect fixes: phase <N>` line for the current phase. Note
+  any `Cold read: phase <N> @ <sha>` line for the current phase and whether its `<sha>` is
   HEAD or an ancestor of it (S5.1 step 4 reads both).
 
 ## Classification rubric
@@ -59,8 +71,33 @@ Apply to every listed item:
 - **Addressable** — a concretely-named change on already-modified files or the issue's scope. The DEFAULT
   for any concretely-named change. Soft politeness ("could be fast-follow", "not blocking", "future PR")
   does NOT by itself move an item out of Addressable.
-- **Cheap-fix-override** — a <= ~20-line fix on already-modified files, even when the reviewer offered to
-  defer it: address it here.
+
+Every Addressable item also gets a **tier**, recorded beside it in the round reply so the call can be
+audited:
+
+- **defect** — correctness, a broken contract or invariant, data loss or corruption, security, a test
+  gap that would let a real bug through, or an unfinished `## Changes` entry of the phase being built
+  (the plan requires it; the diff does not deliver it yet). Keeps the loop open (S5.1 step 3 counts
+  these). **Tie-break:** when defect-vs-polish is unclear, tier it defect if the finding cites a plan
+  decision or shows a test that could not fail, and record the doubt in the round reply — the likely
+  mis-tiering is a test gap under-tiered as polish, which settles the loop early.
+- **polish** — everything else: naming, structure, comments, a small refactor. Fix it **on merit** —
+  cheap (no new spec file, no fix-design dispatch), on code this phase already touches, and clearly
+  right rather than taste; otherwise leave it for the `## Polish` ledger, which the evaluator
+  adjudicates. A refactor touching a guard, a raise, or any fail-closed path is never cheap — a
+  polish refactor that dropped a non-nil assertion turned a raising path fail-open, unnoticed by
+  review. **Always fix in-loop, never ledger**, polish matching the evaluator's `apply` criteria
+  ([`../../_shared/polish-ledger.md`](../../_shared/polish-ledger.md) "Apply criteria"), whatever it
+  costs: parked, it only buys a revision session later.
+  Polish never keeps the loop open. (This replaced the Cheap-fix-override bucket, which forced every
+  ≤ ~20-line fix and fed an unbounded tail of polish rounds.)
+
+A defect is **loop-induced** when its cited site is a `<path>:<symbol>` an earlier round's defect fix
+changed — a site in the defect-fix record, this session's or a prior session's on this phase — or when
+it is the same change at a sibling site of a class fix already addressed (that fix was incomplete). The
+record names defect-fix sites only, because one round commit also carries that round's polish. A file
+touched only by polish or comment edits never makes a finding loop-induced. S5.1 step 3 reads this;
+nothing else does.
 - **Explicitly-deferred** — routed elsewhere with a concrete tracking target (filed as #M, depends on an
   un-landed sibling, a citable PRD/scope exclusion): file it as a follow-up.
 - **Decision-required** — an architectural / API-break / scope-change tradeoff the reviewer named candidate
@@ -74,6 +111,11 @@ Apply to every listed item:
   bucket — this bucket exists to stop re-litigation, never to dismiss a finding. A finding that
   *demonstrates* the decision is defective (a reproducible fault, a documented-constraint violation) is
   not plan-settled: it is Decision-required or Grounding-violation.
+- **Refuted** — the finding is factually wrong or unreachable, shown by evidence you cite: a code read
+  naming the guard or call site that makes it impossible, or a run or reproduction showing the claimed
+  failure does not occur. Settled, not addressed: no edit, no follow-up; the PR reply carries the
+  evidence. No evidence → not refuted, and the item stays in its default bucket. Disagreeing on taste is
+  not refutation — that is polish.
 - **Deferred-by-plan** — the finding names a seam, consumer, or wiring that a **later** phase in
   `facts.phases` ships (a phase after the current cursor). Settled: cite the phase number and title in
   the PR reply, file nothing — `Explicitly-deferred` files a follow-up, and an issue for work a planned
@@ -84,9 +126,8 @@ Apply to every listed item:
 
 1. **Classify** every issue and suggestion per the rubric, reading the plan and `facts.phases` for the two
    settled buckets. The reviewer's own "approved" verdict line is
-   NOT the exit condition — re-classify each listed item. The cheap-fix override applies to <= ~20-line
-   fixes on already-modified files even when the reviewer offered to defer. On iteration 1, fold in the
-   human PR activity from the resume hint.
+   NOT the exit condition — re-classify each listed item, then tier every Addressable one. On iteration
+   1, fold in the human PR activity from the resume hint and every `apply` entry in `facts.polish`.
 2. **Gates before any edit.** A Decision-required item → render the `Decision` card now. A
    Grounding-violation item that is **not** addressable on this PR → render the `Grounding` card now. When
    a finding matches **both**, render `Grounding` — a hard block outranks a soft approval gate. Act on the
@@ -94,13 +135,16 @@ Apply to every listed item:
    step 1 and is fixed in step 4; it is never filed as a follow-up.)
 3. **Deadlock check.** If any item in the current verdict matches a summary in the addressed-items list
    (same file, same surface, same suggested change with no acknowledgement of your prior fix), render the
-   `Review loop` card. Don't address it a second time on the same hypothesis. An item matching the
+   `Review loop` card. Don't address it a second time on the same hypothesis. The same change at a
+   **sibling site** of a class fix you already made is not a match — the hypothesis held and the
+   coverage fell short: fix it per the class discipline, and it counts as loop-induced. An item matching the
    **refuted-items list** is re-settled silently on its second occurrence: no card, no second reply,
    only the entry's repeat count bumped. On its **third** occurrence in one run render the `Review loop`
    card with the refutation standing in for the prior fix — the reviewer's persistence is evidence the
    citation may not answer it.
-4. **Fix plan, then fix.** Before the first edit, list every Addressable and Cheap-fix-override item's
-   intended change as text in this conversation — not in the PR reply, not in a file (on a hot seam, the
+4. **Fix plan, then fix.** Before the first edit, list the intended change of every item you will fix
+   (each defect-tier Addressable item, each evaluator `apply` item, and each polish item you fix on
+   merit) as text in this conversation — not in the PR reply, not in a file (on a hot seam, the
    fix-design dispatch below comes first and supplies those items' lines); one line per item:
    `<item> — <file>:<function> — siblings: <the sites sharing the concept, the class per the first
    fix-discipline bullet> — interacts with: <other items this round: same file, same function, or a fix
@@ -112,11 +156,11 @@ Apply to every listed item:
    - A fix that reverses a plan decision → that item is not a fix: reclassify it Decision-required and
      render step 2's `Decision` card now, before any edit, its paths the decision as it stands (the item
      settles Plan-settled, citing it) and **Re-plan**.
-   An empty list (no Addressable or Cheap-fix-override item) needs no plan — step 5 owns that round.
+   An empty list (nothing to fix) needs no plan — step 5 owns that round.
 
    **Fix design on a hot seam.** Before writing the fix plan, dispatch the fix-design `Explore`
    sub-agent per [`fix-design-prompt.md`](fix-design-prompt.md) when any Addressable or
-   Cheap-fix-override item names a file in the hot seam (Loop-entry SHA — a cold-read-fed round
+   polish item you will fix names a file in the hot seam (Loop-entry SHA — a cold-read-fed round
    included); dispatch it after writing the plan when the set check finds two fixes that cannot both
    hold or one that alters another's premise. At most once per round. Stage the scope diff to
    `<facts.scratch>/fix-design-diff.patch` (`git diff <base>...HEAD` in the workspace, `<base>` per
@@ -139,13 +183,13 @@ Apply to every listed item:
    the code they corrected, and a later run had three of eleven findings introduced by the loop's own
    fixes: the disciplines catch defects inside one fix, the fix plan catches the ones between fixes, and
    the fix design catches the ones between a fix and the seam it lands in. File
-   every Explicitly-deferred item via the follow-up filing protocol (urgency `file-now`, type per the
-   reviewer's framing) and capture the returned URLs. Never file a Grounding-violation item.
-5. **No edits** (zero Addressable, zero Cheap-fix-override items — every item Explicitly-deferred or
-   settled) → this round is complete. Skip steps 6–7 and step 8's commit; stage step 8's reply
+   every Explicitly-deferred item via the follow-up filing protocol — related items as one group
+   (urgency `file-now`, type per the reviewer's framing) — and capture the returned URLs. Never file a Grounding-violation item.
+5. **No edits** (no defect, no `apply` item, no polish fixed on merit — every item Explicitly-deferred,
+   settled, or polish left for the ledger) → this round is complete. Skip steps 6–7 and step 8's commit; stage step 8's reply
    only when this round settled a **new** item or was fed by the cold read (the `Settled (not
    addressed):` block and/or the `Cold read:` line alone). Then step 9,
-   then back to S5.1 step 3, whose "addressed nothing" branch settles the loop — whether or not the
+   then back to S5.1 step 3, whose zero-defect branch settles the loop — whether or not the
    verdict's own line said approved.
 6. **Defect-inject** every new or changed assertion step 4 added. An assertion written to catch a finding's
    defect does not count as coverage until an injection has made it fail: stage the fix first (the
@@ -166,7 +210,10 @@ Apply to every listed item:
    scope". The retry ladder caps a single visit at 3 runs with a forced research breakpoint between cheap
    and deep fixes. On escalation, render the `Tests red` card.
 8. **Commit. Stage the reply** — append this round's section to `<facts.scratch>/loop-comment.md`,
-   briefly describing what changed in response to which points of feedback. Nothing is pushed or posted
+   briefly describing what changed in response to which points of feedback, each item carrying its
+   tier and the round's defect count on its own line (the stall card's evidence). Hold every polish
+   item this round left unfixed for S5.2's `## Polish` ledger write, and every `apply` item it fixed
+   for its `applied (commit <sha>)` update. Nothing is pushed or posted
    here: S5.2 pushes once and posts the whole file as the loop comment, because every per-round push
    started CI on code the next round was about to change. That comment is the GitHub-side record — how
    a reviewer, and the next session, follows what this loop did without replaying the conversation. When the round settled anything new,
@@ -177,16 +224,23 @@ Apply to every listed item:
    Settled (not addressed):
    - plan-settled — <one-line item> — cites: <section> "<decision bullet, verbatim>" (×<repeats>)
    - deferred-by-plan — <one-line item> — phase <N> "<title>" (×<repeats>)
+   - refuted — <one-line item> — evidence: <what was read or run> (×<repeats>)
    ```
 
    `(×<repeats>)` is omitted on a first occurrence; carrying it is what lets the count survive a phase
    boundary.
 
+   A round that fixed a defect also carries one `Defect fixes: phase <N> @ <sha> — <path>:<symbol>;
+   <path>:<symbol>` line: the round's commit and every defect fix's site, never a polish site. `<N>` is
+   the phase number (in a revision run, the last code phase's — the ledger id rule), so the next
+   session's resume re-read finds it.
+
    A round fed by the cold read (S5.1 step 4) also carries the `Cold read: phase <N> @ <sha>` line. A
    round that dispatched the fix design names the seam it re-derived in one line, so a reviewer sees why a
    fix reached past the finding's own site.
-9. **Record.** Append this round's one-line item summaries to the addressed-items list and its settled
-   items, with citations, to the refuted-items list. Hold the filed
+9. **Record.** Append this round's one-line item summaries to the addressed-items list, and its
+   `Defect fixes:` line to the defect-fix record, and its settled items, with citations or
+   evidence, to the refuted-items list; keep its defect count for the next round's comparison. Hold the filed
    follow-up URLs for the PR body and the handoff. Carry any **procedural note** (something the next
    session should know that is not worth an issue) as a capture-not-file item per
    `follow-up-tracking.md` — it lands in the PR body or the handoff `Why:`, never as a filed issue.
@@ -223,4 +277,5 @@ Don't try to satisfy a re-route inside the round; there is nothing here that can
   for an epic the planner scopes the missing in-scope work as a story) and **Abort**. Each `description`
   carries the violated doc citation and the in-scope evidence.
 
-The outer iteration cap is not a fix-round gate: S5.1 tracks iterations and asks.
+The stall card and the emergency ceiling are not fix-round gates: S5.1 tracks the defect counts and
+asks.

@@ -8,13 +8,32 @@ bodies — every follow-up routes through the `drafter` (PRD-grounded, sub-agent
 `general-purpose` sub-agent that proxy-confirms the draft and returns the URL. The caller keeps its own
 registry / timing / URL-weaving rules; this file is only the filing round-trip they share.
 
+## Grouping — one issue per related group
+
+Related items file as **one** issue, not one each: several findings about one module get planned and
+fixed together anyway, and one issue per item floods the tracker. Before filing, the caller groups the
+items it is about to file at this moment:
+
+- **Same type, same seam.** A group is items one PR would naturally fix together — the same module or
+  seam, and the same type. Never mix types: each has its own body template and urgency.
+- **A `bug` group only on a shared root cause** — the umbrella issue the retry ladder already allows for
+  failures sharing one; unrelated bugs stay separate.
+- **At most ~5 items**, so the issue stays plannable in one pass. A `revise-existing` group never spans
+  two target issues.
+- **A single item is a group of one** — grouping never forces unrelated items together.
+
+Who approves the grouping is the caller's: the resolver shows the proposed groups on its end-of-loop
+checkpoint card, and states the grouping in the round reply for review-deferred (`file-now`) items,
+which file immediately. The **planner's** seam-disposition follow-ups are not grouped — each boundary
+bullet cites its own `#M`.
+
 ## Protocol — sub-agent proxy-confirms via the drafter
 
-For the items the caller's own gate has approved at one filing moment (the resolver's user at the
+For the groups the caller's own gate has approved at one filing moment (the resolver's user at the
 end-of-loop checkpoint or a retry-ladder / review-loop deferral, the evaluator's residual step, the
-planner's seam-disposition answer), spawn one `general-purpose` sub-agent per item with this prompt
+planner's seam-disposition answer), spawn one `general-purpose` sub-agent per group with this prompt
 (substitute the placeholders at call time) — **all in one message**, so the batch runs concurrently.
-The items are independent, and spawning them one after another costs the drafter's full round-trip
+The groups are independent, and spawning them one after another costs the drafter's full round-trip
 each in series (an observed resolver run filed 3 follow-ups in ~30 minutes that way).
 
 **The one exception:** `revise-existing` items that share a target issue go one at a time — they
@@ -28,30 +47,35 @@ as not filed, with the reason.
 
 ```
 You are filing one GitHub follow-up issue on behalf of the calling skill
-(the resolver, the evaluator, or the planner). Invoke the
-`/github-pipeline:drafter` skill, proxy-confirm the draft, and return the
-filed issue URL.
+(the resolver, the evaluator, or the planner). The issue covers the group
+of related items below — one item, or several that one PR would fix
+together. Invoke the `/github-pipeline:drafter` skill, proxy-confirm the
+draft, and return the filed issue URL.
 
-Item to file:
+Group to file:
 - Type: <bug | incomplete-feature | feature | deferred-test | revise-existing>
-- Title hint: <one-line summary>
-- Description: <2–5 sentences: the finding, why it matters, and the
-  judgment worth freezing — rulings, exemption classes, constraints.
-  Durable anchors only (paths, symbols, doc section headings, register
-  IDs, #N); never pasted grep output or path:line inventories —
-  downstream skills re-derive sites fresh. If the item describes state
-  the parent PR introduces that is not yet on the default branch, say so>
+- Title hint: <one-line summary covering the whole group>
+- Items (one per line, each with the caller's item id):
+  - <id>: <2–5 sentences: the finding, why it matters, and the
+    judgment worth freezing — rulings, exemption classes, constraints.
+    Durable anchors only (paths, symbols, doc section headings, register
+    IDs, #N); never pasted grep output or path:line inventories —
+    downstream skills re-derive sites fresh. If the item describes state
+    the parent PR introduces that is not yet on the default branch, say so>
 - Parent reference: PR <URL>, issue #<N>, epic #<E> (if applicable)
 - Repository: <owner/repo>
 
 Steps:
 
-1. Invoke the drafter skill, passing the description above as
-   the informal feedback. State the type hint, title hint, and parent
-   reference clearly so the drafter has them at classification time, and
-   state that this is a **proxy-filed follow-up (lean review)** — the
-   drafter's lean tier: one review pass, suggestions surfaced unapplied
-   at its gate. Also relay the attribution rule: any claim describing
+1. Invoke the drafter skill, passing the items above as the informal
+   feedback. State the type hint, title hint, and parent reference
+   clearly so the drafter has them at classification time. With more
+   than one item, state that this is **one grouped follow-up**: one
+   issue, with one checkable bullet per item in its checkable section
+   (`## Definition of done`, or `## Acceptance criteria` for a
+   `feature`) — not an epic to decompose. Also state that this is a
+   **proxy-filed follow-up (lean review)** — the drafter's lean tier:
+   one review pass, suggestions surfaced unapplied at its gate. Also relay the attribution rule: any claim describing
    what the parent PR introduces (state not yet on the default branch)
    must be attributed to the PR in the body ("PR <URL> ships…"), never
    asserted as current-repo truth.
@@ -82,9 +106,11 @@ Steps:
       the Related-issues section."
 
    c. Substance — does the body's What's-wrong / What's-missing /
-      Definition-of-done content match the description? If the drafter
-      hallucinated detail the description doesn't support, reply with a
-      one-sentence correction.
+      Definition-of-done content match the items? For a group, every
+      item has its own checkable bullet — none dropped, none merged into
+      another. If the drafter hallucinated detail the items don't
+      support, or folded items together, reply with a one-sentence
+      correction.
 
 4. Approve if all three checks pass. If any check fails, reply with the
    correction and let the drafter iterate. Cap at 2 correction rounds —
@@ -96,7 +122,8 @@ Steps:
    URL. Capture that URL.
 
 Return only:
-- The filed URL (or "error: <reason>" if you stopped at step 4's cap)
+- The filed URL (or "error: <reason>" if you stopped at step 4's cap),
+  with the item ids it covers
 - The drafter's final type (in case it overrode the hint)
 - A one-line note if you raised any correction before approving
 
@@ -105,5 +132,6 @@ this inside its own flow. Your role is to invoke, proxy-confirm, return.
 ```
 
 The sub-agents isolate the drafter's verbose work (PRD reading, classification questioning, nested
-sub-agent review loop) from the caller's main context. The caller sees one batched round-trip: N
-briefs in, N results out.
+sub-agent review loop) from the caller's main context. The caller sees one batched round-trip: one
+brief per group in, one result per group out — each result naming the item ids it covers, which is
+what the caller's URL weaving keys on.

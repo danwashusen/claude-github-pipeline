@@ -72,7 +72,12 @@ commit <sha>; evaluator rejected: <reason>)` is the evaluator's rejection of a p
 diff in the attributed commit(s) didn't satisfy the bullet. Treat such bullets as **not projected**, even
 when `Phase tracker × closes-dod` would tick them. The disagreement is resolved by re-planning (the
 planner reassigns the bullet to a different phase), by a new code phase whose diff actually satisfies the
-bullet, or by user intervention — never by silent re-ticking on the next push.
+bullet, or by user intervention — never by silent re-ticking on the next push. A re-planned veto carries
+the planner's mark `…; re-plan reassigned to phase Y, awaiting its ship` (prep reports it as
+`facts.dod_vetoes[].reassigned_to`): it stays out of projection until phase `Y` ships, then is projected
+by that push, replacing the annotation in full. On a single-phase issue `Y` is `1` and "phase 1 ships" is
+the revision run's push (spine S4), in the fallback form `(closed by commit <short-sha>)` — which the
+evaluator's DoD verification checks against that commit.
 
 **Idempotent diff-only application.** Projection is computed as
 `expected_set − (currently_ticked_set ∪ rejected_set)`. Only the diff is applied to the body. Never

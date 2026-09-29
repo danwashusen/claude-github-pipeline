@@ -829,6 +829,60 @@ class PhaseTrackerParseTests(unittest.TestCase):
         self.assertIs(prep_planner._parse_phase_tracker, parse.parse_phase_tracker)
 
 
+class PolishLedgerParseTests(unittest.TestCase):
+    """`scan_polish` — the `## Polish` ledger (skills/_shared/polish-ledger.md). A rendering the
+    resolver and evaluator rebuild, so it follows the phase tracker's posture: never raises, and an
+    unparseable line lands in `unparsed` to be rewritten, never a decision."""
+
+    CONTRACT = REPO_ROOT / "skills" / "_shared" / "polish-ledger.md"
+
+    def _contract_example(self):
+        text = self.CONTRACT.read_text(encoding="utf-8")
+        start = text.index("```\n## Polish\n") + len("```\n")
+        return text[start:text.index("```", start)]
+
+    def test_the_contract_worked_example_parses_whole(self):
+        scan = parse.scan_polish(self._contract_example())
+        self.assertTrue(scan["present"])
+        self.assertEqual(scan["unparsed"], [])
+        self.assertEqual(
+            [(e["id"], e["disposition"]) for e in scan["entries"]],
+            [("P1.1", "open"), ("P1.2", "file"), ("P2.1", "applied"), ("P2.2", "drop"), ("P2.3", "apply")],
+        )
+        applied = scan["entries"][2]
+        self.assertEqual(applied["commit_sha"], "3f9c2ab")
+        self.assertEqual(applied["anchor"], "lib/client.rb / retry_after")
+        self.assertEqual(applied["note"], "evaluator: misleading on a public API")
+        self.assertIsNone(scan["entries"][0]["note"])
+
+    def test_every_contract_disposition_is_in_the_closed_set(self):
+        self.assertEqual(parse.POLISH_DISPOSITIONS, {"open", "apply", "file", "drop", "applied"})
+        table = self.CONTRACT.read_text(encoding="utf-8")
+        for word in parse.POLISH_DISPOSITIONS:
+            self.assertIn("| `%s" % word, table)
+
+    def test_malformed_lines_are_unparsed_not_raised(self):
+        body = (
+            "## Polish\n"
+            "- P1.1 · maybe — off-vocabulary disposition — a.py / f\n"
+            "- P1.2 · open — missing its anchor field\n"
+            "- P1.3 · open (commit abc1234) — a commit on a non-applied entry — a.py / f\n"
+            "- P1.4 · open — fine — a.py / f\n"
+            "prose inside the section is ignored\n"
+        )
+        scan = parse.scan_polish(body)
+        self.assertEqual([e["id"] for e in scan["entries"]], ["P1.4"])
+        self.assertEqual(len(scan["unparsed"]), 3)
+
+    def test_absent_section_is_not_present(self):
+        self.assertEqual(parse.scan_polish("no ledger"), parse.absent_polish())
+        self.assertEqual(parse.scan_polish(None), {"present": False, "entries": [], "unparsed": []})
+
+    def test_the_section_ends_at_the_next_heading(self):
+        scan = parse.scan_polish("## Polish\n- P1.1 · open — a — b.py / c\n## Follow-ups\n- P1.2 · open — x — y / z\n")
+        self.assertEqual([e["id"] for e in scan["entries"]], ["P1.1"])
+
+
 class ParsePhasesCliTests(unittest.TestCase):
     def test_phases_happy_path_envelope_conformance(self):
         rc, out, err = _run_cli(
