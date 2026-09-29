@@ -20,6 +20,12 @@ repo-wide search returns no reference presenting a retired path as live; dated r
 historical record — the owning command rules"), **never a frozen enumerated hit list** — enumeration is
 the resolver's build-time grounding, re-derived fresh (≤2 examples marked non-exhaustive are fine).
 
+**Grouped follow-up** (a proxy-filed brief naming several related items — `_shared/follow-up-filing.md`
+"Grouping"): one issue, never an epic to decompose. Every item gets its own checkable bullet in the
+template's checkable section — `## Definition of done`, or `## Acceptance criteria` for a feature; a
+bug group (items sharing one root cause) states the shared cause once and lists each symptom. Dropping
+or merging an item is the proxy's check (c) failure.
+
 **Bug template:**
 
 ```markdown

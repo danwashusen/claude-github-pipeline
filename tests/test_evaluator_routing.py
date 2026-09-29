@@ -389,6 +389,59 @@ class SliceBackstopTests(unittest.TestCase):
         self.assertTrue(envelope.get("dry_run"))
 
 
+class PolishAdjudicationTests(unittest.TestCase):
+    """S5.5: the evaluator decides the resolver's `## Polish` ledger (skills/_shared/polish-ledger.md)
+    — apply / file / drop — before S7's post timing, because `auto` merges on the APPROVE post."""
+
+    def setUp(self):
+        self.spine = re.sub(r"\s+", " ", (PLAYBOOKS_DIR / "evaluate-spine.md").read_text(encoding="utf-8"))
+        self.reference = re.sub(
+            r"\s+", " ", (SKILL_DIR / "references" / "polish-adjudication.md").read_text(encoding="utf-8")
+        )
+
+    def test_the_step_sits_before_the_post_timing(self):
+        self.assertIn("## S5.5 — Polish ledger", self.spine)
+        self.assertLess(self.spine.index("## S5.5 — Polish ledger"), self.spine.index("**Post timing.**"))
+        self.assertIn("an operator-confirmed polish `apply` (S5.5)", self.spine)
+
+    def test_an_apply_is_operator_confirmed_under_either_policy(self):
+        self.assertIn('`header: "Polish"`', self.reference)
+        for option in ("**Apply**", "**File instead**", "**Merge anyway**"):
+            self.assertIn(option, self.reference)
+        # Under `ask` it folds into the gate card rather than asking twice.
+        self.assertIn("fold it into the S7-gate `Approve PR` card", self.reference)
+        self.assertIn("**Needs Revision** applies them and **Approve** drops them", self.spine)
+        # The operator's card is the only bound on polish round-trips — never a counter.
+        self.assertIn("deliberately an operator decision, not a counter", self.reference)
+
+    def test_dispositions_are_written_once_after_the_answer(self):
+        self.assertIn("gh_persist.py edit-pr-body", self.reference)
+        self.assertIn("the ledger never records a decision the operator overrode", self.reference)
+
+    def test_the_route_depends_on_whether_the_plan_changes(self):
+        self.assertIn("**`/github-pipeline:planner revise #<issue>`**", self.reference)
+        self.assertIn("**`/github-pipeline:resolver continue #<PR>`**", self.reference)
+        rubric = re.sub(
+            r"\s+", " ", (SKILL_DIR / "references" / "handoff-renderings.md").read_text(encoding="utf-8")
+        )
+        self.assertIn("Operator-confirmed polish `apply` (S5.5)", rubric)
+        self.assertIn("/github-pipeline:planner revise #142", rubric)
+
+    def test_the_disposition_write_dry_runs_through_edit_pr_body(self):
+        proc, env = _run_persist(
+            ["edit-pr-body", "octo/widgets", "287", "@BODY@", "--dry-run"],
+            body_text="Fixes #142\n\n## Polish\n- P1.1 · file — x — a.py / f — later\n",
+        )
+        self.assertEqual(proc.returncode, 0, msg=proc.stderr)
+        self.assertEqual(env.get("op"), "edit-pr-body")
+        self.assertIn("pr edit", env["would_run"])
+
+    def test_residual_filing_folds_in_ledger_file_entries(self):
+        for name in ("standard.md", "story.md", "epic-integration.md"):
+            text = re.sub(r"\s+", " ", (PLAYBOOKS_DIR / name).read_text(encoding="utf-8"))
+            self.assertIn("`file`", text, "%s must file the ledger's `file` entries" % name)
+
+
 class FollowUpBatchTests(unittest.TestCase):
     """The residual-filing step spawns its sub-agents concurrently — the items are independent, and
     serial spawning costs the drafter's full round-trip each in series."""

@@ -57,7 +57,8 @@ what the distiller does not carry — the approach, the seams, the risks, and th
 current phase is the head phase — the one whose `depends-on` is `(none)`. In `continue` mode it is
 **provisional**: the first unticked `facts.tracker.rows` entry whose `depends-on` is satisfied. Say that
 it is provisional — S4's tracker reconciliation is authoritative and may move the cursor, and a phase
-named here is a preview, not a commitment.
+named here is a preview, not a commitment. A revision run (`facts.revision.active`) ships no phase: focus
+the summary on what it revises — the evaluator's review and the ledger's `apply` items.
 
 ## S2 — Fitness-to-implement audit (fresh start only)
 
@@ -145,6 +146,15 @@ Prep computed the classification in `facts.tracker.diff`:
 Write the reconciled tracker with the same `edit-body` on the PR that S6 uses, then select the cursor
 from it. Never select a phase by row title.
 
+**Revision run** (`facts.revision.active`): every `kind: code-shipping` phase is ticked — single-phase,
+the PR exists — so the cursor selects nothing; an evaluator soft-reject lands exactly here.
+`dod_rejected` in `facts.revision.reasons` → re-route to `/github-pipeline:planner revise #<issue>`
+before any code: a vetoed DoD bullet clears only by re-planning (S6's sticky veto). Otherwise no phase
+ships and S6 projects nothing: S5.1 runs at the **final** scope, iteration 1's input being the resume
+re-read (the evaluator's review) plus every `facts.polish` entry marked `apply`. There is no
+nothing-to-do shortcut — `reasons` only shapes that input; a first round that settles with nothing
+committed pushes nothing and hands off forward, as an aborted or accepted loop's re-entry must.
+
 ## S5 — Do the work + the review loop
 
 Read [`../references/common-pitfalls.md`](../references/common-pitfalls.md) before any code or
@@ -198,7 +208,8 @@ deadlock check reads both) alongside the follow-up registry.
 **Scope.** The phase under review is **final** when the issue is single-phase, or when it is the last
 unshipped `kind: code-shipping` entry of `facts.phases` after S4 reconciliation — a trailing operator /
 decision-only phase ships no commits and never enters S5.1, so the last code phase carries the cumulative
-pass and is the one whose shipping flips the PR ready ("Return to the routed playbook"). Final → `review`'s target is the PR's **cumulative diff**, read from the
+pass and is the one whose shipping flips the PR ready ("Return to the routed playbook"). A revision run
+(S4) is final. Final → `review`'s target is the PR's **cumulative diff**, read from the
 local branch as `origin/<facts.workspace.base_ref>...HEAD` — nothing is pushed until S5.2, so the PR on
 GitHub still shows the last session's state: a correct-but-partial class fix reads as correct every
 round when only the delta since the last fix is re-read, so a delta-scoped loop converges on its own
@@ -226,17 +237,23 @@ nothing (no file named, an approve with no evidence of the diff) — or that cit
 local range — is not a verdict: stage `git diff <base>...HEAD` to `<facts.scratch>/review-diff.patch`
 and re-invoke naming that path.
 
-Loop until `review` approves with zero Addressable / Cheap-fix-override items:
+**Tiers and progress.** The fix round gives every Addressable item a **tier** — `defect` or `polish`
+(the reference's rubric) — and the loop runs on the **defect count**: the defect-tier Addressable items
+left after classification (Plan-settled, Deferred-by-plan and Explicitly-deferred never count). Polish
+is fixed on merit and never keeps the loop running; what a round leaves goes to the PR's `## Polish`
+ledger at S5.2 ([`../../_shared/polish-ledger.md`](../../_shared/polish-ledger.md)). This replaced a
+fixed iteration cap that could not tell a round of nits from a round of new bugs.
 
 1. Run `Skill(skill="review")` with the Invocation arguments above, **in this main conversation** (the
    built-in command is unreachable from
    inside an `Agent`-dispatched sub-agent — that design consistently failed on PR #607, forcing prose
    instead of a real verdict). Its verdict text is this round's input.
-2. Run one **fix round** on it per the reference, in this conversation: classify every listed item
-   (iteration 1 also folds in human PR comments and reviews, and seeds the refuted-items list from prior
-   rounds' `Settled (not addressed):` blocks), deadlock-check against both lists, list the **fix plan**
-   for every Addressable + Cheap-fix-override item (the **fix-design** sub-agent designs a hot seam's
-   lines) and check it as a set before the first edit, fix
+2. Run one **fix round** on it per the reference, in this conversation: classify and tier every listed
+   item (iteration 1 also folds in human PR comments and reviews, seeds the refuted-items list from prior
+   rounds' `Settled (not addressed):` blocks, and treats every `facts.polish` entry marked `apply` as
+   Addressable whatever its tier), deadlock-check against both lists, list the **fix plan** for every
+   item it will fix (the **fix-design** sub-agent designs a hot seam's lines) and check it as a set
+   before the first edit, fix
    them, defect-inject every new or changed assertion, run the §10.6 pre-push gate (the same retry
    ladder as §8, test-selection diff-base override = HEAD), commit, and stage the round's reply — the
 push and the reply both wait for S5.2. "Approved" is **not** the exit condition — you re-classify every listed item; soft politeness
@@ -244,25 +261,35 @@ push and the reply both wait for S5.2. "Approved" is **not** the exit condition 
    verification failure / grounding violation) is a direct `AskUserQuestion` card per the reference,
    rendered at the point it fires. A **grounding-violation** item is never filed as a follow-up — the
    hard block exists to stop the ship.
-3. Branch on what the round did, not on the verdict's approval line alone:
-   - **The round addressed items** (it committed) → re-run step 1.
-   - **The round addressed nothing** — an approved verdict with zero Addressable / Cheap-fix-override
-     items, *or* a non-approving verdict whose every item classified as Explicitly-deferred (filed),
-     Plan-settled, or Deferred-by-plan — → the loop has **settled**. Nothing the loop can do moves an
-     unchanged PR, so a reviewer that never approves must not spin it: on the second shape, name the
-     outstanding items with their follow-up URLs or plan citations in the PR body (fresh mode: the staged
-     `pr.md`) before settling.
+3. Branch on the round's **defect count**, not on the verdict's approval line:
+   - **Zero** — the round addressed nothing that keeps the loop open: an approved verdict with no defect,
+     *or* a non-approving verdict whose every item classified as Explicitly-deferred (filed),
+     Plan-settled, Deferred-by-plan, or polish → the loop has **settled** (a reviewer that never approves
+     must not spin an unchanged PR; name the outstanding items with their follow-up URLs or plan
+     citations in the PR body — fresh mode: the staged `pr.md`). A round whose only fixes were polish
+     first gets one **light re-review**: `review` at `medium` over that round's own commits
+     (`<pre-round HEAD>...HEAD`) — a defect it finds re-enters this loop at step 2; polish it finds goes
+     to the ledger unfixed.
+   - **Progress** — the count fell from the previous round's (round 1 has none to compare) → re-run
+     step 1.
+   - **No progress** — it did not fall, or **churn**: most of the round's defect items sit in the hot
+     seam (`git diff --name-only <loop-entry sha>...HEAD`, the reference's fix-design trigger), which
+     round 1 cannot show. The first such round is a **grace round** (re-run step 1 — the reviewer is
+     noisy); the second in a row renders the **stall card**. A round that rendered the `Review loop`
+     deadlock card does not also render the stall card — the repeated item is the more specific signal.
    - Settled and the cold read has **not** run this run — nor, per step 4's PR record, on this phase
      at this HEAD → step 4. Settled and it **has** → S5.1 is done; go to S5.2.
 
    After `review`'s verdict text lands, your next emissions are the round's **operational beats** (the
    classification, the fix plan, the edits, the gate), not a recap — stopping at the verdict text is
-   the PR #416/#653 missing-handoff failure mode. Cap the outer loop — **one** cap across the whole of S5.1:
-   `review` runs at most **2** times on a non-final phase and **4** times on the final phase before the
-   cold read; step 4 owns what follows it. On the cap ask (`header: "Iter cap"`): **Continue**
-   (free-text count) / **Accept current** (exit S5.1 as committed, the cold read skipped when it has not
-   run yet; every still-open Addressable item becomes a `file-now` follow-up and the PR body records
-   the override) / **Abort**.
+   the PR #416/#653 missing-handoff failure mode. **Stall card** (`header: "Loop stall"`), showing each
+   round's defect count and the churn share as evidence for you to judge: **Continue** (free-text count
+   of further `review` runs) / **Accept current** (exit S5.1 as committed, the cold read skipped when it
+   has not run yet; every still-open defect becomes a `file-now` follow-up, open polish goes to the
+   ledger, and the PR body records the override) / **Abort**, plus **Re-plan** when churn fired. The
+   same card renders, marked "ceiling reached", at the **emergency ceiling**: 8 `review` runs in S5.1,
+   light re-reviews and the post-cold-read run included. It is a backstop against a progress call the
+   model makes on its own work, not a budget — reaching it means the rule misfired.
 
    **A guard rail's answer can end the run.** **Re-plan** and **Restructure** re-route to the planner,
    **Abort** / **Abort loop** stop the run: each leaves S5.1 immediately — no further `review`, no cold
@@ -270,7 +297,7 @@ push and the reply both wait for S5.2. "Approved" is **not** the exit condition 
 today's per-round pushes left it), then goes to the routed playbook's handoff, whose `Why:` quotes what
 triggered it. Only
    the continuing answers (**Try another angle**, **Accept + defer**, **Push with reds**, **Defer the
-   tests**, a named architectural path) resume this loop.
+   tests**, a named architectural path, **Continue**) resume this loop.
 4. **Cold-read audit — once per phase, after settle.** The PR is the record: the round reply carries
    `Cold read: phase <N> @ <sha>` (`<N>` the phase number, `1` for a single-phase issue; `<sha>` HEAD at
    dispatch — a local commit S5.2 pushes unchanged), surfaced by the iteration-1 re-read. A prior record for this phase whose `<sha>` **is**
@@ -287,11 +314,9 @@ triggered it. Only
    `code: AMBIGUOUS` (missing or empty staged diff) → repair the staging and re-dispatch, or surface the
    failure to the operator; never read it as "no findings". An empty `## Findings` → stage the
    `Cold read: phase <N> @ <sha>` line into the loop comment; S5.1 is done. Findings → run one fix round (step 2,
-   those findings as the verdict; its reply carries the `Cold read:` line), then **re-run step 1**
-   exactly once as the confirming review. That round classifies but does not fix: settled items settle
-   it, and any Addressable item goes straight to the `Iter cap` card (**Continue** resumes steps 1–3 for
-   the count given) — the cold read is never dispatched twice in one run. `review` stays the terminal
-   gate; the cold read supplements the reviewer, never substitutes for it.
+   those findings as the verdict; its reply carries the `Cold read:` line), then continue at step 1 under
+   step 3's rules — the cold read is never dispatched twice in one run, so the next settle ends S5.1.
+   `review` stays the terminal gate; the cold read supplements the reviewer, never substitutes for it.
 
 ### S5.2 — Push the phase, once
 
@@ -313,8 +338,10 @@ ${CLAUDE_PLUGIN_ROOT}/scripts/gh_persist.py create-pr <owner/repo> "<facts.scrat
 ```
 
 `--base`/`--head` are always explicit facts from the workspace (never inferred from cwd). Continue mode:
-when the loop added PR-body items (outstanding settled items, an `Iter cap` override, `## Known
-failures`), stage the updated body and apply it with `edit-pr-body`. Then post the loop comment — every
+when the loop added PR-body items (outstanding settled items, ledger entries, an `Accept current`
+override, `## Known failures`), stage the updated body and apply it with `edit-pr-body`. Either mode,
+the `## Polish` ledger ([`../../_shared/polish-ledger.md`](../../_shared/polish-ledger.md)) gains an
+`open` entry per polish item the loop left and `applied (commit <sha>)` on each `apply` item it fixed. Then post the loop comment — every
 round's staged reply, in order, one `comment` on the PR; a `BODY_TOO_LONG` decision splits it one
 comment per round. It is the GitHub-side record the next session's resume re-read seeds from. Delete
 `<facts.scratch>/loop-comment.md` once it is posted.
@@ -370,16 +397,17 @@ Without this the parent's rollup would read `0/N` forever — the whole reason s
 File `file-now` follow-ups (retry-ladder deferrals, review-deferred items) in-flight so `// TODO(#NNN)`
 markers carry real numbers. Batch `file-at-checkpoint` items at the end of the loop and confirm before
 filing, per [`../references/follow-up-tracking.md`](../references/follow-up-tracking.md); every filed
-issue routes through the drafter proxy in [`../../_shared/follow-up-filing.md`](../../_shared/follow-up-filing.md)
-— never hand-craft a `gh issue create` body. Weave URLs into the PR body's `## Follow-ups` section, the
+issue — one per **group** of related items — routes through the drafter proxy in
+[`../../_shared/follow-up-filing.md`](../../_shared/follow-up-filing.md) — never hand-craft a
+`gh issue create` body. Weave URLs into the PR body's `## Follow-ups` section, the
 `// TODO` markers, and the handoff.
 
 ## Return to the routed playbook
 
 Capture the run's pushed range for the handoff's `Changes:` link: `facts.workspace.sha` (the session-entry HEAD) → `git rev-parse HEAD` in `facts.workspace.path`, read **after** the review loop settles and S5.2 has pushed — its fix rounds commit on top of the phase's work, so a HEAD read before the loop exits names a range that stops short of what this run actually shipped.
 
-Multi-phase last-planned-phase shipped: flip the PR draft → ready with
+Multi-phase last-planned-phase shipped, or a revision run (S4): flip the PR draft → ready with
 `gh pr ready <N> --repo <owner/repo>` **immediately before** the handoff (without the flip the
 evaluator's draft-PR guard deadlocks the handoff). Then continue in the routed playbook (`standard.md`
-/ `story.md`) for its handoff shape. On a re-route exit (audit blocker → drafter, plan drift →
-planner, doc conflict → drafter), skip straight to the routed playbook's re-route handoff.
+/ `story.md`) for its handoff shape. On a re-route exit (audit blocker → drafter, plan drift or a
+revision run's vetoed DoD → planner, doc conflict → drafter), skip straight to the routed playbook's re-route handoff.

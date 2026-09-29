@@ -127,9 +127,9 @@ second record for a story that already has one. Name the story you recorded in t
 ## Residual follow-ups + cleanup
 
 Then file residual non-blocking follow-ups (shared with the standard route): de-dup against the PR
-body's `## Follow-ups` *Filed* entries, file each via
-[`../../_shared/follow-up-filing.md`](../../_shared/follow-up-filing.md) (parent reference = this PR +
-the story issue + the parent epic), post the URLs as a brief PR comment. Then purge the scratch
+body's `## Follow-ups` *Filed* entries, fold in the `## Polish` ledger's `file` entries, and file
+each related group via [`../../_shared/follow-up-filing.md`](../../_shared/follow-up-filing.md)
+(parent reference = this PR + the story issue + the parent epic), post the URLs as a brief PR comment. Then purge the scratch
 dir only (`rm -rf "<facts.scratch>"`) — the worktree is **deliberately retained** (this session runs
 inside it); the handoff's Cleanup line hands the operator
 `/github-pipeline:workspace-close <facts.workspace.branch>` for the teardown + gated removal.

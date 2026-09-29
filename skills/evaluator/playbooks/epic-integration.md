@@ -43,9 +43,9 @@ on the merge into `main`.
 ## After the merge — residual follow-ups + cleanup
 
 File residual non-blocking follow-ups (shared with the other routes): de-dup against the PR body's
-`## Follow-ups` *Filed* entries, file each via
-[`../../_shared/follow-up-filing.md`](../../_shared/follow-up-filing.md) (parent reference = this PR +
-the epic issue), post the URLs as a brief PR comment. Then purge the scratch dir only
+`## Follow-ups` *Filed* entries, fold in the `## Polish` ledger's `file` entries, and file each
+related group via [`../../_shared/follow-up-filing.md`](../../_shared/follow-up-filing.md) (parent
+reference = this PR + the epic issue), post the URLs as a brief PR comment. Then purge the scratch dir only
 (`rm -rf "<facts.scratch>"`) — the worktree is **deliberately retained** (this session runs inside
 it); the terminal handoff's fence hands the operator
 `/github-pipeline:workspace-close <facts.workspace.branch>` for the teardown + gated removal.

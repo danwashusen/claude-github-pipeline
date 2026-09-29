@@ -137,14 +137,16 @@ its §review-loop, its S6 DoD projection) that carry the same numbering v1 used,
   exceptions, no "this change is too small to review."
 - **Don't exit the loop just because the verdict says "approved".** Reviews routinely approve with
   `Medium`, `Low`, or `Nitpick` items — issues *and* suggestions — that the reviewer still expects fixed
-  (e.g., "Approved with minor fixes"). Exit only when `review`'s verdict is approved **and** your
-  re-classification finds zero Addressable or Cheap-fix-override items in that verdict. Items the reviewer
-  routes elsewhere with a **concrete tracking target** (filed as #N, depends on un-landed sibling, citable
-  PRD/scope exclusion) are deferred and filed as follow-ups. Soft politeness alone ("could be fast-follow",
-  "not blocking", "deferrable", "informational only", "future PR", "consider for a future change") is
-  **not** sufficient — re-classify per `review-fix-round.md`'s rubric, where the **default for any
-  concretely-named change is Addressable**. The Cheap-fix override addresses ≤ ~20-line fixes on
-  already-modified files even when the reviewer defers them. Nothing structural enforces this any more:
+  (e.g., "Approved with minor fixes"). The loop settles on the round's **defect count** — zero
+  defect-tier Addressable items after your re-classification (spine S5.1 step 3) — never on the approval
+  line. Items the reviewer routes elsewhere with a **concrete tracking target** (filed as #N, depends on
+  un-landed sibling, citable PRD/scope exclusion) are deferred and filed as follow-ups. Soft politeness
+  alone ("could be fast-follow", "not blocking", "deferrable", "informational only", "future PR",
+  "consider for a future change") is **not** sufficient — re-classify per `review-fix-round.md`'s rubric,
+  where the **default for any concretely-named change is Addressable**, then tier it: a real defect keeps
+  the loop open whatever the reviewer called it, while polish is fixed on merit or goes to the `## Polish`
+  ledger. Don't tier a defect as polish to settle sooner — the tier is recorded in the round reply so the
+  call can be audited. Nothing structural enforces this any more:
   the classify-and-act body used to sit behind a sub-agent boundary that made skipping it visible, and it
   now runs in the same conversation that just read the verdict. The rubric applied to every listed item is
   the only guard left, so the hazard this bullet exists for is fully live.

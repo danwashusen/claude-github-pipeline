@@ -46,7 +46,7 @@ scripts/
   workspace.py        # ensure / attach / remove / gc / lint; default-branch derivation
   branching.py        # import-only: branch naming, type detection, prior-PR rows, linked branches,
                       #   ambient-branch issue detection
-  parse.py            # dod | oq-links | phases subcommands
+  parse.py            # dod | oq-links | phases subcommands; import-only tracker + polish-ledger scanners
   gh_gather.py  gh_pr_gather.py  gh_persist.py  config_block.py   # executor ports (S21)
   prep_drafter.py  prep_researcher.py  prep_slicer.py  prep_planner.py  prep_resolver.py  prep_evaluator.py
   prep_question_sweep.py  prep_question_resolver.py  prep_requirements_gatherer.py
@@ -440,6 +440,16 @@ Skill frontmatter carries no `model:` or `effort:` keys — every skill inherits
 session's model and effort level (the v1 pins were removed 2026-08-01; reintroducing one is a
 deviation through the normal gate). There are no mechanical-relay
 agents: if a task is deterministic it is a script, not a sub-agent.
+
+**The review loop's exit is a tier, not a sub-agent (4.21.0).** The resolver's fix round tiers every
+Addressable finding `defect` or `polish`, and the loop runs while the defect count keeps falling (one
+grace round, then a stall card; an emergency ceiling of 8 `review` runs). This reintroduces a severity
+axis on purpose, and it is **not** the convergence machinery 4.11.0 removed (`finding_provenance`,
+severity decay, one-shot suppression): that decided *when to cold-read*, and the cold read is still
+unconditional once per phase; this decides *when the loop ends*, replacing a fixed 2/4 cap that could not
+tell a round of nits from a round of new bugs. Unfixed polish goes to the PR's `## Polish` ledger
+(`skills/_shared/polish-ledger.md`), which the **evaluator** adjudicates before merge — its one PR-body
+write, through `gh_persist.py edit-pr-body`.
 
 ## §9 Skill anatomy
 

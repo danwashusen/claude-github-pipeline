@@ -1073,6 +1073,14 @@ def build_facts(pr_number, repo, root=".", scratch_dir=None, refresh=False, cwd=
             sections[key] = value
     facts["sections"] = sections
 
+    # The `## Polish` ledger (skills/_shared/polish-ledger.md) — the adjudication input
+    # (references/polish-adjudication.md). Scanned from the same PR body, so no extra call; the scan
+    # never raises (an unparseable line is `unparsed`, rewritten on the evaluator's disposition write).
+    pr_body = pr_envelope.get("body")
+    if pr_body is None and pr_envelope.get("body_mode") == "path":
+        pr_body = Path(pr_envelope["body_path"]).read_text(encoding="utf-8")
+    facts["polish"] = parse.scan_polish(pr_body)
+
     return facts
 
 

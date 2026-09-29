@@ -257,7 +257,9 @@ per [architecture.md §7](docs/architecture.md)'s mapping table).
   writes **no** parent edge (that stays the slicer's, per `_shared/epic-story-hierarchy.md`) — the
   "child of #N" answer routes the handoff to a slicer adoption run.
 - `parse.py` — `dod` / `oq-links` / `phases`: the three contract parsers, each with a malformed
-  decision code (`DOD_MALFORMED`, `PHASES_MALFORMED`).
+  decision code (`DOD_MALFORMED`, `PHASES_MALFORMED`). Plus two import-only scanners for renderings the
+  pipeline rebuilds — the PR's `## Phase tracker` and `## Polish` ledger — which never raise (an
+  unparseable line is rewritten, never a stop), so they have no subcommand and no decision code.
 - `plan_shipped.py` — the shipped-phase records (`skills/_shared/plan-shipped-phases.md`). Import
   core `collect(thread, pr)` (a thread scan, keyed (PR, phase), duplicate → `MARKER_AMBIGUOUS`),
   `read_pointed` (every PR the plan's pointer bullets name — read leniently, so a reworded pointer
@@ -397,9 +399,11 @@ now the same rule everything else follows rather than an exception.
   tracked-dependency registry, not buildable scope or DoD.
 - `follow-up-filing.md` — the drafter-proxy sub-agent protocol the resolver, the evaluator, and the
   planner (seam-disposition follow-ups) use to file a follow-up issue (never a hand-crafted
-  `gh issue create` body). One filing moment's approved items are spawned as **one concurrent
-  batch, in a single message** — the items are independent, and serial spawning cost the drafter's
-  full round-trip each in series; same-target `revise-existing` items are the one exception.
+  `gh issue create` body). Related items file as **one issue per group** (same type, same seam,
+  ≤ ~5, one checkable bullet per item — the planner's seam follow-ups excepted), and one filing
+  moment's approved groups are spawned as **one concurrent batch, in a single message** — the groups
+  are independent, and serial spawning cost the drafter's full round-trip each in series; same-target
+  `revise-existing` items are the one exception.
 - `asking-the-user.md` — the `AskUserQuestion` card shape, and the rule that a sub-agent returns a
   §3 decision code instead of asking.
 - `plan-summary.md` — the `## Plan summary` block: the human-readable digest of an implementation
@@ -408,6 +412,14 @@ now the same rule everything else follows rather than an exception.
   rule that keeps a posted plan reviewer-verified. Rendered by the **planner** (before its
   `## Handoff`, whenever the session posted or refreshed a plan) and by the **resolver** (at session
   start, focused on the phase this run ships). It is never part of the `## Handoff` block.
+- `polish-ledger.md` — the `## Polish` PR-body section: the polish findings the resolver's review loop
+  tiered as `polish` and chose not to fix (the loop exits on **defect** progress alone, so polish never
+  keeps it running). One line per item with a stable `P<phase>.<seq>` id and a closed disposition set
+  (`open` / `applied` resolver-written; `apply` / `file` / `drop` evaluator-written). The **evaluator**
+  adjudicates it before merge (operator-confirmed `apply` → soft-reject to the resolver, or to the
+  planner when applying it reverses a locked decision); an `apply` item is Addressable for the resolver
+  whatever its tier, which is what stops a polish ping-pong. `parse.py`'s `scan_polish` reads it for
+  three preps; it never raises.
 
 When changing behavior that touches handoffs, the plan summary, DoD annotations, the worktree block
 format, the epic delivery log, or the open-question contracts, edit the `_shared` file (the single

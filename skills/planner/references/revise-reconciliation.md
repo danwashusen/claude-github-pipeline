@@ -47,6 +47,18 @@ no `not_restored` — [`shipped-phase-relocation.md`](shipped-phase-relocation.m
 `## Test plan` unchanged in substance: it only changed which comment carries it. It never counts toward
 the **Judgment call** rule's `## Changes` block text edits. Judge only the entries whose text changed.
 
+### A polish re-route: the ledger's `apply` items become a phase
+
+When the evaluator sends a PR here because a confirmed polish item would reverse a locked plan decision
+(`../../_shared/polish-ledger.md`; its handoff `Why:` quotes the item and the decision), the work is in
+the open PR's ledger: every entry in `facts.revise.open_pr.polish` marked `apply`. Revise the decision
+the item reverses (quote the ledger id in the new `## Architecture decisions` / `## UI decisions` bullet
+so the change is traceable), then add **one new phase after the shipped ones** whose `ships` / `deliverable`
+cover those entries by id. Every phase has shipped by the time the evaluator runs, so it takes k+1 with no
+renumbering — **SOFT** ("New phases added beyond what's shipped"). The resolver then builds it as the
+tracker's `missing` row in continue mode, marking each entry `applied (commit <sha>)`. Never edit the
+ledger yourself — it belongs to the resolver and the evaluator.
+
 ### Inserting a phase after work has shipped
 
 New work that must run *between* a shipped phase and an unshipped one is the case that produces

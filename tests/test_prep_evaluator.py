@@ -428,6 +428,22 @@ class PlanFactsTests(PrepEvaluatorSandboxTestCase):
         self.assertTrue(any("2 plan comments" in n for n in envelope["notices"]))
 
 
+class PolishLedgerFactTests(PrepEvaluatorSandboxTestCase):
+    """`facts.polish` — the `## Polish` ledger the adjudication step reads
+    (skills/_shared/polish-ledger.md), scanned from the PR body the gather already fetched."""
+
+    def test_the_ledger_is_scanned_from_the_pr_body(self):
+        polish = self._envelope(fixture_case="prep_evaluator_polish")["polish"]
+        self.assertTrue(polish["present"])
+        self.assertEqual(
+            [(e["id"], e["disposition"]) for e in polish["entries"]], [("P1.1", "open"), ("P1.2", "file")]
+        )
+
+    def test_no_ledger_is_not_present(self):
+        polish = self._envelope(fixture_case="prep_evaluator_happy_standard")["polish"]
+        self.assertEqual(polish, {"present": False, "entries": [], "unparsed": []})
+
+
 class CiRollupClassificationTests(PrepEvaluatorSandboxTestCase):
     """Four CI states — S6 DoD: "Fixtures: four CI states.\""""
 

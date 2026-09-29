@@ -1274,6 +1274,10 @@ def _build_revise_facts(issue_envelope, open_prs, plan_sha, grounding_sha, repo,
         }
         if pr_facts.get("body_mode") == "path":
             open_pr_fact["body_path"] = pr_facts.get("body_path")
+        # The `## Polish` ledger (skills/_shared/polish-ledger.md): on a revise the evaluator
+        # routed here, its `apply` entries are the work the new phase absorbs — and an inline PR
+        # body is otherwise dropped, so this is the planner's only view of them.
+        open_pr_fact["polish"] = parse.scan_polish(pr_body)
         revise["open_pr"] = open_pr_fact
         revise["phase_tracker"] = _parse_phase_tracker(pr_body)
     else:

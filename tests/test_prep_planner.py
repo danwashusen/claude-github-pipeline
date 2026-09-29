@@ -309,6 +309,27 @@ class PlanRefRowTests(PrepPlannerSandboxTestCase):
         self.assertEqual(envelope["grounding"]["ref"], "201-fix-gadget")
         self.assertEqual(len(envelope["grounding"]["sha"]), 40)
 
+    def test_revise_carries_the_open_prs_polish_ledger_from_an_inline_body(self):
+        # An evaluator soft-reject routed to `planner revise` (skills/_shared/polish-ledger.md): the
+        # ledger's `apply` entries are the work the re-plan absorbs, and an inline PR body is
+        # otherwise not forwarded — so the scanned ledger is the planner's only view of them.
+        _git(["fetch", "origin"], self.root)
+        _git(["checkout", "-b", "201-fix-gadget"], self.root)
+        _write(self.root / "gadget.txt", "fixed\n")
+        _git(["add", "gadget.txt"], self.root)
+        _git(["commit", "-m", "fix gadget"], self.root)
+        _git(["push", "origin", "201-fix-gadget"], self.root)
+        _git(["checkout", "main"], self.root)
+
+        envelope = self._envelope(
+            issue="201", fixture_case="prep_planner_revise_polish", ambient="201-fix-gadget"
+        )
+        polish = envelope["revise"]["open_pr"]["polish"]
+        self.assertTrue(polish["present"])
+        self.assertEqual(
+            [(e["id"], e["disposition"]) for e in polish["entries"]], [("P1.1", "apply")]
+        )
+
     def test_row_story_under_open_epic(self):
         self._push_branch("epic/100-sandbox-fixture")
         envelope = self._envelope(
@@ -819,6 +840,8 @@ class ReviseFactsTests(PrepPlannerSandboxTestCase):
         self.assertEqual(len(revise["grounding_sha"]), 40)
         self.assertIsNotNone(revise["open_pr"])
         self.assertEqual(revise["open_pr"]["headRefName"], "900-large-plan")
+        # The polish ledger rides on the open-PR fact (absent here: the body has no `## Polish`).
+        self.assertEqual(revise["open_pr"]["polish"], {"present": False, "entries": [], "unparsed": []})
         self.assertEqual(len(revise["phase_tracker"]), 2)
         # `annotation` (#48 review): the row's trailing `(operator action <ISO-date>)` when it has
         # one, so a rebuild can preserve the only record that an operator phase landed. `None` here.
