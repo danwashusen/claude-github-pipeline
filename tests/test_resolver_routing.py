@@ -1186,7 +1186,16 @@ class MainLoopReviewFixRoundTests(unittest.TestCase):
         self.assertIn("**Settled-item pre-check**", text)
         self.assertIn("still at most once per round", text)
         self.assertIn("fix it this round with **no card**", text)
-        self.assertIn("Named in `## Plan conflicts` → the `Settled item` card, **Re-plan** recommended", text)
+        self.assertIn("Named in `## Plan conflicts`, or in `## Needs a plan decision` with an open intent → the `Settled item` card, **Re-plan** recommended", text)
+        self.assertIn("in `## Needs a plan decision` as out of scope → the card, **Keep settled** recommended", text)
+        # The Deferred-by-plan skip is justified by ownership, not by what fix design could answer.
+        self.assertIn("a later phase already owns that seam, so the plan has placed the work", text)
+        # A Decision card raised in step 4 keeps the round's plan lines — never a second dispatch.
+        self.assertIn("**A card raised in step 4** — the `Settled item` card, or a `Decision` card from fix design's", text)
+        # The Decision card's own definition carries the fix-design variant.
+        self.assertIn("or, when fix design returned `## Needs a plan decision`, its candidate designs", text)
+        prompt = " ".join((REFERENCES_DIR / "fix-design-prompt.md").read_text(encoding="utf-8").split())
+        self.assertIn("When `<<loop_files>>` is `(none)` there is no prior correction to account for", prompt)
         self.assertIn("Named in `## Out of reach` → the card, **Fix it here** recommended", text)
         self.assertIn("A recurring **Refuted** item skips the dispatch", text)
 
@@ -1216,6 +1225,18 @@ class MainLoopReviewFixRoundTests(unittest.TestCase):
         self.assertNotIn("independent-defect pass below", text)
         prompt = " ".join((REFERENCES_DIR / "fix-design-prompt.md").read_text(encoding="utf-8").split())
         self.assertNotIn("`## Plan conflicts` below", prompt)
+
+    def test_pr_63_second_review_fixes(self):
+        text = " ".join(self.reference.read_text(encoding="utf-8").split())
+        # New evidence reopens even an operator-kept settlement.
+        self.assertIn("a `kept` one included, its mark dropped", text)
+        # The pre-check must not spend the set check's fix design.
+        self.assertIn("may dispatch once more when its set check then fails", text)
+        # One scope test, shared with fix design.
+        self.assertIn("the same scope test fix design applies (`fix-design-prompt.md` step 5)", text)
+        # File as follow-up continues the round; it never ends it.
+        continuing = text[text.index("A **continuing** answer"):text.index("A **terminating** answer")]
+        self.assertIn("File as follow-up", continuing)
 
     def test_a_re_plan_first_fixes_the_rounds_independent_defects(self):
         text = " ".join(self.reference.read_text(encoding="utf-8").split())
@@ -1382,13 +1403,37 @@ class MainLoopReviewFixRoundTests(unittest.TestCase):
             "<<addressed_items>>",
             "<<plan_decisions>>",
             "<<phase_context>>",
+            "<<plan_path>>",
+            "<<plan_shipped_path>>",
+            "<<issue_body_path>>",
         ):
             self.assertIn(placeholder, prompt)
         # The fix round fills every placeholder it owns (workspace and diff follow the cold read's).
-        for placeholder in ("<<loop_files>>", "<<findings>>", "<<addressed_items>>", "<<plan_decisions>>"):
+        for placeholder in (
+            "<<loop_files>>", "<<findings>>", "<<addressed_items>>", "<<plan_decisions>>",
+            "<<plan_path>>", "<<plan_shipped_path>>", "<<issue_body_path>>",
+        ):
             self.assertIn(placeholder, reference)
-        for section in ("## Seam", "## Change set", "## Plan conflicts", "## Out of reach"):
+        for section in (
+            "## Seam", "## Change set", "## Plan conflicts", "## Needs a plan decision", "## Out of reach",
+        ):
             self.assertIn(section, prompt)
+        # The sub-agent sees the plan's scope and the Definition of done, and may not pick an intent
+        # the plan never stated: scope creep and an open intent are a plan decision, not a design.
+        self.assertIn("5. **Check scope and intent.**", prompt)
+        self.assertIn(
+            "falls outside the code the scope diff touches, the plan's `## Changes` / phase `ships`, **and** the Definition of done",
+            prompt,
+        )
+        self.assertIn("Do not pick an intent the plan never stated", prompt)
+        self.assertIn("An ambiguous intent is not out of reach — it is `## Needs a plan decision`", prompt)
+        self.assertIn("`<<plan_path>>` ← `plan_marker_path`", reference)
+        self.assertIn("a `## Needs a plan decision` entry is Decision-required too, never adopted as a fix", reference)
+        # PR #63 review: scope creep is follow-up work, so an out-of-scope entry recommends filing it.
+        self.assertIn("**File as follow-up**, recommended (scope creep is follow-up work", reference)
+        self.assertIn("when the plan leaves the **intent open**, **Re-plan** is recommended", reference)
+        self.assertIn("never adopted as a fix", reference)
+        self.assertIn("in `## Needs a plan decision` with an open intent → the `Settled item` card", reference)
 
 
 class PhaseScopedReviewTests(unittest.TestCase):

@@ -68,7 +68,10 @@ This is **not** a sub-agent prompt: no placeholders, no JSON return, and every g
 
 Apply to every listed item:
 
-- **Addressable** — a concretely-named change on already-modified files or the issue's scope. The DEFAULT
+- **Addressable** — a concretely-named change **in scope**: on code this phase's diff touches, or within
+  the plan's `## Changes` / phase `ships` or the issue's Definition of done — the same scope test fix
+  design applies (`fix-design-prompt.md` step 5), so the two never disagree. A change outside all three
+  is not Addressable: Explicitly-deferred (file it) or Decision-required. The DEFAULT
   for any concretely-named change. Soft politeness ("could be fast-follow", "not blocking", "future PR")
   does NOT by itself move an item out of Addressable.
 
@@ -148,19 +151,21 @@ nothing else does.
 3. **Deadlock check.** If any item in the current verdict matches a summary in the addressed-items list
    (same file, same surface, same suggested change with no acknowledgement of your prior fix), render the
    `Review loop` card. Don't address it a second time on the same hypothesis. The same change at a
-   **sibling site** of a class fix you already made is not a match — the hypothesis held and the
-   coverage fell short: fix it per the class discipline, and it counts as loop-induced. The `Review loop`
-   card is for these addressed-item deadlocks only. An item matching the **refuted-items list** verbatim
-   — the same claim, carrying no reproduction, instance, or case the settled entry did not answer — is
+   **sibling site** of a class fix you already made is not a match — the hypothesis held and the coverage
+   fell short: fix it per the class discipline, and it counts as loop-induced. The `Review loop` card is
+   for these addressed-item deadlocks only. An item matching the **refuted-items list** verbatim — the
+   same claim, carrying no reproduction, instance, or case the settled entry did not answer — is
    re-settled silently on its second occurrence: no card, no second reply, only the entry's repeat count
    bumped — in the bucket the entry records, never re-bucketed. An entry marked `kept` (the operator
    answered **Keep settled**, this session or an earlier one) is re-settled silently on **every**
-   occurrence: that question is answered. A repeat that **brings new evidence** is classified fresh on the merits: the prior settlement
-   is not a citation for evidence it never saw. A **recurrence that stays settled** — the third
-   occurrence in one run, or a fresh classification that lands on Plan-settled again — bumps the count
-   and takes step 4's **settled-item pre-check** this same round (never waiting for another occurrence,
-   so a reviewer widening the finding cannot cycle it), then the `Settled item` card only if that check
-   leaves it standing — the reviewer's persistence is evidence the citation may not answer it.
+   verbatim occurrence: that question is answered. A repeat that **brings new evidence** is classified
+   fresh on the merits — a `kept` one included, its mark dropped: the prior settlement, and the
+   operator's answer to it, are not a citation for evidence they never saw. A **recurrence that stays
+   settled** — the third occurrence in one run, or a fresh classification that lands on Plan-settled
+   again — bumps the count and takes step 4's **settled-item pre-check** this same round (never waiting
+   for another occurrence, so a reviewer widening the finding cannot cycle it), then the `Settled item`
+   card only if that check leaves it standing — the reviewer's persistence is evidence the citation may
+   not answer it.
 4. **Fix plan, then fix.** Before the first edit, list the intended change of every item you will fix
    (each defect-tier Addressable item, each evaluator `apply` item, and each polish item you fix on
    merit) as text in this conversation — not in the PR reply, not in a file (on a hot seam, the
@@ -177,37 +182,47 @@ nothing else does.
      settles Plan-settled, citing it) and **Re-plan**.
    An empty list (nothing to fix) needs no plan — step 5 owns that round.
 
-   **Fix design on a hot seam.** Before writing the fix plan, dispatch the fix-design `Explore`
-   sub-agent per [`fix-design-prompt.md`](fix-design-prompt.md) when any Addressable or
-   polish item you will fix names a file in the hot seam (Loop-entry SHA — a cold-read-fed round
-   included); dispatch it after writing the plan when the set check finds two fixes that cannot both
-   hold or one that alters another's premise. At most once per round. Stage the scope diff to
-   `<facts.scratch>/fix-design-diff.patch` (`git diff <base>...HEAD` in the workspace, `<base>` per
-   S5.1's scope rule) and fill `<<loop_files>>` with the hot-seam file list, `<<findings>>` with those
-   items verbatim, `<<addressed_items>>` with the addressed-items list's surfaces only (no reasoning),
-   `<<plan_decisions>>` with the plan's decision bullets, and `<<phase_context>>` as for the cold read.
-   Print its `## Seam` and `## Change set`, then adopt the change set as the plan lines for those items
-   (main's own lines stand for the rest, and the set check runs over the union); a `## Plan conflicts`
-   entry is Decision-required — render step 2's `Decision` card, as for a fix that reverses a plan
-   decision; an `## Out of reach` entry keeps
-   your own plan line. `code: AMBIGUOUS` → repair the staging and re-dispatch once, else proceed on your
-   own plan and say so. The sub-agent designs; you edit. It exists because a loop's own fixes kept
+   **Fix design on a hot seam.** Before writing the fix plan, dispatch the fix-design `Explore` sub-agent
+   per [`fix-design-prompt.md`](fix-design-prompt.md) when any Addressable or polish item you will fix
+   names a file in the hot seam (Loop-entry SHA — a cold-read-fed round included); dispatch it after
+   writing the plan when the set check finds two fixes that cannot both hold or one that alters another's
+   premise. At most once per round — except that a round whose dispatch the settled-item pre-check forced
+   before the plan may dispatch once more when its set check then fails, so the pre-check never spends
+   the set check's design. Stage the scope diff to `<facts.scratch>/fix-design-diff.patch` (`git diff
+   <base>...HEAD` in the workspace, `<base>` per S5.1's scope rule) and fill `<<loop_files>>` with the
+   hot-seam file list, `<<findings>>` with those items verbatim, `<<addressed_items>>` with the
+   addressed-items list's surfaces only (no reasoning), `<<plan_decisions>>` with the plan's decision
+   bullets, `<<phase_context>>` as for the cold read, and the scope from `facts.distiller_bundle`:
+   `<<plan_path>>` ← `plan_marker_path`, `<<plan_shipped_path>>` ← `plan_shipped_path` (or `(absent)`),
+   `<<issue_body_path>>` ← `issue_body_path`. Print its `## Seam` and `## Change set`, then adopt the
+   change set as the plan lines for those items (main's own lines stand for the rest, and the set check
+   runs over the union); a `## Plan conflicts` entry is Decision-required — render step 2's `Decision`
+   card, as for a fix that reverses a plan decision; a `## Needs a plan decision` entry is
+   Decision-required too, never adopted as a fix — the `Decision` card with its candidate designs as
+   options plus **Re-plan** and, when the entry is **out of scope** (outside the diff, the plan, and the
+   Definition of done), **File as follow-up**, recommended (scope creep is follow-up work —
+   Explicitly-deferred, filed grouped; a re-plan would widen the issue); when the plan leaves the
+   **intent open**, **Re-plan** is recommended. An `## Out of reach` entry (it could not read far enough)
+   keeps your own plan line. `code: AMBIGUOUS` → repair the staging and re-dispatch once, else proceed on
+   your own plan and say so. The sub-agent designs; you edit. It exists because a loop's own fixes kept
    creating findings on the seam they touched: each changed a guard, and nobody re-derived the sibling
    properties sharing it.
 
    **Settled-item pre-check** (step 3's recurring settled item), by the bucket it stands in. A
-   **Plan-settled** item joins this round's fix-design dispatch — dispatch one when the round had none, still at most once
-   per round — as a finding to design. Its `## Change set` has an entry and `## Plan conflicts` does not
-   name it → it was never settled: reclassify it Addressable, tier it, and fix it this round with **no
-   card**, the round reply noting "recurring settled item re-examined: fix design found no plan
-   conflict". Named in `## Plan conflicts` → the `Settled item` card, **Re-plan** recommended. Named in
-   `## Out of reach` → the card, **Fix it here** recommended (the design failed, not the plan). A recurring
-   **Deferred-by-plan** item skips the dispatch — fix design treats a later phase's seam as out of scope,
-   so it could only answer "out of reach" and push a later phase's work into this one: re-check its phase
-   citation — no unshipped later phase ships it any more → classify fresh (a gap: Addressable or
-   Decision-required); still owned → the card, **Keep settled** recommended. A recurring **Refuted** item
-   skips the dispatch too: re-check its cited evidence — gone → classify fresh; still holds → the card,
-   **Keep settled** recommended.
+   **Plan-settled** item joins this round's fix-design dispatch — dispatch one when the round had none,
+   still at most once per round — as a finding to design. Its `## Change set` has an entry and `## Plan
+   conflicts` does not name it → it was never settled: reclassify it Addressable, tier it, and fix it
+   this round with **no card**, the round reply noting "recurring settled item re-examined: fix design
+   found no plan conflict". Named in `## Plan conflicts`, or in `## Needs a plan decision` with an open
+   intent → the `Settled item` card, **Re-plan** recommended; in `## Needs a plan decision` as out of
+   scope → the card, **Keep settled** recommended (the plan put that work elsewhere). Named in `## Out of
+   reach` → the card, **Fix it here** recommended (it could not read far enough — the design failed, not
+   the plan). A recurring **Deferred-by-plan** item skips the dispatch — a later phase already owns that
+   seam, so the plan has placed the work and there is no design to decide: re-check its phase citation —
+   no unshipped later phase ships it any more → classify fresh (a gap: Addressable or Decision-required);
+   still owned → the card, **Keep settled** recommended. A recurring **Refuted** item skips the dispatch
+   too: re-check its cited evidence — gone → classify fresh; still holds → the card, **Keep settled**
+   recommended.
 
    Then fix every item the check left standing, applying `common-pitfalls.md`'s three fix-discipline
    bullets to each fix *before* writing it — "Don't fix the instance when the finding names a class",
@@ -215,9 +230,9 @@ nothing else does.
    naming its implicit properties". A retro found fix rounds carrying several times the defect density of
    the code they corrected, and a later run had three of eleven findings introduced by the loop's own
    fixes: the disciplines catch defects inside one fix, the fix plan catches the ones between fixes, and
-   the fix design catches the ones between a fix and the seam it lands in. File
-   every Explicitly-deferred item via the follow-up filing protocol — related items as one group
-   (urgency `file-now`, type per the reviewer's framing) — and capture the returned URLs. Never file a Grounding-violation item.
+   the fix design catches the ones between a fix and the seam it lands in. File every Explicitly-deferred
+   item via the follow-up filing protocol — related items as one group (urgency `file-now`, type per the
+   reviewer's framing) — and capture the returned URLs. Never file a Grounding-violation item.
 5. **No edits** (no defect, no `apply` item, no polish fixed on merit — every item Explicitly-deferred,
    settled, or polish left for the ledger) → this round is complete. Skip steps 6–7 and step 8's commit; stage step 8's reply
    only when this round settled a **new** item or was fed by the cold read (the `Settled (not
@@ -285,7 +300,8 @@ Render each via `AskUserQuestion` per [`../../_shared/asking-the-user.md`](../..
 at the point it fires. An answer settles that gate for the run — don't re-raise it on a later round.
 
 Two kinds of answer, and the difference is load-bearing. A **continuing** answer (Try another angle,
-Accept + defer, Fix it here, Keep settled, Push with reds, Defer the tests, a named architectural path)
+Accept + defer, Fix it here, Keep settled, File as follow-up, Push with reds, Defer the tests, a named
+architectural path)
 is acted on inside this round, which then finishes normally. A **terminating** answer — **Re-plan** (from
 the `Decision`, `Grounding` or `Settled item` card, or the stall card's churn option) and
 **Restructure** (re-route to the planner), **Abort** and **Abort loop** — ends the round *and* S5.1 on
@@ -305,14 +321,18 @@ re-planned finding; both must hold:
 
 When in doubt, it is **coupled**: fixing code the re-plan is about to reshape is wasted or conflicting.
 Where the answer arrives decides what is left to do:
-- **`Decision` or `Grounding` card** (step 2, before any fix plan) → run **steps 4 and 6–8 for the
-  independent subset**: fix plan with its set check, defect injection, the §10.6 gate, one commit.
-- **`Settled item` card** (step 4, after this round's fix design and fix plan) → keep the existing plan
-  lines for the independent subset and drop the rest — no second fix-design dispatch — then steps 6–8.
+- **A `Decision` or `Grounding` card raised in step 2** (from the verdict, before any fix plan) → run
+  **steps 4 and 6–8 for the independent subset**: fix plan with its set check, defect injection, the
+  §10.6 gate, one commit.
+- **A card raised in step 4** — the `Settled item` card, or a `Decision` card from fix design's
+  `## Plan conflicts` / `## Needs a plan decision` or the fix plan's plan-reversal check (after this
+  round's fix design and fix plan) → keep the existing plan lines for the independent subset and drop
+  the rest — no second fix-design dispatch — then steps 6–8.
 - **Stall card** (S5.1 step 3) → **no pass**: the round's fixes are already committed, and the churn that
   offered Re-plan says its defects are coupled to the loop's own sites.
 
-Either way **no further `review`**: the next session's final-scope review re-reads them. A gate that escalates past
+Either way **no further `review`**: the next session's final-scope review re-reads them. A gate that
+escalates past
 the retry ladder → revert those fixes and record them, with no `Tests red` card. Coupled defects are
 recorded in the round reply, the PR body, and the handoff `Why:`. **Restructure** (the gate is already
 red) and **Abort** / **Abort loop** (the operator asked to stop) take no pass.
@@ -325,13 +345,16 @@ red) and **Abort** / **Abort loop** (the operator asked to stop) take no pass.
   `header: "Settled item"`, options with the recommended one first (step 4 says which): **Re-plan**
   (terminating; offered only for a plan-anchored item — Plan-settled or Deferred-by-plan — since the
   question is whether the plan is wrong), **Fix it here** (reclassify Addressable, fix this round),
-  **Keep settled** (recorded as `kept` on the entry, step 8 — never re-raised, this session or later). Each `description` quotes the
+  **Keep settled** (recorded as `kept` on the entry, step 8 — never re-raised, this session or later).
+  Each `description` quotes the
   settlement's citation or evidence and, when fix design ran, its conflict or out-of-reach entry. Never
   **Accept + defer**: a plan question is not a follow-up.
 - **Decision required.** The verdict flags an architectural choice, an API break, or a scope-change
   tradeoff. Don't guess. `header: "Decision"`, with one option per candidate path the reviewer named, each
   `description` carrying the reviewer's framing for that path — or, when step 4's fix plan raised it, the
-  plan decision as it stands and **Re-plan**.
+  plan decision as it stands and **Re-plan** — or, when fix design returned `## Needs a plan decision`,
+  its candidate designs (each `description` naming the intent it serves) plus **Re-plan**, and
+  **File as follow-up** for an out-of-scope entry, with step 4's recommendation first.
 - **Verification failure.** The retry ladder ran 3 times and the gate is still red. `header: "Tests red"`,
   options: **Push with reds** / **Defer the tests** / **Restructure**, per the retry-ladder Escalation
   section.
