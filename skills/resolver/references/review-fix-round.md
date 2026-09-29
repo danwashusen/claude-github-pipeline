@@ -105,8 +105,9 @@ nothing else does.
 - **Grounding-violation** — a diff that violates a documented constraint the issue/epic kept in-scope: if
   addressable here, fix it; else render the `Grounding` card. NEVER filed as a follow-up.
 - **Plan-settled** — the finding contests a decision the plan records in `## Architecture decisions`,
-  `## UI decisions`, or `## Deviations from project docs`, or **verbatim** repeats an item the
-  refuted-items list already carries. Settled, not addressed: no edit, no follow-up; the PR reply quotes
+  `## UI decisions`, or `## Deviations from project docs`. (A verbatim repeat of a refuted-items entry
+  keeps the bucket that entry records — step 3 — so a repeated Refuted item stays Refuted.) Settled, not
+  addressed: no edit, no follow-up; the PR reply quotes
   the decision bullet **verbatim** as the citation. No citation → the item is not plan-settled and stays
   in its default bucket — this bucket exists to stop re-litigation, never to dismiss a finding. A finding
   that *demonstrates* the decision is defective (a reproducible fault, a documented-constraint violation)
@@ -152,7 +153,9 @@ nothing else does.
    card is for these addressed-item deadlocks only. An item matching the **refuted-items list** verbatim
    — the same claim, carrying no reproduction, instance, or case the settled entry did not answer — is
    re-settled silently on its second occurrence: no card, no second reply, only the entry's repeat count
-   bumped. A repeat that **brings new evidence** is classified fresh on the merits: the prior settlement
+   bumped — in the bucket the entry records, never re-bucketed. An entry marked `kept` (the operator
+   answered **Keep settled**, this session or an earlier one) is re-settled silently on **every**
+   occurrence: that question is answered. A repeat that **brings new evidence** is classified fresh on the merits: the prior settlement
    is not a citation for evidence it never saw. A **recurrence that stays settled** — the third
    occurrence in one run, or a fresh classification that lands on Plan-settled again — bumps the count
    and takes step 4's **settled-item pre-check** this same round (never waiting for another occurrence,
@@ -192,15 +195,19 @@ nothing else does.
    creating findings on the seam they touched: each changed a guard, and nobody re-derived the sibling
    properties sharing it.
 
-   **Settled-item pre-check** (step 3's recurring settled item). A Plan-settled or Deferred-by-plan item
-   joins this round's fix-design dispatch — dispatch one when the round had none, still at most once
+   **Settled-item pre-check** (step 3's recurring settled item), by the bucket it stands in. A
+   **Plan-settled** item joins this round's fix-design dispatch — dispatch one when the round had none, still at most once
    per round — as a finding to design. Its `## Change set` has an entry and `## Plan conflicts` does not
    name it → it was never settled: reclassify it Addressable, tier it, and fix it this round with **no
    card**, the round reply noting "recurring settled item re-examined: fix design found no plan
    conflict". Named in `## Plan conflicts` → the `Settled item` card, **Re-plan** recommended. Named in
    `## Out of reach` → the card, **Fix it here** recommended (the design failed, not the plan). A recurring
-   **Refuted** item skips the dispatch: re-check its cited evidence — gone → classify fresh; still holds
-   → the card, **Keep settled** recommended.
+   **Deferred-by-plan** item skips the dispatch — fix design treats a later phase's seam as out of scope,
+   so it could only answer "out of reach" and push a later phase's work into this one: re-check its phase
+   citation — no unshipped later phase ships it any more → classify fresh (a gap: Addressable or
+   Decision-required); still owned → the card, **Keep settled** recommended. A recurring **Refuted** item
+   skips the dispatch too: re-check its cited evidence — gone → classify fresh; still holds → the card,
+   **Keep settled** recommended.
 
    Then fix every item the check left standing, applying `common-pitfalls.md`'s three fix-discipline
    bullets to each fix *before* writing it — "Don't fix the instance when the finding names a class",
@@ -254,7 +261,8 @@ nothing else does.
    ```
 
    `(×<repeats>)` is omitted on a first occurrence; carrying it is what lets the count survive a phase
-   boundary.
+   boundary. An entry the operator answered **Keep settled** on carries `kept` in the same parenthetical
+   (`(×3, kept)`), so the next session's seed never asks the question again.
 
    A round that fixed a defect also carries one `Defect fixes: phase <N> @ <sha> — <path>:<symbol>;
    <path>:<symbol>` line: the round's commit and every defect fix's site, never a polish site. `<N>` is
@@ -281,24 +289,30 @@ Accept + defer, Fix it here, Keep settled, Push with reds, Defer the tests, a na
 is acted on inside this round, which then finishes normally. A **terminating** answer — **Re-plan** (from
 the `Decision`, `Grounding` or `Settled item` card, or the stall card's churn option) and
 **Restructure** (re-route to the planner), **Abort** and **Abort loop** — ends the round *and* S5.1 on
-the spot, except the Re-plan independent-defect pass below: stop fixing, run no further gate, and hand
+the spot, except "The Re-plan independent-defect pass": stop fixing, run no further gate, and hand
 back to S5.2 (it pushes what is committed) and then the routed playbook's handoff, quoting the trigger in
 the `Why:`. Don't try to satisfy a re-route inside the round; there is nothing here that can.
 
 **The Re-plan independent-defect pass.** A Re-plan leaves the round's other defects behind, and some are
 unrelated to what the re-plan will reshape — a run once handed the planner two such defects it could have
-fixed. Before S5.2, fix each defect-tier item of this round that is **independent** of the re-planned
-finding; both must hold:
+fixed. Before S5.2, fix each still-unfixed defect-tier item of this round that is **independent** of the
+re-planned finding; both must hold:
 - its fix site shares no `<path>:<symbol>` with the re-planned finding's site or the fix-design seam
-  drawn for it — when no seam was drawn (a Re-plan from `Decision`, `Grounding`, or the stall card),
-  sharing a **file** with the re-planned finding's site stands in for sharing its seam;
+  drawn for it — when no seam was drawn (a Re-plan from `Decision` or `Grounding`), sharing a **file**
+  with the re-planned finding's site stands in for sharing its seam;
 - its fix would be the same whichever way the re-plan goes — it neither reads nor changes what the
   re-planned decision governs.
 
 When in doubt, it is **coupled**: fixing code the re-plan is about to reshape is wasted or conflicting.
-The answer arrives at step 2 or 3, before this round's fix plan exists, so run **steps 4 and 6–8 for the
-independent subset** — fix plan with its set check, defect injection, the §10.6 gate, one commit — and
-**no further `review`**: the next session's final-scope review re-reads them. A gate that escalates past
+Where the answer arrives decides what is left to do:
+- **`Decision` or `Grounding` card** (step 2, before any fix plan) → run **steps 4 and 6–8 for the
+  independent subset**: fix plan with its set check, defect injection, the §10.6 gate, one commit.
+- **`Settled item` card** (step 4, after this round's fix design and fix plan) → keep the existing plan
+  lines for the independent subset and drop the rest — no second fix-design dispatch — then steps 6–8.
+- **Stall card** (S5.1 step 3) → **no pass**: the round's fixes are already committed, and the churn that
+  offered Re-plan says its defects are coupled to the loop's own sites.
+
+Either way **no further `review`**: the next session's final-scope review re-reads them. A gate that escalates past
 the retry ladder → revert those fixes and record them, with no `Tests red` card. Coupled defects are
 recorded in the round reply, the PR body, and the handoff `Why:`. **Restructure** (the gate is already
 red) and **Abort** / **Abort loop** (the operator asked to stop) take no pass.
@@ -311,7 +325,7 @@ red) and **Abort** / **Abort loop** (the operator asked to stop) take no pass.
   `header: "Settled item"`, options with the recommended one first (step 4 says which): **Re-plan**
   (terminating; offered only for a plan-anchored item — Plan-settled or Deferred-by-plan — since the
   question is whether the plan is wrong), **Fix it here** (reclassify Addressable, fix this round),
-  **Keep settled** (holds for the rest of the run, never re-raised). Each `description` quotes the
+  **Keep settled** (recorded as `kept` on the entry, step 8 — never re-raised, this session or later). Each `description` quotes the
   settlement's citation or evidence and, when fix design ran, its conflict or out-of-reach entry. Never
   **Accept + defer**: a plan question is not a follow-up.
 - **Decision required.** The verdict flags an architectural choice, an API break, or a scope-change

@@ -1164,7 +1164,7 @@ class MainLoopReviewFixRoundTests(unittest.TestCase):
             "**Still true** → it does not, and the item is Addressable",
             "A list of **required behaviour** (\"must refuse …\", \"checks …\") is a **minimum**",
             "A **definition** (\"X means …\") is not",
-            "or **verbatim** repeats an item the refuted-items list already carries",
+            "A verbatim repeat of a refuted-items entry keeps the bucket that entry records",
         ):
             self.assertIn(phrase, text)
         prompt = " ".join((REFERENCES_DIR / "fix-design-prompt.md").read_text(encoding="utf-8").split())
@@ -1200,6 +1200,23 @@ class MainLoopReviewFixRoundTests(unittest.TestCase):
         self.assertIn("The `Review loop` card is for these addressed-item deadlocks only", text)
         self.assertIn("`Review loop` or `Settled item` card does not also render the stall card", self.flat)
 
+    def test_pr_63_review_fixes(self):
+        text = " ".join(self.reference.read_text(encoding="utf-8").split())
+        # A repeated Refuted item stays Refuted — it gets the evidence re-check, not fix design.
+        self.assertIn("never re-bucketed", text)
+        # Deferred-by-plan skips fix design: its later-phase seam would read as out of reach and the
+        # card would recommend pulling that phase's work forward.
+        self.assertIn("A recurring **Deferred-by-plan** item skips the dispatch", text)
+        self.assertIn("still owned → the card, **Keep settled** recommended", text)
+        # Keep settled survives the session through the settled block.
+        self.assertIn("An entry marked `kept`", text)
+        self.assertIn("(`(×3, kept)`)", text)
+        self.assertIn("recorded as `kept` on the entry, step 8 — never re-raised, this session or later", text)
+        # No positional cross-references (CLAUDE.md "Stable §-anchors over positional cross-references").
+        self.assertNotIn("independent-defect pass below", text)
+        prompt = " ".join((REFERENCES_DIR / "fix-design-prompt.md").read_text(encoding="utf-8").split())
+        self.assertNotIn("`## Plan conflicts` below", prompt)
+
     def test_a_re_plan_first_fixes_the_rounds_independent_defects(self):
         text = " ".join(self.reference.read_text(encoding="utf-8").split())
         for phrase in (
@@ -1212,7 +1229,9 @@ class MainLoopReviewFixRoundTests(unittest.TestCase):
             "**no further `review`**",
             "revert those fixes and record them, with no `Tests red` card",
             "take no pass",
-            "except the Re-plan independent-defect pass below",
+            'except "The Re-plan independent-defect pass"',
+            "**Stall card** (S5.1 step 3) → **no pass**: the round's fixes are already committed",
+            "keep the existing plan lines for the independent subset and drop the rest — no second fix-design dispatch",
         ):
             self.assertIn(phrase, text)
         self.assertIn("a **Re-plan** first fixes the round's independent defects", self.flat)

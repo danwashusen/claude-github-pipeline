@@ -40,7 +40,7 @@ re-deriving the properties that share it. Your job is to derive those properties
   first round). A finding on one of these is likely a second-order effect of that change.
 - **Plan decisions**: `<<plan_decisions>>` — the plan's `## Architecture decisions` / `## UI decisions` /
   `## Deviations from project docs` bullets, verbatim. These are locked **as written** — a bullet
-  constrains only what makes it false (see `## Plan conflicts` below).
+  constrains only what makes it false (the `## Plan conflicts` output section says what that means).
 - **Phase context**: `<<phase_context>>` — the plan's `## Phases` list with the current phase marked. A
   seam a **later** phase ships is not in scope.
 

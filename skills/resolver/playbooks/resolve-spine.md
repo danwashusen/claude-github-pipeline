@@ -298,7 +298,8 @@ push and the reply both wait for S5.2. "Approved" is **not** the exit condition 
    its findings **recorded, not fixed** (defects as follow-ups, polish to the ledger) and its `Cold
    read:` record written, so the stalling round never ships unread; these follow-ups are filed right
    after S5.2's push — in fresh mode once `create-pr` returns the URL, so each has its parent PR; say so
-   in the option's description) / **Abort**, plus **Re-plan** when churn fired. The
+   in the option's description) / **Abort**, plus **Re-plan** when churn fired (its round's fixes are
+   already committed, so it takes no independent-defect pass). The
    same card renders, marked "ceiling reached", at the **emergency ceiling**: 8 `review` runs in S5.1,
    light re-reviews and the post-cold-read run included. It is a backstop against a progress call the
    model makes on its own work, not a budget — reaching it means the rule misfired.
