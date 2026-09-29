@@ -1292,6 +1292,12 @@ class RevisionAndPolishFactTests(PrepResolverSandboxTestCase):
         self.assertEqual(polish["entries"][0]["note"], "misleading to operators")
         self.assertEqual(len(polish["unparsed"]), 1)
 
+    def test_a_commented_review_on_a_ready_pr_is_not_a_soft_reject(self):
+        # The evaluator's self-approval downgrade posts an APPROVE as a COMMENTED review at head and
+        # leaves the PR ready; only a real soft-reject flips it to draft.
+        facts = self._envelope(fixture_case="prep_resolver_revision_ready")
+        self.assertEqual(facts["revision"]["reasons"], ["polish_apply"])
+
     def test_an_unshipped_phase_is_not_a_revision(self):
         facts = self._envelope(fixture_case="prep_resolver_tracker_clean")
         self.assertEqual(facts["revision"], {"active": False, "reasons": []})

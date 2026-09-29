@@ -103,6 +103,7 @@ import workspace  # noqa: E402
 from pipelib import process  # noqa: E402
 from pipelib.decisions import AMBIGUOUS, PLAN_MISSING, needs_decision  # noqa: E402
 from pipelib.envelope import EXIT_OK, EXIT_USAGE_ERROR, emit_needs_decision, emit_ok  # noqa: E402
+from pipelib.spill import read_section  # noqa: E402
 from pipelib.thread import load_thread  # noqa: E402
 
 # The implementation-plan marker (skills/planner/references/plan-schema.md;
@@ -650,14 +651,13 @@ def _absent_tracker():
 
 
 def _load_reviews(pr_facts):
-    """The prior PR's review list, from the gather's spilled-or-inline JSON text. Returns `[]` on
-    anything unreadable — the only consumer is a convenience reason in `facts.revision`."""
-    raw = pr_facts.get("reviews")
+    """The prior PR's review list, from the gather's spilled-or-inline JSON text (a list already in
+    the legacy inline mode). Returns `[]` on anything unreadable — the only consumer is a
+    convenience reason in `facts.revision`."""
     try:
-        if raw is None and pr_facts.get("reviews_mode") == "path":
-            raw = Path(pr_facts["reviews_path"]).read_text(encoding="utf-8")
+        raw = read_section(pr_facts, "reviews")
         if isinstance(raw, str):
-            raw = json.loads(raw)
+            raw = json.loads(raw) if raw else []
     except (OSError, ValueError, KeyError):
         return []
     return raw if isinstance(raw, list) else []
@@ -678,6 +678,12 @@ def review_at_head(reviews, head_oid):
     return False
 
 
+def _absent_pr_extras():
+    """What `_build_tracker` reports beside the tracker when there is no PR fetch to read. A factory,
+    for `_absent_tracker`'s reason."""
+    return {"polish": parse.absent_polish(), "review_at_head": False}
+
+
 def _absent_revision():
     """The revision fact outside a revision run. A factory, for `_absent_tracker`'s reason."""
     return {"active": False, "reasons": []}
@@ -692,7 +698,8 @@ def build_revision(mode, phases, tracker, prior_pr_fact, dod, polish, reviewed_a
     to the planner — they never short-circuit the loop:
       - `dod_rejected` — a DoD bullet the evaluator un-ticked (sticky veto: only a re-plan clears it);
       - `polish_apply` — a `## Polish` ledger entry the evaluator marked `apply`;
-      - `review_at_head` — a non-approving review posted on the current head.
+      - `review_at_head` — a non-approving review posted on the current head of a **draft** PR (a
+        soft-reject flips it to draft; the self-approval downgrade's COMMENTED review does not).
 
     A convenience fact: no decision, no notice, never raises. An epic target's plan carries no
     `## Phases`, so it takes the single-phase branch and can read `active: True` — harmless, since
@@ -737,9 +744,8 @@ def _build_tracker(prior_pr_fact, phases, repo, scratch_dir=None, cwd=None):
     narrower change. Mirrors `prep_planner._build_revise_facts`.
     """
     notices = []
-    absent_extras = {"polish": parse.absent_polish(), "review_at_head": False}
     if not prior_pr_fact or not prior_pr_fact.get("number"):
-        return _absent_tracker(), absent_extras, notices, None
+        return _absent_tracker(), _absent_pr_extras(), notices, None
 
     pr_facts, pr_notices, decision = gh_pr_gather.build_pr_facts(
         prior_pr_fact["number"], repo, scratch_dir=scratch_dir, cwd=cwd
@@ -752,11 +758,9 @@ def _build_tracker(prior_pr_fact, phases, repo, scratch_dir=None, cwd=None):
         if notice not in notices:
             notices.append(notice)
     if decision is not None:
-        return None, absent_extras, notices, decision
+        return None, _absent_pr_extras(), notices, decision
 
-    pr_body = pr_facts.get("body")
-    if pr_body is None and pr_facts.get("body_mode") == "path":
-        pr_body = Path(pr_facts["body_path"]).read_text(encoding="utf-8")
+    pr_body = read_section(pr_facts, "body")
     scan = parse.scan_phase_tracker(pr_body)
 
     tracker = {
@@ -773,7 +777,11 @@ def _build_tracker(prior_pr_fact, phases, repo, scratch_dir=None, cwd=None):
         tracker["body_path"] = pr_facts.get("body_path")
     extras = {
         "polish": parse.scan_polish(pr_body),
-        "review_at_head": review_at_head(_load_reviews(pr_facts), pr_facts.get("headRefOid")),
+        # A soft-reject flips the PR back to draft; the evaluator's self-approval downgrade (an
+        # APPROVE posted as a COMMENTED review on a self-authored PR) leaves it ready. The draft
+        # flag is what tells the two apart — the review objects look the same.
+        "review_at_head": bool(pr_facts.get("isDraft"))
+        and review_at_head(_load_reviews(pr_facts), pr_facts.get("headRefOid")),
     }
     return tracker, extras, notices, None
 
@@ -978,7 +986,7 @@ def build_facts(issue_number, repo, root=".", scratch_dir=None, refresh=False, c
             return None
     else:
         tracker, tracker_notices = _absent_tracker(), []
-        pr_extras = {"polish": parse.absent_polish(), "review_at_head": False}
+        pr_extras = _absent_pr_extras()
 
     # 4c) Shipped-phase records (skills/_shared/plan-shipped-phases.md). A revise moves a shipped
     #     phase's `## Changes` / `## Data model / schema impact` / `## Test plan` entries into a

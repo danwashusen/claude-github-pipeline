@@ -421,6 +421,23 @@ class PolishAdjudicationTests(unittest.TestCase):
         self.assertIn("the verdict is COMMENT with **no new card**", self.reference)
         self.assertIn("`resolved otherwise at <short-sha>`", self.reference)
 
+    def test_every_apply_is_confirmed_even_on_a_comment_verdict(self):
+        # An unfixed `apply` stays binding on the next run, so an `apply` the operator never saw
+        # would block the merge on the evaluator's say-so. No ride-along without a card.
+        self.assertIn("**Every** proposed `apply` — on any verdict", self.reference)
+        self.assertNotIn("ride along", self.reference)
+        self.assertNotIn("ride along", self.spine)
+        self.assertIn("**Every** `apply` needs the operator's confirmation, on any verdict", self.spine)
+
+    def test_an_untick_soft_reject_routes_straight_to_the_planner(self):
+        rubric = re.sub(
+            r"\s+", " ", (SKILL_DIR / "references" / "handoff-renderings.md").read_text(encoding="utf-8")
+        )
+        self.assertIn("**When the verdict included an S4-untick**, re-route to **`/github-pipeline:planner revise #<issue>`**", rubric)
+        for name in ("standard.md", "story.md", "epic-integration.md"):
+            text = re.sub(r"\s+", " ", (PLAYBOOKS_DIR / name).read_text(encoding="utf-8"))
+            self.assertIn("S4-untick or a plan-changing polish `apply`", text, name)
+
     def test_dispositions_are_written_once_after_the_answer(self):
         self.assertIn("gh_persist.py edit-pr-body", self.reference)
         self.assertIn("the ledger never records a decision the operator overrode", self.reference)

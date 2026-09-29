@@ -62,9 +62,10 @@ example's paths mix Python, Ruby and Swift on purpose — the format is stack-ne
   between the two skills indefinitely.
 - **Items are never deleted.** A dispositioned item stays as the record of the decision; a stale one is
   `drop`ped with its reason, not removed.
-- **The operator bounds the cycle.** An `apply` that only polish would cause is always
-  operator-confirmed (`evaluator/references/polish-adjudication.md`), and that confirmation is the only
-  limit on how often a PR goes back for polish. It is deliberately not a counter.
+- **The operator bounds the cycle.** Every `apply` is operator-confirmed, on any verdict
+  (`evaluator/references/polish-adjudication.md`) — which is what lets the evaluator treat one left
+  unfixed as still binding — and that confirmation is the only limit on how often a PR goes back for
+  polish. It is deliberately not a counter.
 - **Writes go through the single write path.** The resolver stages the section into `pr.md` (fresh
   mode) or rewrites it with `gh_persist.py edit-pr-body` (continue mode); the evaluator rewrites
   dispositions with `gh_persist.py edit-pr-body`. A body over the cap surfaces the existing

@@ -143,7 +143,7 @@ Prep computed the classification in `facts.tracker.diff`:
   body — the same needs-re-verification posture as a DoD un-tick; never carry a tick onto work it did
   not ship) / **Abort**.
 
-Write the reconciled tracker with the same `edit-body` on the PR that S6 uses, then select the cursor
+Write the reconciled tracker with the same `edit-pr-body` S6 uses, then select the cursor
 from it. Never select a phase by row title.
 
 **Revision run** (`facts.revision.active`): every `kind: code-shipping` phase is ticked — single-phase,
@@ -270,8 +270,8 @@ push and the reply both wait for S5.2. "Approved" is **not** the exit condition 
      first gets one **light re-review**: `review` at `medium` over that round's own commits
      (`<pre-round HEAD>...HEAD`) — a defect it finds re-enters this loop at step 2; polish it finds goes
      to the ledger unfixed.
-   - **Progress** — the count fell from the previous round's (round 1 has none to compare) → re-run
-     step 1.
+   - **Progress** — the count fell from the previous round's; round 1, with nothing to compare,
+     always counts as progress → re-run step 1.
    - **No progress** — it did not fall, or **churn**: most of the round's defect items sit in the hot
      seam (`git diff --name-only <loop-entry sha>...HEAD`, the reference's fix-design trigger), which
      round 1 cannot show. The first such round is a **grace round** (re-run step 1 — the reviewer is
@@ -363,12 +363,14 @@ ${CLAUDE_PLUGIN_ROOT}/scripts/gh_persist.py edit-body <owner/repo> <issue> \
   "<facts.scratch>/issue-body-projected.md"
 ```
 
-Then update the PR's `## Phase tracker` (stage + `edit-body` on the PR) — the **reconciled** row set
-from S4, never the rows a prior session wrote. Never tick a bullet the
+Then update the PR's `## Phase tracker` with `edit-pr-body` (the issue-body op `edit-body` rejects
+a PR number) — the **reconciled** row set from S4, never the rows a prior session wrote. Restage from the
+body this run last wrote (S5.2's, which carries the ledger), never prep's session-start copy: each write
+replaces the whole body, so a stale base silently drops the other's sections. Never tick a bullet the
 phase's `closes-dod` doesn't claim (the resolver projects the planner's declaration, it doesn't infer).
 Never re-tick a bullet the evaluator rejected (`… evaluator rejected: …` is a **sticky veto** —
 resolve it by re-planning or a new phase, never by silent re-ticking). Never mark a multi-phase PR
-ready except at the last-phase handoff, and never add `Closes #N` in reaction to shipping a phase — both
+ready except at the last-phase handoff or a revision run's end ("Return to the routed playbook"), and never add `Closes #N` in reaction to shipping a phase — both
 are the evaluator's judgment. Projection failure does **not** abort the run (re-entry reconciliation is
 the backstop); log it and continue.
 

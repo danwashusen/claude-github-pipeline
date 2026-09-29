@@ -144,7 +144,7 @@ A re-route is a handoff whose `Next:` points at a prior skill — typically:
 
   These three are one arm at two altitudes (#16), which is why they all name the slicer: the seam gate picks the *bar* the children clear, not the skill. They differ in what the planner posts (a seam-analysis comment on the first, nothing on the other two) and in whether the target is reshaped (only the first promotes it).
 - evaluator → resolver (a soft-reject: a COMMENT verdict, the operator's **Needs Revision** / **Reject**, or an operator-confirmed polish `apply`; the PR is flipped back to draft and the resolver continues on it)
-- evaluator → planner (an operator-confirmed polish `apply` whose fix would reverse a locked plan decision or reshape a phase — `skills/_shared/polish-ledger.md`; the PR stays in draft and the planner's revise adds a phase for the `apply` items)
+- evaluator → planner (a soft-reject only a re-plan can clear: a DoD bullet the evaluator un-ticked — the planner reassigns it to a new phase — or an operator-confirmed polish `apply` whose fix would reverse a locked plan decision or reshape a phase, `skills/_shared/polish-ledger.md`; the PR stays in draft)
 - slicer → setup (the consuming repo declares no grounding documents, so the decomposition would invent scope; the slicer refuses and files nothing. Terminal-style for the pipeline: the remedy is a `<!-- doc-catalogue -->` block, not another pipeline stage, but the `Next:` fence carries the setup command)
 
 (The reverse, researcher → planner, is the *forward* route this pipeline normally takes — research is the planner's input — and follows the standard schema, not these re-route rules. Likewise slicer → planner: the slicer's own forward route, after a cut, is the planner.)
@@ -153,7 +153,7 @@ A re-route is a handoff whose `Next:` points at a prior skill — typically:
 
 The schema does not change. The `Why:` line is the load-bearing piece — it must name the specific evidence so the user (and the prior skill, when re-run) can act without re-investigating:
 
-- Plan re-routes: quote the locked decision verbatim and cite the `file:line` where the contradiction surfaced. From the evaluator (a polish `apply`), quote the ledger item by id and the plan decision it would reverse.
+- Plan re-routes: quote the locked decision verbatim and cite the `file:line` where the contradiction surfaced. From the evaluator, quote each `… evaluator rejected: …` annotation for an un-tick, or the ledger item by id and the plan decision it would reverse for a polish `apply`.
 - Drafter re-routes: quote the body's claim verbatim, name the missing or contradictory symbol, and cite the closest-match `file:line`.
 - Researcher re-routes (planner → researcher): name the specific ungroundable fact verbatim (the dependency/API/version and what's unknown), so the researcher targets exactly that gap rather than re-researching the whole issue.
 - Open-question re-routes (planner → answer the question): name the blocking OQ id and the companion `question` issue `#N` (and its `audience:*`), so the reader knows exactly which decision unblocks the plan.

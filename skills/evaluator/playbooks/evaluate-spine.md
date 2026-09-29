@@ -226,10 +226,10 @@ When `facts.polish` carries an `open` entry or an unfixed `apply` one (the resol
 [`../../_shared/polish-ledger.md`](../../_shared/polish-ledger.md)), adjudicate it per
 [`../references/polish-adjudication.md`](../references/polish-adjudication.md) **before S7's post
 timing** — under `auto` an APPROVE posts and merges at once. Re-check each entry at head and propose
-`apply` / `file` / `drop` with a reason. An `apply` on an otherwise-APPROVE verdict needs the operator's
-confirmation — the reference's `Polish` card under `auto`, folded into the S7-gate card under `ask` —
-and a confirmed apply makes the verdict COMMENT, routed to `resolver continue` or, when applying it
-changes the plan, `planner revise`. On a verdict already COMMENT, `apply` items ride along with no card.
+`apply` / `file` / `drop` with a reason. **Every** `apply` needs the operator's confirmation, on any
+verdict — the reference's `Polish` card, folded into the S7-gate card only under `ask` with an
+otherwise-APPROVE verdict — and a confirmed apply makes the verdict COMMENT, routed to
+`resolver continue` or, when applying it changes the plan, `planner revise`.
 Write the final dispositions once — after any answer, before the review posts — with
 `gh_persist.py edit-pr-body`; `file` entries are filed after the merge by the playbook's residual step.
 

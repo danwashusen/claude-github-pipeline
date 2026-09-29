@@ -1172,7 +1172,7 @@ def scan_polish(pr_body_text):
     lines = (pr_body_text or "").splitlines()
     found = _find_section(lines, r"Polish")
     if found is None:
-        return {"present": False, "entries": [], "unparsed": []}
+        return absent_polish()
     start, end = found
 
     entries, unparsed = [], []

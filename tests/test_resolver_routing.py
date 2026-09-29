@@ -1098,6 +1098,7 @@ class MainLoopReviewFixRoundTests(unittest.TestCase):
             "the loop runs on the **defect count**",
             "Plan-settled, Deferred-by-plan and Explicitly-deferred never count",
             "**Progress** — the count fell from the previous round's",
+            "round 1, with nothing to compare, always counts as progress",
             "The first such round is a **grace round**",
             "the second in a row renders the **stall card**",
             "most of the round's defect items sit in the hot seam",
@@ -1275,6 +1276,9 @@ class PhaseScopedReviewTests(unittest.TestCase):
             "There is no nothing-to-do shortcut",
             "A revision run (S4) is final.",
             "or a revision run (S4): flip the PR draft → ready",
+            "except at the last-phase handoff or a revision run's end",
+            "Then update the PR's `## Phase tracker` with `edit-pr-body`",
+            "Restage from the body this run last wrote",
         ):
             self.assertIn(phrase, self.flat)
         router = " ".join(ROUTER.read_text(encoding="utf-8").split())

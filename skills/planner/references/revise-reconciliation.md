@@ -53,10 +53,19 @@ When the evaluator sends a PR here because a confirmed polish item would reverse
 (`../../_shared/polish-ledger.md`; its handoff `Why:` quotes the item and the decision), the work is in
 the open PR's ledger: every entry in `facts.revise.open_pr.polish` marked `apply`. Revise the decision
 the item reverses (quote the ledger id in the new `## Architecture decisions` / `## UI decisions` bullet
-so the change is traceable), then add **one new phase after the shipped ones** whose `ships` / `deliverable`
-cover those entries by id. Every phase has shipped by the time the evaluator runs, so it takes k+1 with no
-renumbering — **SOFT** ("New phases added beyond what's shipped"). The resolver then builds it as the
-tracker's `missing` row in continue mode, marking each entry `applied (commit <sha>)`. Never edit the
+so the change is traceable), then place the work by the PR's shape:
+
+- **Multi-phase** (`facts.revise.phase_tracker` carries rows) — add **one new phase after the shipped
+  ones** whose `ships` / `deliverable` cover those entries by id. Every phase has shipped by the time the
+  evaluator runs, so it takes k+1 with no renumbering — **SOFT** ("New phases added beyond what's
+  shipped"). The resolver builds it as the tracker's `missing` row in continue mode.
+- **Single-phase** (`facts.revise.phase_tracker` is empty — a single-phase PR carries no tracker) — add
+  **no** phase: fold the entries into the plan's one phase (its `## Changes`). A new phase here would
+  turn the plan multi-phase with no tracker row recording that phase 1 shipped, so the resolver would
+  rebuild it. A single-phase PR that exists is already a revision run (`facts.revision`), which applies
+  the `apply` entries as Addressable.
+
+Either way the resolver marks each entry `applied (commit <sha>)`. Never edit the
 ledger yourself — it belongs to the resolver and the evaluator.
 
 ### Inserting a phase after work has shipped

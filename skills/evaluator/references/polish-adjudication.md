@@ -38,16 +38,19 @@ on the evidence), and the entry is `drop`ped with the note `reclassified: defect
 
 ## 2. Confirm an `apply` with the operator
 
-Only when the verdict would otherwise be **APPROVE** — on a COMMENT verdict the PR is going back anyway,
-so `apply` items ride along in that review with no card.
+**Every** proposed `apply` — on any verdict. An `apply` is binding: the resolver must fix it, and
+§1 treats one left unfixed as already confirmed, so an `apply` the operator never saw would block the
+merge on the evaluator's say-so alone.
 
-- **`auto` policy** — no gate card will render, so ask now (`header: "Polish"`), listing each `apply`
-  entry (id, item, reason): **Apply** / **File instead** / **Merge anyway**.
-- **`ask` policy** (and epic-integration) — fold it into the S7-gate `Approve PR` card instead of
-  asking twice: the `question` lists the `apply` entries, **Needs Revision** applies them, and
-  **Approve** merges without them.
+- **Default** — ask now (`header: "Polish"`), listing each `apply` entry (id, item, reason):
+  **Apply** / **File instead** / **Merge anyway**. On a verdict that is already COMMENT (the PR goes
+  back regardless) the card decides only whether the items go back with it; **Merge anyway** there
+  reads "drop them", and the route does not change.
+- **`ask` policy (and epic-integration) with an otherwise-APPROVE verdict** — fold it into the S7-gate
+  `Approve PR` card instead of asking twice: the `question` lists the `apply` entries, **Needs
+  Revision** applies them, and **Approve** merges without them.
 
-Answers: **Apply** (or Needs Revision) → the verdict becomes COMMENT (below). **File instead** →
+Answers: **Apply** (or Needs Revision) → the verdict becomes COMMENT when it was not already (below). **File instead** →
 every `apply` becomes `file`. **Merge anyway** (or Approve) → every `apply` becomes `drop` with the note
 `operator: merge anyway`. This confirmation is the **only** limit on how often a PR goes back for
 polish — deliberately an operator decision, not a counter; do not add one.

@@ -63,6 +63,8 @@ policy) or `APPROVE (operator)` (gate path). The issue closes via GitHub's auto-
 
 On a **no-merge** exit, emit the matching rubric shape instead — **soft-reject → re-route** to
 `/github-pipeline:resolver continue #<PR>` (COMMENT verdict or operator Needs-Revision / Reject; PR is
-back in draft, `merge: skipped (verdict)`, no Cleanup line), or **APPROVE-but-skipped** (DIRTY/BLOCKED
+back in draft, `merge: skipped (verdict)`, no Cleanup line) — or to `/github-pipeline:planner revise
+#<issue>` when the soft-reject carries an S4-untick or a plan-changing polish `apply`, since only a
+re-plan clears either — or **APPROVE-but-skipped** (DIRTY/BLOCKED
 or operator-deferred; `merge: skipped (DIRTY|BLOCKED|deferred)`, the `Next:` quotes the manual `gh pr
 merge` command).
