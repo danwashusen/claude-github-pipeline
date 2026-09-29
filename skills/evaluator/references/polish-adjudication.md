@@ -7,8 +7,8 @@ procedure. It runs **after the S5 verdict and before S7's post timing**, because
 policy an APPROVE posts and merges immediately — a ledger decided after that point could not stop the
 merge.
 
-Input: `facts.polish` (prep's scan of the PR body), and `facts.plans` for the scope and decision
-checks. Nothing to do when it is absent or carries neither an `open` entry nor an unfixed `apply` entry.
+Input: `facts.polish` (prep's scan of the PR body), plus `facts.plans` and `facts.dod` for the scope and
+decision checks. Nothing to do when it is absent or carries no `open`, unfixed `apply`, or `file` entry.
 A line in `facts.polish.unparsed` is rewritten into grammar by this step's write, keeping its text;
 never silently dropped.
 
@@ -19,7 +19,10 @@ unfixed (an **Accept current** on its stall card, an abort). Still present at he
 again and put it back in front of the operator at §2, marked `confirmed on a prior run, left unfixed`:
 skipping it would silently drop the operator's decision, and forcing it with no card would leave no way
 to release it once priorities change — the operator may re-apply, file it instead, or drop it. Gone
-at head → `drop` with the note `resolved otherwise at <short-sha>`. Then the `open` entries:
+at head → `drop` with the note `resolved otherwise at <short-sha>`. Next, every `file` entry — decided on
+an earlier run whose verdict sent the PR back, so still unfiled (filing runs only after the merge), and
+the revision since may have fixed it: still true at head → keep it, not asked again; gone → `drop` with
+`resolved otherwise at <short-sha>`, named in the review. Then the `open` entries:
 
 Read the entry's anchor in the workspace (`facts.workspace.path`, at `pr.headRefOid`) and check the
 entry's **claim**, not only that the anchor still exists — the reviewer wrote it against an earlier
@@ -35,8 +38,8 @@ not the reviewer's. Then propose one of the following, with a one-line reason as
   `apply`-criteria entry here is a **resolver miss** — name it as one in the review body. A PR sent back
   for polish costs a whole resolver session; if most entries want `apply`, the resolver's defect/polish
   line is misplaced — say so rather than sending the PR round again and again.
-- **re-plan** — the entry sits inside this PR's scope (the plan's `## Changes` / phase `ships`, or the
-  issue's Definition of done, per `facts.plans`) but its fix needs a decision the plan does not make:
+- **re-plan** — the entry sits inside this PR's scope (the plan's `## Changes` / phase `ships` in
+  `facts.plans`, or the issue's Definition of done in `facts.dod`) but its fix needs a decision the plan does not make:
   it would make a plan decision bullet **false as written** (reverses a choice, redefines a term the plan
   defines, moves work the plan places elsewhere — a list of required behaviour is a minimum, a
   definition is not), or the plan and the Definition of done leave the intended behaviour open, so two
@@ -79,13 +82,27 @@ evaluator's proposal first and marked recommended:
 A re-proposed `apply` says it was `confirmed on a prior run, left unfixed`. The tool's "Other" takes a
 split answer by id ("file all but P1.3; re-plan P1.3"); apply it entry by entry.
 
-Answers: **File as follow-up** → `file`. **Drop** → `drop`. **Apply in this PR** → `apply`. **Re-plan** →
-`apply`, the note prefixed `operator: re-plan —`, which forces the planner route at §4 whatever its
-plan-change test says. When an answer differs from the proposal, the note leads with `operator:
-<answer>` and keeps the evaluator's reason after it. Any **Apply in this PR** or **Re-plan** answer makes
-the verdict COMMENT when it was not already (§4); with none, the verdict stands and S7 proceeds — under
-`ask` to the `Approve PR` card, which does not carry the ledger. This card is the **only** limit on
-how often a PR goes back for polish — deliberately an operator decision, not a counter; do not add one.
+Answers:
+
+- **File as follow-up** → `file`, the note carrying `group: <the question's group label>` — the residual
+  step files one issue per recorded group, as the operator approved it
+  ([`../../_shared/polish-ledger.md`](../../_shared/polish-ledger.md) "Rules").
+- **Drop** → `drop`.
+- **Apply in this PR** → `apply`. On an entry proposed as re-plan because two intents fit, ask one
+  follow-up question first — one option per intent the note names — and record the answer as
+  `intent: <chosen>` in the note: the resolver implements that intent and never picks one itself.
+- **Re-plan** → `apply`, the note prefixed `operator: re-plan —`, which forces the planner route at §4
+  whatever its plan-change test says.
+
+When an answer differs from the proposal, the note leads with `operator: <answer>` and keeps the
+evaluator's reason after it. With no **Apply in this PR** or **Re-plan** answer, the verdict stands and
+S7 proceeds — under `ask` to the `Approve PR` card, which does not carry the ledger. With one, an
+APPROVE becomes COMMENT (§4). On a verdict that is **already** COMMENT — the evaluator's own soft-reject
+(red health, a failed dimension, an S4-untick) — the answers decide only which items go back with the
+PR: the review keeps the evaluator's header and the `COMMENT (soft-reject)` marker, and the route is the
+verdict's own, except that a **Re-plan** answer routes to `planner revise` as an S4-untick does. This
+card is the **only** limit on how often a PR goes back for polish — deliberately an operator decision,
+not a counter; do not add one.
 
 ## 3. Write the dispositions once
 
@@ -103,10 +120,12 @@ Entries are never deleted (`polish-ledger.md` "Rules").
 
 ## 4. A confirmed `apply` — the soft-reject and its route
 
-The review body gains a `## Polish` section listing each `apply` entry by id with its reason, and the
-operator-attribution header (`**Operator decision: Needs Revision**`, per `review-comment.md`) since
-the operator made the call. Post it as S7-post's `comment` and flip the PR back to draft exactly as a
-COMMENT verdict does. The handoff's `review:` marker is `COMMENT (operator: needs-revision)`.
+The review body gains a `## Polish` section listing each `apply` entry by id with its reason. When the
+polish answer is what turned an APPROVE into COMMENT, the body also takes the operator-attribution header
+(`**Operator decision: Needs Revision**`, per `review-comment.md`) since the operator made the call; on an
+already-COMMENT verdict it keeps the evaluator's own (§2). Post it as S7-post's `comment` and flip the PR back to draft exactly as a
+COMMENT verdict does. The handoff's `review:` marker is `COMMENT (operator: needs-revision)` — or
+`COMMENT (soft-reject)` on an already-COMMENT verdict.
 
 Route by whether applying the items changes the plan — the same test the resolver's fix plan applies to
 a fix that reverses a plan decision:

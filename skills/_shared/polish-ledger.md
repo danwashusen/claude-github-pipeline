@@ -81,6 +81,12 @@ The single list of what makes polish **actively bad to merge** — the evaluator
   lets the evaluator treat an `apply` left unfixed as still binding, and it bounds the cycle: the
   operator's answer is the only limit on how often a PR goes back for polish. It is deliberately not a
   counter.
+- **A `file` entry files from its note too.** The residual filing briefs each `file` entry from its
+  item **and** its note: a `narrowed:` note supersedes the item's claim (the evaluator found only that
+  much still true at head), and entries file **one issue per recorded `group:`** — the groups the
+  operator approved on the `Polish` card, never regrouped at filing.
+- **An `apply` note's `intent:` is the operator's decision.** Recorded when the evaluator found two
+  intents the plan leaves open; the resolver implements that intent and never picks one itself.
 - **Writes go through the single write path.** The resolver stages the section into `pr.md` (fresh
   mode) or rewrites it with `gh_persist.py edit-pr-body` (continue mode); the evaluator rewrites
   dispositions with `gh_persist.py edit-pr-body`. A body over the cap surfaces the existing

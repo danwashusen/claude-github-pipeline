@@ -413,7 +413,10 @@ class PolishAdjudicationTests(unittest.TestCase):
         self.assertIn("`file` and `drop` included, on any verdict and under either merge policy", self.reference)
         for option in ("**File as follow-up**", "**Apply in this PR**", "**Re-plan**", "**Drop**"):
             self.assertIn(option, self.reference)
-            self.assertIn(option, self.spine)
+            # The reference owns the labels; the spine and CLAUDE.md point at the card, never restate it.
+            self.assertNotIn(option, self.spine)
+        claude_md = (REPO_ROOT / "CLAUDE.md").read_text(encoding="utf-8")
+        self.assertNotIn("File / Apply in this PR / Re-plan / Drop", claude_md)
         self.assertIn("the evaluator's proposal first and marked recommended", self.reference)
         self.assertIn("one question per group — at most 4 questions per card", self.reference)
         self.assertNotIn("ride along", self.reference)
@@ -433,7 +436,7 @@ class PolishAdjudicationTests(unittest.TestCase):
     def test_an_unfixed_apply_is_rechecked_not_skipped(self):
         # A revision run can leave a confirmed `apply` unfixed (Accept current / abort); skipping it
         # on the next run would merge past the operator's decision.
-        self.assertIn("an `open` entry or an unfixed `apply` one", self.spine)
+        self.assertIn("an `open`, unfixed `apply`, or `file` entry", self.spine)
         # PR #62 review: forcing it with no card left no way to release it — it is re-proposed.
         self.assertIn("marked `confirmed on a prior run, left unfixed`", self.reference)
         self.assertNotIn("no new card", self.reference)
@@ -447,8 +450,52 @@ class PolishAdjudicationTests(unittest.TestCase):
         self.assertIn("`narrowed: <what holds>`", self.reference)
         self.assertIn("Re-check each entry's claim at head", self.spine)
 
+    def test_a_file_entry_is_rechecked_after_a_revision(self):
+        # A `file` answered on a verdict that sent the PR back is still unfiled; the revision may fix it.
+        self.assertIn("Next, every `file` entry — decided on an earlier run whose verdict sent the PR back",
+                      self.reference)
+        self.assertIn("still true at head → keep it, not asked again; gone → `drop` with "
+                      "`resolved otherwise at <short-sha>`", self.reference)
+        self.assertIn("carries no `open`, unfixed `apply`, or `file` entry", self.reference)
+
+    def test_file_entries_carry_their_group_and_narrowed_claim_to_filing(self):
+        # PR #65 review: the card's groups and a `narrowed:` claim must survive to the residual filing.
+        self.assertIn("the note carrying `group: <the question's group label>`", self.reference)
+        ledger = re.sub(r"\s+", " ", (REPO_ROOT / "skills" / "_shared" / "polish-ledger.md").read_text(encoding="utf-8"))
+        self.assertIn("a `narrowed:` note supersedes the item's claim", ledger)
+        self.assertIn("one issue per recorded `group:`", ledger)
+        self.assertIn("never regrouped at filing", ledger)
+        for name in ("standard.md", "story.md", "epic-integration.md"):
+            text = re.sub(r"\s+", " ", (PLAYBOOKS_DIR / name).read_text(encoding="utf-8"))
+            self.assertIn("one issue per recorded `group:`, each briefed from its item and note", text, name)
+
+    def test_apply_on_a_two_intent_entry_records_the_chosen_intent(self):
+        self.assertIn("record the answer as `intent: <chosen>` in the note", self.reference)
+        ledger = re.sub(r"\s+", " ", (REPO_ROOT / "skills" / "_shared" / "polish-ledger.md").read_text(encoding="utf-8"))
+        self.assertIn("**An `apply` note's `intent:` is the operator's decision.**", ledger)
+        fix_round = re.sub(
+            r"\s+", " ",
+            (REPO_ROOT / "skills" / "resolver" / "references" / "review-fix-round.md").read_text(encoding="utf-8"),
+        )
+        self.assertIn("each evaluator `apply` item — built to its note's `intent:` when it carries one", fix_round)
+
+    def test_an_already_comment_verdict_keeps_its_own_marker_and_route(self):
+        # The rewrite had dropped this: the evaluator's own soft-reject is not the operator's decision.
+        self.assertIn("On a verdict that is **already** COMMENT", self.reference)
+        self.assertIn("the review keeps the evaluator's header and the `COMMENT (soft-reject)` marker", self.reference)
+        self.assertIn("except that a **Re-plan** answer routes to `planner revise` as an S4-untick does", self.reference)
+        self.assertIn("When the polish answer is what turned an APPROVE into COMMENT", self.reference)
+        rubric = re.sub(
+            r"\s+", " ", (SKILL_DIR / "references" / "handoff-renderings.md").read_text(encoding="utf-8")
+        )
+        self.assertIn("`COMMENT (soft-reject)` when the evaluator's own verdict was already COMMENT", rubric)
+        self.assertIn("on a Re-plan answer about an intent the plan leaves open, the two intents the note names", rubric)
+
     def test_an_in_scope_entry_needing_a_decision_is_proposed_as_re_plan(self):
         self.assertIn("- **re-plan** — the entry sits inside this PR's scope", self.reference)
+        # The DoD is `facts.dod`; `facts.plans` carries only plan comments.
+        self.assertIn("or the issue's Definition of done in `facts.dod`", self.reference)
+        self.assertIn("plus `facts.plans` and `facts.dod`", self.reference)
         self.assertIn("a list of required behaviour is a minimum, a definition is not", self.reference)
         self.assertIn("two fixes fit, each serving a different intent", self.reference)
         # Out of scope files instead, carrying the open question to the follow-up's planner.
