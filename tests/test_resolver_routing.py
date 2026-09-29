@@ -1094,17 +1094,64 @@ class MainLoopReviewFixRoundTests(unittest.TestCase):
         self.assertIn("marked `apply` is Addressable on iteration 1 whatever its tier", text)
 
     def test_the_loop_runs_on_defect_progress_with_a_grace_round(self):
+        # The #957 replay: a falling count alone read one-new-defect-per-round (real progress) as a
+        # stall at round 3, and a file-level churn signal fired on files a polish rename made "hot".
         for phrase in (
             "the loop runs on the **defect count**",
-            "Plan-settled, Deferred-by-plan and Explicitly-deferred never count",
-            "**Progress** — the count fell from the previous round's",
+            "Plan-settled, Deferred-by-plan, Refuted and Explicitly-deferred never count",
+            "**Progress** — the count fell from the previous round's, **or** none of its defects is **loop-induced**",
             "round 1, with nothing to compare, always counts as progress",
+            "**No progress** — the count did not fall **and** at least one defect is loop-induced",
             "The first such round is a **grace round**",
             "the second in a row renders the **stall card**",
-            "most of the round's defect items sit in the hot seam",
+            "**Churn** — at least 2 defects, most of them loop-induced",
             "does not also render the stall card",
         ):
             self.assertIn(phrase, self.flat)
+        self.assertNotIn("most of the round's defect items sit in the hot seam", self.flat)
+
+    def test_a_reopened_loop_starts_a_fresh_baseline(self):
+        self.assertIn(
+            "the next round counts as round 1 again: a fresh baseline and an unused grace round "
+            "(the ceiling's count carries on)",
+            self.flat,
+        )
+
+    def test_loop_induced_reads_defect_fix_commits_not_the_file_level_seam(self):
+        text = " ".join(self.reference.read_text(encoding="utf-8").split())
+        self.assertIn("A defect is **loop-induced** when its cited site falls inside `git diff <sha>^..<sha>`", text)
+        self.assertIn("A file touched only by polish or comment edits never makes a finding loop-induced", text)
+        self.assertIn("each round's entries carrying that round's **commit SHA** and whether it **fixed a defect**", text)
+        # The file-level hot seam stays the fix-design trigger, where erring wide is safe.
+        self.assertIn("It scopes that dispatch only", text)
+
+    def test_evidence_refuted_findings_are_a_settled_bucket(self):
+        text = " ".join(self.reference.read_text(encoding="utf-8").split())
+        self.assertIn("- **Refuted** — the finding is factually wrong or unreachable, shown by evidence you cite", text)
+        self.assertIn("No evidence → not refuted", text)
+        self.assertIn("- refuted — <one-line item> — evidence: <what was read or run>", text)
+        self.assertIn("Plan-settled / Deferred-by-plan / Refuted item", text)
+        self.assertIn("Deferred-by-plan, Refuted, or polish → the loop has **settled**", self.flat)
+
+    def test_a_sibling_site_miss_is_fixed_not_carded(self):
+        text = " ".join(self.reference.read_text(encoding="utf-8").split())
+        self.assertIn("**sibling site** of a class fix you already made is not a match", text)
+        self.assertIn("fix it per the class discipline, and it counts as loop-induced", text)
+
+    def test_polish_tier_bounds_and_must_fix_list(self):
+        text = " ".join(self.reference.read_text(encoding="utf-8").split())
+        self.assertIn("cheap (no new spec file, no fix-design dispatch)", text)
+        self.assertIn("A refactor touching a guard, a raise, or any fail-closed path is never cheap", text)
+        self.assertIn("**Always fix in-loop, never ledger**, polish matching the evaluator's `apply` criteria", text)
+        self.assertIn("an unfinished `## Changes` entry of the phase being built", text)
+        self.assertIn("**Tie-break:** when defect-vs-polish is unclear, tier it defect", text)
+
+    def test_stall_card_continue_and_accept_current_semantics(self):
+        self.assertIn("the stall check pauses for the next N `review` runs, then applies again", self.flat)
+        self.assertIn("at the ceiling, Continue raises it by N", self.flat)
+        self.assertIn("with its findings **recorded, not fixed**", self.flat)
+        self.assertIn("so the stalling round never ships unread", self.flat)
+        self.assertIn("exit S5.1 as committed", self.flat)
 
     def test_the_emergency_ceiling_counts_every_review_run(self):
         self.assertIn("**emergency ceiling**: 8 `review` runs in S5.1", self.flat)
@@ -1148,7 +1195,7 @@ class MainLoopReviewFixRoundTests(unittest.TestCase):
         # loop settles instead of spinning an unchanged PR.
         self.assertIn(
             "a non-approving verdict whose every item classified as Explicitly-deferred (filed), "
-            "Plan-settled, Deferred-by-plan, or polish",
+            "Plan-settled, Deferred-by-plan, Refuted, or polish",
             self.flat,
         )
         text = " ".join(self.reference.read_text(encoding="utf-8").split())

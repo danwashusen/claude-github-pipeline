@@ -56,7 +56,10 @@ example's paths mix Python, Ruby and Swift on purpose — the format is stack-ne
 ## Rules
 
 - **Only unfixed polish enters.** Polish the loop fixes itself is never recorded; a **defect** is never
-  recorded here — it is fixed, deferred with a filed follow-up, or escalated.
+  recorded here — it is fixed, deferred with a filed follow-up, or escalated. Polish matching the
+  evaluator's `apply` criteria (a comment, doc or message that states something false; a misleading
+  name on a public or cross-module surface; wrong user-visible copy) never enters either: the resolver
+  always fixes it in-loop, because parked it only buys a revision session.
 - **An `apply` item is Addressable for the resolver whatever its tier** (`review-fix-round.md`
   "Classification rubric"). It has already been decided; re-recording it as `open` would bounce the PR
   between the two skills indefinitely.

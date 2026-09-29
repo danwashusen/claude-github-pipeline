@@ -24,9 +24,11 @@ disposition, with a one-line reason as the entry's note:
 
 - **`apply`** — the polish would be **actively bad to merge**: a name on a public or cross-module
   surface that misleads, a comment / doc / message that now states something false, user-visible copy
-  that is wrong. This bucket is meant to be rare: a PR sent back for polish costs a whole resolver
-  session. If most entries want `apply`, the resolver's defect/polish line is misplaced — say so in the
-  review body rather than sending the PR round again and again.
+  that is wrong. This bucket is meant to be near-empty: the resolver fixes polish matching these
+  criteria in-loop and never ledgers it (`review-fix-round.md` "Classification rubric"), so an
+  `apply`-criteria entry here is a **resolver miss** — name it as one in the review body. A PR sent back
+  for polish costs a whole resolver session; if most entries want `apply`, the resolver's defect/polish
+  line is misplaced — say so rather than sending the PR round again and again.
 - **`file`** — worth doing, not worth holding the merge for. Filed after the merge by the routed
   playbook's residual step, grouped per [`../../_shared/follow-up-filing.md`](../../_shared/follow-up-filing.md)
   (polish groups file as `incomplete-feature`).

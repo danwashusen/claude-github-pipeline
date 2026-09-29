@@ -200,7 +200,7 @@ comment's opening section.
 ### S5.1 — Review loop
 
 Read [`../references/review-fix-round.md`](../references/review-fix-round.md) at loop entry: the
-classification rubric (with its two plan-settled buckets), the fix-round steps, and the guard-rail cards
+classification rubric (with its settled buckets), the fix-round steps, and the guard-rail cards
 live there; this section is the control flow. Record HEAD as the **loop-entry SHA**; keep an
 **addressed-items list** and a **refuted-items list** (one-line summaries, appended every round — the
 deadlock check reads both) alongside the follow-up registry.
@@ -239,7 +239,7 @@ and re-invoke naming that path.
 
 **Tiers and progress.** The fix round gives every Addressable item a **tier** — `defect` or `polish`
 (the reference's rubric) — and the loop runs on the **defect count**: the defect-tier Addressable items
-left after classification (Plan-settled, Deferred-by-plan and Explicitly-deferred never count). Polish
+left after classification (Plan-settled, Deferred-by-plan, Refuted and Explicitly-deferred never count). Polish
 is fixed on merit and never keeps the loop running; what a round leaves goes to the PR's `## Polish`
 ledger at S5.2 ([`../../_shared/polish-ledger.md`](../../_shared/polish-ledger.md)). This replaced a
 fixed iteration cap that could not tell a round of nits from a round of new bugs.
@@ -264,19 +264,24 @@ push and the reply both wait for S5.2. "Approved" is **not** the exit condition 
 3. Branch on the round's **defect count**, not on the verdict's approval line:
    - **Zero** — the round addressed nothing that keeps the loop open: an approved verdict with no defect,
      *or* a non-approving verdict whose every item classified as Explicitly-deferred (filed),
-     Plan-settled, Deferred-by-plan, or polish → the loop has **settled** (a reviewer that never approves
+     Plan-settled, Deferred-by-plan, Refuted, or polish → the loop has **settled** (a reviewer that never approves
      must not spin an unchanged PR; name the outstanding items with their follow-up URLs or plan
      citations in the PR body — fresh mode: the staged `pr.md`). A round whose only fixes were polish
      first gets one **light re-review**: `review` at `medium` over that round's own commits
      (`<pre-round HEAD>...HEAD`) — a defect it finds re-enters this loop at step 2; polish it finds goes
      to the ledger unfixed.
-   - **Progress** — the count fell from the previous round's; round 1, with nothing to compare,
-     always counts as progress → re-run step 1.
-   - **No progress** — it did not fall, or **churn**: most of the round's defect items sit in the hot
-     seam (`git diff --name-only <loop-entry sha>...HEAD`, the reference's fix-design trigger), which
-     round 1 cannot show. The first such round is a **grace round** (re-run step 1 — the reviewer is
-     noisy); the second in a row renders the **stall card**. A round that rendered the `Review loop`
+   - **Progress** — the count fell from the previous round's, **or** none of its defects is
+     **loop-induced** (the reference's test: on lines an earlier defect fix changed, or a sibling-site
+     miss of an addressed class fix) — new defects in untouched code are real progress, not a stall;
+     round 1, with nothing to compare, always counts as progress → re-run step 1.
+   - **No progress** — the count did not fall **and** at least one defect is loop-induced. The first
+     such round is a **grace round** (re-run step 1 — the reviewer is noisy); the second in a row
+     renders the **stall card**. **Churn** — at least 2 defects, most of them loop-induced — is the
+     card's evidence and adds its **Re-plan** option. A round that rendered the `Review loop`
      deadlock card does not also render the stall card — the repeated item is the more specific signal.
+   - **Reset** — when a light re-review or the cold read reopens a settled loop with a defect, the next
+     round counts as round 1 again: a fresh baseline and an unused grace round (the ceiling's count
+     carries on).
    - Settled and the cold read has **not** run this run — nor, per step 4's PR record, on this phase
      at this HEAD → step 4. Settled and it **has** → S5.1 is done; go to S5.2.
 
@@ -284,9 +289,13 @@ push and the reply both wait for S5.2. "Approved" is **not** the exit condition 
    classification, the fix plan, the edits, the gate), not a recap — stopping at the verdict text is
    the PR #416/#653 missing-handoff failure mode. **Stall card** (`header: "Loop stall"`), showing each
    round's defect count and the churn share as evidence for you to judge: **Continue** (free-text count
-   of further `review` runs) / **Accept current** (exit S5.1 as committed, the cold read skipped when it
-   has not run yet; every still-open defect becomes a `file-now` follow-up, open polish goes to the
-   ledger, and the PR body records the override) / **Abort**, plus **Re-plan** when churn fired. The
+   N: the stall check pauses for the next N `review` runs, then applies again; at the ceiling, Continue
+   raises it by N) / **Accept current** (exit S5.1 as committed; every still-open defect becomes a
+   `file-now` follow-up, open polish goes to the ledger, and the PR body records the override — and on
+   the final phase or a revision run, when the cold read has not run on this phase, it runs once before
+   S5.2 with its findings **recorded, not fixed** (defects as `file-now` follow-ups, polish to the
+   ledger) and its `Cold read:` record written, so the stalling round never ships unread; say so in the
+   option's description) / **Abort**, plus **Re-plan** when churn fired. The
    same card renders, marked "ceiling reached", at the **emergency ceiling**: 8 `review` runs in S5.1,
    light re-reviews and the post-cold-read run included. It is a backstop against a progress call the
    model makes on its own work, not a budget — reaching it means the rule misfired.

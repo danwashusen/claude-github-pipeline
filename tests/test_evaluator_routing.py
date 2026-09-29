@@ -438,6 +438,9 @@ class PolishAdjudicationTests(unittest.TestCase):
             text = re.sub(r"\s+", " ", (PLAYBOOKS_DIR / name).read_text(encoding="utf-8"))
             self.assertIn("S4-untick or a plan-changing polish `apply`", text, name)
 
+    def test_an_apply_criteria_ledger_entry_is_a_resolver_miss(self):
+        self.assertIn("an `apply`-criteria entry here is a **resolver miss**", self.reference)
+
     def test_dispositions_are_written_once_after_the_answer(self):
         self.assertIn("gh_persist.py edit-pr-body", self.reference)
         self.assertIn("the ledger never records a decision the operator overrode", self.reference)

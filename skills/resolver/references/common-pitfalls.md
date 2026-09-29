@@ -160,9 +160,10 @@ its §review-loop, its S6 DoD projection) that carry the same numbering v1 used,
   one it dispatches is the post-settle cold read, which never invokes `review`. Don't reintroduce a
   dispatched `review` thinking "this time stronger emphasis will work" — the constraint is the harness, not
   the model.
-- **Don't reach for Plan-settled or Deferred-by-plan without the citation the rubric requires.** The
-  buckets exist to stop re-litigation, not to dismiss findings; `review-fix-round.md`'s classification
-  rubric owns the rule and its escape hatches.
+- **Don't reach for Plan-settled, Deferred-by-plan or Refuted without the citation or evidence the
+  rubric requires.** The buckets exist to stop re-litigation, not to dismiss findings — a Refuted item
+  needs a cited code read or run, never a disagreement; `review-fix-round.md`'s classification rubric
+  owns the rule and its escape hatches.
 - **Don't scale down verification with the review scope.** Scope narrows the adversarial review only;
   the deterministic gates stay at full strength on every phase, per S5.1 "Scope".
 - **Don't stop at any turn-boundary beat in the review loop.** S5.1 has three beats where the
