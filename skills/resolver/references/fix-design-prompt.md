@@ -1,8 +1,9 @@
 # Fix-design sub-agent prompt (pre-edit seam re-derivation)
 
 Dispatched from `review-fix-round.md` step 4, before the first edit of a round, when the round's findings
-land on a **hot seam** — a file this review loop's own commits have already changed — or when the round's
-fix plan fails its set check. A fix round carries a real defect rate: a retro counted 7 of 24 loop items
+land on a **hot seam** — a file this review loop's own commits have already changed — when the round's
+fix plan fails its set check, or when a finding the loop settled against the plan keeps recurring (the
+settled-item pre-check: the design decides whether the plan really forbids the fix). A fix round carries a real defect rate: a retro counted 7 of 24 loop items
 created by the loop's own fixes, five of them on one seam, where every fix changed a guard and each change
 had a second-order effect on a sibling property nobody re-derived (`canSave` / `canAnswer` / `canEdit`
 disagreeing for four rounds). The main conversation cannot see this reliably — by then it reasons forward
@@ -38,7 +39,8 @@ re-deriving the properties that share it. Your job is to derive those properties
 - **Already changed**: `<<addressed_items>>` — one-line surfaces earlier rounds changed (`(none)` on the
   first round). A finding on one of these is likely a second-order effect of that change.
 - **Plan decisions**: `<<plan_decisions>>` — the plan's `## Architecture decisions` / `## UI decisions` /
-  `## Deviations from project docs` bullets, verbatim. These are locked.
+  `## Deviations from project docs` bullets, verbatim. These are locked **as written** — a bullet
+  constrains only what makes it false (see `## Plan conflicts` below).
 - **Phase context**: `<<phase_context>>` — the plan's `## Phases` list with the current phase marked. A
   seam a **later** phase ships is not in scope.
 
@@ -70,7 +72,13 @@ Return markdown, nothing else:
 - `## Change set` — one bullet per finding:
   `<finding> — class: <every site> — change: <what, where> — preserves: <which seam rules> — removes: <superseded guards, or none>`.
   Concrete enough that a fixer can edit without re-deriving your analysis.
-- `## Plan conflicts` — a finding whose correct fix reverses a plan decision: the finding, the decision
-  bullet verbatim, and why. Design nothing for it. Empty section → say so.
+- `## Plan conflicts` — a finding whose correct fix would make a decision bullet **false as written**:
+  it reverses a choice the plan made, redefines a term the plan defines, or moves work the plan places
+  elsewhere. Give the finding, the decision bullet verbatim, and why. Design nothing for it. A fix that
+  leaves every bullet true is not a conflict — design it. In particular, a list of **required
+  behaviour** ("must refuse …", "checks …") is a minimum: a fix that adds a refusal or check it did not
+  name leaves it true, unless the bullet says "only" / "exactly" or records the omission as a choice. A
+  **definition** ("X means …") is different: adding a case to what X means makes it false. Empty section
+  → say so.
 - `## Out of reach` — a finding you could not design (the seam extends past what you could read, or the
   intent is genuinely ambiguous), with the reason. Empty section → say so.

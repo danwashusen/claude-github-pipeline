@@ -1075,7 +1075,7 @@ class MainLoopReviewFixRoundTests(unittest.TestCase):
             "Deferred-by-plan",
         ):
             self.assertIn(bucket, text, "the classification rubric must survive the move")
-        for header in ('"Review loop"', '"Decision"', '"Tests red"', '"Grounding"'):
+        for header in ('"Review loop"', '"Settled item"', '"Decision"', '"Tests red"', '"Grounding"'):
             self.assertIn(header, text, "guard rail %s must survive as a direct card" % header)
         self.assertIn("AskUserQuestion", text)
         self.assertNotIn("needs_decision", text)
@@ -1153,6 +1153,69 @@ class MainLoopReviewFixRoundTests(unittest.TestCase):
         self.assertIn("in fresh mode once `create-pr` returns the URL, so each has its parent PR", self.flat)
         self.assertIn("(`<round sha>^...HEAD` — the round's single step-8 commit)", self.flat)
         self.assertNotIn("<pre-round HEAD>", self.flat)
+
+    def test_plan_settled_uses_the_still_true_test(self):
+        # The #959 run settled a finding that asked a "must refuse" list to refuse more — the fix left
+        # the plan's bullet true, so it was a defect to fix inside the plan, not a settled item.
+        text = " ".join(self.reference.read_text(encoding="utf-8").split())
+        for phrase in (
+            "**The still-true test** decides \"contests\"",
+            "**Now false** → the finding contests it",
+            "**Still true** → it does not, and the item is Addressable",
+            "A list of **required behaviour** (\"must refuse …\", \"checks …\") is a **minimum**",
+            "A **definition** (\"X means …\") is not",
+            "or **verbatim** repeats an item the refuted-items list already carries",
+        ):
+            self.assertIn(phrase, text)
+        prompt = " ".join((REFERENCES_DIR / "fix-design-prompt.md").read_text(encoding="utf-8").split())
+        # The sub-agent never sees the rubric, so its conflict test carries the same distinction.
+        self.assertIn("would make a decision bullet **false as written**", prompt)
+        self.assertIn("a list of **required behaviour** (\"must refuse …\", \"checks …\") is a minimum", prompt)
+        self.assertIn("These are locked **as written**", prompt)
+        pitfalls = " ".join((REFERENCES_DIR / "common-pitfalls.md").read_text(encoding="utf-8").split())
+        self.assertIn("Re-litigating means asking to make a decision false", pitfalls)
+
+    def test_a_settled_repeat_with_new_evidence_is_re_examined(self):
+        text = " ".join(self.reference.read_text(encoding="utf-8").split())
+        self.assertIn("re-settled silently on its second occurrence: no card, no second reply", text)
+        self.assertIn("A repeat that **brings new evidence** is classified fresh on the merits", text)
+        self.assertIn("so a reviewer widening the finding cannot cycle it", text)
+
+    def test_a_recurring_settled_item_gets_a_fix_design_before_any_card(self):
+        text = " ".join(self.reference.read_text(encoding="utf-8").split())
+        self.assertIn("**Settled-item pre-check**", text)
+        self.assertIn("still at most once per round", text)
+        self.assertIn("fix it this round with **no card**", text)
+        self.assertIn("Named in `## Plan conflicts` → the `Settled item` card, **Re-plan** recommended", text)
+        self.assertIn("Named in `## Out of reach` → the card, **Fix it here** recommended", text)
+        self.assertIn("A recurring **Refuted** item skips the dispatch", text)
+
+    def test_the_settled_item_card_offers_re_plan_and_never_defer(self):
+        text = " ".join(self.reference.read_text(encoding="utf-8").split())
+        self.assertIn('`header: "Settled item"`', text)
+        for option in ("**Re-plan**", "**Fix it here**", "**Keep settled**"):
+            self.assertIn(option, text)
+        self.assertIn("offered only for a plan-anchored item", text)
+        self.assertIn("Never **Accept + defer**: a plan question is not a follow-up", text)
+        self.assertIn("The `Review loop` card is for these addressed-item deadlocks only", text)
+        self.assertIn("`Review loop` or `Settled item` card does not also render the stall card", self.flat)
+
+    def test_a_re_plan_first_fixes_the_rounds_independent_defects(self):
+        text = " ".join(self.reference.read_text(encoding="utf-8").split())
+        for phrase in (
+            "**The Re-plan independent-defect pass.**",
+            "its fix site shares no `<path>:<symbol>` with the re-planned finding's site",
+            "sharing a **file** with the re-planned finding's site stands in for sharing its seam",
+            "its fix would be the same whichever way the re-plan goes",
+            "When in doubt, it is **coupled**",
+            "run **steps 4 and 6–8 for the independent subset**",
+            "**no further `review`**",
+            "revert those fixes and record them, with no `Tests red` card",
+            "take no pass",
+            "except the Re-plan independent-defect pass below",
+        ):
+            self.assertIn(phrase, text)
+        self.assertIn("a **Re-plan** first fixes the round's independent defects", self.flat)
 
     def test_evidence_refuted_findings_are_a_settled_bucket(self):
         text = " ".join(self.reference.read_text(encoding="utf-8").split())
@@ -1383,8 +1446,10 @@ class PhaseScopedReviewTests(unittest.TestCase):
         reference = " ".join((REFERENCES_DIR / "review-fix-round.md").read_text(encoding="utf-8").split())
         # Finding 2: a seeded deferral expires when its phase comes due.
         self.assertIn("**except** a `deferred-by-plan` entry whose phase is the current phase", reference)
-        # Below-cap: a refuted repeat has a bounded escape.
-        self.assertIn("On its **third** occurrence in one run render the `Review loop` card", reference)
+        # Below-cap: a refuted repeat has a bounded escape — now the settled-item pre-check and card,
+        # not the addressed-item `Review loop` card (the #959 run: that card offered no Re-plan).
+        self.assertIn("the third occurrence in one run", reference)
+        self.assertIn("then the `Settled item` card only if that check leaves it standing", reference)
         pitfalls = " ".join((REFERENCES_DIR / "common-pitfalls.md").read_text(encoding="utf-8").split())
         # Finding 5: the turn-boundary pitfall cites step 4 instead of restating a stale mechanism.
         self.assertNotIn("staging the cumulative diff", pitfalls)
