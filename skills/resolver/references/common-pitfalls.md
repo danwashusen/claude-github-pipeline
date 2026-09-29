@@ -130,7 +130,8 @@ its §review-loop, its S6 DoD projection) that carry the same numbering v1 used,
 - **Don't trust the issue title alone.** The title often reflects the original report; the actual problem
   may have shifted in the comments.
 - **Don't re-litigate decided questions.** If a maintainer said "let's go with approach B" three comments
-  ago, go with approach B.
+  ago, go with approach B. Re-litigating means asking to make a decision false; a finding that adds a case
+  the decision never named is not re-litigation — it completes the decision.
 - **Don't open a PR for a question.** Some issues are resolved by an answer, not a code change (the
   comment-only route).
 - **Don't skip the review loop.** For any PR, `review` must approve before the work is considered done. No
@@ -162,7 +163,8 @@ its §review-loop, its S6 DoD projection) that carry the same numbering v1 used,
   the model.
 - **Don't reach for Plan-settled, Deferred-by-plan or Refuted without the citation or evidence the
   rubric requires.** The buckets exist to stop re-litigation, not to dismiss findings — a Refuted item
-  needs a cited code read or run, never a disagreement; `review-fix-round.md`'s classification rubric
+  needs a cited code read or run, never a disagreement, and a fix that leaves the decision bullet true as
+  written is not settled (the rubric's still-true test); `review-fix-round.md`'s classification rubric
   owns the rule and its escape hatches.
 - **Don't scale down verification with the review scope.** Scope narrows the adversarial review only;
   the deterministic gates stay at full strength on every phase, per S5.1 "Scope".

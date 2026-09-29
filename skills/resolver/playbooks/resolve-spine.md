@@ -279,8 +279,8 @@ push and the reply both wait for S5.2. "Approved" is **not** the exit condition 
    - **No progress** — the count did not fall **and** at least one defect is loop-induced. The first
      such round is a **grace round** (re-run step 1 — the reviewer is noisy); the second in a row
      renders the **stall card**. **Churn** — at least 2 defects, most of them loop-induced — is the
-     card's evidence and adds its **Re-plan** option. A round that rendered the `Review loop`
-     deadlock card does not also render the stall card — the repeated item is the more specific signal.
+     card's evidence and adds its **Re-plan** option. A round that rendered the `Review loop` or
+     `Settled item` card does not also render the stall card — the repeated item is the more specific signal.
    - **Reset** — when a light re-review or the cold read reopens a settled loop with a defect, the next
      round counts as round 1 again: a fresh baseline and an unused grace round (the ceiling's count
      carries on).
@@ -298,14 +298,16 @@ push and the reply both wait for S5.2. "Approved" is **not** the exit condition 
    its findings **recorded, not fixed** (defects as follow-ups, polish to the ledger) and its `Cold
    read:` record written, so the stalling round never ships unread; these follow-ups are filed right
    after S5.2's push — in fresh mode once `create-pr` returns the URL, so each has its parent PR; say so
-   in the option's description) / **Abort**, plus **Re-plan** when churn fired. The
+   in the option's description) / **Abort**, plus **Re-plan** when churn fired (its round's fixes are
+   already committed, so it takes no independent-defect pass). The
    same card renders, marked "ceiling reached", at the **emergency ceiling**: 8 `review` runs in S5.1,
    light re-reviews and the post-cold-read run included. It is a backstop against a progress call the
    model makes on its own work, not a budget — reaching it means the rule misfired.
 
    **A guard rail's answer can end the run.** **Re-plan** and **Restructure** re-route to the planner,
    **Abort** / **Abort loop** stop the run: each leaves S5.1 immediately — no further `review`, no cold
-   read — pushes what it has committed via S5.2 (in fresh mode that opens the PR; the remote ends where
+   read; a **Re-plan** first fixes the round's independent defects (the reference's "Guard rails") —
+   pushes what it has committed via S5.2 (in fresh mode that opens the PR; the remote ends where
 today's per-round pushes left it), then goes to the routed playbook's handoff, whose `Why:` quotes what
 triggered it. Only
    the continuing answers (**Try another angle**, **Accept + defer**, **Push with reds**, **Defer the
