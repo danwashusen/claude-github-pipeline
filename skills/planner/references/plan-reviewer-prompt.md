@@ -133,10 +133,10 @@ Run only the dimensions named in the inputs.
    name the fact, quote the owning line, and quote each restating line with its
    `<<plan_body>>:<line>` anchor. A fact restated rather than cited in any other section is a
    SUGGESTION — a bare cross-reference by section name is correct and is never a finding. A plan body
-   **over the 65,536-character cap** is a BLOCKER: it cannot be posted at all, so the plan is
-   unexecutable in the literal sense the severity bar names. **Size is evidence, never the
-   violation** — `wc -m <<plan_body>>` past half the cap is the signal to run this audit, not a
-   finding in itself, and the finding is always the restated fact and the sections carrying it.
+   **over the 65,536-character cap** is a BLOCKER (`wc -m <<plan_body>>`): it cannot be posted at all,
+   so the plan is unexecutable in the literal sense the severity bar names. **Size is evidence, never
+   the violation** — below the cap, length is not a finding in itself and is not reported, and the
+   finding is always the restated fact and the sections carrying it.
 
    **Delivery status** *(epic-level plan only; fires on a `## Story breakdown` section)*. A plan states
    what is to be built; what has shipped is the epic delivery log's, and a merged story's `shipped:`

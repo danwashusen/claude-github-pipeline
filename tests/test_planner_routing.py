@@ -773,8 +773,30 @@ class SectionOwnershipAndSizeTests(unittest.TestCase):
             "the schema must say which unit the cap is measured in",
         )
 
-    def test_half_the_cap_is_a_defect_to_fix_before_posting(self):
-        self.assertRegex(self.schema, r"past \*\*half\*\* the cap is a defect to fix before posting")
+    def test_the_cap_is_the_only_size_line(self):
+        # #39 stated a sub-cap threshold as "a defect to fix before posting"; the authoring session read
+        # it as a budget and trimmed a 38k plan toward it twice in one revise (#959), the second time
+        # to offset what the reviewer had asked it to add. The platform cap is the only size line.
+        flat = " ".join(self.schema.split())
+        self.assertIn("**The cap is the only size line**", flat)
+        self.assertIn("you do not cut for size", flat)
+        self.assertIn("never offset a reviewer-requested addition by cutting elsewhere", flat)
+        self.assertIn("Only when `main.over_limit` is true, compact", flat)
+
+    def test_no_planner_prompt_names_a_sub_cap_size_budget(self):
+        # A number below the cap reads as a target to a literal instruction-follower, which then trims
+        # toward it instead of planning — #39's rejected per-section budgets, back as one global budget.
+        budget = re.compile(
+            r"half\W+(?:of\W+)?the\W+(?:\S+\W+)?cap|(?:50|fifty)\s*(?:%|per\s*cent)[^.\n]{0,40}\bcap",
+            re.IGNORECASE,
+        )
+        for path in sorted(SKILL_DIR.rglob("*.md")):
+            flat = " ".join(path.read_text(encoding="utf-8").split())
+            match = budget.search(flat)
+            self.assertIsNone(
+                match,
+                "%s names a sub-cap size budget: %r" % (path.relative_to(REPO_ROOT), match and match.group(0)),
+            )
 
     def test_ownership_section_is_outside_the_frozen_fence(self):
         # The first fenced block is byte-frozen against the S1 capture (PlanSchemaByteCompatTests).
