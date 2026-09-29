@@ -781,7 +781,14 @@ class SectionOwnershipAndSizeTests(unittest.TestCase):
         self.assertIn("**The cap is the only size line**", flat)
         self.assertIn("you do not cut for size", flat)
         self.assertIn("never offset a reviewer-requested addition by cutting elsewhere", flat)
-        self.assertIn("Only when `main.over_limit` is true, compact", flat)
+        self.assertIn("Only when `over_limit` is true, compact", flat)
+
+    def test_the_size_read_works_on_a_fresh_draft(self):
+        # `plan_shipped.py check` needs a prior plan, so naming it alone left a fresh draft with no
+        # clean call — and a hand count. `parse.py phases` runs after every staging on every route.
+        flat = " ".join(self.schema.split())
+        self.assertIn("the `size` block `parse.py phases` returns on every staging", flat)
+        self.assertIn("never a hand count", flat)
 
     def test_no_planner_prompt_names_a_sub_cap_size_budget(self):
         # A number below the cap reads as a target to a literal instruction-follower, which then trims

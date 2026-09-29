@@ -34,6 +34,7 @@ which invariant its mutation targets.
 import json
 import subprocess
 import sys
+import tempfile
 import unittest
 from pathlib import Path
 
@@ -49,6 +50,7 @@ sys.path.insert(0, str(SCRIPTS_DIR))
 
 import parse  # noqa: E402  (import after sys.path setup, by necessity)
 from pipelib.envelope import EXIT_OK, EXIT_USAGE_ERROR  # noqa: E402
+from pipelib.limits import BODY_CHAR_LIMIT, body_size  # noqa: E402
 from tests.support import envelope_asserts  # noqa: E402
 
 
@@ -903,6 +905,37 @@ class ParsePhasesCliTests(unittest.TestCase):
         envelope_asserts.assert_full_envelope_conformance(envelope)
         self.assertEqual(envelope["status"], "ok")
         self.assertEqual(envelope["phases"], [])
+
+    def test_phases_reports_the_staged_body_size(self):
+        # The planner reads size from the call it already runs after every staging (plan-schema.md
+        # "Size."), so a fresh draft never falls back to a hand count.
+        fixture = PHASES_FIXTURES_DIR / "well_formed_multi_phase.md"
+        rc, out, err = _run_cli(["phases", str(fixture)])
+        envelope = _parse_one_envelope(out)
+        text = fixture.read_bytes().decode("utf-8")
+        self.assertEqual(envelope["size"], body_size(text))
+        self.assertFalse(envelope["size"]["over_limit"])
+
+    def test_phases_reports_size_for_a_plan_with_no_phases_section(self):
+        # A fresh single-phase draft has no `## Phases` — exactly the path that had no size read.
+        rc, out, err = _run_cli(["phases", str(PHASES_FIXTURES_DIR / "no_section_single_phase.md")])
+        envelope = _parse_one_envelope(out)
+        self.assertEqual(envelope["phases"], [])
+        self.assertIn("chars", envelope["size"])
+
+    def test_an_over_cap_body_is_ok_never_a_decision(self):
+        # Size is the planner's to fix; `status` stays owned by the grammar.
+        body = (PHASES_FIXTURES_DIR / "well_formed_multi_phase.md").read_text(encoding="utf-8")
+        body += "\n## Risks & watchpoints\n\n- " + "x" * (BODY_CHAR_LIMIT + 1) + "\n"
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "plan.md"
+            path.write_text(body, encoding="utf-8")
+            rc, out, err = _run_cli(["phases", str(path)])
+        envelope = _parse_one_envelope(out)
+        self.assertEqual(rc, EXIT_OK)
+        self.assertEqual(envelope["status"], "ok")
+        self.assertTrue(envelope["size"]["over_limit"])
+        self.assertEqual(len(envelope["phases"]), 4)
 
     def test_phases_sub_issue_round_trips_through_the_envelope(self):
         rc, out, err = _run_cli(

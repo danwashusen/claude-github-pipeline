@@ -257,7 +257,10 @@ per [architecture.md §7](docs/architecture.md)'s mapping table).
   writes **no** parent edge (that stays the slicer's, per `_shared/epic-story-hierarchy.md`) — the
   "child of #N" answer routes the handoff to a slicer adoption run.
 - `parse.py` — `dod` / `oq-links` / `phases`: the three contract parsers, each with a malformed
-  decision code (`DOD_MALFORMED`, `PHASES_MALFORMED`). Plus two import-only scanners for renderings the
+  decision code (`DOD_MALFORMED`, `PHASES_MALFORMED`). `phases` also reports the staged body's `size`
+  against `BODY_CHAR_LIMIT` (`pipelib.limits.body_size`, the shape `plan_shipped.py check`'s `main`
+  shares) — the planner's size read on every staging, including a fresh draft with no prior plan to
+  hand `check`; never a decision. Plus two import-only scanners for renderings the
   pipeline rebuilds — the PR's `## Phase tracker` and `## Polish` ledger — which never raise (an
   unparseable line is rewritten, never a stop), so they have no subcommand and no decision code.
 - `plan_shipped.py` — the shipped-phase records (`skills/_shared/plan-shipped-phases.md`). Import

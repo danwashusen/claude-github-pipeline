@@ -17,3 +17,22 @@ nobody reads until a write fails.
 # would refuse a legal multibyte body and could never detect that it had; gating on characters can
 # only ever be right. Do not "simplify" a consumer of this constant to `stat().st_size`.
 BODY_CHAR_LIMIT = 65536
+
+
+def body_size(text):
+    """The size fact for one body against :data:`BODY_CHAR_LIMIT` — the one shape every script that
+    reports size emits (``parse.py phases``' ``size``, ``plan_shipped.py check``'s ``main``), so two
+    readers of one staged body cannot disagree.
+
+    ``text`` is counted as given, in characters. Callers read the file untranslated
+    (``newline=""``) so a ``\\r\\n`` counts as the two characters ``gh_persist``'s gate counts:
+    universal-newline reading would undercount a CRLF body against the gate that actually refuses.
+    ``over_limit`` is ``>``, matching that gate — a body exactly AT the limit still writes.
+    """
+    chars = len(text)
+    return {
+        "chars": chars,
+        "limit_chars": BODY_CHAR_LIMIT,
+        "headroom_chars": BODY_CHAR_LIMIT - chars,
+        "over_limit": chars > BODY_CHAR_LIMIT,
+    }
