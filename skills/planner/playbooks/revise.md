@@ -123,7 +123,7 @@ Everything below runs only after the spine returns.
 
 Read [`../references/handoff-renderings.md`](../references/handoff-renderings.md):
 
-- **Revise — plan refreshed**: same forward shape as the fresh route, with the **new** comment URL in the `Issue:` line (the stale one was deleted). `Next: /github-pipeline:resolver continue #<PR>` when a draft PR is open, else `/github-pipeline:resolver #<N>`.
+- **Revise — plan refreshed**: same forward shape as the fresh route, with the **new** comment URL in the `Issue:` line (the stale one was deleted). `Next: /github-pipeline:resolver #<N>` — the issue, never the PR, whether or not a draft PR is open (the resolver re-enters an open PR in continue mode by itself).
   `Why:` names what changed (the renamed symbol, the resolved OQ) — and, on HARD Start-fresh, that the superseded PR was closed with the supersession note.
   The `## Plan summary` block's `**What changed:**` section carries the **Compute reconciliation** result above — what moved and why, at the operator's altitude. Carry it; never re-derive it, and never let it become a history layer inside the plan body (the ban at the top of this file governs the body, not this session's output).
 - **Epic-shaped, planning aborted** (seam gate chose "Split as epic"): `plan: ✗`, no `Grounding:`;

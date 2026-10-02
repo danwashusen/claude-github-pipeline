@@ -1822,5 +1822,82 @@ class PlanSummaryStepTests(unittest.TestCase):
         self.assertIn("distill state → plan summary → audit → plan-gate →", self.spine)
 
 
+class ResolverCommandArgumentTests(unittest.TestCase):
+    """Every handoff that hands back to the resolver names the ISSUE, never the PR.
+
+    `prep_resolver.py` takes one positional `issue` and no mode word: it derives continue mode from
+    the issue's prior-PR state, and a PR number trips gh_gather's `TARGET_IS_PR` card — a wasted
+    decision in the next session before any work starts. The bug this pins: the evaluator's
+    soft-reject rows, the planner's revise route and the resolver's own notes all taught
+    `/github-pipeline:resolver continue #<PR>`, so the resolver copied that form into its multi-phase
+    re-entries. The rule lives once in _shared/handoff-format.md ("Authorship"); these tests scan every
+    skill, because the drift was cross-skill — fixing one skill's renderings left the others teaching
+    the wrong form."""
+
+    SKILLS_ROOT = REPO_ROOT / "skills"
+    HANDOFF_FORMAT = SKILLS_ROOT / "_shared" / "handoff-format.md"
+    BANNED = re.compile(r"/github-pipeline:resolver\s+(?:continue\b|#<PR>)")
+    # Tolerates a mode word (`continue #287`) so a PR number is caught here too, not only by the
+    # banned-form scan.
+    COMMAND = re.compile(r"/github-pipeline:resolver\s+(?:[a-z]+\s+)?#(\d+)")
+    PR_LINE = re.compile(r"\*\*PR:\*\* #(\d+)")
+    TARGET_LINE = re.compile(r"\*\*(?:Issue|Story|Epic):\*\* #(\d+)")
+
+    def _fenced_blocks(self, path):
+        """(start line, block text) for every ``` fence in `path`."""
+        blocks, body, start, inside = [], [], 0, False
+        for i, line in enumerate(path.read_text(encoding="utf-8").splitlines(), 1):
+            if line.lstrip().startswith("```"):
+                if inside:
+                    blocks.append((start, "\n".join(body)))
+                    body = []
+                else:
+                    start = i
+                inside = not inside
+            elif inside:
+                body.append(line)
+        return blocks
+
+    def test_no_skill_hands_the_resolver_a_pr_or_a_continue_keyword(self):
+        for path in sorted(self.SKILLS_ROOT.rglob("*.md")):
+            for i, line in enumerate(path.read_text(encoding="utf-8").splitlines(), 1):
+                self.assertIsNone(
+                    self.BANNED.search(line),
+                    "%s:%d hands the resolver a PR / `continue` argument: %r"
+                    % (path.relative_to(REPO_ROOT), i, line.strip()),
+                )
+
+    def test_every_worked_resolver_command_names_the_handoffs_issue_not_its_pr(self):
+        checked = 0
+        for path in sorted(self.SKILLS_ROOT.rglob("*.md")):
+            for start, block in self._fenced_blocks(path):
+                commands = self.COMMAND.findall(block)
+                if not commands:
+                    continue
+                targets = set(self.TARGET_LINE.findall(block))
+                prs = set(self.PR_LINE.findall(block))
+                where = "%s:%d" % (path.relative_to(REPO_ROOT), start)
+                for number in commands:
+                    checked += 1
+                    self.assertNotIn(number, prs, "%s: resolver command names the PR #%s" % (where, number))
+                    self.assertIn(
+                        number,
+                        targets,
+                        "%s: resolver command #%s is none of the block's Issue/Story/Epic numbers %s"
+                        % (where, number, sorted(targets)),
+                    )
+        # Guard the scan itself: the worked shapes exist in three skills' renderings.
+        self.assertGreaterEqual(checked, 11, "expected >= 11 worked resolver commands, found %d" % checked)
+
+    def test_the_shared_contract_fixes_the_argument(self):
+        flat = re.sub(r"\s+", " ", self.HANDOFF_FORMAT.read_text(encoding="utf-8"))
+        for phrase in (
+            "**the number names the target the next skill's prep consumes.**",
+            "**never the PR's number and never a `continue` keyword**",
+            "refused as `TARGET_IS_PR`",
+        ):
+            self.assertTrue(phrase in flat, "handoff-format.md Authorship must state: %r" % phrase)
+
+
 if __name__ == "__main__":
     unittest.main()

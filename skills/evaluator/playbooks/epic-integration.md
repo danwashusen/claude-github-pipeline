@@ -60,6 +60,6 @@ merge commit, or `squash → main@<sha>`), Cleanup line, `Next: (terminal — no
 the pipeline ends here.
 
 On a **no-merge** exit, emit the matching rubric shape — **soft-reject → re-route** to
-`/github-pipeline:resolver continue #<PR>` (or `/github-pipeline:planner revise #<issue>` when it carries
+`/github-pipeline:resolver #<epic>` (or `/github-pipeline:planner revise #<epic>` when it carries
 an S4-untick or a plan-changing polish `apply`), or **APPROVE-but-skipped** with the manual `gh pr merge`
 command.

@@ -150,7 +150,7 @@ legacy epic):
 `review:` is `APPROVE` or `APPROVE (operator)`; the merge line is `squash → epic/<N>-<slug>@<sha>`.
 
 On a **no-merge** exit, Actions 1–3 did **not** run: emit the **soft-reject → re-route** shape to
-`/github-pipeline:resolver continue #<PR>` (not the forward-to-next-story route — no merge landed; the
+`/github-pipeline:resolver #<story>` (not the forward-to-next-story route — no merge landed; the
 next story is deferred to a later run that actually merges this one) — or to `/github-pipeline:planner
-revise #<issue>` when it carries an S4-untick or a plan-changing polish `apply` — or the **APPROVE-but-skipped**
+revise #<story>` when it carries an S4-untick or a plan-changing polish `apply` — or the **APPROVE-but-skipped**
 shape with the manual `gh pr merge` command.

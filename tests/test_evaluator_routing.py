@@ -541,7 +541,7 @@ class PolishAdjudicationTests(unittest.TestCase):
 
     def test_the_route_depends_on_whether_the_plan_changes(self):
         self.assertIn("**`/github-pipeline:planner revise #<issue>`**", self.reference)
-        self.assertIn("**`/github-pipeline:resolver continue #<PR>`**", self.reference)
+        self.assertIn("**`/github-pipeline:resolver #<issue>`**", self.reference)
         rubric = re.sub(
             r"\s+", " ", (SKILL_DIR / "references" / "handoff-renderings.md").read_text(encoding="utf-8")
         )

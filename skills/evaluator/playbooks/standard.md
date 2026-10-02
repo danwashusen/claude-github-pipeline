@@ -63,7 +63,7 @@ policy) or `APPROVE (operator)` (gate path). The issue closes via GitHub's auto-
 `main` — the pipeline ends here.
 
 On a **no-merge** exit, emit the matching rubric shape instead — **soft-reject → re-route** to
-`/github-pipeline:resolver continue #<PR>` (COMMENT verdict or operator Needs-Revision / Reject; PR is
+`/github-pipeline:resolver #<issue>` (COMMENT verdict or operator Needs-Revision / Reject; PR is
 back in draft, `merge: skipped (verdict)`, no Cleanup line) — or to `/github-pipeline:planner revise
 #<issue>` when the soft-reject carries an S4-untick or a plan-changing polish `apply`, since only a
 re-plan clears either — or **APPROVE-but-skipped** (DIRTY/BLOCKED

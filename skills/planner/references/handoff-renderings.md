@@ -312,9 +312,9 @@ it as a fact.
 
 **Next:** resume implementation in a fresh session.
 
-    /github-pipeline:resolver continue #287
+    /github-pipeline:resolver #142
 
 **Why:** the plan was refreshed against today's codebase (the `<X>` symbol the previous plan named was renamed to `<Y>` at `<path:line>`). PR #287 is still open on the same branch; the resolver continues from there with the updated locked decisions.
 ```
 
-If no PR exists yet (the resolver hasn't started), drop `continue #287` and use `/github-pipeline:resolver #142`.
+The command names the issue (`#142`), never the open PR (`#287`): the resolver re-enters the PR in continue mode from the issue. If no PR exists yet (the resolver hasn't started), the command is the same; the `Why:` drops its open-PR sentence and `Workspace:` follows the fresh route's rule.

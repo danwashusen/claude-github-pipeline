@@ -10,10 +10,16 @@ Next-command skills are the v2 pipeline names (`evaluator`, `planner`, `drafter`
 namespaced `/github-pipeline:<name>`. **`Workspace:` lines** (the v3 "start the next session
 here" carrier — see `_shared/handoff-format.md`) substitute `<workspace-path>` from
 `facts.workspace.path`: present on every route whose next session must run inside this PR's
-worktree (→ evaluator, → resolver continue, → planner revise **with** a draft PR, whose plan
+worktree (→ evaluator, → resolver in continue mode, → planner revise **with** a draft PR, whose plan
 grounds on the PR head); on a planner revise **without** a PR the planner grounds on `main`,
 so render `**Workspace:** any clean main checkout — not this worktree` instead; omitted on
 drafter re-routes and terminals (checkout-agnostic).
+
+**The resolver's own command** — every shape that hands back to the resolver — is
+`/github-pipeline:resolver #<N>` with `<N>` = `facts.target.number`: the issue this run resolved
+(the story or epic on those routes). Never `facts.prior_pr`'s number or the PR this run opened, and
+no `continue` keyword: the next prep re-derives continue mode from the issue's PR state, and a PR
+number is refused as `TARGET_IS_PR` (`_shared/handoff-format.md`, "Authorship").
 
 **`Changes:` lines** (the reviewable link to what *this run* pushed — see `_shared/handoff-format.md`) appear on every shape whose run pushed at least one commit, and are omitted on the no-push exits (the drafter re-routes, both terminals, and a PR-less planner re-route). Substitute the entry SHA from `facts.workspace.sha`, the head SHA from `git rev-parse HEAD` run in `facts.workspace.path` **after the review loop settles** (its fix rounds add commits of their own, pushed once at the spine's S5.2, so a HEAD read before the loop exits stops short of what the run shipped), and the PR url from `facts.prior_pr.url` (continue mode) or the `create-pr` envelope's `url` (fresh mode); SHAs are 7-char, matching `dod-annotations.md`. Render the range form `<pr-url>/files/<entry-sha>..<head-sha>` whenever the entry SHA is a commit **in** the PR (the usual continue-mode case). Render the whole-PR form `<pr-url>/files` when it isn't — the entry SHA is the PR's base commit, which GitHub 404s on the range form (the usual fresh-run case, where the whole PR is this run's changes), or an epic run's drift rebase rewrote it out of the history.
 
@@ -217,8 +223,8 @@ branch after the plan is refreshed.
 ```
 
 If no PR was opened yet, omit the PR and `Changes:` lines entirely, render `**Workspace:** any clean main
-checkout — not this worktree` (a PR-less revise grounds on `main`), and the resolver continues
-with `/github-pipeline:resolver #142` instead of `continue #287`.
+checkout — not this worktree` (a PR-less revise grounds on `main`). Either way the resolver later
+re-enters with `/github-pipeline:resolver #142` — the issue, whether or not a PR exists.
 
 ## Re-route → drafter (fitness audit)
 

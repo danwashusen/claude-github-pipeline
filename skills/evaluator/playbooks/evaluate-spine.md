@@ -230,7 +230,7 @@ propose `apply` / re-plan / `file` / `drop` with a reason (an unfixed `apply` fr
 re-proposed, so the operator can release it). The operator decides **every** entry, on any verdict and
 under either policy — the reference's `Polish` card, one question per group, asked before the S7-gate
 card, which never carries the ledger. An answer that applies an entry makes the verdict COMMENT, routed
-to `resolver continue` or — on a re-plan, or when applying it changes the plan — `planner revise`.
+to the resolver (`#<issue>`) or — on a re-plan, or when applying it changes the plan — `planner revise`.
 Write the final dispositions once — after any answer, before the review posts — with
 `gh_persist.py edit-pr-body`; `file` entries are filed after the merge by the playbook's residual step.
 
