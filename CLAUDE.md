@@ -314,7 +314,9 @@ now the same rule everything else follows rather than an exception.
 ### Shared contracts in `skills/_shared/`
 
 - `handoff-format.md` — the cross-session `## Handoff` schema, omission rules, Epic/Story variants,
-  terminal endings, re-route rules, and the closed-set state-marker vocabulary.
+  terminal endings, re-route rules, the closed-set state-marker vocabulary, and the next-command
+  argument rule (the evaluator takes a PR; every other skill, the resolver included, takes the issue —
+  never `continue #<PR>`, which trips `TARGET_IS_PR`).
 - `dod-annotations.md` — the closed set of `## Definition of done` checkbox annotation forms and
   the parser. Three skills share it: the **resolver** projects ticks as phases ship, the
   **evaluator** verifies and writes sticky-veto un-ticks, the **planner** reconciles during revise
