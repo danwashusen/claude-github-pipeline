@@ -95,10 +95,15 @@ ROUTABLE_PLAYBOOKS = {"cut.md"}
 #
 # The S6 forward-route clause was absorbed by re-wrapping; the router's was a same-line edit (126).
 #
+#   +2   cut.md S4, from the PR #69 review (278 -> 290 in all): *Cut anyway* re-runs S2 with the
+#        operator's milestones as FIXED inputs, never re-folded by the milestone pass or the reviewer.
+#        Without it the no-cut card could loop: the same pass that proposed the no cut would fold the
+#        operator's answer straight back into another one.
+#
 # Trimming any of it would restore a defect, which is precisely what prd.md §10's provision and the
 # S19 precedent forbid. The router still fits one default Read (126 <= 150) — the bar that actually
 # protects session startup; the growth is in the playbook, loaded only on the routed path.
-SLICER_BAR = 288
+SLICER_BAR = 290
 
 sys.path.insert(0, str(SCRIPTS_DIR))
 
@@ -534,7 +539,7 @@ class MilestoneSliceTests(unittest.TestCase):
 
     def test_the_playbook_routes_the_no_cut_past_the_reviewer_and_the_write_gate(self):
         self.assertIn("milestone pass (method §4.1)", self.playbook)
-        self.assertRegex(self.playbook, r"skip S3 \(there is nothing to review\)")
+        self.assertRegex(self.playbook, r"skip S3 \(nothing to review\)")
         self.assertIn("A no cut skips the table and the write gate", self.playbook)
         self.assertIn("File nothing — plan multi-phase", self.playbook)
         self.assertIn("Cut anyway", self.playbook)
@@ -548,6 +553,12 @@ class MilestoneSliceTests(unittest.TestCase):
         self.assertNotIn("**Slices:**", fence)
         self.assertNotIn("**Grounding:**", fence)
         self.assertIn("/github-pipeline:planner", fence)
+
+    def test_cut_anyway_milestones_are_fixed_inputs_so_the_no_cut_card_cannot_loop(self):
+        self.assertIn("re-runs with them as fixed inputs", self.playbook)
+        self.assertIn("the milestone pass never folds them", self.playbook)
+        self.assertIn("operator-named", self.playbook)
+        self.assertRegex(self.reviewer, r"Never recommend merging two `operator-named` children")
 
     def test_the_reviewer_carries_the_milestone_signal(self):
         self.assertIn("One milestone → recommend MERGE", self.reviewer)

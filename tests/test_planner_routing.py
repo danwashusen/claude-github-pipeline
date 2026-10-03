@@ -388,6 +388,17 @@ class ShapeTriageOffRampTests(unittest.TestCase):
         self.assertIn("two or more milestones", self.seams)
         self.assertNotIn("Too large to plan as one unit", self.renderings)
 
+    def test_the_milestone_row_never_re_asks_once_the_issue_is_sliced(self):
+        """An issue with slices has two or more milestones by construction, so without this guard
+        every planner run after the slicer hands back would re-ask the cut the operator just made."""
+        self.assertIn("never fires when `facts.slices` is non-empty", self.seams)
+
+    def test_every_route_offering_slice_first_renders_its_handoff(self):
+        """revise offers both off-ramps for a standalone issue, so it must name both abort shapes."""
+        for name in ("single.md", "story-jit.md", "revise.md"):
+            text = (PLAYBOOKS_DIR / name).read_text(encoding="utf-8")
+            self.assertIn("Slice first chosen", text, name)
+
     def test_the_epic_off_ramp_routes_to_the_slicer_not_the_drafter(self):
         """#16 retargeted off-ramp A. The drafter no longer decomposes epics, so a handoff still
         pointing there would hand the operator a command that does nothing."""

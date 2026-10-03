@@ -38,7 +38,10 @@ options omit.
    A *milestone* is an outcome a stakeholder would accept and track on its own, apart from its
    neighbours; the increments that build toward one are phases, never milestones of their own
    ([`../../slicer/references/slicing-method.md`](../../slicer/references/slicing-method.md) §4.1).
-   **Plan as one issue** gates each seam (below) and plans the issue multi-phase.
+   **Plan as one issue** gates each seam (below) and plans the issue multi-phase. The milestone row
+   **never fires when `facts.slices` is non-empty**: an issue with slices has two or more milestones by
+   construction, the operator already chose to track them, and the plan maps its phases onto the live
+   set ([`sub-issue-reconciliation.md`](sub-issue-reconciliation.md)) rather than re-deciding the cut.
 
    Recommend **Split as epic** when the seams are shippable-independent: the epic machinery's
    `## Story contracts` + just-in-time story plans is built to hold exactly that seam registry, and

@@ -46,7 +46,8 @@ job is to attack the cut — find the strongest case it is *wrong* — and repor
   slots carry slot-level scopes instead). On the **re-confirm pass** each entry carries the title plus
   the full proposed body, because a body can reveal a child is bigger or smaller than its one-line scope
   claimed. Adoption candidates (already-filed issues being adopted rather than created) are marked as
-  such with their live state.
+  such with their live state. Children marked `operator-named` are milestones the operator named after
+  declining a no cut: they are fixed inputs, not candidates (see the `milestone` signal).
 - **Existing children**: `<<existing_children>>` — on a resume, the children that already exist. Treat
   them as **fixed**: they are approved and possibly already shipped. Review only how the proposed
   remainder interacts with them (ordering against them, overlap with them), never whether they should
@@ -117,7 +118,9 @@ would sign off alone. Remediation: one slice carrying their criteria, its increm
 parent plan's phases. When the **whole** cut is one milestone, recommend **no cut** — file nothing; the
 parent's multi-phase plan carries the increments and its Definition of done carries the criteria. That
 applies to a fresh cut only (`<<existing_children>>` empty): on a resume the remainder may legitimately
-be one new slice beside the fixed ones.
+be one new slice beside the fixed ones. Never recommend merging two `operator-named` children, or no cut
+when any child is `operator-named` — the operator already rejected that fold, so the finding would only
+re-ask a decision they made.
 
 **Over-coalesced → recommend SPLIT** (the guardrail): a child bundles increments that each have
 independent value, a clean contract, *and* a cheaper isolated test surface — the clearest case being
