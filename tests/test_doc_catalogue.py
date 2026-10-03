@@ -159,7 +159,45 @@ class ReadCatalogueTests(unittest.TestCase):
         self.assertEqual(len(entries), 3)
         for entry in entries:
             self.assertTrue(entry["present"])
+            self.assertEqual(entry["kind"], "file")
+            self.assertIsNone(entry["members"])
             self.assertEqual(entry["abs_path"], str(self.vantage / entry["path"]))
+
+    def test_a_directory_entry_is_present_and_lists_its_direct_documents(self):
+        """The 4.26.0 regression: `docs/architecture/` (a declared spoke set) read as missing because
+        presence was `is_file()`, which raised a false stale-entry line and told the planner and
+        slicer to skip binding docs. A directory is present, and its members are the non-hidden
+        regular files directly inside it — a nested subdirectory and a dotfile are both left out."""
+        self._seed_catalogue(
+            "- `docs/architecture/` — architecture — binding — The architecture spokes.\n"
+        )
+        spokes = self.vantage / "docs" / "architecture"
+        _write(spokes / "view-layer.md", "# View layer\n")
+        _write(spokes / "api-contract.md", "# API contract\n")
+        _write(spokes / ".DS_Store", "")
+        _write(spokes / "diagrams" / "flow.md", "# Nested — its own entry if it grounds anything\n")
+
+        entries, notices = doc_catalogue.read_catalogue(str(self.vantage))
+        self.assertEqual(notices, [])
+        (entry,) = entries
+        self.assertTrue(entry["present"])
+        self.assertEqual(entry["kind"], "dir")
+        self.assertEqual(entry["abs_path"], str(spokes))
+        self.assertEqual(
+            entry["members"],
+            ["docs/architecture/api-contract.md", "docs/architecture/view-layer.md"],
+        )
+        self.assertEqual(doc_catalogue.missing_entry_paths(entries), [])
+
+    def test_a_directory_entry_without_the_trailing_slash_resolves_the_same(self):
+        """`kind` comes from the filesystem, not the spelling: the trailing `/` is setup's
+        convention for readability, not a parse rule a hand-edit can break."""
+        self._seed_catalogue("- `docs/specs` — spec — informative — Per-feature specs.\n")
+        _write(self.vantage / "docs" / "specs" / "export.md", "# Export\n")
+
+        entries, _notices = doc_catalogue.read_catalogue(str(self.vantage))
+        self.assertEqual(entries[0]["kind"], "dir")
+        self.assertEqual(entries[0]["members"], ["docs/specs/export.md"])
 
     def test_declared_but_missing_document_is_reported_not_dropped(self):
         """A stale entry and legitimate branch drift are indistinguishable here, so the entry must
@@ -172,6 +210,8 @@ class ReadCatalogueTests(unittest.TestCase):
         self.assertEqual(len(entries), 3)
         self.assertTrue(entries[0]["present"])
         self.assertIsNone(entries[1]["abs_path"])
+        self.assertIsNone(entries[1]["kind"])
+        self.assertIsNone(entries[1]["members"])
         self.assertEqual(
             doc_catalogue.missing_entry_paths(entries),
             ["docs/architecture.md", "docs/guides/style.md"],

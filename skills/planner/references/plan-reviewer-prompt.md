@@ -51,13 +51,16 @@ failure mode; do not flag a plan for leaving line-level mechanics to the impleme
   list with `ls <<grounding_workspace>>/<dir>`. **Never** read the orchestrator's working tree and never
   run a `git show <ref>:path` / `git grep <ref>` — the workspace is already at the right ref, so a plain
   filesystem read is both correct and simpler.
-- **Declared project docs**: `<<catalogue_entries>>` — the documents this repo declares as its
-  grounding set, one per line as `<path> — <role> — <binding|informative> — <summary>`, and anything
-  they `@`-include. They live under the same workspace path; read them there. `binding` means a plan
-  contradicting the document is a **blocker**, `informative` means the tension is a judgment call —
-  so do not raise a conflict with an `informative` doc as a blocking finding. When this list is empty
-  the repo declares no grounding docs: judge the plan on the issue, the thread and codebase
-  precedent, and never invent a doc path to check against.
+- **Declared project docs**: `<<catalogue_entries>>` — the documents this repo declares as its grounding
+  set, one per line as `<path> — <role> — <binding|informative> — <summary>`, and anything they
+  `@`-include. An entry naming a directory is a **document set**: its member files follow it, one per
+  indented `- <path>` line (the planner lists them from the entry's `members`), each under the entry's
+  authority — check the members the plan touches and cite the member file, never the directory. They live
+  under the same workspace path; read them there. `binding` means a plan contradicting the document is a
+  **blocker**, `informative` means the tension is a judgment call — so do not raise a conflict with an
+  `informative` doc as a blocking finding. When this list is empty the repo declares no grounding docs:
+  judge the plan on the issue, the thread and codebase precedent, and never invent a doc path to check
+  against.
 - **Recorded ref** (context only): `<<plan_ref_recorded>>` — the `<plan-ref>@<short-sha>` the plan footer
   records, so you can name it in a finding. Do not run any git command against it.
 - **Dimensions to check**: `<<dimensions>>` — a subset of {1..10}. Run only the listed dimensions; don't

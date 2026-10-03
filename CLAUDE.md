@@ -469,8 +469,13 @@ the *consuming* repo provides — not by plugin config:
 - **Grounding docs the repo declares itself** — the `<!-- doc-catalogue -->` block in the consuming
   repo's `docs/README.md` ([`skills/_shared/doc-catalogue.md`](skills/_shared/doc-catalogue.md)), one
   line per document carrying its path, `role`, `authority` (`binding` = a conflict is a blocker |
-  `informative` = context), and a summary. `setup` writes it (seeding via a context-blind derivation
-  sub-agent, re-ingesting an existing block as the base); the `prep_planner.py` / `prep_drafter.py` /
+  `informative` = context), and a summary. A line may name a **directory** instead — a document set
+  under one role/authority/summary (an architecture hub's spokes); `doc_catalogue.py` reports it as
+  `kind: dir` with its direct files as `members`, and readers cite the member file. Until 4.26.0
+  presence was `is_file()`, so a directory read as missing and the planner/slicer skipped binding docs;
+  listing a declared directory one level is not the filesystem walk the absent-catalogue rule
+  forbids. `setup` writes it (seeding via a context-blind derivation sub-agent, re-ingesting an
+  existing block as the base); the `prep_planner.py` / `prep_drafter.py` /
   `prep_slicer.py` / `prep_requirements_gatherer.py` readers consume it
   through `scripts/doc_catalogue.py`, at the same vantage as the docs themselves (as every config
   family now is — this was a deliberate exception while gate config was pinned). When it is absent

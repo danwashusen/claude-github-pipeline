@@ -39,7 +39,7 @@ the typed `parent`, open `blocked_by`), `promotion`, `children` (what already ex
 `kind` (`slices`/`stories`), `entries`, `count` and `open_count` (**filed** children only),
 `placeholder_count` (legacy `## Stories` bullets naming stories nobody filed — the cut still files
 those), `total_named`, `next_index`, `source`), `adoption_candidates`,
-`grounding_docs` (the repo's `<!-- doc-catalogue -->` entries — `path`/`role`/`authority`/`present`),
+`grounding_docs` (the repo's `<!-- doc-catalogue -->` entries — `path`/`role`/`authority`/`present`/`kind`, a `dir` entry's `members`),
 `research` (dossier present), `open_questions` (the `in-scope (blocked)` entries), `sections` (spilled
 body/thread paths), and `attention`. Consume each as **data** — never re-derive the type, the altitude,
 the mode, the refusal set, or the slice numbering.

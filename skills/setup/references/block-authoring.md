@@ -312,9 +312,10 @@ to run them cheaply; leave the fast ones alone* — then fill it in. Same shape,
 
 ### doc-catalogue
 
-The repo's **grounding documents**, declared by the repo itself. The planner and drafter read it to
-learn which docs to ground on and how much authority each carries; without it they ground on no
-documents at all. The full contract — home, per-field semantics, the absent-catalogue rule — is
+The repo's **grounding documents**, declared by the repo itself. The planner, drafter, slicer, and
+requirements-gatherer read it to learn which docs to ground on and how much authority each carries;
+without it they have no declared documents to ground on. The full contract — home, per-field semantics,
+directory entries, the absent-catalogue rule — is
 [`../../_shared/doc-catalogue.md`](../../_shared/doc-catalogue.md); read it before drafting. This
 section covers only the authoring side.
 
@@ -359,10 +360,11 @@ write fails outright rather than silently. Surface it ("commit `docs/README.md` 
 around it by creating a `docs/` directory holding nothing but this block.
 
 **Validate what you wrote.** After the upsert, re-read the block and check every non-blank interior
-line against the contract's grammar: four ` — `-separated fields, a backtick-quoted path that exists,
-an `authority` of exactly `binding` or `informative`. A line that fails is **silently skipped by
-readers** — the same failure class as a dropped `worktree-*` command — so report it and fix it rather
-than shipping a catalogue with a hole in it.
+line against the contract's grammar: four ` — `-separated fields, a backtick-quoted path that exists
+(a file, or a directory declared as a document set), an `authority` of exactly `binding` or
+`informative`. A line that fails is **silently skipped by readers** — the same failure class as a
+dropped `worktree-*` command — so report it and fix it rather than shipping a catalogue with a hole in
+it.
 
 Summary vocabulary is the user-owned one: **seeded** / **refreshed** / **already-current** / **skipped**.
 

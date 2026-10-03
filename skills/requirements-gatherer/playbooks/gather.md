@@ -29,15 +29,15 @@ Carry a `/github-pipeline:setup` breadcrumb into the summary.
 
 ## 3. Draft the candidate set
 
-Read the approved grounding docs by absolute path (`grounding_docs[].abs_path`, or the paths the
-operator named). Draft the enumerated candidate set — for each requirement: its **stable id**
-(`REQ-<issue>-<seq>`, assigned now from `facts.dod.next_req_seq` and counting up, so the id the
-operator approves is the id that lands), a **one-line falsifiable criterion** (criterion +
-exemption classes, the drafter's DoD altitude), its **provenance** (the doc §heading or register
-id that records it, or `operator elicited`), and any acceptance detail. Ground every
-doc citation in text you actually read — a requirement you can't cite is operator-elicited or it
-doesn't exist; never invent a doc anchor. A `binding` doc that contradicts the issue is a
-conflict to surface, not design around.
+Read the approved grounding docs by absolute path (`grounding_docs[].abs_path`; a `kind: dir` entry is
+a document set — read the `members` this issue touches under `facts.root.path` and cite the member
+file; or the paths the operator named). Draft the enumerated candidate set — for each requirement: its
+**stable id** (`REQ-<issue>-<seq>`, assigned now from `facts.dod.next_req_seq` and counting up, so the
+id the operator approves is the id that lands), a **one-line falsifiable criterion** (criterion +
+exemption classes, the drafter's DoD altitude), its **provenance** (the doc §heading or register id
+that records it, or `operator elicited`), and any acceptance detail. Ground every doc citation in text
+you actually read — a requirement you can't cite is operator-elicited or it doesn't exist; never invent
+a doc anchor. A `binding` doc that contradicts the issue is a conflict to surface, not design around.
 
 ## 4. Gate G2 — the elicitation loop
 

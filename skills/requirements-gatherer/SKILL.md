@@ -28,7 +28,7 @@ It returns one JSON **facts block** (`architecture.md §4`): `vector` (`type` ×
 append-only id sequence a re-run continues from — and the parsed `bullets` with 1-based indexes
 and any existing `req_id`), `plan` (`present` — the `<!-- implementation-plan:v1 -->` marker; a
 planned issue is mid-flight even with zero annotations), `grounding_docs` (the repo's `<!-- doc-catalogue -->` entries —
-`path`/`role`/`authority`/`summary`/`present`/`abs_path`), `sections` (spilled body/thread
+`path`/`role`/`authority`/`summary`/`present`/`kind`/`members`/`abs_path`), `sections` (spilled body/thread
 paths), `scratch`, and `attention`. Consume each as **data** — never re-derive the type, the
 refusal set, the bullet indexes, or the id sequence.
 

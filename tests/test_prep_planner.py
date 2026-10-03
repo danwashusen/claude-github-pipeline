@@ -665,6 +665,23 @@ class GroundingDocInventoryTests(PrepPlannerSandboxTestCase):
             envelope["attention"],
         )
 
+    def test_declared_directory_is_present_with_members_and_raises_no_attention(self):
+        """The 4.26.0 regression end to end: a catalogue entry naming a committed directory (a
+        document set) is not "absent at the grounding ref" — it is a `dir` entry whose members the
+        planner reads, and no stale-entry attention line fires."""
+        _write(self.root / "docs" / "architecture" / "view-layer.md", "# View layer\n")
+        self._replace_catalogue(
+            "- `docs/prd.md` — prd — binding — What the product is.\n"
+            "- `docs/architecture/` — architecture — binding — The architecture spokes.\n"
+        )
+        envelope = self._envelope(issue="200", fixture_case="prep_planner_row_default")
+        by_path = {e["path"]: e for e in envelope["grounding_docs"]}
+        spokes = by_path["docs/architecture/"]
+        self.assertTrue(spokes["present"])
+        self.assertEqual(spokes["kind"], "dir")
+        self.assertEqual(spokes["members"], ["docs/architecture/view-layer.md"])
+        self.assertEqual(envelope["attention"], [])
+
     def test_malformed_entries_are_skipped_without_losing_their_neighbours(self):
         self._replace_catalogue(
             "Prose that is not an entry.\n"

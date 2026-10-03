@@ -26,9 +26,9 @@ sake, so the catalogue rides along on upkeep that already happens. A plugin-only
 <!-- /doc-catalogue -->
 ```
 
-One Markdown list item per document, in the repo's own preferred reading order. The shape rhymes
-with the command-list blocks (`issue-resolver-fast-checks`, `worktree-setup`) — backtick-quoted
-value, then ` — `, then fields — but carries three fields instead of one description.
+One Markdown list item per document or document set, in the repo's own preferred reading order. The
+shape rhymes with the command-list blocks (`issue-resolver-fast-checks`, `worktree-setup`) —
+backtick-quoted value, then ` — `, then fields — but carries three fields instead of one description.
 
 ## Entry grammar
 
@@ -37,7 +37,7 @@ Each entry is **one line**; a reader strips the leading `- ` and splits the rema
 
 | Field | Form | Meaning |
 | --- | --- | --- |
-| `path` | the line's first backtick-quoted span, repo-root-relative | the document |
+| `path` | the line's first backtick-quoted span, repo-root-relative | the document, or a directory naming a document set |
 | `role` | short lowercase slug | what kind of document this is |
 | `authority` | `binding` or `informative` — the closed pair | how a reader must treat a conflict |
 | `summary` | free text, one line | what is in it, so a reader can judge relevance unopened |
@@ -57,6 +57,20 @@ Splitting on **at most** four parts is what lets a summary contain its own em da
 yields fewer than four parts, or an `authority` outside the closed pair, is **skipped** by readers
 (best-effort, the posture every block scan in the plugin shares) — which is why `setup` re-checks
 every line it writes: a silently skipped entry is a document that silently stops grounding anything.
+
+## Directory entries
+
+A `path` naming a directory declares a **document set**: the documents directly inside it, all under
+the one `role`, `authority`, and `summary` the line carries — an architecture hub's spokes, a folder of
+per-feature specs. Write it with a trailing `/` so a human reads it as a set; readers resolve file
+versus directory from the checkout, not from the spelling. The set is **one level**: a nested
+directory that grounds work is declared as its own entry. When members need different authority,
+declare them one per line instead.
+
+A reader treats the set as the documents it lists — the read mechanics report them as the entry's
+members — reads the ones the work at hand touches, and **cites the member file**, never the directory.
+Listing a directory the repo declared is not the walk the absent-catalogue rule forbids: the repo
+nominated it, and nothing outside it is searched.
 
 ## Ownership — user-owned
 

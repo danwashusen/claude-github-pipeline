@@ -51,7 +51,9 @@ job is to attack the cut — find the strongest case it is *wrong* — and repor
   remainder interacts with them (ordering against them, overlap with them), never whether they should
   have existed.
 - **Grounding docs**: `<<grounding_docs>>` — the repo's declared docs with their `authority`. A `binding`
-  document is a constraint, not a trade-off.
+  document is a constraint, not a trade-off. An entry naming a directory (`kind: dir`) is a **document
+  set** whose `members` are its files, each under the entry's authority — cite the member file, never the
+  directory.
 - **Repo root**: `<<repo_root>>` — absolute path. Run **every** grep/find/Read from this root **by
   absolute path — never a bare relative path in YOUR OWN ambient working directory**: a sub-agent's cwd
   is not the slicer's, and a relative read would silently ground your verdicts on the wrong tree.
@@ -232,7 +234,7 @@ None.
 - `Read <<parent_body_path>>` — the parent body the orchestrator staged. Never fetch the issue yourself.
 - `Grep`/`Glob` from `<<repo_root>>` by absolute path — confirm that two children really touch the same
   files, the same test target, or the same type before recommending a merge.
-- `Read` a `<<grounding_docs>>` entry by its absolute path — confirm a child's claimed behaviour is
-  actually recorded, and at what authority.
+- `Read` a `<<grounding_docs>>` entry by its absolute path (a `dir` entry: the member files, joined to
+  `<<repo_root>>`) — confirm a child's claimed behaviour is actually recorded, and at what authority.
 
 All of these are reads. You never write to GitHub, never stage a file, and never edit the repository.

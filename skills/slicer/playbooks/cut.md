@@ -40,11 +40,11 @@ slices.
 per-altitude child templates, and the presentation format this flow delegates to. Then read the target's
 body and thread from `facts.sections` (spilled paths).
 
-Read the docs `facts.grounding_docs` declares, from `facts.root.path` by absolute path — plain
-`Read`/`Grep`. Treat each per its `role` (what it answers) and `authority`: `binding` = a cut that
-contradicts it is wrong, not a trade-off; `informative` = context you weigh and cite. Skip and note an
-entry whose `present` is false. If `facts.research.present`, also read the dossier — current external
-truth the cut may cite, never authority.
+Read the docs `facts.grounding_docs` declares, from `facts.root.path` by absolute path — plain `Read`/`Grep`.
+Treat each per its `role` (what it answers) and `authority`: `binding` = a cut that contradicts it is wrong,
+not a trade-off; `informative` = context you weigh and cite. A `kind: dir` entry is a document set: read the
+`members` the cut touches, cite the member file. Skip and note an entry whose `present` is false. If
+`facts.research.present`, also read the dossier — current external truth the cut may cite, never authority.
 
 **The grounding gate — the one gate that cannot degrade into proceeding.** No entries (or
 `DOC_CATALOGUE_ABSENT` in `facts.notices`) **and** no sources the operator named at invocation: file
