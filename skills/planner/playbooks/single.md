@@ -26,8 +26,9 @@ ground → gates → draft → hedge sweep → verify → show → persist). The
   slice-coverage check runs. Dimension 10 is added by the spine whenever the plan carries
   `## Open questions`.
 - **Off-ramp (spine S4).** `off-ramp: epic + slicer offered` — a standalone issue too large to plan as
-  one unit is either an Epic filed as one issue (seams mostly out-of-slice, each shippable) or an issue
-  wanting deliverable slices (increments demonstrable on one branch); the shape triage picks.
+  one unit may be an Epic filed as one issue (seams mostly out-of-slice, each shippable); one carrying
+  two or more milestones demonstrable on one branch is planned multi-phase unless the operator chooses
+  to track them as deliverable slices. The shape triage puts both to the operator.
 
 Everything below runs only after the spine returns; on a re-route or trivial-skip exit, emit the
 matching handoff instead.
@@ -46,8 +47,8 @@ Read [`../references/handoff-renderings.md`](../references/handoff-renderings.md
   /github-pipeline:researcher #<N> — <the ungroundable fact>`; `Why:` names it verbatim.
 - **Epic-shaped, planning aborted** (seam gate chose "Split as epic"): `plan: ✗`, no `Grounding:`;
   `Next: /github-pipeline:slicer` promoting #N to an Epic per the seam-analysis comment.
-- **Too large to plan as one unit** (seam gate chose "Slice first"): `plan: ✗`, no `Grounding:`, nothing
-  posted; `Next: /github-pipeline:slicer #<N>`. It hands back — re-run the planner after the cut.
+- **Slice first chosen** (the operator picked "Slice first" at the seam gate): `plan: ✗`, no `Grounding:`,
+  nothing posted; `Next: /github-pipeline:slicer #<N>`. It hands back — re-run the planner after the cut.
 - **Open-question total block** (every plannable part gated by an unresolved OQ): terminal-style, `plan:
   ✗`, `Next:` names no follow-up skill (a human answers), with a re-run breadcrumb; if no companion
   question is filed yet, point at `/github-pipeline:drafter` to file one first.

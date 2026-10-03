@@ -370,8 +370,23 @@ class ShapeTriageOffRampTests(unittest.TestCase):
         self.assertIn("sub-issue-reconciliation.md", self.seams)
 
     def test_rendering_exists_and_routes_to_the_slicer(self):
-        self.assertIn("Too large to plan as one unit", self.renderings)
+        self.assertIn("Slice first chosen", self.renderings)
         self.assertIn("/github-pipeline:slicer", self.renderings)
+
+    def test_demonstrable_milestones_recommend_a_multi_phase_plan_not_slicing(self):
+        """Slicing is the operator's tracking choice, never the planner's default: every increment
+        becomes a phase on this branch either way, and recommending "Slice first" sent issues a
+        multi-phase plan would hold to the slicer, which then filed one slice per increment. The card
+        fires on two or more milestones, not on size, so recommending one issue never contradicts
+        the premise it fired on."""
+        self.assertIn("Plan as one issue (recommended) + Slice first (off-ramp B)", self.seams)
+        self.assertIn(
+            "Recommend Plan as one issue when the milestones are only demonstrable-independent",
+            self.seams,
+        )
+        self.assertNotIn("Recommend Slice first", self.seams)
+        self.assertIn("two or more milestones", self.seams)
+        self.assertNotIn("Too large to plan as one unit", self.renderings)
 
     def test_the_epic_off_ramp_routes_to_the_slicer_not_the_drafter(self):
         """#16 retargeted off-ramp A. The drafter no longer decomposes epics, so a handoff still
@@ -1779,7 +1794,7 @@ class PlanSummaryBlockTests(unittest.TestCase):
             "trivial change",
             "knowledge gap",
             "epic-shaped abort",
-            "too large",
+            "slice first",
             "OQ blocks the whole plan",
         ):
             self.assertIn(shape, flat, shape)

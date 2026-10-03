@@ -58,10 +58,11 @@ this route supplies:
   backlink as the **first line after** the marker (never above it) and a `## Epic contract` section —
   `Delivers` (matching the epic's `## Story contracts`) and `Consumes` (each already in the delivery
   log), every line `[epic-plan: #<N>]`-cited (see [`../references/plan-schema.md`](../references/plan-schema.md)).
-- **Off-ramp (spine S4).** `off-ramp: slicer offered — epic not offered` — a story too large to plan as
-  one unit is sliceable (slices are phases on its own branch), but a story that outgrows its epic
-  *contract* is an epic-contract problem: re-route to the planner on the parent epic in revise mode
-  (the feedback edge above), never promote a story to an epic.
+- **Off-ramp (spine S4).** `off-ramp: slicer offered — epic not offered` — a story carrying two or more
+  milestones is planned multi-phase unless the operator chooses to track them as deliverable slices
+  (slices are phases on its own branch), but a story that outgrows its epic *contract* is an
+  epic-contract problem: re-route to the planner on the parent epic in revise mode (the feedback edge
+  above), never promote a story to an epic.
 - **Reviewer dimensions (spine S7).** `1, 2, 3, 4, 6, 8`; add `7` for a multi-phase story, passing
   `<<live_slices>>` from `facts.slices` so its slice-coverage check runs — pass the epic plan + delivery-log staged
   paths so Dimension 8 checks the `## Epic contract` against the epic's `## Story contracts` and the
@@ -85,5 +86,8 @@ Read [`../references/handoff-renderings.md`](../references/handoff-renderings.md
   /github-pipeline:resolver #<N>`, `Why:`.
 - **Re-route → planner (epic revise)** (contract/Dimension-8 mismatch): `Next:
   /github-pipeline:planner revise #<epic> — <pred> shipped <actual> but the contract pinned <pinned>`.
+- **Slice first chosen** (the operator picked "Slice first" at the seam gate): `Story:` line (`plan: ✗`) +
+  parent `Epic:` line, no `Grounding:`, nothing posted; `Next: /github-pipeline:slicer #<N>`. It hands
+  back — re-run the planner after the cut.
 - **Open-question total block**: terminal-style, `plan: ✗`, re-run breadcrumb (drafter first if no
   companion question is filed).

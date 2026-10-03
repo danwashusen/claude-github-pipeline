@@ -10,17 +10,23 @@ this file is about *how to cut*.
 ## 1. The independence bar is a parameter
 
 One operation, one knob. Decomposition asks the same question at every altitude — *what is the
-smallest increment of visible behaviour that stands on its own?* — and only the meaning of "stands on
-its own" changes:
+smallest unit of visible behaviour that stands on its own and earns its own issue?* — and only the
+meaning of "stands on its own" changes:
 
 | Cutting | Children | The bar each child must clear |
 |---|---|---|
 | a story or standalone issue into slices | slices | independently **demonstrable** — someone can show the new behaviour |
 | an epic into stories | stories | independently **shippable** — the child gets its own branch and PR |
 
+The bar is a floor every child must clear, never the reason to cut. A child must also earn its issue
+over the cheaper alternative the next stage already offers: at epic altitude, the fixed per-story tax
+(§5.1); at story altitude, a phase in the parent's own multi-phase plan (§4.1). Clearing the bar
+without earning the issue makes a phase, not a child.
+
 `facts.vector.altitude` names which (`story` / `epic`), and everything below is written against *the
-bar*. Where a rule genuinely differs by altitude it says so and says why; §5 is epic-only, and §8's
-child body differs because the two children carry different contracts. Nothing else forks.
+bar*. Where a rule genuinely differs by altitude it says so and says why; §4.1 is story-only, §5 is
+epic-only, and §8's child body differs because the two children carry different contracts. Nothing
+else forks.
 
 ## 2. Think vertical, not horizontal
 
@@ -74,16 +80,54 @@ what the walking skeleton is, what is deferred. Then cut:
 
 1. **First child = the thinnest walking skeleton.** The narrowest end-to-end path that crosses every
    architectural seam the parent touches. It proves the seams while changing course is still cheap,
-   and gives stakeholders something real to react to.
+   and gives stakeholders something real to react to. At story altitude the skeleton is the first
+   slice's *first phase*, not a slice of its own (§4.1).
 2. **Each subsequent child adds exactly one observable increment** — a new path, a new variant, a
-   recorded failure behaviour — never "finish the backend".
+   recorded failure behaviour — never "finish the backend". At story altitude read "increment" as
+   "milestone": the increments inside a milestone are its phases (§4.1).
 3. **Every child clears the bar on its own.** If you cannot say what it lets someone do — demonstrate
    at story altitude, ship at epic altitude — in one sentence, the cut is wrong.
 4. **Prefer few, thick-enough slices over many thin ones** (and the same bias at epic altitude: few,
-   thick-enough stories). Children sequence risk and feedback; they do not shard work. A handful is
-   usually right; **ten or more is an anti-pattern** (§10). Two independent reasons: a thin child's
-   one-sentence test stops being interesting, and a rollup of fifteen children is noise rather than a
-   progress signal — and the rollup is why these are issues at all.
+   thick-enough stories). Children sequence risk and feedback; they do not shard work. There is no
+   target count: the count is the number of distinct outcomes the sources record, and at story
+   altitude zero is a legitimate answer (§4.1); **ten or more is an anti-pattern** (§10). Two
+   independent reasons: a thin child's one-sentence test stops being interesting, and a rollup of
+   fifteen children is noise rather than a progress signal — and the rollup is why these are issues
+   at all.
+
+### 4.1 What earns a slice (story altitude only)
+
+**The alternative is a phase.** Every increment of a story becomes a phase in the parent's
+multi-phase plan whether or not anyone slices it — a slice is a phase marker on the parent's branch
+([`../../_shared/epic-story-hierarchy.md`](../../_shared/epic-story-hierarchy.md)). Sequencing the
+increments is the plan's job. A slice adds exactly two things a phase does not: a **milestone on the
+board** (the parent's rollup — "the rollup is the point" in that contract) and a **home for its own
+acceptance criteria**. So a slice is earned by a milestone, not by an increment:
+
+> "Would a stakeholder watching the board care that this closed, apart from its neighbours?"
+
+If not, it is a phase — and its behaviour is acceptance criteria — inside the slice whose milestone
+it builds toward.
+
+**The milestone pass.** Apply it yourself before proposing anything. Merge candidates into one slice,
+carried as that slice's criteria and served by several phases, when any of these fire:
+
+1. **One outcome to a stakeholder** — they would accept the candidates together: a first-use path and
+   its returning path, a happy path and its recorded failure behaviour, a variant of another
+   candidate's behaviour.
+2. **A skeleton nobody signs off** — the walking skeleton alone is not a milestone; it is the first
+   phase of the first slice.
+3. **Sequential with no stakeholder-visible value alone** — one only feeds the next.
+
+**Guardrail.** Keep candidates apart when each is a distinct outcome a stakeholder tracks on its own:
+"patients can log in" and "patients can complete intake" are two milestones even though both are
+small, and folding them together hides real progress from the board.
+
+**No cut is a legitimate outcome.** If the pass leaves **one** milestone, that milestone is the
+parent's own Definition of done, and a slice would only restate it (§10, "the issue restated"). File
+nothing: the parent's multi-phase plan carries the increments and its DoD carries the criteria.
+`playbooks/cut.md` S2/S4 own that exit. It applies to a `fresh` cut only; a `resume` run keeps its
+existing set and its "already fully sliced" exit.
 
 ## 5. Cutting an epic into stories (epic altitude only)
 
@@ -167,6 +211,11 @@ idempotency, an unavailable dependency, validation failures, recovery after inte
 authorization failures. Recorded failure modes are requirements with provenance, not optional polish,
 and deferring them all to the end defers the riskiest work to last.
 
+At story altitude prefer the scenarios: a recorded failure behaviour is usually part of the milestone
+its happy path delivers (§4.1, merge signal 1), so it lands as that slice's criteria and a phase of
+its own. It earns a separate slice only when a source records it as an outcome stakeholders track
+separately.
+
 Never invent a failure mode the sources don't record. That is new scope, and new scope is elicited
 from a human, not minted here.
 
@@ -236,10 +285,12 @@ references for the same reason §-anchors do.
 slice — its last serving phase shipping — so a closed slice never reads as half-unmet. Per-criterion
 ticking as each phase ships (Tier 2) is deliberately **not** built: it would need a seventh key in a
 closed phase grammar, a second projection target, slice-scoped annotation forms, and a second
-reconciliation axis. **The trigger for revisiting it, with its diagnosis attached:** per-criterion
-progress only reveals anything when a slice spans more than one phase — and a slice needing three
-phases before it is demonstrable is a slice whose one-sentence demo is straining, so check whether
-the cut is too thick *before* concluding the machinery is missing.
+reconciliation axis. A slice served by several phases is the **expected** shape — a milestone, not an
+increment (§4.1) — so its criteria stay unticked until the last of them ships, and the board's
+progress resolution is the milestone. **The trigger for revisiting Tier 2, with its diagnosis
+attached:** an operator who needs criterion-level progress *inside* a milestone. That is a case for
+the machinery, never for cutting thinner slices — a thinner cut trades the milestone the board exists
+to show for a phase list re-filed as issues.
 
 ### 8.2 Epic altitude — the Story template
 
@@ -271,17 +322,26 @@ Show the operator, in this order:
 They may approve, re-cut, reorder, retitle, or drop children; iterate until approved. Nothing is
 written to GitHub during this step.
 
+A **no cut** (§4.1) replaces items 3 and 4 with the one milestone and why each increment is a phase
+of it rather than a slice — the merge signal that folded it, per increment — so the operator can
+judge the claim, not take it.
+
 ## 10. Anti-patterns
 
 - **Horizontal children** — any child whose title names a layer instead of a behaviour.
-- **The issue restated** — one child that is just the whole parent. If it genuinely cannot be cut, say
-  so and explain why rather than pretending otherwise.
+- **The issue restated** — one child that is just the whole parent. At story altitude that is a
+  single milestone, and the answer is no cut (§4.1); at epic altitude, if it genuinely cannot be cut,
+  say so and explain why rather than pretending otherwise.
+- **A slice per increment** — a slice no stakeholder would track apart from its neighbours: a
+  returning path, a variant, a recorded failure behaviour of another slice's outcome. It is a phase
+  and acceptance criteria inside that slice (§4.1).
 - **Uncited children** — nothing to cite means invented scope (§3).
 - **Inflation** — more children than the sources' distinct outcomes justify. Ten or more means the cut
   is sharding tasks rather than sequencing behaviour.
 - **Editing the parent body outside a gate** — child detail lives only in child bodies. The cut never
-  touches the parent; the two sanctioned parent-body writes (a promotion rewrite, a legacy-checklist
-  reconciliation) are the playbook's, each behind its own explicit confirmation.
+  touches the parent; the three sanctioned parent-body writes (a promotion rewrite, a legacy-checklist
+  reconciliation, an omitted bookend's `## Background` note) are the playbook's, each behind its own
+  explicit confirmation.
 - **A slice with its own sub-issues** — a slice is never sliced. A *story* is sliced later, in its own
   run against that story, never from an epic-altitude cut.
 - **Designators on stories** — the `<N>/S<K>` form marks a slice; using it for a story makes the

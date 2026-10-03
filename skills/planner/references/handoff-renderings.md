@@ -67,7 +67,7 @@ case.
   plan posted; the epic-plus-story composite; epic plan posted with stories not filed; plan posted with
   planned-around OQs; revise — plan refreshed.
 - **Carries no block:** trivial change — declined to plan; knowledge gap → researcher; epic-shaped abort
-  → slicer; too large → slicer; OQ blocks the whole plan; HARD-revise *Start fresh*. Nothing was posted
+  → slicer; slice first → slicer; OQ blocks the whole plan; HARD-revise *Start fresh*. Nothing was posted
   this session, so there is no digest to render and the `Why:` line is the whole carrier.
 
 **The composite epic+story session emits ONE block, not two** — same rule as the `**Open questions:**`
@@ -252,12 +252,13 @@ picks the altitude, not the skill. The two shapes still differ in what gets post
 seam-analysis comment; off-ramp B posts nothing) and in what happens to the target (this one reshapes it
 into an Epic behind the slicer's own rewrite gate).
 
-**Too large to plan as one unit — re-route to the slicer.** The shape triage chose "Slice first"
-(`references/seam-dispositions.md` off-ramp B): the increments are each demonstrable but share one
-branch and PR, so they are deliverable slices, not stories. **Nothing is posted** — no plan, no
-`planned` label, and (unlike the epic off-ramp) no seam-analysis comment: the slicer re-derives its cut
-from the repo's declared grounding docs, so a planner-authored proposal would compete with it. `plan: ✗`,
-no `Grounding:`. This is a round trip — the slicer hands back.
+**Slice first chosen — re-route to the slicer.** The issue carries two or more milestones, each
+demonstrable but sharing one branch and PR, and the operator chose "Slice first" over the recommended
+**Plan as one issue** (`references/seam-dispositions.md` off-ramp B) to track them on the board as
+deliverable slices, not stories. **Nothing is posted** — no plan, no `planned` label, and (unlike the
+epic off-ramp) no seam-analysis comment: the slicer re-derives its cut from the repo's declared
+grounding docs, so a planner-authored proposal would compete with it. `plan: ✗`, no `Grounding:`. This
+is a round trip — the slicer hands back.
 
 ```
 ## Handoff
@@ -268,7 +269,7 @@ no `Grounding:`. This is a round trip — the slicer hands back.
 
     /github-pipeline:slicer 103
 
-**Why:** #103 carries five distinct observable increments — first login, returning login, password reset, intake step one, intake completion — each demonstrable on its own but none independently shippable, since they land on one branch behind one PR. That is a slice set, not an epic's story set: promoting #103 would buy the integration branch, delivery log, and per-story review round-trips that this work doesn't need, and would split one deliverable across five PRs. A single-issue plan would instead hide the sequencing in phases nothing tracks. After the cut, re-run `/github-pipeline:planner 103` — `facts.slices` then carries the approved set and reconciliation maps phases onto it (`references/sub-issue-reconciliation.md`).
+**Why:** #103 carries two milestones a stakeholder tracks separately — a patient can get into their account (first login, returning login, password reset) and a patient can complete intake (step one, completion) — each demonstrable on its own but neither independently shippable, since they land on one branch behind one PR. The operator chose "Slice first" over planning it as one issue, to track the two milestones on the board with their own acceptance criteria; the five increments stay phases either way. Promoting #103 would buy the integration branch, delivery log, and per-story review round-trips this work doesn't need. After the cut, re-run `/github-pipeline:planner 103` — `facts.slices` then carries the approved set and reconciliation maps phases onto it (`references/sub-issue-reconciliation.md`).
 ```
 
 **Open question blocks the whole plan — re-route to answer it.** Every plannable part is gated by an

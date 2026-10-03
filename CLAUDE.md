@@ -93,9 +93,14 @@ S15 parity record's Scenario 4(b) preserves that older topology.
 off-ramps on one criterion — the independence bar the seams clear. **Both land on the slicer** (#16):
 it is one operation at two altitudes, so the gate picks the altitude, not the skill. Seams
 *shippable*-independent (each wants its own branch and PR) → the slicer promotes #N to an Epic and cuts
-**stories**; seams only *demonstrable*-independent (increments sharing one branch) → it cuts
-**deliverable slices** in place. Either way it hands **back** to the planner, whose phases then map onto
-the children via `sub-issue:`, and it is also operator-invocable directly. The off-ramps stay
+**stories**; two or more milestones only *demonstrable*-independent (sharing one branch) → the gate
+**recommends planning the issue multi-phase** and offers slicing beside it, for an operator who wants
+each milestone tracked on the board as a **deliverable slice** carrying its own acceptance criteria —
+the only things a slice buys over a phase. Either way it hands **back** to the planner, whose phases
+then map onto the children via `sub-issue:` (or, when the slicer finds one milestone and files nothing —
+its *no cut* exit — plan the issue multi-phase), and it is also operator-invocable directly. A slice is
+a **milestone, not an increment**: one slice per increment re-files the plan's phase list as issues,
+which is the over-slicing `slicing-method.md` §4.1 exists to stop. The off-ramps stay
 asymmetric in what the planner posts: the promoting one leaves a lean seam-analysis comment (a promotion
 argues from the seam inventory), the slice-in-place one posts **nothing** — that cut re-derives from the
 repo's declared grounding docs, so a planner-authored proposal would be a competing, staler

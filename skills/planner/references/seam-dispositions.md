@@ -24,24 +24,33 @@ Conform to [`../../_shared/asking-the-user.md`](../../_shared/asking-the-user.md
 question, 2–4 options, recommendation as option 1, the auto-appended "Other" absorbs anything the
 options omit.
 
-1. **Shape triage** (`header: "Issue shape"`) — only when the seam inventory says this issue is too
-   large to plan as one unit, and only for the off-ramps the routed playbook's `off-ramp` fact
-   actually offers. Which off-ramp depends on **one** thing: the independence bar the seams clear.
+1. **Shape triage** (`header: "Issue shape"`) — only when the seam inventory finds a decomposition
+   choice to put to the operator (the two triggers below), and only for the off-ramps the routed
+   playbook's `off-ramp` fact actually offers. Which off-ramp depends on **one** thing: the
+   independence bar the seams clear.
 
    | Seam inventory | Bar the children clear | Offer |
    |---|---|---|
-   | few seams, all inside the issue's DoD | — | nothing: gate per-seam and plan it multi-phase |
-   | many increments, each **demonstrable** but sharing one branch and PR | demonstrable | **Slice first** (off-ramp B) |
-   | most seams **outside** the DoD, each its own shippable unit | shippable | **Split as epic** (off-ramp A) |
+   | one milestone, however many increments, its seams inside the issue's DoD | — | nothing: gate per-seam and plan it multi-phase |
+   | **two or more milestones** a stakeholder would track separately, each **demonstrable** but sharing one branch and PR | demonstrable | **Plan as one issue** (recommended) + **Slice first** (off-ramp B) |
+   | too large: most seams **outside** the DoD, each its own shippable unit | shippable | **Split as epic** (off-ramp A) + **Plan as one issue** |
 
-   Offer the apt off-ramp plus **Gate per-seam** (proportionate when the ceremony isn't warranted —
-   for an epic that means the integration branch, delivery log, and per-story review round-trips).
+   A *milestone* is an outcome a stakeholder would accept and track on its own, apart from its
+   neighbours; the increments that build toward one are phases, never milestones of their own
+   ([`../../slicer/references/slicing-method.md`](../../slicer/references/slicing-method.md) §4.1).
+   **Plan as one issue** gates each seam (below) and plans the issue multi-phase.
+
    Recommend **Split as epic** when the seams are shippable-independent: the epic machinery's
-   `## Story contracts` + just-in-time story plans is built to hold exactly that seam registry.
-   Recommend **Slice first** when they are only demonstrable-independent: slices are phase markers on
-   *this* issue's branch, so promoting to an epic would buy ceremony the work doesn't need while
-   splitting one deliverable across several PRs. On either off-ramp, run its flow below and stop — no
-   per-seam questions.
+   `## Story contracts` + just-in-time story plans is built to hold exactly that seam registry, and
+   **Plan as one issue** is the proportionate alternative when the ceremony isn't warranted (the
+   integration branch, delivery log, and per-story review round-trips). Recommend **Plan as one
+   issue** when the milestones are only demonstrable-independent: every increment becomes a phase on
+   *this* issue's branch either way, so the multi-phase plan already sequences them. Offer **Slice
+   first** beside it for when the operator wants each milestone tracked as a sub-issue on the board
+   with its own acceptance criteria — that tracking, and nothing else, is what a slice buys over a
+   phase. Never recommend promoting demonstrable milestones to an epic: it buys ceremony the work
+   doesn't need while splitting one deliverable across several PRs. On either off-ramp, run its flow
+   below and stop — no per-seam questions.
 2. **Per-seam questions** — one question per under-defined / out-of-slice seam (`header:` the seam's
    short name), at most 4 seams per `AskUserQuestion` call, further seams in follow-on calls. Offer
    the 3–4 dispositions most apt for that seam:
@@ -111,7 +120,7 @@ difference, which is why the triage table selects on exactly that.
 
 ## Off-ramp B (planning aborted; the issue is sliced first)
 
-On "Slice first": **post nothing at all** and end with the **Too large to plan as one unit** handoff
+On "Slice first": **post nothing at all** and end with the **Slice first chosen** handoff
 ([`handoff-renderings.md`](handoff-renderings.md)): `plan: ✗`, no `Grounding:` line, no `planned`
 label, `Next:` the slicer on #N.
 
@@ -122,10 +131,14 @@ genuine handover artifact. A demonstrable-altitude cut in place needs no such ar
 from the repo's declared grounding docs
 ([`../../slicer/references/slicing-method.md`](../../slicer/references/slicing-method.md)), so a
 planner-authored comment would be a second, staler decomposition proposal competing with it — and one
-the operator would have to reconcile. The `Why:` line carries everything that reader needs: what makes
-the issue too large, and why its seams are demonstrable- rather than shippable-independent.
+the operator would have to reconcile. The `Why:` line carries everything that reader needs: the
+milestones the operator chose to track as slices, and why they are demonstrable- rather than
+shippable-independent.
 
 The slicer hands back here. Its slices then arrive as facts on the next run — `facts.slices` plus the
 plan-versus-live diff — and the phase set must satisfy the cardinality rule in
 [`sub-issue-reconciliation.md`](sub-issue-reconciliation.md). So this off-ramp is a round trip, not a
-dead end, and the second pass plans *against* the approved cut rather than re-deciding it.
+dead end, and the second pass plans *against* the approved cut rather than re-deciding it. The slicer
+may instead find **one** milestone and file nothing (its *No cut* exit): then there are no slices, the
+next run plans the issue multi-phase, and should the triage fire again, **Plan as one issue** is the
+answer the operator already gave.
