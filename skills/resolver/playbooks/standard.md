@@ -18,10 +18,13 @@ outcome to its rubric:
 - **Forward — standard PR opened / updated** (default code outcome): `Issue:` line, `PR:` line
   (`base main · review: not run · health: not run · merge: not run` — the resolver runs none of the
   evaluator's checks), `Next: /github-pipeline:evaluator #<PR>`, `Why:`.
-- **Multi-phase** — pick **non-final code phase pushed** (`plan: ✓ (multi-phase: K of M …)`, PR stays
-  draft, `Next: /github-pipeline:resolver #<N>`), **operator/decision-only next phase** (surface the
-  `deliverable` + the `<!-- operator-phase-complete: <N> -->` marker verbatim), or **last planned phase
-  shipped** (PR flipped ready, `Next: /github-pipeline:evaluator #<PR>`). **Every one of these three
+- **Multi-phase** — pick **non-final code phase pushed** (the session ends after a non-final phase: an
+  **End session** answer at its checkpoint card, `../references/phase-continuation.md`, or an `Abort`
+  after S5.2 pushed; `plan: ✓ (multi-phase: K of M …)`, PR stays draft,
+  `Next: /github-pipeline:resolver #<N>`, plus `--pause` when the session held it),
+  **operator/decision-only next phase** (surface the `deliverable` + the
+  `<!-- operator-phase-complete: <N> -->` marker verbatim), or **last planned phase shipped** (PR flipped
+  ready, `Next: /github-pipeline:evaluator #<PR>`). **Every one of these three
   shapes still carries `review: not run · health: not run`** — the review loop and the §8 gate ran
   internally this session, but that is not what those two fields mean (they are the evaluator's,
   populated only once it acts); do not render an off-closed-set glyph for "ran internally."

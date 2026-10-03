@@ -5,11 +5,11 @@ description: Implement a planned GitHub issue end-to-end — read the issue and 
 
 # resolver — router
 
-The implementation stage of the pipeline: a filed, planned issue in → a PR (or a posted comment)
-plus a `## Handoff` out. One issue-resolution attempt, one session; a fresh session on every
-re-entry (nothing survives between runs except what is persisted to GitHub). Read this router, run
-prep, route to exactly one playbook, then hand off. Scripts own the mechanical work; your judgment
-is the audit call, the plan-gate call, the code, the review verdicts, and the handoff `Why:`.
+The implementation stage of the pipeline: a filed, planned issue in → a PR (or a posted comment) plus a
+`## Handoff` out. One issue-resolution attempt per session, shipping phases until a checkpoint; a fresh
+session on every re-entry (nothing survives between sessions except what is persisted to GitHub). Read
+this router, run prep, route to exactly one playbook, then hand off. Scripts own the mechanical work; your
+judgment is the audit call, the plan-gate call, the code, the review verdicts, and the handoff `Why:`.
 
 ## 1. Prep
 
@@ -18,7 +18,8 @@ This session runs **inside** the work worktree the operator opened with
 (linked-branch first, then the `<N>-…` pattern) and re-runs the repo's setup hooks — discovered in
 this worktree's own working tree, so this branch's hooks are the ones that run; it never creates a
 worktree. Assemble the entire starting state in **one** call. `<issue>` is the issue
-number (from the user, a URL, or the current branch); `<owner/repo>` is the repo:
+number (from the user, a URL, or the current branch); `<owner/repo>` is the repo. A trailing `--pause` (or
+the operator asking in words) stops after every phase — held by this session, never passed to prep:
 
 ```bash
 ${CLAUDE_PLUGIN_ROOT}/scripts/prep_resolver.py <issue> <owner/repo>
@@ -122,19 +123,19 @@ Universal across every route:
   the comment/PR to check it landed (re-reads reintroduce races and burn context).
 - **Gates only for genuine decisions** (per [`../_shared/asking-the-user.md`](../_shared/asking-the-user.md)):
   the audit-blocker gate, the missing-plan gate, a doc conflict, an existing-PR contest, retry-ladder
-  escalation, review-loop guard rails, the loop-stall card — never to confirm a fact prep derived. A
-  judgment sub-agent (state-distiller, fitness audit, test-selection, cold-read audit) never calls
-  `AskUserQuestion`; it returns its typed result (a §3 decision code or its verdict) to this loop, which
-  asks.
+  escalation, review-loop guard rails, the loop-stall card, the phase checkpoint card — never to confirm a
+  fact prep derived. A judgment sub-agent (state-distiller, fitness audit, test-selection, cold-read audit)
+  never calls `AskUserQuestion`; it returns its typed result (a §3 decision code or its verdict) to this
+  loop, which asks.
 - **Faithful reporting.** Lead with the outcome; report failures verbatim with evidence; declare
   skipped work. Print each judgment sub-agent's rationale before acting on it — the plan summary is one
   such print, compressing the state-distiller's effective plan rather than restating its raw output.
-- **Handoff on clean exit** (§4). One `## Handoff` block ends every clean run; it replaces any ad-hoc narration. Separate from it, and at session **start** rather than exit, the code-shipping routes render the
+- **Handoff on clean exit** (§4). One `## Handoff` block ends every clean session; it replaces any ad-hoc narration. Separate from it, and at session **start** rather than exit, the code-shipping routes render the
   `## Plan summary` block ([`../_shared/plan-summary.md`](../_shared/plan-summary.md)) — the digest of the plan this run is about to build, focused on the phase it will ship.
 
 ## 4. Handoff
 
-Every clean run ends with a single `## Handoff` block — the only bridge to the next session. The
+Every clean session ends with a single `## Handoff` block — the only bridge to the next session. The
 schema, omission rules, and closed-set state-marker vocabulary are owned by
 [`../_shared/handoff-format.md`](../_shared/handoff-format.md); the resolver's per-outcome rubric and
 eleven worked shapes are in [`references/handoff-renderings.md`](references/handoff-renderings.md).

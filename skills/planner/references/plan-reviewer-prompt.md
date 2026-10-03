@@ -222,6 +222,19 @@ Run only the dimensions named in the inputs.
    *enables* it** (a substrate phase claiming a measurement bullet is a BLOCKER — the evaluator would
    score it satisfied before the measurement ran).
 
+   **Checkpoints.** Each `code-shipping` phase but the last carries `checkpoint: pause | continue` —
+   whether the resolver asks the operator, after the phase ships, before it starts the next one in the
+   same session (`plan-schema.md`, "The `checkpoint:` phase key", owns the pause categories). A
+   **`continue` on a phase whose own `## Changes` entries or `deliverable` fall in a pause category** —
+   security (authentication, authorization, permissions, secrets, a trust boundary), data (a migration, a
+   schema change, a destructive or irreversible operation), a contract (a public API, a wire or file
+   format, the seam a later phase builds on), money, or a `provisional-default` / deviation the phase
+   puts into effect — is a BLOCKER: that phase's change set would ship and be built on with no human
+   look, which is exactly what the key exists to prevent. A **missing `checkpoint:` line on a
+   non-last `code-shipping` phase** is a SUGGESTION only (absent reads as `pause`, so it fails safe). A
+   `checkpoint:` on the last `code-shipping` phase or on an `operator`/`decision-only` phase is a NIT —
+   the resolver stops there regardless.
+
    **Slice coverage** *(runs only when `<<live_slices>>` is non-empty)*. Each phase's `sub-issue:` key
    records the one sub-issue it serves (`#<N>`), or `(none)` for substrate. The map is **N:1 and total
    over the OPEN set**: several phases may serve one sub-issue — **two phases naming the same `#<N>` is

@@ -603,6 +603,88 @@ class ParsePhasesSubIssueModuleTests(unittest.TestCase):
         self.assertIn("more than once", ctx.exception.reason)
 
 
+class ParsePhasesCheckpointModuleTests(unittest.TestCase):
+    """The `checkpoint:` key records whether the resolver may continue to the next phase in the same
+    session once this one ships. Recognized but **not required**: an absent line is `None`, which
+    the resolver reads as `pause` — the behaviour every plan authored before the key had.
+    """
+
+    def test_three_states_across_the_fixture(self):
+        text = _fixture_text(PHASES_FIXTURES_DIR, "well_formed_checkpoint.md")
+        phases = parse.parse_phases(text)
+        self.assertEqual(
+            [p["checkpoint"] for p in phases], ["continue", "pause", None, None]
+        )
+
+    def test_pre_contract_plan_parses_with_checkpoint_none(self):
+        text = _fixture_text(PHASES_FIXTURES_DIR, "well_formed_multi_phase.md")
+        phases = parse.parse_phases(text)
+        self.assertEqual([p["checkpoint"] for p in phases], [None, None, None, None])
+
+    def test_checkpoint_key_is_always_present_in_the_payload(self):
+        for fixture in ("well_formed_multi_phase.md", "well_formed_sub_issue_mapped.md"):
+            for phase in parse.parse_phases(_fixture_text(PHASES_FIXTURES_DIR, fixture)):
+                self.assertIn("checkpoint", phase)
+
+    def test_bad_value_raises_rather_than_defaulting(self):
+        text = _fixture_text(PHASES_FIXTURES_DIR, "malformed_checkpoint_bad_value.md")
+        with self.assertRaises(parse._PhasesMalformed) as ctx:
+            parse.parse_phases(text)
+        self.assertIn("checkpoint", ctx.exception.reason)
+        self.assertIn("'pause' or 'continue'", ctx.exception.reason)
+
+    def test_empty_value_raises(self):
+        text = _fixture_text(PHASES_FIXTURES_DIR, "malformed_checkpoint_empty.md")
+        with self.assertRaises(parse._PhasesMalformed) as ctx:
+            parse.parse_phases(text)
+        self.assertIn("checkpoint", ctx.exception.reason)
+
+    def test_values_are_case_sensitive(self):
+        text = (
+            "## Phases\n"
+            "1. **Phase 1 — a**\n"
+            "   - kind: code-shipping\n"
+            "   - ships: PR commits to the issue branch\n"
+            "   - closes-dod: (none)\n"
+            "   - deliverable: x\n"
+            "   - depends-on: (none)\n"
+            "   - checkpoint: Continue\n"
+        )
+        with self.assertRaises(parse._PhasesMalformed):
+            parse.parse_phases(text)
+
+    def test_duplicate_checkpoint_key_in_one_phase_raises(self):
+        text = (
+            "## Phases\n"
+            "1. **Phase 1 — a**\n"
+            "   - kind: code-shipping\n"
+            "   - ships: PR commits to the issue branch\n"
+            "   - closes-dod: (none)\n"
+            "   - deliverable: x\n"
+            "   - depends-on: (none)\n"
+            "   - checkpoint: continue\n"
+            "   - checkpoint: pause\n"
+        )
+        with self.assertRaises(parse._PhasesMalformed) as ctx:
+            parse.parse_phases(text)
+        self.assertIn("more than once", ctx.exception.reason)
+
+    def test_checkpoint_and_sub_issue_coexist_in_either_order(self):
+        text = (
+            "## Phases\n"
+            "1. **Phase 1 — a**\n"
+            "   - kind: code-shipping\n"
+            "   - ships: PR commits to the issue branch\n"
+            "   - closes-dod: (none)\n"
+            "   - deliverable: x\n"
+            "   - depends-on: (none)\n"
+            "   - checkpoint: continue\n"
+            "   - sub-issue: #214\n"
+        )
+        phase = parse.parse_phases(text)[0]
+        self.assertEqual((phase["checkpoint"], phase["sub_issue"]), ("continue", 214))
+
+
 class ParsePhasesMalformedModuleTests(unittest.TestCase):
     def test_missing_required_key_raises(self):
         text = _fixture_text(PHASES_FIXTURES_DIR, "malformed_missing_key.md")
@@ -675,6 +757,8 @@ class ParsePhasesMalformedModuleTests(unittest.TestCase):
             "malformed_sub_issue_multi_value.md",
             "malformed_sub_issue_zero.md",
             "malformed_sub_issue_empty.md",
+            "malformed_checkpoint_bad_value.md",
+            "malformed_checkpoint_empty.md",
         ):
             text = _fixture_text(PHASES_FIXTURES_DIR, fixture_name)
             try:
@@ -948,6 +1032,27 @@ class ParsePhasesCliTests(unittest.TestCase):
         self.assertEqual(
             [p["sub_issue"] for p in envelope["phases"]], ["(none)", 214, 214, 216]
         )
+
+    def test_phases_checkpoint_round_trips_through_the_envelope(self):
+        rc, out, err = _run_cli(
+            ["phases", str(PHASES_FIXTURES_DIR / "well_formed_checkpoint.md")]
+        )
+        self.assertEqual(rc, EXIT_OK)
+        envelope = _parse_one_envelope(out)
+        envelope_asserts.assert_full_envelope_conformance(envelope)
+        self.assertEqual(envelope["status"], "ok")
+        self.assertEqual(
+            [p["checkpoint"] for p in envelope["phases"]], ["continue", "pause", None, None]
+        )
+
+    def test_phases_malformed_checkpoint_emits_phases_malformed_decision(self):
+        rc, out, err = _run_cli(
+            ["phases", str(PHASES_FIXTURES_DIR / "malformed_checkpoint_bad_value.md")]
+        )
+        self.assertEqual(rc, EXIT_OK)
+        envelope = _parse_one_envelope(out)
+        envelope_asserts.assert_decision_payload_shape(envelope)
+        self.assertEqual(envelope["decision"]["code"], "PHASES_MALFORMED")
 
     def test_phases_malformed_sub_issue_emits_phases_malformed_decision(self):
         rc, out, err = _run_cli(

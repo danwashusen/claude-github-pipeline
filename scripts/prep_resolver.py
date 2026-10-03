@@ -846,6 +846,13 @@ def _build_tracker(prior_pr_fact, phases, repo, scratch_dir=None, cwd=None):
     }
     if pr_facts.get("body_mode") == "path":
         tracker["body_path"] = pr_facts.get("body_path")
+    elif scratch_dir is not None and pr_facts.get("body_mode") == "inline":
+        # Staged paths, always (the distiller bundle's rule): an inline body is written out once so
+        # every continue-mode PR-body write has a fetched base to restage from — the copy the
+        # spine's S6 and an in-session continuation (references/phase-continuation.md) rely on.
+        staged = Path(scratch_dir) / ("pr-%s-body.md" % prior_pr_fact["number"])
+        staged.write_text(pr_body, encoding="utf-8")
+        tracker["body_path"] = str(staged)
     extras = {
         "polish": parse.scan_polish(pr_body),
         # A soft-reject flips the PR back to draft; the evaluator's self-approval downgrade (an
@@ -1428,6 +1435,7 @@ def build_facts(issue_number, repo, root=".", scratch_dir=None, refresh=False, c
             "sha": work_workspace_envelope.get("sha"),
             "dirty": work_workspace_envelope.get("dirty"),
             "unpushed_commits": work_workspace_envelope.get("unpushed_commits"),
+            "upstream_sha": work_workspace_envelope.get("upstream_sha"),
             "source": "ambient",
             "setup": work_workspace_envelope.get("setup"),
         }

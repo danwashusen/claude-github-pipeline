@@ -923,6 +923,11 @@ class PhasesParsingTests(PrepResolverSandboxTestCase):
         self.assertEqual(len(envelope["phases"]), 2)
         self.assertEqual(envelope["phases"][0]["kind"], "code-shipping")
         self.assertEqual(envelope["phases"][1]["depends_on"], [1])
+        # `checkpoint` passes through verbatim; an absent line is `None`, which the spine reads as
+        # `pause` (references/phase-continuation.md).
+        self.assertEqual(
+            [p["checkpoint"] for p in envelope["phases"]], ["continue", None]
+        )
         self.assertIsNotNone(envelope["distiller_bundle"]["plan_marker_path"])
         self.assertTrue(Path(envelope["distiller_bundle"]["plan_marker_path"]).is_file())
 
@@ -1254,6 +1259,23 @@ class TrackerFactTests(PrepResolverSandboxTestCase):
             },
         )
         self.assertEqual([row["phase"] for row in tracker["rows"]], [1, 2, 3, 4, 5, 6])
+
+    def test_an_inline_pr_body_is_staged_as_a_path(self):
+        # Staged paths, always: a continue-mode PR-body write needs a fetched base to restage from,
+        # and before this an inline (small) body was never emitted at all — only a spilled one was.
+        envelope = self._envelope(fixture_case="prep_resolver_tracker_clean")
+        tracker = envelope["tracker"]
+        self.assertEqual(tracker["body_mode"], "inline")
+        staged = Path(tracker["body_path"])
+        self.assertTrue(staged.is_file())
+        self.assertTrue(str(staged).startswith(envelope["scratch"]))
+        self.assertIn("## Phase tracker", staged.read_text(encoding="utf-8"))
+
+    def test_workspace_reports_the_pushed_tip(self):
+        # Nothing unpushed in the sandbox: the pushed tip IS the local HEAD.
+        workspace = self._envelope(fixture_case="prep_resolver_tracker_clean")["workspace"]
+        self.assertEqual(workspace["unpushed_commits"], 0)
+        self.assertEqual(workspace["upstream_sha"], workspace["sha"])
 
     def test_last_shipped_falls_back_unreachable_on_fixture_shas(self):
         # The fixture's SHAs are not commits in the sandbox, so nothing is an ancestor of HEAD: the

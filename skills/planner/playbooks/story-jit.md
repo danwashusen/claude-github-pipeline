@@ -54,7 +54,8 @@ this route supplies:
   [`../references/shipped-phase-relocation.md`](../references/shipped-phase-relocation.md) after the
   "Reconcile against what already shipped" step — every revise, not only a large one. It owns the
   record-first persist order, so the records post before the **Persist (spine S8)** bullet's `edit-comment`.
-- **Schema sections.** The standard single-issue schema plus the `**Epic:** #<epic-#> — <epic title>`
+- **Schema sections.** The standard single-issue schema (a multi-phase story's `## Phases` included —
+  its `checkpoint` key too) plus the `**Epic:** #<epic-#> — <epic title>`
   backlink as the **first line after** the marker (never above it) and a `## Epic contract` section —
   `Delivers` (matching the epic's `## Story contracts`) and `Consumes` (each already in the delivery
   log), every line `[epic-plan: #<N>]`-cited (see [`../references/plan-schema.md`](../references/plan-schema.md)).

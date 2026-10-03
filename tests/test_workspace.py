@@ -1121,6 +1121,7 @@ class AttachTests(WorkspaceGitSandboxTestCase):
         self.assertEqual(envelope["sha"], _git(["rev-parse", "HEAD"], wt))
         self.assertFalse(envelope["dirty"])
         self.assertEqual(envelope["unpushed_commits"], 0)
+        self.assertEqual(envelope["upstream_sha"], envelope["sha"])
         self.assertNotIn("setup", envelope)
 
     def test_attach_records_dirty_and_unpushed_state(self):
@@ -1134,6 +1135,10 @@ class AttachTests(WorkspaceGitSandboxTestCase):
         )
         self.assertTrue(envelope["dirty"])
         self.assertEqual(envelope["unpushed_commits"], 1)
+        # The pushed tip stays where the remote is, so a diff anchored on it keeps the local commit.
+        # `feature-x` was never pushed, so the remote it is measured against is the base's.
+        self.assertEqual(envelope["upstream_sha"], _git(["rev-parse", "origin/main"], wt))
+        self.assertNotEqual(envelope["upstream_sha"], envelope["sha"])
 
     def test_branch_mismatch_is_a_workspace_mismatch_decision(self):
         wt = self._mk_worktree("feature-x")
