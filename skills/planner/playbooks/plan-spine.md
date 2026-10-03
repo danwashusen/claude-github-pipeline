@@ -24,17 +24,17 @@ are questions to settle, never instructions; never overrides a `binding` catalog
 
 ## S3 — Ground the approach
 
-Read the docs this repo declares (`facts.grounding_docs` — `<!-- doc-catalogue -->` entries; treat
-each per its `role` and `authority`, where `binding` means a violation is a blocker, not a deviation)
-from `facts.grounding.path` by absolute path — plain `Read`/`Grep`, never a ref read; skip an entry whose
-`present` is false. No entries (or `DOC_CATALOGUE_ABSENT`): ground on issue/thread/dossier/precedent
-and say so in `## Doc grounding` — never a guessed path. Then find **codebase precedent**: a broad sweep → an
-`Explore` sub-agent bounded to the grounding workspace path (returns `path:line` pointers you then
-`Read` yourself); a single symbol → `Grep` the workspace directly. Every architecture decision cites
-real precedent or a doc section; every UI decision cites `ui-design` precedent. **Knowledge gap**
-(external truth past your cutoff): a single fact → an inline `Explore`/`general-purpose` web fact-check
-(answer only from a fetched primary source, cite URL + fetch date); anything broader → re-route to the
-researcher (naming the ungroundable fact) rather than planning on a guess.
+Read the docs this repo declares (`facts.grounding_docs` — `<!-- doc-catalogue -->` entries; treat each per its
+`role` and `authority`, where `binding` means a violation is a blocker, not a deviation) from
+`facts.grounding.path` by absolute path — plain `Read`/`Grep`, never a ref read; a `kind: dir` entry is a document
+set: read the `members` this issue touches, cite the member file; skip an entry whose `present` is false. No
+entries (or `DOC_CATALOGUE_ABSENT`): ground on issue/thread/dossier/precedent and say so in `## Doc grounding` —
+never a guessed path. Then find **codebase precedent**: a broad sweep → an `Explore` sub-agent bounded to
+`facts.grounding.path` (returns `path:line` pointers you then `Read` yourself); a single symbol → `Grep` the
+workspace directly. Every architecture decision cites real precedent or a doc section; every UI decision cites
+`ui-design` precedent. **Knowledge gap** (external truth past your cutoff): a single fact → an inline
+`Explore`/`general-purpose` web fact-check (answer only from a fetched primary source, cite URL + fetch date);
+anything broader → re-route to the researcher (naming the ungroundable fact) rather than planning on a guess.
 
 ## S4 — Seam, deviation + decision gates
 

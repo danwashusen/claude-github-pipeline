@@ -683,6 +683,26 @@ class PureHelperUnitTests(unittest.TestCase):
         )
         self.assertTrue(result["present"])
         self.assertEqual(result["path"], "/repo/docs/prd.md")
+        self.assertIsNone(result["members"])
+
+    def test_prd_presence_carries_a_directory_entrys_members(self):
+        """A `prd` entry naming a directory hands the PRD-tension step its member files, never a bare
+        directory path to `Read`."""
+        members = ["docs/prd/billing.md", "docs/prd/onboarding.md"]
+        result = prep_drafter._prd_presence(
+            [
+                {
+                    "path": "docs/prd/",
+                    "role": "prd",
+                    "present": True,
+                    "kind": "dir",
+                    "members": members,
+                    "abs_path": "/repo/docs/prd",
+                }
+            ]
+        )
+        self.assertTrue(result["present"])
+        self.assertEqual(result["members"], members)
 
     def test_template_inventory_absent_dir(self):
         with tempfile.TemporaryDirectory() as tmp:

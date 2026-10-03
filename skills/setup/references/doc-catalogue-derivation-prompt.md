@@ -36,7 +36,11 @@ the conversation that led here.
 
 One line per document that **grounds work**: something a person planning or drafting a change ought to
 read and must not contradict. Requirements, architecture, non-negotiable constraints, UI authority,
-house conventions, domain guides.
+house conventions, domain guides. One line may instead name a **document set** — a directory the index
+itself presents as one body of grounding (an architecture hub's spokes, a folder of per-feature specs),
+written with a trailing `/` (`docs/architecture/`) and carrying one role, authority, and summary for
+every file directly inside it. The contract's "Directory entries" section defines it; use one only when
+the index groups those files and they share one authority — otherwise give each its own line.
 
 Not every Markdown file in the repo. Changelogs, release notes, meeting notes, generated API
 references, contributor onboarding, and issue templates are not grounding documents — including them
@@ -71,17 +75,18 @@ presents as grounding or authoritative and write one entry:
   produces a pipeline that stops on every tension, which trains the operator to ignore the signal.
 - **`summary`** — compressed from what the index itself says about the document. When the index gives
   no description, read the document's opening lines and summarize *those*. Never invent a purpose from
-  the filename.
+  the filename. A document set's summary comes from what the index says about the set as a whole.
 
-**3. Ground every entry.** Confirm each `path` resolves to a real file under `<<repo_root>>` before
-proposing it. Drop an entry only on positive evidence of absence, and report the drop. Do not run any
-ref arithmetic — the checkout is already at the right state, so a plain filesystem check is both
-correct and simpler.
+**3. Ground every entry.** Confirm each `path` resolves under `<<repo_root>>` before proposing it — to
+a real file, or for a document set to a real directory with files directly inside it. Drop an entry
+only on positive evidence of absence, and report the drop. Do not run any ref arithmetic — the
+checkout is already at the right state, so a plain filesystem check is both correct and simpler.
 
-**4. Never discover documents the index does not name.** Do not walk the tree, glob for `*.md`, or
-add a document because you noticed it. If the index omits something important, that is a **finding
-about the index**, and the fix is a human editing their docs index — not a catalogue entry the index
-does not support. This is the boundary that keeps the catalogue an honest reflection of what the repo
+**4. Never discover documents the index does not name.** Do not walk the tree, glob for `*.md`, or add
+a document because you noticed it — a document set names a directory the index itself groups, which is
+the index's claim, not a discovery. If the index omits something important, that is a **finding about
+the index**, and the fix is a human editing their docs index — not a catalogue entry the index does
+not support. This is the boundary that keeps the catalogue an honest reflection of what the repo
 claims about itself.
 
 **5. Prefer a short, high-trust set.** A catalogue naming four documents a planner will actually read

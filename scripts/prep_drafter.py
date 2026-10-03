@@ -315,12 +315,15 @@ def _prd_presence(entries):
     drafter's PRD-tension step reads exactly this one fact, and it read it before the catalogue
     existed — so the fact path `facts.repo_context.docs.prd` survives the migration unchanged.
     A repo that declares no `prd`-role document reports `present: False`, the same shape the
-    four-candidate filesystem search reported when it found nothing.
+    four-candidate filesystem search reported when it found nothing. A `prd` entry naming a
+    directory (a document set) carries its `members` — repo-root-relative, like every catalogue path
+    — so the PRD-tension step reads files rather than being handed a bare directory; a file entry
+    carries `members: None`.
     """
     entry = doc_catalogue.entry_for_role(entries, _PRD_ROLE)
     if entry is None or not entry.get("present"):
-        return {"present": False, "path": None}
-    return {"present": True, "path": entry["abs_path"]}
+        return {"present": False, "path": None, "members": None}
+    return {"present": True, "path": entry["abs_path"], "members": entry.get("members")}
 
 
 def _grounding_docs(root):

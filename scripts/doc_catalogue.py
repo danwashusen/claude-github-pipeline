@@ -22,6 +22,15 @@ a loud gap: it grounds a plan on a document the repo never nominated. What a con
 the gap differs by consumer (planner/drafter proceed ungrounded; a documents-derived consumer
 refuses) and that asymmetry lives in the shared contract, not here.
 
+**A directory entry is listed, not walked.** An entry may name a directory — a document set the repo
+declares under one role / authority / summary (a ``docs/architecture/`` of spokes beside a
+``docs/architecture.md`` hub). Until 4.26.0 presence was ``is_file()``, so such an entry always read
+as missing: every reader raised a false "stale entry" attention line, and the planner and slicer —
+told to skip a ``present: false`` entry — wrote binding documents out of their grounding. Listing the
+directory's direct members is not the forbidden walk: the repo nominated that directory, the listing
+is one level and deterministic, and nothing searches for doc-shaped files elsewhere. The script lists
+it so no prompt, and no context-blind reviewer, has to — and so a citation names a member file.
+
 Every function is a pure, non-emitting core (architecture.md §2's pure-core pattern, the S8 lock):
 ``(value, notices)`` — never prints, never exits, never raises on malformed input. A prep composes
 these in-process and merges the returned notices into its own envelope. There is no CLI surface (no
@@ -146,11 +155,13 @@ def read_catalogue(vantage_path):
 
     Returns ``(entries, notices)``:
 
-    - ``entries`` — the parsed entries, each additionally carrying ``present`` (the file exists at
-      this vantage) and ``abs_path`` (absolute path when present, else ``None``). A declared-but-
-      missing document is **reported, not dropped**: the caller raises it as an attention line, since
-      a stale entry and legitimate branch drift look identical from here and only the operator can
-      tell them apart.
+    - ``entries`` — the parsed entries, each additionally carrying ``present`` (the path exists at
+      this vantage as a file **or** a directory), ``kind`` (``"file"`` | ``"dir"`` when present,
+      ``None`` when absent), ``members`` (a ``dir`` entry's documents — see ``_dir_members`` — else
+      ``None``) and ``abs_path`` (absolute path when present, else ``None``). A declared-but-missing
+      document is **reported, not dropped**: the caller raises it as an attention line, since a stale
+      entry and legitimate branch drift look identical from here and only the operator can tell them
+      apart.
     - ``notices`` — ``[DOC_CATALOGUE_ABSENT]`` when no well-formed block was found (no
       ``docs/README.md``, no block in it, or a malformed one — ``read_block_anywhere`` already treats
       malformed as absent), else ``[]``. A block that is *present but empty* is a repo explicitly
@@ -168,10 +179,36 @@ def read_catalogue(vantage_path):
     vantage = Path(vantage_path)
     for entry in entries:
         doc_path = vantage / entry["path"]
-        is_file = doc_path.is_file()
-        entry["present"] = is_file
-        entry["abs_path"] = str(doc_path) if is_file else None
+        kind = "dir" if doc_path.is_dir() else "file" if doc_path.is_file() else None
+        entry["present"] = kind is not None
+        entry["kind"] = kind
+        entry["members"] = _dir_members(doc_path, entry["path"]) if kind == "dir" else None
+        entry["abs_path"] = str(doc_path) if kind is not None else None
     return entries, []
+
+
+def _dir_members(dir_path, rel_path):
+    """A ``dir`` entry's documents: the sorted repo-root-relative paths of the **non-hidden regular
+    files directly inside it**.
+
+    One level, by contract (``skills/_shared/doc-catalogue.md`` §"Directory entries"): a nested set
+    is declared as its own entry, so the repo — not this listing — decides how deep its grounding
+    goes, and a docs tree with an assets or archive subdirectory does not drag those in. No extension
+    filter: what counts as a document is the repo's call (a directory of `.md`, `.adoc` or `.txt`
+    alike), and the repo made it by naming the directory. Dotfiles are skipped as tooling, not docs.
+    An unreadable directory yields ``[]`` rather than raising — the module's non-raising posture; the
+    entry still reads as present, so the operator sees a set with nothing in it, not a stale path.
+    """
+    prefix = rel_path.rstrip("/")
+    try:
+        children = list(dir_path.iterdir())
+    except OSError:
+        return []
+    return sorted(
+        "%s/%s" % (prefix, child.name)
+        for child in children
+        if child.is_file() and not child.name.startswith(".")
+    )
 
 
 def entry_for_role(entries, role):

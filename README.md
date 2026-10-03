@@ -115,7 +115,9 @@ when a convention is absent, but work best when the repo provides:
   re-ingests your edits rather than overwriting them.
 - **A doc catalogue** (optional, setup-authored) — a `<!-- doc-catalogue -->` block in
   `docs/README.md` naming the documents that ground the pipeline's work, one per line with a role, an
-  authority (`binding` — contradicting it is a blocker — or `informative`), and a one-line summary.
+  authority (`binding` — contradicting it is a blocker — or `informative`), and a one-line summary. A
+  line can also name a directory (`docs/architecture/`) to declare every document directly inside it
+  under one role and authority.
   The planner and drafter read it to align designs; the paths are **yours**, so a PRD at
   `docs/product/requirements.md` works as well as one at `docs/prd.md`. Setup derives a first draft
   from your `docs/README.md` and re-ingests your edits on re-run. Without it, those skills ground on

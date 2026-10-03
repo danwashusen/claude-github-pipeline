@@ -28,8 +28,7 @@ names everything stops being read.
 
 - **`docs/specs/**`** — the frozen behavioral record of v1 plus the live-parity results, exempt from
   every validator by [`CLAUDE.md`](../CLAUDE.md). It is evidence about what v1 *did*, cited when
-  adjudicating a divergence, not a requirement for new work. It is also a tree rather than a
-  document, and a catalogue entry names one file.
+  adjudicating a divergence, not a requirement for new work.
 - **`docs/guides/**`** — see [`docs/guides/README.md`](guides/README.md). These teach a **consuming
   repo's** maintainer how to author the documents the skills read (`prd.md`, `architecture.md`,
   `architecture-notes.md`, `ui-design.md`, `constitution.md`). They describe *another* repo's docs, so

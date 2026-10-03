@@ -71,12 +71,12 @@ that reference, binding every body): durable anchors only, never an authored `pa
 state criterion + exemption classes, never a frozen hit list; freeze judgment, not re-derivable facts.
 
 **PRD tension → `## PRD impact`.** When the repo declares a PRD (`facts.repo_context.docs.prd` — its
-catalogue's `prd` entry, at whatever path it names), ground language in its personas/terminology and watch
-for tension — the feedback **contradicts** the PRD, **extends** it into uncovered territory, or an
-incomplete-feature report describes a **gap** against a PRD section. On genuine
-tension, add a `## PRD impact` note and gate (`header: "PRD conflict"`): **File to update PRD** / **File the
-feature** / **Flag for discussion** — the user decides whether the PRD or the feedback is stale. No tension
-→ omit the section; don't add it just to show you read the PRD.
+catalogue's `prd` entry, at whatever path it names; for a directory, read the `members` the feedback
+touches), ground language in its personas/terminology and watch for tension — the feedback **contradicts**
+the PRD, **extends** it into uncovered territory, or an incomplete-feature report describes a **gap**
+against a PRD section. On genuine tension, add a `## PRD impact` note and gate (`header: "PRD conflict"`):
+**File to update PRD** / **File the feature** / **Flag for discussion** — the user decides whether the PRD
+or the feedback is stale. No tension → omit the section; don't add it just to show you read the PRD.
 
 **Related issues → `## Related issues` + native dep.** When the user referenced other issues, read them
 (`gh issue view <N> --json title,state,body,labels`) and classify the relationship, mirroring the user's
