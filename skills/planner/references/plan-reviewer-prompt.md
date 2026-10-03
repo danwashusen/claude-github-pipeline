@@ -54,13 +54,13 @@ failure mode; do not flag a plan for leaving line-level mechanics to the impleme
 - **Declared project docs**: `<<catalogue_entries>>` — the documents this repo declares as its grounding
   set, one per line as `<path> — <role> — <binding|informative> — <summary>`, and anything they
   `@`-include. An entry naming a directory is a **document set**: its member files follow it, one per
-  indented `- <path>` line (the planner lists them from the entry's `members`), each under the entry's
-  authority — check the members the plan touches and cite the member file, never the directory. They live
-  under the same workspace path; read them there. `binding` means a plan contradicting the document is a
-  **blocker**, `informative` means the tension is a judgment call — so do not raise a conflict with an
-  `informative` doc as a blocking finding. When this list is empty the repo declares no grounding docs:
-  judge the plan on the issue, the thread and codebase precedent, and never invent a doc path to check
-  against.
+  indented `- <path>` line (the planner lists them from the entry's `members` and omits an entry whose
+  `present` is false), each under the entry's authority — check the members the plan touches and cite the
+  member file, never the directory. They live under the same workspace path; read them there. `binding`
+  means a plan contradicting the document is a **blocker**, `informative` means the tension is a judgment
+  call — so do not raise a conflict with an `informative` doc as a blocking finding. When this list is
+  empty the repo declares no grounding docs: judge the plan on the issue, the thread and codebase
+  precedent, and never invent a doc path to check against.
 - **Recorded ref** (context only): `<<plan_ref_recorded>>` — the `<plan-ref>@<short-sha>` the plan footer
   records, so you can name it in a finding. Do not run any git command against it.
 - **Dimensions to check**: `<<dimensions>>` — a subset of {1..10}. Run only the listed dimensions; don't
@@ -98,14 +98,16 @@ failure mode; do not flag a plan for leaving line-level mechanics to the impleme
 
 Run only the dimensions named in the inputs.
 
-1. **Doc / constitution coherence.** Cross-reference the plan against the project docs **in the read
-   workspace** (`Read <<grounding_workspace>>/docs/...`). Flag: **Contradicts** — the plan proposes
-   something a doc explicitly forbids and the contradiction is **not** declared in `## Deviations from
-   project docs` with an agreed date (undisclosed deviation = BLOCKER; a disclosed-and-agreed one is
-   fine; a **constitution** violation is always a BLOCKER even if disclosed). **Extends** — the plan
-   extends into territory the docs don't cover (SUGGESTION unless acknowledged). **Gap** — `## Doc
-   grounding` cites a section that doesn't say what the plan claims, or omits a section that governs this
-   change (cite both the plan claim and the doc section).
+1. **Doc / constitution coherence.** Cross-reference the plan against the declared project docs
+   (`<<catalogue_entries>>`) **in the read workspace** (`Read <<grounding_workspace>>/<path>`; a
+   document set: its member files). Flag: **Contradicts** — the plan proposes something a `binding` doc
+   explicitly forbids and the contradiction is **not** declared in `## Deviations from project docs`
+   with an agreed date (undisclosed deviation = BLOCKER; a disclosed-and-agreed one is fine; a
+   **constitution** violation is always a BLOCKER even if disclosed; a contradiction with an
+   `informative` doc is a SUGGESTION). **Extends** — the plan extends into territory the docs don't
+   cover (SUGGESTION unless acknowledged). **Gap** — `## Doc grounding` cites a section that doesn't say
+   what the plan claims, or omits a section that governs this change (cite both the plan claim and the
+   doc section).
 
 2. **Codebase coherence.** For every path, type, symbol, method, signature, identifier, or behaviour the
    plan names as **existing** (in `## Changes`, `## Architecture decisions`, `[precedent: …]` — never a
@@ -200,11 +202,11 @@ Run only the dimensions named in the inputs.
    `delivers` clause (or its absence).
 
 6. **Precedent grounding.** Every `## Architecture decisions` / `## UI decisions` entry must carry a
-   citation that is (a) a real codebase location (`[precedent: path:NN]`), (b) a real doc section
-   (`architecture.md §X`, `architecture-notes §Y`, `ui-design §Z`), (c) a `DEVIATION (agreed <date>)`
-   marker, or (d) a `[user decision <date>]` marker. Flag a decision with no citation (under-grounded —
-   SUGGESTION unless load-bearing, then BLOCKER) or a citation that fails dimension-2 verification
-   (fabricated — BLOCKER).
+   citation that is (a) a real codebase location (`[precedent: path:NN]`), (b) a real section of a
+   declared doc (`<<catalogue_entries>>` — e.g. `docs/architecture.md §X`; a document set's member file,
+   never the directory), (c) a `DEVIATION (agreed <date>)` marker, or (d) a `[user decision <date>]`
+   marker. Flag a decision with no citation (under-grounded — SUGGESTION unless load-bearing, then
+   BLOCKER) or a citation that fails dimension-2 verification (fabricated — BLOCKER).
 
 7. **Phase coherence** *(multi-phase only; fires on a `## Phases` section — an epic uses `## Story
    contracts` with Dimensions 5/8)*. Read each phase's bullets and check: **all required keys present**

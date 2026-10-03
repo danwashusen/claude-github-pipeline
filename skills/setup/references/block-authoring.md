@@ -312,8 +312,9 @@ to run them cheaply; leave the fast ones alone* — then fill it in. Same shape,
 
 ### doc-catalogue
 
-The repo's **grounding documents**, declared by the repo itself. The planner, drafter, slicer, and
-requirements-gatherer read it to learn which docs to ground on and how much authority each carries;
+The repo's **grounding documents**, declared by the repo itself. The planner, drafter, slicer,
+requirements-gatherer, resolver, evaluator, and question-resolver read it to learn which docs to ground
+on and how much authority each carries;
 without it they have no declared documents to ground on. The full contract — home, per-field semantics,
 directory entries, the absent-catalogue rule — is
 [`../../_shared/doc-catalogue.md`](../../_shared/doc-catalogue.md); read it before drafting. This
@@ -350,7 +351,7 @@ remedy (create `docs/README.md` describing the repo's grounding docs, then re-ru
 walk the tree looking for doc-shaped files, and do **not** interview the operator for a doc list: a
 catalogue with no index behind it has nothing to re-ingest on the next run, which breaks the
 user-owned posture, and inventing a grounding set is precisely what the block exists to prevent. The
-planner and drafter degrade loudly on their side (a `DOC_CATALOGUE_ABSENT` notice), so the gap is
+readers degrade loudly on their side (a `DOC_CATALOGUE_ABSENT` notice), so the gap is
 visible without setup guessing at it.
 
 **Target the committed file.** The staged upsert writes `<workspace>/docs/README.md` inside a

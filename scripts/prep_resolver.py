@@ -23,6 +23,11 @@ processes any script may spawn are git/gh")::
                                                        from the asserted work workspace's WORKING
                                                        TREE — the operator's checkout is the
                                                        trusted source (architecture.md §6)
+    doc_catalogue.read_catalogue                   -- the consuming repo's `<!-- doc-catalogue -->`
+                                                       grounding docs, read at the audit view
+                                                       (read workspace, else work workspace) and
+                                                       emitted with that vantage as
+                                                       `grounding_path`
     parse.parse_phases / parse.parse_dod_bullets / parse.parse_oq_links
                                                     -- the plan's ## Phases, the issue's
                                                        ## Definition of done, and its
@@ -94,6 +99,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 import config_block  # noqa: E402  (import after sys.path setup, by necessity; in-process composition)
+import doc_catalogue  # noqa: E402  (the consuming repo's declared grounding docs)
 import gh_gather  # noqa: E402
 import gh_pr_gather  # noqa: E402  (continue mode only: the prior PR's body, for the tracker diff)
 import branching  # noqa: E402  (shared branch/type/prior-PR cores; aliased below)
@@ -101,7 +107,12 @@ import parse  # noqa: E402
 import plan_shipped  # noqa: E402  (the shipped-phase records a relocated plan's detail lives in)
 import workspace  # noqa: E402
 from pipelib import process  # noqa: E402
-from pipelib.decisions import AMBIGUOUS, PLAN_MISSING, needs_decision  # noqa: E402
+from pipelib.decisions import (  # noqa: E402
+    AMBIGUOUS,
+    DOC_CATALOGUE_ABSENT,
+    PLAN_MISSING,
+    needs_decision,
+)
 from pipelib.envelope import EXIT_OK, EXIT_USAGE_ERROR, emit_needs_decision, emit_ok  # noqa: E402
 from pipelib.spill import read_section  # noqa: E402
 from pipelib.thread import load_thread  # noqa: E402
@@ -432,6 +443,33 @@ def _suggested_playbook(issue_type, comment_only, epic_branch_name=None):
 # ---------------------------------------------------------------------------
 # attention
 # ---------------------------------------------------------------------------
+
+
+def _catalogue_attention(grounding_docs, catalogue_absent):
+    """The doc-catalogue attention lines, prep_planner's three-state shape: `grounding_docs` is `None`
+    when the catalogue was never read (`--refresh`, comment-only and gated rows), `[]` when it was read
+    and declares nothing, a list otherwise — "we didn't look" must not render as "the repo declared
+    nothing". The resolver proceeds ungrounded on an absent catalogue (skills/_shared/doc-catalogue.md),
+    so these are attention, never a decision."""
+    if grounding_docs is None:
+        return []
+    attention = []
+    if catalogue_absent:
+        attention.append(
+            "no doc catalogue at the audit ref — the fitness audit and doc grounding run ungrounded; "
+            "run /github-pipeline:setup to declare this repo's grounding docs in docs/README.md"
+        )
+    elif not grounding_docs:
+        attention.append(
+            "doc catalogue declares no documents — the fitness audit and doc grounding run "
+            "ungrounded until it names some"
+        )
+    for missing in doc_catalogue.missing_entry_paths(grounding_docs):
+        attention.append(
+            "doc catalogue names '%s', absent at the audit ref — a stale entry, or a doc this "
+            "branch has not merged yet" % missing
+        )
+    return attention
 
 
 def _build_attention(work_workspace_envelope, prior_pr_row, epic_facts, story_epic_matches):
@@ -1222,6 +1260,7 @@ def build_facts(issue_number, repo, root=".", scratch_dir=None, refresh=False, c
     #    work workspace's working tree — the same checkout the session runs in, so what the
     #    operator sees is what gates them.
     config_attention = []
+    grounding_path, grounding_docs, catalogue_notices = None, None, []
     if not refresh:
         work_workspace_envelope = None
         work_base = None
@@ -1274,6 +1313,19 @@ def build_facts(issue_number, repo, root=".", scratch_dir=None, refresh=False, c
                 "gate config was read from a checkout with uncommitted changes (%s) — the checks "
                 "that judge this work are the ones in your working tree" % gate_root
             )
+
+        # Grounding docs (skills/_shared/doc-catalogue.md) — read at the AUDIT view: the read
+        # workspace when one was ensured (epic-as-target, story under an open epic), else the work
+        # workspace (the standard path, where audit_ref == main and the worktree IS the audit view).
+        # One resolved vantage, emitted as `grounding_path`, so neither the spine nor the audit
+        # prompt branches on which view exists. Comment-only and gated rows ground nothing, so they
+        # read nothing — `None` keeps their attention silent rather than reporting a catalogue
+        # nobody looked for.
+        if not skip_work_workspace:
+            audit_view = read_workspace_envelope or work_workspace_envelope
+            if audit_view is not None:
+                grounding_path = audit_view["path"]
+                grounding_docs, catalogue_notices = doc_catalogue.read_catalogue(grounding_path)
     else:
         work_workspace_envelope = None
         read_workspace_envelope = None
@@ -1344,10 +1396,14 @@ def build_facts(issue_number, repo, root=".", scratch_dir=None, refresh=False, c
         "suggested_playbook": suggested_playbook,
         "config": gate_config,
         "distiller_bundle": distiller_bundle,
+        "grounding_path": grounding_path,
+        "grounding_docs": grounding_docs if grounding_docs is not None else [],
         "attention": _build_attention(
             work_workspace_envelope, prior_pr_row, epic_facts, story_epic_matches
-        ) + config_attention + shipped_attention,
-        "notices": list(config_notices) + link_notices + epic_notices + tracker_notices,
+        ) + config_attention + shipped_attention
+        + _catalogue_attention(grounding_docs, DOC_CATALOGUE_ABSENT in catalogue_notices),
+        "notices": list(config_notices) + link_notices + epic_notices + tracker_notices
+        + catalogue_notices,
     }
     if prior_pr_rejected:
         facts["prior_pr_rejected"] = prior_pr_rejected

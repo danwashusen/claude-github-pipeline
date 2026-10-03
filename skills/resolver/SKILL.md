@@ -25,20 +25,20 @@ ${CLAUDE_PLUGIN_ROOT}/scripts/prep_resolver.py <issue> <owner/repo>
 ```
 
 It returns one JSON **facts block** (`architecture.md §4`): `target` (issue number/title/state/
-labels/`blocked_by`/`blocking`), `vector` (`type` × `mode` × `prior_pr_row`, plus `gate` on a gated
-row and `comment_only`), `suggested_playbook`, `prior_pr`, `plan` (present/SHA/comment-id/url),
-`phases` (parsed `## Phases`), `tracker` (continue mode: the prior PR's `## Phase tracker` rows plus
-`diff` — the row set reconciled against `phases`, with `diff.conflict` the gate — and `last_shipped`,
-the shipped phase nearest HEAD: the non-final review's diff base), `polish` (the PR's `## Polish`
-ledger), `revision` (`active` + `reasons`: the S4 revision run), `dod` (the issue's `## Definition of done` bullets, each with its
-annotation), `open_questions` + `open_questions_gate` (the hard gate), `audit_ref` (a **bare** branch
-name), `config` (the three gate-config blocks read from **this worktree's working tree**, uncommitted
-edits included; `config.source` names the checkout/branch/SHA and its dirty state), `distiller_bundle` (staged paths for the
-state-distiller), `workspace` (the **observed ambient checkout**: path/branch/`base_ref`/sha/dirty/
-unpushed, asserted by prep), `read_workspaces.audit` (the detached read workspace at the audit
-ref, when a second view is needed), `epic`/`story` facts, `sections` (spilled issue-body/thread/
-plan-marker paths), and `attention`. Consume every fact as **data** — never re-derive the issue
-type, the mode, the branch, the audit ref, or the phase list in prose; prep already did.
+labels/`blocked_by`/`blocking`), `vector` (`type` × `mode` × `prior_pr_row`, plus `gate` on a gated row and
+`comment_only`), `suggested_playbook`, `prior_pr`, `plan` (present/SHA/comment-id/url), `phases` (parsed `##
+Phases`), `tracker` (continue mode: the prior PR's `## Phase tracker` rows plus `diff` — the row set reconciled
+against `phases`, with `diff.conflict` the gate — and `last_shipped`, the shipped phase nearest HEAD: the non-final
+review's diff base), `polish` (the PR's `## Polish` ledger), `revision` (`active` + `reasons`: the S4 revision run),
+`dod` (the issue's `## Definition of done` bullets, each with its annotation), `open_questions` +
+`open_questions_gate` (the hard gate), `audit_ref` (a **bare** branch name), `config` (the three gate-config blocks
+read from **this worktree's working tree**, uncommitted edits included; `config.source` names the checkout/branch/SHA
+and its dirty state), `distiller_bundle` (staged paths for the state-distiller), `workspace` (the **observed ambient
+checkout**: path/branch/`base_ref`/sha/dirty/ unpushed, asserted by prep), `read_workspaces.audit` (the detached read
+workspace at the audit ref, when a second view is needed), `grounding_path` + `grounding_docs` (the audit view — that
+read workspace, else this worktree — and the repo's `<!-- doc-catalogue -->` entries read there), `epic`/`story`
+facts, `sections` (spilled issue-body/thread/ plan-marker paths), and `attention`. Consume every fact as **data** —
+never re-derive the issue type, the mode, the branch, the audit ref, or the phase list in prose; prep already did.
 
 **Decision card rule.** If prep exits with `status: needs_decision`, render its `decision` as one
 `AskUserQuestion` card (per [`../_shared/asking-the-user.md`](../_shared/asking-the-user.md)), act on

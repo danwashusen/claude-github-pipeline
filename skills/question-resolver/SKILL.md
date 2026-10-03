@@ -25,7 +25,9 @@ ${CLAUDE_PLUGIN_ROOT}/scripts/prep_question_resolver.py <issue> <owner/repo> [--
 Returns one **facts block** (`architecture.md §4`): `repo`, `root`, `target` (`number`/`title`/`state`/
 `labels`), `is_question`, `reentrancy` (`mode` fresh/revise + `prior_decision` on revise — its
 `comment_id` for the marker replace), `already_closed`, `blocking` (the build issues this question
-gates → `## Unblocks`), `blocked_by`, staged `sections`, `scratch`, `attention`. Consume as **data**. A
+gates → `## Unblocks`), `blocked_by`, `grounding_docs` (the repo's `<!-- doc-catalogue -->` entries, read
+at `root`'s working tree — the constraint audit's doc set), staged `sections`, `scratch`, `attention`.
+Consume as **data**. A
 `needs_decision` is `AUTH_REQUIRED` or the >1-marker `MARKER_AMBIGUOUS` (v1's "which decision is
 current") — render it as one `AskUserQuestion` card and stop.
 

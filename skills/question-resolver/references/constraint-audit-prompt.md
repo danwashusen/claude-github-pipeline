@@ -17,14 +17,21 @@ documented constraint it violates before it's recorded.
   question already flagged) and `## References` (the docs/§ that ground it).
 - **Chosen decision**: `<<chosen_decision>>` — the decision to verify.
 - **Repo root**: `<<repo_root>>` — absolute path. Read the project docs from here at the working tree
-  (a question isn't tied to a branch): `docs/constitution.md`, `docs/prd.md`, `docs/architecture.md`,
-  `docs/architecture-notes.md`, `docs/ui-design.md`, `CLAUDE.md` — whichever exist. `grep`/`Read` from
-  this root.
+  (a question isn't tied to a branch). `grep`/`Read` from this root.
+- **Declared project docs**: `<<catalogue_entries>>` — the documents this repo declares as its grounding
+  set (its doc catalogue), one per line as `<path> — <role> — <binding|informative> — <summary>`, paths
+  relative to `<<repo_root>>`. An entry naming a directory is a **document set**: its member files follow
+  it, one per indented `- <path>` line (the orchestrator lists them from the entry's `members` and omits
+  an entry whose `present` is false), each under the entry's authority — cite the member file, never the
+  directory. A `binding` doc's rule is a documented constraint; an `informative` doc is context, never a
+  BLOCKER on its own. When this list is empty the repo declares no grounding docs: check against the docs
+  the question itself cites, say so in the summary, and never invent a doc path.
 
 ## What to check
 
-Read the docs the question's `## Constraints` / `## References` cite, plus the constitution (the
-inviolable rules). For the chosen decision, determine whether it **satisfies or violates** a
+Read the docs the question's `## Constraints` / `## References` cite, plus the `binding` entries in
+`<<catalogue_entries>>` the decision touches — always the `constitution`-role entry when one is declared
+(the inviolable rules). For the chosen decision, determine whether it **satisfies or violates** a
 *documented* constraint:
 
 - A **regulatory / legal / contractual / platform** limit stated in a doc (often surfaced in the

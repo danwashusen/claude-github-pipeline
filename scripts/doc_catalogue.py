@@ -11,9 +11,10 @@ constants, which disagreed with each other on the PRD's spelling and with the pr
 two further docs (``docs/ui-design.md``, ``docs/architecture-notes.md``) neither prep inventoried.
 A path list in the plugin is an assumption about a *consuming* repo's layout — the thing the
 convention-driven coupling rule (CLAUDE.md "Coupling to a consuming repo is convention-driven")
-exists to forbid. Both preps now call this module; it is the ``oq_tracker.py`` promotion pattern
-(one literal algorithm serving one shared contract named by two real consumers, not two
-similarly-shaped local helpers).
+exists to forbid. Every grounding reader's prep now calls this module — planner, drafter, slicer,
+requirements-gatherer, and (since 4.27.0, which retired the last prose path lists) resolver,
+evaluator, and question-resolver; it is the ``oq_tracker.py`` promotion pattern (one literal
+algorithm serving one shared contract, not several similarly-shaped local helpers).
 
 **No fallback, no walk.** When the catalogue is absent the answer is an empty set plus the
 ``DOC_CATALOGUE_ABSENT`` notice — never a built-in path list, and never a filesystem search for

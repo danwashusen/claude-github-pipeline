@@ -22,6 +22,10 @@ script may spawn are git/gh"; S8 pattern lock)::
                                                      --delete-marker-id` deletes on the replace.
     git rev-parse HEAD                            -- root's own SHA (informational; no freshness gate in
                                                      prep — the resolver writes no tracked files)
+    doc_catalogue.read_catalogue                  -- the consuming repo's `<!-- doc-catalogue -->`
+                                                     grounding docs, read at root's working tree —
+                                                     the constraint audit's doc set (filesystem only;
+                                                     no gh/git call)
 
 `gh_gather.run` exposes the S8-locked emit-through-a-stream shape; this prep passes a discard stream and
 reads the returned ``(exit, envelope)`` directly, forwarding any ``needs_decision`` verbatim (see the
@@ -76,8 +80,10 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
-import gh_gather  # noqa: E402  (import after sys.path setup, by necessity; in-process composition)
+import doc_catalogue  # noqa: E402  (import after sys.path setup, by necessity; in-process composition)
+import gh_gather  # noqa: E402
 from pipelib import process  # noqa: E402
+from pipelib.decisions import DOC_CATALOGUE_ABSENT  # noqa: E402
 from pipelib.envelope import emit_needs_decision, emit_ok  # noqa: E402
 
 # The durable decision comment (skills/_shared/open-question-links.md §Status; the sole writer is this
@@ -144,9 +150,12 @@ def _build_reentrancy(issue_envelope):
     return reentrancy
 
 
-def _build_attention(is_question, target, blocking):
+def _build_attention(is_question, target, blocking, grounding_docs=None, catalogue_absent=False):
     """Script-detectable conditions worth surfacing with evidence (architecture.md §4) — facts the
-    router acts on via its gates, not decision cards from prep."""
+    router acts on via its gates, not decision cards from prep. `grounding_docs` is `None` when the
+    catalogue was not read (a non-question issue stops before any audit), the prep_planner three-state
+    shape; an absent catalogue is attention, never a decision — the audit proceeds on the docs the
+    question itself cites (skills/_shared/doc-catalogue.md)."""
     attention = []
     if not is_question:
         attention.append(
@@ -158,6 +167,22 @@ def _build_attention(is_question, target, blocking):
             "this question natively blocks %d build issue(s): %s — name them in the decision comment's "
             "`## Unblocks`" % (len(blocking), ", ".join("#%s" % b.get("number") for b in blocking))
         )
+    if grounding_docs is not None:
+        if catalogue_absent:
+            attention.append(
+                "no doc catalogue in docs/README.md — the constraint audit checks only the docs the "
+                "question cites; run /github-pipeline:setup to declare this repo's grounding docs"
+            )
+        elif not grounding_docs:
+            attention.append(
+                "doc catalogue declares no documents — the constraint audit checks only the docs the "
+                "question cites"
+            )
+        for missing in doc_catalogue.missing_entry_paths(grounding_docs):
+            attention.append(
+                "doc catalogue names '%s', absent in this checkout — a stale entry, or a doc this "
+                "branch has not merged yet" % missing
+            )
     return attention
 
 
@@ -204,6 +229,12 @@ def build_facts(issue, repo, root=".", scratch_dir=None, cwd=None, env=None):
         if key.startswith(("issue_body", "thread", "marker_comment"))
     }
 
+    # The constraint audit's doc set — read at root's working tree, the vantage the audit reads docs
+    # at. Only for a question issue: a non-question stops at the router, so its catalogue is noise.
+    grounding_docs, catalogue_notices = (
+        doc_catalogue.read_catalogue(root) if is_question else (None, [])
+    )
+
     facts = {
         "repo": repo,
         "scratch": scratch_dir,
@@ -216,8 +247,15 @@ def build_facts(issue, repo, root=".", scratch_dir=None, cwd=None, env=None):
         "blocked_by": issue_envelope.get("blocked_by") or [],
         "deps_available": issue_envelope.get("deps_available"),
         "sections": sections,
-        "attention": _build_attention(is_question, target, blocking),
-        "notices": [],
+        "grounding_docs": grounding_docs if grounding_docs is not None else [],
+        "attention": _build_attention(
+            is_question,
+            target,
+            blocking,
+            grounding_docs,
+            DOC_CATALOGUE_ABSENT in catalogue_notices,
+        ),
+        "notices": list(catalogue_notices),
     }
     return facts
 

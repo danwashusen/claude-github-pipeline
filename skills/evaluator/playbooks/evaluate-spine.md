@@ -156,16 +156,18 @@ copy.
    only via this native relationship; a `scoped-out` question is not a gap.
 4. **Doc grounding.** Verify the diff is consistent with the project's documented constraints,
    escalating depth by the cheapest evidence available; never hard-block on a missing section alone.
-   Skip entirely for one-line bug fixes, pure doc/typo changes, and repos with no docs. If the issue
-   carries a specific `## Doc grounding` section, verify the cited PRD/architecture/constitution/
-   CLAUDE.md sections say what it claims and the diff honors them. If absent or vague, do the grounding
-   yourself against the canonical docs (`docs/prd.md`, `docs/architecture.md`, `docs/constitution.md`,
-   `CLAUDE.md`) read-if-present in the workspace — bounded to the implicated slices. Soft-reject only
-   on a **clear** documented-constraint violation (quote the section + diverging diff); soft/ambiguous
-   → flag, don't block. Also re-adjudicate any `## Follow-ups` deferral in the PR body: a filed
-   follow-up does **not** excuse an in-scope documented-constraint violation (the severity axis is
-   whether an in-scope constraint is violated, not whether a ticket exists) → soft-reject, quoting the
-   doc section and the deferred-to issue; genuinely out-of-scope/future work → note, don't block.
+   Skip entirely for one-line bug fixes, pure doc/typo changes, and a repo that declares no grounding
+   docs (`facts.grounding_docs` empty, or `DOC_CATALOGUE_ABSENT`). If the issue carries a specific
+   `## Doc grounding` section, verify the cited doc sections say what it claims and the diff honors
+   them. If absent or vague, do the grounding yourself against the repo's declared docs
+   (`facts.grounding_docs`, read under `facts.workspace.path`; a `kind: dir` entry's `members`; skip a
+   `present: false` entry) — bounded to the implicated slices. Soft-reject only on a **clear**
+   violation of a `binding` doc (quote the section + diverging diff); a tension with an `informative`
+   doc, or anything soft/ambiguous → flag, don't block. Also re-adjudicate any `## Follow-ups` deferral
+   in the PR body: a filed follow-up does **not** excuse an in-scope documented-constraint violation
+   (the severity axis is whether an in-scope constraint is violated, not whether a ticket exists) →
+   soft-reject, quoting the doc section and the deferred-to issue; genuinely out-of-scope/future work →
+   note, don't block.
 5. **Plan adherence.** With a `<!-- implementation-plan:v1 -->` plan present, check the diff against
    its **locked decisions** (`## Architecture decisions`, `## Changes`, `## Data model / schema
    impact`, `## Test plan`) in targeted slices — for a shipped phase the plan points at with `- Phases …
