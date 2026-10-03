@@ -168,6 +168,24 @@ both `Slices:` and `Grounding:` are omitted.
 **Why:** the operator declined the proposed cut at the write gate, so nothing was filed and #103 is untouched. The proposed slices are in this session's transcript; a re-run re-derives them from the same sources.
 ```
 
+**No cut — plan it multi-phase.** Story altitude, `fresh` mode only (an epic cut never ends here): the
+milestone pass left **one** milestone, and the operator chose *File nothing* at S4's no-cut card. **Zero
+GitHub writes happened**, so `Slices:` and `Grounding:` are omitted; the `Why:` names the milestone, the
+increments it folded and the sources that record them, because nothing durable carries the judgment —
+the planner's next run re-derives its own seam inventory.
+
+```
+## Handoff
+
+**Issue:** #120 — Patient: reset a forgotten password · open · story · plan: ✗
+
+**Next:** plan #120 as one issue — multi-phase, one phase per increment. If the planner's Issue-shape card fires, choose "Plan as one issue".
+
+    /github-pipeline:planner 120
+
+**Why:** #120 is one milestone — a patient who forgot their password can get back in — and docs/prd.md §4.3 records it as one outcome. Its four increments (request a reset, receive the emailed link, set a new password, the recorded expired-link behaviour) are what a stakeholder would accept together, so each is a phase of #120's plan and an item of its Definition of done, not a slice; four sub-issues would re-file the phase list. Nothing was filed and #120 is untouched.
+```
+
 **Refused — no grounding.** The one refusal that routes outside the pipeline: the remedy is a doc
 catalogue, not another stage.
 

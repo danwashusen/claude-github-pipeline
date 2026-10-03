@@ -81,10 +81,29 @@ ROUTABLE_PLAYBOOKS = {"cut.md"}
 #        nothing); the `<<pass>>` and `<<changed_summary>>` inputs the reviewer prompt defines and
 #        hangs behaviour on but nothing filled; the S4 gate row and S5 step for the bookend note.
 #
+# RE-ADJUDICATED by the milestone-slices change (278 -> 288). Operators found story-altitude cuts
+# filing one slice per demonstrable increment — a phase list re-filed as issues — where one multi-phase
+# plan would do. The method now makes a slice earn its issue as a milestone (slicing-method.md §4.1),
+# which needs an exit the flow did not have: a cut that leaves one milestone files NOTHING.
+#
+#   +3   cut.md S2: the milestone pass at story altitude and the no-cut branch (skip S3 — there is
+#        nothing to review).
+#   +1   cut.md S3: a reviewer `milestone` finding that folds the whole cut, once adopted, is a no cut.
+#   +6   cut.md S4: the no-cut card — the operator asked for slices (here, or at the planner's "Slice
+#        first"), so overriding that is a genuine decision with its own two options, not a silent
+#        downgrade, and it must say it skips the summary table and the write gate.
+#
+# The S6 forward-route clause was absorbed by re-wrapping; the router's was a same-line edit (126).
+#
+#   +2   cut.md S4, from the PR #69 review (278 -> 290 in all): *Cut anyway* re-runs S2 with the
+#        operator's milestones as FIXED inputs, never re-folded by the milestone pass or the reviewer.
+#        Without it the no-cut card could loop: the same pass that proposed the no cut would fold the
+#        operator's answer straight back into another one.
+#
 # Trimming any of it would restore a defect, which is precisely what prd.md §10's provision and the
 # S19 precedent forbid. The router still fits one default Read (126 <= 150) — the bar that actually
 # protects session startup; the growth is in the playbook, loaded only on the routed path.
-SLICER_BAR = 278
+SLICER_BAR = 290
 
 sys.path.insert(0, str(SCRIPTS_DIR))
 
@@ -469,7 +488,10 @@ class MethodReferenceTests(unittest.TestCase):
 
     def test_tier_1_ticking_and_the_tier_2_trigger_with_its_diagnosis(self):
         self.assertRegex(self.method, r"ticks \*\*all\*\* of a slice's criteria")
-        self.assertRegex(self.method, r"cut is too thick")
+        # The diagnosis flipped with milestone slices: a multi-phase slice is the expected shape, so
+        # the old "check whether the cut is too thick" advice would push back toward thin slices.
+        self.assertRegex(_normalized(self.method), r"never for cutting thinner slices")
+        self.assertNotRegex(self.method, r"cut is too thick")
 
     def test_citation_duty_is_stated(self):
         self.assertRegex(self.method, r"[Cc]itation duty")
@@ -478,6 +500,73 @@ class MethodReferenceTests(unittest.TestCase):
     def test_the_four_named_non_slices_are_listed(self):
         for phrase in ("database tables", "API endpoints", "the UI", "background job"):
             self.assertIn(phrase, self.method, phrase)
+
+
+class MilestoneSliceTests(unittest.TestCase):
+    """Story-altitude cuts filed one slice per demonstrable increment — the parent plan's phase list
+    re-filed as issues. A slice now earns its issue as a milestone (slicing-method.md §4.1), and a cut
+    that leaves one milestone files nothing. These pin the rule, its exit, and the reviewer signal, so a
+    later editor cannot quietly restore the increment-sized cut."""
+
+    def setUp(self):
+        self.method = _normalized((REFERENCES_DIR / "slicing-method.md").read_text(encoding="utf-8"))
+        self.method_raw = (REFERENCES_DIR / "slicing-method.md").read_text(encoding="utf-8")
+        self.playbook = _normalized((PLAYBOOKS_DIR / "cut.md").read_text(encoding="utf-8"))
+        self.reviewer = _normalized(
+            (REFERENCES_DIR / "cut-reviewer-prompt.md").read_text(encoding="utf-8")
+        )
+        self.renderings = (REFERENCES_DIR / "handoff-renderings.md").read_text(encoding="utf-8")
+        self.handoff = _normalized((SHARED / "handoff-format.md").read_text(encoding="utf-8"))
+
+    def test_the_method_makes_a_slice_earn_its_issue_over_a_phase(self):
+        self.assertIn("### 4.1 What earns a slice (story altitude only)", self.method_raw)
+        self.assertIn("The alternative is a phase.", self.method)
+        self.assertIn(
+            "Would a stakeholder watching the board care that this closed, apart from its neighbours?",
+            self.method,
+        )
+        self.assertIn("The milestone pass.", self.method)
+        self.assertIn("A slice per increment", self.method)
+
+    def test_no_count_target_is_set(self):
+        """A sub-cap number is read as a target (the planner's #959); the count is the outcomes."""
+        self.assertIn("There is no target count", self.method)
+        self.assertNotIn("A handful is usually right", self.method)
+
+    def test_no_cut_is_a_legitimate_outcome_scoped_to_a_fresh_story_cut(self):
+        self.assertIn("No cut is a legitimate outcome.", self.method)
+        self.assertRegex(self.method, r"applies to a `fresh` cut only")
+
+    def test_the_playbook_routes_the_no_cut_past_the_reviewer_and_the_write_gate(self):
+        self.assertIn("milestone pass (method §4.1)", self.playbook)
+        self.assertRegex(self.playbook, r"skip S3 \(nothing to review\)")
+        self.assertIn("A no cut skips the table and the write gate", self.playbook)
+        self.assertIn("File nothing — plan multi-phase", self.playbook)
+        self.assertIn("Cut anyway", self.playbook)
+        self.assertIn("No cut — plan it multi-phase", self.playbook)
+
+    def test_the_no_cut_shape_files_nothing_and_routes_to_the_planner(self):
+        self.assertIn("**No cut — plan it multi-phase.**", self.renderings)
+        block = self.renderings.split("**No cut — plan it multi-phase.**", 1)[1]
+        fence = block.split("```", 2)[1]
+        self.assertIn("**Issue:**", fence)
+        self.assertNotIn("**Slices:**", fence)
+        self.assertNotIn("**Grounding:**", fence)
+        self.assertIn("/github-pipeline:planner", fence)
+
+    def test_cut_anyway_milestones_are_fixed_inputs_so_the_no_cut_card_cannot_loop(self):
+        self.assertIn("re-runs with them as fixed inputs", self.playbook)
+        self.assertIn("the milestone pass never folds them", self.playbook)
+        self.assertIn("operator-named", self.playbook)
+        self.assertRegex(self.reviewer, r"Never recommend merging two `operator-named` children")
+
+    def test_the_reviewer_carries_the_milestone_signal(self):
+        self.assertIn("One milestone → recommend MERGE", self.reviewer)
+        self.assertIn("recommend no cut", self.reviewer)
+        self.assertRegex(self.reviewer, r"Signal: <1 \| 2 \| 3 \| milestone \|")
+
+    def test_the_shared_schema_lists_no_cut_among_the_exits_that_file_nothing(self):
+        self.assertIn("declined write gate, no cut, any refusal", self.handoff)
 
 
 class HandoffRenderingTests(unittest.TestCase):
@@ -654,7 +743,8 @@ class SharedContractTests(unittest.TestCase):
         self.assertRegex(self.handoff, r"slicer → setup")
 
     def test_hierarchy_defines_the_slice_and_its_bar(self):
-        self.assertRegex(self.hierarchy, r"deliverable slice\*\* is the smallest increment")
+        self.assertRegex(self.hierarchy, r"deliverable slice\*\* is a milestone")
+        self.assertRegex(_normalized(self.hierarchy), r"a phase list re-filed as issues")
         self.assertRegex(self.hierarchy, r"independently \*\*demonstrable\*\*")
         self.assertRegex(self.hierarchy, r"A slice is never itself sliced")
 

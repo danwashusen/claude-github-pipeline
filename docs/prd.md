@@ -171,11 +171,16 @@ ground these are produced by implementation step S1. Lettered items are individu
     issue cuts into **deliverable slices** (*demonstrable*), an epic cuts into **stories**
     (*shippable*). The bar is stated once, in the method reference; the flow reads it as
     `vector.altitude` rather than forking.
-  - (b) Reachable two ways: operator invocation, and a planner re-route when the seam gate's shape
-    triage finds the issue too large to plan as one unit — with *demonstrable*-independent seams it
-    cuts slices, and with *shippable*-independent seams it promotes the issue to an Epic and cuts
-    stories (both of the gate's off-ramps land here since #16). It hands back to the planner, whose
-    phases then map onto the slices (`sub-issue:`).
+  - (b) Reachable two ways: operator invocation, and a planner re-route from the seam gate's shape
+    triage — with two or more *demonstrable*-independent milestones, when the operator chooses
+    "Slice first" over the recommended multi-phase plan, it cuts slices; with *shippable*-independent
+    seams it promotes the issue to an Epic and cuts stories (both of the gate's off-ramps land here
+    since #16). It hands back to the planner, whose phases then map onto the slices (`sub-issue:`).
+  - (b1) **A slice is a milestone, not an increment.** Every increment becomes a phase of the parent's
+    plan whether or not it is sliced, so a slice must earn its issue by what only an issue buys: a
+    milestone a stakeholder tracks on the board, with its own acceptance criteria. A story-altitude
+    cut that leaves one milestone files **nothing** (the *no cut* exit, behind its own operator card)
+    and hands back for a multi-phase plan.
   - (b2) **Promotion.** On the epic-shaped off-ramp it rewrites the target's body as an Epic, rewrites
     its title to carry the `Epic:` prefix (classification is lexical, so a promotion that skipped the
     title would leave the target reading as a non-epic), and swaps
@@ -186,7 +191,7 @@ ground these are produced by implementation step S1. Lettered items are individu
     each candidate's live state — and never silently moving an issue out of another parent.
   - (b4) **Adversarially reviewed before the operator sees it.** A context-blind cut reviewer (§8)
     holds the ordering and sizing judgment for both altitudes, including the bookend-slot check at
-    epic altitude; findings resolve under a pass cap and a circular guard. This is the judgment that
+    epic altitude and the one-milestone merge (or no-cut) signal at story altitude; findings resolve under a pass cap and a circular guard. This is the judgment that
     previously lived as dimensions 5 and 7 of the drafter's issue reviewer.
   - (c) **Grounding gate.** Refuses to decompose without adequate grounding, and every slice cites
     what it derives from. Grounding sources are the consuming repo's own declaration (the
@@ -197,9 +202,10 @@ ground these are produced by implementation step S1. Lettered items are individu
   - (e) **Resume, don't duplicate.** Re-running against a partially-sliced issue detects the existing
     slices and cuts only the remainder.
   - (f) The **cut** never edits the parent issue's body. Child detail lives only in child bodies; no
-    `## Slices` section is written. Exactly two parent-body writes are sanctioned, each behind its own
-    explicit gate and never as a side effect of filing: the promotion rewrite (b2), and reconciling a
-    legacy `## Stories` checklist on an epic that has no native relation for those entries.
+    `## Slices` section is written. Exactly three parent-body writes are sanctioned, each behind its own
+    explicit gate and never as a side effect of filing: the promotion rewrite (b2), reconciling a
+    legacy `## Stories` checklist on an epic that has no native relation for those entries, and the
+    `## Background` note recording an omitted bookend story and its reason.
   - (g) Refuses, with a reason, on a target that is itself a slice (**never slice a slice**), is a
     `question`, is closed, or is blocked by an open native blocker or an `in-scope (blocked)` open
     question read from live state. An **epic is not refused** since #16 — it is the epic-altitude

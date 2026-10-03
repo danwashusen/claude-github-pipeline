@@ -58,15 +58,18 @@ what the walking skeleton is, what is deliberately deferred. It stays in this se
 parent-side would create a second source of truth about the child set, and each child's own rationale
 section reconstructs the reasoning.
 
-Cut per the method reference **at `facts.vector.altitude`**: walking skeleton first; each subsequent
-child adds exactly one observable increment; every child clears its bar in one sentence; prefer few,
-thick-enough children. At epic altitude also apply the coalescing pass and the two bookend slots (method
-§5) — an omitted bookend is recorded with its reason in the epic body's `## Background` (an approved S4
-row, never a silent write and never a silent omission). On `mode: resume` treat `facts.children` as fixed
-— already approved, possibly already shipped — and cut only the remainder, numbering from
-`facts.children.next_index` at story altitude. `facts.children.placeholder_count` entries are the
-exception: a legacy `## Stories` bullet with no issue number names a story nobody has **filed**, so it is
-part of what this cut files, not part of what it treats as done.
+Cut per the method reference **at `facts.vector.altitude`**: walking skeleton first; each subsequent child
+adds exactly one observable increment (a milestone at story altitude); every child clears its bar in one
+sentence; prefer few, thick-enough children. At story altitude also apply the milestone pass (method §4.1)
+— a slice is a milestone a stakeholder tracks, never an increment the parent's phases already sequence —
+and if a `fresh` cut leaves **one** milestone the proposal is a **no cut**: skip S3 (nothing to review)
+and take S4's no-cut card. At epic altitude also apply the coalescing pass and the two bookend slots
+(method §5) — an omitted bookend is recorded with its reason in the epic body's `## Background` (an
+approved S4 row, never a silent write and never a silent omission). On `mode: resume` treat
+`facts.children` as fixed — already approved, possibly already shipped — and cut only the remainder,
+numbering from `facts.children.next_index` at story altitude. `facts.children.placeholder_count` entries
+are the exception: a legacy `## Stories` bullet with no issue number names a story nobody has **filed**,
+so it is part of what this cut files, not part of what it treats as done.
 
 Include any `facts.adoption_candidates` as candidate children, marked as adoptions with their live state;
 adopt an existing issue *instead of* filing a new child whose scope it already covers, never both. For a
@@ -91,7 +94,8 @@ its own prior findings instead of re-reading the whole cut.
 
 Apply the merges, splits and re-orders the findings justify; contest one you can refute with evidence and
 say so. Re-loop under SKILL.md §3's control (3-pass cap, circular guard). A BLOCKER you neither fix nor
-refute goes to the operator in S4's closing note — never silently past it.
+refute goes to the operator in S4's closing note — never silently past it. A `milestone` finding that
+folds the whole cut into one slice, once adopted, makes it a no cut.
 
 ## S4 — Present, iterate, and the write gate
 
@@ -109,6 +113,14 @@ bookend-omission `## Background` note) — and **one** explicit `AskUserQuestion
 [`../../_shared/asking-the-user.md`](../../_shared/asking-the-user.md)). Aborting here costs nothing; on
 decline perform no writes and emit the *Declined at the write gate* shape (the proposed cut is in the
 transcript; a re-run re-derives it).
+
+**A no cut skips the table and the write gate** — nothing would be written. Show the grounding summary,
+the strategy, and the one milestone with why each increment is a phase of it (method §9), then ask
+**one** `AskUserQuestion`. *File nothing — plan multi-phase* (recommended) writes nothing and emits the
+*No cut — plan it multi-phase* shape. *Cut anyway* has the operator name the milestones to track, and S2
+re-runs with them as **fixed inputs**: the milestone pass never folds them, they reach the reviewer marked
+`operator-named`, and you contest any finding that re-folds them, citing the operator's answer. A genuine
+decision: the operator asked for slices, here or at the planner's "Slice first".
 
 ## S5 — File the approved children
 
@@ -147,6 +159,6 @@ so prose-linked children are worse than none: they read as tracked progress that
 Emit the matching shape from [`../references/handoff-renderings.md`](../references/handoff-renderings.md)
 verbatim, per SKILL.md §4. The forward route is the planner: its phases must map onto the children just
 filed (`sub-issue:` in [`../../planner/references/plan-schema.md`](../../planner/references/plan-schema.md)),
-and its reconciliation reads the live set — so a plan authored before this cut is now stale. At epic
-altitude the planner posts the epic-level plan (cross-story contracts + sequencing) and each story is
-then planned just-in-time as it is built.
+and its reconciliation reads the live set — so a plan authored before this cut is now stale (after a no
+cut there is no set: the planner plans #N multi-phase). At epic altitude the planner posts the
+epic-level plan (cross-story contracts + sequencing) and each story is then planned just-in-time.

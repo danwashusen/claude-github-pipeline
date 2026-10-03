@@ -26,7 +26,8 @@ job is to attack the cut — find the strongest case it is *wrong* — and repor
   the only thing that differs between the two reviews:
   - `story` — children are **deliverable slices**. Bar: independently **demonstrable** (someone can
     show the new behaviour). A slice has no branch of its own; the resolver ships it as a phase on the
-    parent's branch.
+    parent's branch — so every increment becomes a phase anyway, and a slice must also be a
+    **milestone** a stakeholder tracks on its own (the `milestone` signal under sizing).
   - `epic` — children are **stories**. Bar: independently **shippable** (each gets its own branch, PR,
     review and merge).
 - **Parent**
@@ -45,7 +46,8 @@ job is to attack the cut — find the strongest case it is *wrong* — and repor
   slots carry slot-level scopes instead). On the **re-confirm pass** each entry carries the title plus
   the full proposed body, because a body can reveal a child is bigger or smaller than its one-line scope
   claimed. Adoption candidates (already-filed issues being adopted rather than created) are marked as
-  such with their live state.
+  such with their live state. Children marked `operator-named` are milestones the operator named after
+  declining a no cut: they are fixed inputs, not candidates (see the `milestone` signal).
 - **Existing children**: `<<existing_children>>` — on a resume, the children that already exist. Treat
   them as **fixed**: they are approved and possibly already shipped. Review only how the proposed
   remainder interacts with them (ordering against them, overlap with them), never whether they should
@@ -93,9 +95,11 @@ on the bar:
 - At `epic` altitude each child pays for its own worktree (and any per-worktree resources — simulator,
   test DB, port), baseline, cold build or app boot, targeted test run, and review-loop round-trip, so a
   child that is too thin spends more on overhead than on work.
-- At `story` altitude the cost is different but real: a thin child's one-sentence demonstration stops
-  being interesting, and a rollup of fifteen children is noise rather than a progress signal — which
-  defeats the reason the children are issues at all.
+- At `story` altitude the alternative to a slice is a **phase** in the parent's own multi-phase plan,
+  which sequences the same increments with no issue at all. A slice buys only a board milestone and a
+  home for its acceptance criteria, so one that is an increment rather than a milestone is pure cost: a
+  thin child's one-sentence demonstration stops being interesting, and a rollup of fifteen children is
+  noise rather than a progress signal — which defeats the reason the children are issues at all.
 
 **Too granular → recommend MERGE** when any of these fire for a pair (or cluster):
 
@@ -107,11 +111,24 @@ on the bar:
 3. *Same files or layer, individually thin* — several small edits to the same files/layer a reviewer
    would naturally read as one change.
 
+**One milestone → recommend MERGE** (signal `milestone`, `story` altitude only): the children are
+increments a stakeholder would accept as one outcome — a first-use path and its returning path, a happy
+path and its recorded failure behaviour, a variant of a sibling's behaviour, a walking skeleton nobody
+would sign off alone. Remediation: one slice carrying their criteria, its increments sequenced as the
+parent plan's phases. When the **whole** cut is one milestone, recommend **no cut** — file nothing; the
+parent's multi-phase plan carries the increments and its Definition of done carries the criteria. That
+applies to a fresh cut only (`<<existing_children>>` empty): on a resume the remainder may legitimately
+be one new slice beside the fixed ones. Never recommend merging two `operator-named` children, or no cut
+when any child is `operator-named` — the operator already rejected that fold, so the finding would only
+re-ask a decision they made.
+
 **Over-coalesced → recommend SPLIT** (the guardrail): a child bundles increments that each have
 independent value, a clean contract, *and* a cheaper isolated test surface — the clearest case being
 distinct pure-function or model layers covered by fast unit tests with no build/UI/snapshot cost. Thin
 alone is not mergeable; a small increment introducing a real contract worth reviewing on its own (a
-schema field, a new public type with its own suite) earns its own child.
+schema field, a new public type with its own suite) earns its own child. At `story` altitude the
+guardrail is the milestone itself: a slice bundling outcomes a stakeholder tracks separately ("can log
+in", "can complete intake") hides progress the board exists to show.
 
 **Horizontal cut** — a child whose title or scope names a layer ("the API endpoints", "the migrations",
 "the UI") rather than a behaviour clears neither bar: nothing is demonstrable or shippable when it
@@ -144,8 +161,10 @@ On the split pass you are reasoning from scope descriptors (files / layer / test
 bodies, so **ground every overlap claim by grepping the codebase**: confirm two children really touch
 the same files or the same test target before recommending a merge. A merge/split recommendation
 without a grepped overlap is a dropped finding (see "Evidence is mandatory"). Name the signal (1/2/3,
-guardrail, horizontal, bookend, or adoption) in each finding. The bookend structural checks are the one
-exception to the grep rule: their evidence is the parent body and the child list.
+milestone, guardrail, horizontal, bookend, or adoption) in each finding. Two checks are exceptions to
+the grep rule, because their evidence is not code: the bookend structural checks (the parent body and
+the child list), and `milestone` (the quoted outcomes the parent body and grounding docs record — what
+a stakeholder would accept together).
 
 ### conformance
 
@@ -206,11 +225,11 @@ Findings: <BLOCKER count> blocker, <SUGGESTION count> suggestion, <NIT count> ni
 ### Finding 1
 - Severity: BLOCKER | SUGGESTION | NIT
 - Dimension: <ordering | sizing | conformance>
-- Signal: <1 | 2 | 3 | guardrail | horizontal | bookend | adoption | cycle | n/a>
+- Signal: <1 | 2 | 3 | milestone | guardrail | horizontal | bookend | adoption | cycle | n/a>
 - Children: <the child titles or designators this concerns>
 - Evidence: <quote, or `path/to/file.ext:line-range`, or `<doc> § <heading>`>
 - What's wrong: <one or two sentences>
-- Remediation: <the concrete change: merge these two, swap this order, add this section>
+- Remediation: <the concrete change: merge these two, swap this order, add this section, no cut>
 
 ### Finding 2
 ...

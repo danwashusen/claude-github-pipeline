@@ -10,7 +10,7 @@ This file is the single source of truth for how the relation is written and read
 epic ──parent-of──▶ story ──parent-of──▶ deliverable slice
 ```
 
-A **deliverable slice** is the smallest increment of actor- or business-visible behaviour that could be demonstrated on its own — vertical through whatever layers it needs. "Build the tables" and "add the endpoints" are *tasks inside* a slice, never slices.
+A **deliverable slice** is a milestone of actor- or business-visible behaviour — a coherent outcome a stakeholder would accept and track on its own, demonstrable without a branch of its own — vertical through whatever layers it needs. The increments that build toward it are its parent plan's *phases*, and a slice is usually served by several; one slice per increment is a phase list re-filed as issues. "Build the tables" and "add the endpoints" are *tasks inside* a slice, never slices.
 
 A slice differs from a story in exactly **one** parameter, and that parameter is set by one fact — *does the child get its own branch and PR?*
 

@@ -14,9 +14,12 @@ Each stage runs in its own Claude Code session and ends with a copy-pasteable `#
 that starts the next one, so context stays clean across the pipeline. That's the conceptual order —
 in practice the drafter hands to the **planner**, and research is a detour the planner takes only
 when the work turns on external truth it shouldn't guess at: it routes you to the researcher, which
-posts a cited dossier and hands back to the planner. Slicing is the same kind of detour — take it when
-one issue holds several increments you'd want to demonstrate separately; the slicer files them as
-sub-issues so GitHub's rollup tracks delivery, and hands back to the planner.
+posts a cited dossier and hands back to the planner. Slicing is the same kind of detour, and an
+optional one: the planner sequences an issue's increments as phases of one multi-phase plan by default,
+and offers slicing when the issue holds several milestones you'd want to track separately on a board.
+The slicer files each milestone as a sub-issue carrying its own acceptance criteria, so GitHub's rollup
+tracks delivery — or files nothing when the issue is really one milestone — and hands back to the
+planner.
 
 ## The pipeline
 
@@ -24,7 +27,7 @@ sub-issues so GitHub's rollup tracks delivery, and hands back to the planner.
 |---|---|
 | `/github-pipeline:drafter` | Turns informal feedback into **one** well-structured issue — bug, feature, story, Epic or `question` — and files it. Never silently absorbs an unresolved open question: each is matched against the `question`-issue registry, filed if untracked, and recorded on the build issue. Decomposition is the slicer's, so a filed Epic hands off there for its stories. |
 | `/github-pipeline:researcher` | Web-researches version/API/migration questions and posts a dated, cited dossier on the issue — or declines outright when the issue carries no currency risk. |
-| `/github-pipeline:slicer` | Cuts one issue into ordered, operator-approved children and files them as native sub-issues, so the parent's own progress rollup tracks delivery. One operation at two altitudes: a story or standalone issue becomes **deliverable slices** (the smallest increments you could demonstrate on their own), an Epic becomes **stories** (each independently shippable, with its own branch and PR). It can also promote an issue to an Epic before cutting it, and draw an Epic around issues that already exist. Report-then-apply: nothing is written until you confirm the whole cut, and it refuses rather than guessing when your repo declares no grounding docs. |
+| `/github-pipeline:slicer` | Cuts one issue into ordered, operator-approved children and files them as native sub-issues, so the parent's own progress rollup tracks delivery. One operation at two altitudes: a story or standalone issue becomes **deliverable slices** (milestones a stakeholder would track on their own, each served by one or more plan phases — or no slices at all, when the issue is one milestone), an Epic becomes **stories** (each independently shippable, with its own branch and PR). It can also promote an issue to an Epic before cutting it, and draw an Epic around issues that already exist. Report-then-apply: nothing is written until you confirm the whole cut, and it refuses rather than guessing when your repo declares no grounding docs. |
 | `/github-pipeline:planner` | Designs the implementation approach, grounded in repo precedent + project docs at a recorded commit SHA, and posts a reviewed `<!-- implementation-plan:v1 -->` comment. Epic plans pin cross-story contracts; story plans are authored just-in-time. |
 | `/github-pipeline:resolver` | Implements one issue against its verified plan **in the worktree you opened with `workspace-open`** (the session starts inside it and is verified there), opens/continues a PR, projects Definition-of-done ticks as phases ship, and loops with code review while it keeps removing defects — reviewing each non-final phase's own delta against the plan, and the whole diff in depth on the final phase; polish it doesn't fix is recorded on the PR for the evaluator to decide. |
 | `/github-pipeline:evaluator` | Evaluates a PR against its origin issue (in the PR's own worktree, verified at exactly the PR head), gates on branch health (CI plus your declared checks, cached per head SHA), posts a formal approve/soft-reject review, asks you what to do with the PR's recorded polish (apply before merge, re-plan, file as grouped follow-ups, or drop — its proposal recommended), merges per your configured policy, and hands you the `workspace-close` command. |
