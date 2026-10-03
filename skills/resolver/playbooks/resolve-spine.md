@@ -62,13 +62,14 @@ the summary on what it revises — the evaluator's review and the ledger's `appl
 
 ## S2 — Fitness-to-implement audit (fresh start only)
 
-Skip this section entirely in `continue` mode. On a fresh implementation start, dispatch the **fitness
-audit** `Explore` sub-agent per [`../references/issue-audit-prompt.md`](../references/issue-audit-prompt.md).
-It reads code and docs from the **read workspace** (`facts.read_workspaces.audit.path`, a detached
-checkout at the audit ref — never a raw ref, never the root cwd) and the issue/siblings/plan it
-self-fetches; it returns `## Audit summary` + `## Findings` (each BLOCKER/SUGGESTION/NIT with
-evidence). Which dimensions run: 1–4 + 6 always; 5 (cross-issue contract drift) for a story under an
-open epic or an epic-as-target; 7 (plan-vs-code currency) only when a plan exists. Print the summary.
+Skip this section entirely in `continue` mode. On a fresh implementation start, dispatch the **fitness audit**
+`Explore` sub-agent per [`../references/issue-audit-prompt.md`](../references/issue-audit-prompt.md). It reads code
+and docs from the **audit view** (`facts.grounding_path` as `<<audit_workspace_path>>` — the detached read
+workspace when prep ensured one, else the work worktree; never a raw ref, never the root cwd), the repo's declared
+docs (`facts.grounding_docs` as `<<catalogue_entries>>`, each `kind: dir` entry's `members` listed under it), and
+the issue/siblings/plan it self-fetches; it returns `## Audit summary` + `## Findings` (each BLOCKER/SUGGESTION/NIT
+with evidence). Which dimensions run: 1–4 + 6 always; 5 (cross-issue contract drift) for a story under an open epic
+or an epic-as-target; 7 (plan-vs-code currency) only when a plan exists. Print the summary.
 
 Fill `<<related_issues>>` from the native parent/sub-issue relation in the facts block —
 `facts.target.sub_issues` for an epic target, `facts.target.parent` plus that epic's `sub_issues` for a
@@ -95,10 +96,11 @@ reason** (record `Audit override: <reason>` for the PR body's `## Audit override
   `/github-pipeline:planner #<N>`, or reply `proceed without a plan`. On the override, record
   `Plan override: <reason>` for the PR body's `## Plan override` section. Trivial fixes are exempt.
 
-**Doc grounding.** Use the distiller's lifted `## Doc grounding` citations (plan-present path). With no
-plan, ground the implementation yourself against the docs in the **read workspace** — `docs/prd.md`,
-`docs/architecture.md`, `docs/constitution.md`, `CLAUDE.md` read-if-present, bounded to the implicated
-slices — and stage a `## Doc grounding` section for the PR body. On a **clear** doc conflict the body
+**Doc grounding.** Use the distiller's lifted `## Doc grounding` citations (plan-present path). With no plan,
+ground the implementation yourself against the repo's declared docs (`facts.grounding_docs`, read under
+`facts.grounding_path`; a `kind: dir` entry's `members`; skip a `present: false` entry; none, or
+`DOC_CATALOGUE_ABSENT`, is said so in the section — never a guessed path), bounded to the implicated slices,
+and stage a `## Doc grounding` section for the PR body. On a **clear** conflict with a `binding` doc the body
 can't be reconciled against, gate (`header: "Doc conflict"`): **Update the doc** / **Reshape issue**
 (re-route to the drafter) / **Override with reason**.
 

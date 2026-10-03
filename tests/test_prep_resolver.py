@@ -42,6 +42,7 @@ from tests.support import envelope_asserts, gitsandbox, shimenv  # noqa: E402
 
 
 def _write(path, text):
+    Path(path).parent.mkdir(parents=True, exist_ok=True)
     with open(path, "w", encoding="utf-8", newline="") as fh:
         fh.write(text)
 
@@ -65,6 +66,16 @@ def _parse_one_envelope(stdout_text):
     return json.loads(lines[0])
 
 
+# The doc catalogue every sandbox starts configured with (skills/_shared/doc-catalogue.md) — one
+# entry naming a document setUp also creates, so a baseline run reports one present grounding doc,
+# no notice, and no attention line.
+SEEDED_CATALOGUE_INTERIOR = "- `docs/prd.md` — prd — binding — What the product is.\n"
+
+
+def _catalogue_block(interior):
+    return "<!-- doc-catalogue -->\n%s<!-- /doc-catalogue -->\n" % interior
+
+
 class PrepResolverSandboxTestCase(unittest.TestCase):
     """Shared setup: a real temp git origin+clone (the `--root`), pre-seeded with `.gitignore`
     (mirroring tests/test_prep_evaluator.py's identical rationale: an unseeded first `ensure`
@@ -77,8 +88,13 @@ class PrepResolverSandboxTestCase(unittest.TestCase):
         self.addCleanup(self.clone.cleanup)
         self.root = self.clone.path
         _write(self.root / ".gitignore", ".worktrees/\n")
-        _git(["add", ".gitignore"], self.root)
-        _git(["commit", "-m", "seed gitignore"], self.root)
+        # A configured consuming repo: a doc catalogue naming one document that exists (the
+        # test_prep_planner seed), so the grounding read is neutral for every test not about it —
+        # without it each run's `attention` carries the catalogue-absent line.
+        _write(self.root / "docs" / "README.md", _catalogue_block(SEEDED_CATALOGUE_INTERIOR))
+        _write(self.root / "docs" / "prd.md", "# PRD\n")
+        _git(["add", ".gitignore", "docs"], self.root)
+        _git(["commit", "-m", "seed gitignore + doc catalogue"], self.root)
         _git(["push", "origin", "HEAD:main"], self.root)
         self._tmp_ctx = tempfile.TemporaryDirectory()
         self.scratch = self._tmp_ctx.name
@@ -695,6 +711,92 @@ class StoryParentEpicSearchTests(PrepResolverSandboxTestCase):
         self.assertEqual(envelope["audit_ref"], "epic/100-sandbox-fixture")
         self.assertEqual(envelope["suggested_playbook"], "story.md")
         self.assertIn("read_workspaces", envelope)
+
+
+class GroundingDocsTests(PrepResolverSandboxTestCase):
+    """The consuming repo's doc catalogue (skills/_shared/doc-catalogue.md), read at the AUDIT view and
+    emitted with that vantage as `grounding_path` — the fitness audit's and S3 doc grounding's doc set,
+    which until 4.27.0 was a hardcoded `docs/prd.md` / `docs/architecture.md` / … list."""
+
+    ambient_default = "100-fix-the-widget"
+    # Borrowed (not inherited, which would re-run that class's tests) for the time-stamped gated row.
+    _stamped_active_fixture = PriorPrRowTests._stamped_active_fixture
+
+    def _remove_catalogue(self):
+        (self.root / "docs" / "README.md").unlink()
+        _git(["add", "-A"], self.root)
+        _git(["commit", "-m", "remove doc catalogue"], self.root)
+        _git(["push", "origin", "HEAD:main"], self.root)
+
+    def test_standard_route_reads_the_catalogue_at_the_work_workspace(self):
+        """No read workspace on the standard route (audit_ref == main), so the worktree IS the audit
+        view — and `grounding_path` names it, so nothing has to infer that."""
+        envelope = self._envelope()
+        self.assertNotIn("read_workspaces", envelope)
+        self.assertEqual(envelope["grounding_path"], envelope["workspace"]["path"])
+        (entry,) = envelope["grounding_docs"]
+        self.assertEqual(entry["path"], "docs/prd.md")
+        self.assertTrue(entry["present"])
+        self.assertEqual(entry["abs_path"], str(Path(envelope["grounding_path"]) / "docs/prd.md"))
+        self.assertEqual(envelope["attention"], [])
+
+    def test_story_route_reads_the_catalogue_at_the_audit_read_workspace(self):
+        _git(["fetch", "origin"], self.root)
+        _git(["branch", "epic/100-sandbox-fixture", "origin/main"], self.root)
+        _git(["push", "origin", "epic/100-sandbox-fixture"], self.root)
+        envelope = self._envelope(
+            issue="101", fixture_case="prep_resolver_story_parent_search", ambient="101-story-work"
+        )
+        self.assertEqual(envelope["grounding_path"], envelope["read_workspaces"]["audit"]["path"])
+        self.assertTrue(envelope["grounding_docs"][0]["present"])
+
+    def test_absent_catalogue_is_an_attention_line_and_a_notice_never_a_decision(self):
+        self._remove_catalogue()
+        envelope = self._envelope()
+        self.assertEqual(envelope["status"], "ok")
+        self.assertEqual(envelope["grounding_docs"], [])
+        self.assertIn("DOC_CATALOGUE_ABSENT", envelope["notices"])
+        self.assertTrue(
+            any("no doc catalogue at the audit ref" in item for item in envelope["attention"]),
+            envelope["attention"],
+        )
+
+    def test_declared_but_missing_doc_names_its_path(self):
+        _write(
+            self.root / "docs" / "README.md",
+            _catalogue_block(
+                SEEDED_CATALOGUE_INTERIOR
+                + "- `docs/ui-design.md` — ui-design — binding — Not committed here.\n"
+            ),
+        )
+        _git(["add", "-A"], self.root)
+        _git(["commit", "-m", "catalogue names a missing doc"], self.root)
+        _git(["push", "origin", "HEAD:main"], self.root)
+        envelope = self._envelope()
+        self.assertTrue(
+            any("docs/ui-design.md" in item for item in envelope["attention"]), envelope["attention"]
+        )
+
+    def test_gated_row_reads_no_catalogue(self):
+        """A gated row grounds nothing, so it reads nothing: an absent catalogue must not surface as
+        attention on a run that will never audit."""
+        self._remove_catalogue()
+        envelope = self._envelope(
+            fixtures_dir=self._stamped_active_fixture("prep_resolver_row_draft_other_author"),
+            ambient=None,
+        )
+        self.assertEqual(envelope["vector"]["mode"], "gated")
+        self.assertIsNone(envelope["grounding_path"])
+        self.assertEqual(envelope["grounding_docs"], [])
+        self.assertNotIn("DOC_CATALOGUE_ABSENT", envelope["notices"])
+        self.assertEqual([item for item in envelope["attention"] if "catalogue" in item], [])
+
+    def test_refresh_reads_no_catalogue(self):
+        self._remove_catalogue()
+        envelope = self._envelope(extra_args=["--refresh"], ambient=None)
+        self.assertEqual(envelope["grounding_docs"], [])
+        self.assertNotIn("DOC_CATALOGUE_ABSENT", envelope["notices"])
+        self.assertEqual([item for item in envelope["attention"] if "catalogue" in item], [])
 
 
 class UntypedSubIssueTests(PrepResolverSandboxTestCase):

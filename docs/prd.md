@@ -272,7 +272,7 @@ an artifact written by a v1 skill is consumed correctly by its v2 counterpart, a
 | `question`-issue body schema + `audience:*` labels | question issues |
 | `## Handoff` schema + closed-set state markers | session output |
 | Config marker blocks (`issue-resolver-*`, `pr-evaluator-*`, `drafter-open-question-markers`, `worktree-setup`/`-teardown`, `claude-code-stack-profile`) | consuming repo `CLAUDE.md`/`COMMANDS.md` |
-| `<!-- doc-catalogue -->` grounding-doc declaration (setup-written, planner/drafter-read) | consuming repo `docs/README.md` |
+| `<!-- doc-catalogue -->` grounding-doc declaration (setup-written; read by every stage that grounds on docs) | consuming repo `docs/README.md` |
 | Deliverable-slice sub-issue body + `<parent#>/S<K>` title convention (slicer-written) | slice issues |
 | `epic/<N>-<slug>` integration-branch naming | consuming repo branches |
 

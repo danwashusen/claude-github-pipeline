@@ -475,15 +475,20 @@ the *consuming* repo provides — not by plugin config:
   presence was `is_file()`, so a directory read as missing and the planner/slicer skipped binding docs;
   listing a declared directory one level is not the filesystem walk the absent-catalogue rule
   forbids. `setup` writes it (seeding via a context-blind derivation sub-agent, re-ingesting an
-  existing block as the base); the `prep_planner.py` / `prep_drafter.py` /
-  `prep_slicer.py` / `prep_requirements_gatherer.py` readers consume it
-  through `scripts/doc_catalogue.py`, at the same vantage as the docs themselves (as every config
-  family now is — this was a deliberate exception while gate config was pinned). When it is absent
+  existing block as the base); the `prep_planner.py` / `prep_drafter.py` / `prep_slicer.py` /
+  `prep_requirements_gatherer.py` / `prep_resolver.py` / `prep_evaluator.py` /
+  `prep_question_resolver.py` readers consume it through `scripts/doc_catalogue.py`, as
+  `grounding_docs`, at the same vantage as the docs themselves (as every config family now is — this
+  was a deliberate exception while gate config was pinned): the resolver at its audit view (reported
+  as `grounding_path`), the evaluator at the PR head. Every sub-agent prompt that checks docs receives
+  the entries as `<<catalogue_entries>>`. When it is absent
   the readers emit the
   `DOC_CATALOGUE_ABSENT` notice and ground on **nothing**: there is no built-in path list and no
   filesystem walk, because a guessed doc layout is exactly what the block removes. The plugin
   formerly hardcoded `docs/prd.md` / `docs/architecture.md` / `docs/constitution.md` / `CLAUDE.md` in
-  two preps that disagreed with each other and with the prompts; don't reintroduce a default list.
+  two preps that disagreed with each other and with the prompts, and until 4.27.0 the resolver's audit,
+  the evaluator's doc grounding, the drafter's issue reviewer, and the question-resolver's constraint
+  audit still read that list in prose; don't reintroduce a default list.
 - **Setup-authored operating guidance** (distinct from the machine-parsed blocks above): `setup`
   proposes a `<!-- claude-code-stack-profile -->` block in the consuming repo's `CLAUDE.md` —
   concise, currency-checked guidance on running that stack efficiently in a Claude Code session

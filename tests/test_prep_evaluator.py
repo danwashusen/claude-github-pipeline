@@ -51,6 +51,7 @@ from tests.support import envelope_asserts, gitsandbox, shimenv  # noqa: E402
 
 
 def _write(path, text):
+    Path(path).parent.mkdir(parents=True, exist_ok=True)
     with open(path, "w", encoding="utf-8", newline="") as fh:
         fh.write(text)
 
@@ -74,6 +75,16 @@ def _parse_one_envelope(stdout_text):
     return json.loads(lines[0])
 
 
+# The doc catalogue every sandbox starts configured with (skills/_shared/doc-catalogue.md) — one
+# entry naming a document setUp also creates, so a baseline run reports one present grounding doc,
+# no notice, and no attention line.
+SEEDED_CATALOGUE_INTERIOR = "- `docs/prd.md` — prd — binding — What the product is.\n"
+
+
+def _catalogue_block(interior):
+    return "<!-- doc-catalogue -->\n%s<!-- /doc-catalogue -->\n" % interior
+
+
 class PrepEvaluatorSandboxTestCase(unittest.TestCase):
     """Shared setup: a real temp git origin+clone (the `--root`), pre-seeded with `.gitignore`
     (mirroring tests/test_workspace.py's own setUp rationale: a fresh consuming repo's very first
@@ -87,8 +98,13 @@ class PrepEvaluatorSandboxTestCase(unittest.TestCase):
         self.addCleanup(self.clone.cleanup)
         self.root = self.clone.path
         _write(self.root / ".gitignore", ".worktrees/\n")
-        _git(["add", ".gitignore"], self.root)
-        _git(["commit", "-m", "seed gitignore"], self.root)
+        # A configured consuming repo: a doc catalogue naming one document that exists (the
+        # test_prep_planner seed), so the grounding read is neutral for every test not about it —
+        # without it each run's `attention` carries the catalogue-absent line.
+        _write(self.root / "docs" / "README.md", _catalogue_block(SEEDED_CATALOGUE_INTERIOR))
+        _write(self.root / "docs" / "prd.md", "# PRD\n")
+        _git(["add", ".gitignore", "docs"], self.root)
+        _git(["commit", "-m", "seed gitignore + doc catalogue"], self.root)
         _git(["push", "origin", "HEAD:main"], self.root)
         self._tmp_ctx = tempfile.TemporaryDirectory()
         self.scratch = self._tmp_ctx.name
@@ -392,6 +408,58 @@ class HappyPathFactsSchemaTests(PrepEvaluatorSandboxTestCase):
         self.assertTrue(
             any("setup hook failed" in item for item in envelope["attention"]),
             envelope["attention"],
+        )
+
+
+class GroundingDocsTests(PrepEvaluatorSandboxTestCase):
+    """The consuming repo's doc catalogue (skills/_shared/doc-catalogue.md), read at the PR-head
+    worktree — S4's doc-grounding set, which until 4.27.0 was a hardcoded `docs/prd.md` /
+    `docs/architecture.md` / … list."""
+
+    def _pr_head_worktree(self):
+        return self._mk_ambient(self._head_branch_from_fixture("prep_evaluator_happy_standard"))
+
+    def test_catalogue_is_read_at_the_pr_head_worktree(self):
+        envelope = self._envelope()
+        (entry,) = envelope["grounding_docs"]
+        self.assertEqual(entry["path"], "docs/prd.md")
+        self.assertTrue(entry["present"])
+        self.assertEqual(entry["abs_path"], str(Path(envelope["workspace"]["path"]) / "docs/prd.md"))
+
+    def test_a_pr_that_edits_the_catalogue_is_judged_by_its_own_copy(self):
+        wt = self._pr_head_worktree()
+        _write(wt / "docs" / "architecture" / "view-layer.md", "# View layer\n")
+        _write(
+            wt / "docs" / "README.md",
+            _catalogue_block(
+                SEEDED_CATALOGUE_INTERIOR
+                + "- `docs/architecture/` — architecture — binding — The architecture spokes.\n"
+            ),
+        )
+        envelope = self._envelope()
+        by_path = {e["path"]: e for e in envelope["grounding_docs"]}
+        self.assertEqual(by_path["docs/architecture/"]["kind"], "dir")
+        self.assertEqual(by_path["docs/architecture/"]["members"], ["docs/architecture/view-layer.md"])
+
+    def test_absent_catalogue_is_an_attention_line_and_a_notice_never_a_decision(self):
+        wt = self._pr_head_worktree()
+        (wt / "docs" / "README.md").unlink()
+        envelope = self._envelope()
+        self.assertEqual(envelope["status"], "ok")
+        self.assertEqual(envelope["grounding_docs"], [])
+        self.assertIn("DOC_CATALOGUE_ABSENT", envelope["notices"])
+        self.assertTrue(
+            any("no doc catalogue in the PR head" in item for item in envelope["attention"]),
+            envelope["attention"],
+        )
+
+    def test_declared_but_missing_doc_names_its_path(self):
+        wt = self._pr_head_worktree()
+        (wt / "docs" / "prd.md").unlink()
+        envelope = self._envelope()
+        self.assertFalse(envelope["grounding_docs"][0]["present"])
+        self.assertTrue(
+            any("docs/prd.md" in item for item in envelope["attention"]), envelope["attention"]
         )
 
 
@@ -843,6 +911,9 @@ class RefreshModeTests(unittest.TestCase):
         self.assertNotIn("workspace", envelope)
         self.assertEqual(envelope["config"], {})
         self.assertFalse(envelope["root"]["fresh"])
+        # No checkout read, so no catalogue read — "we didn't look" is not "the repo declared none".
+        self.assertEqual(envelope["grounding_docs"], [])
+        self.assertEqual([item for item in envelope["attention"] if "catalogue" in item], [])
 
     def test_refresh_still_re_derives_ci_and_health_cache(self):
         result = self._run(

@@ -72,6 +72,17 @@ members — reads the ones the work at hand touches, and **cites the member file
 Listing a directory the repo declared is not the walk the absent-catalogue rule forbids: the repo
 nominated it, and nothing outside it is searched.
 
+## Handing the catalogue to a sub-agent
+
+A context-blind sub-agent that checks work against the docs (the plan reviewer, the resolver's fitness
+audit, the drafter's issue reviewer, the question-resolver's constraint audit) receives the entries as a
+`<<catalogue_entries>>` placeholder, filled from the prep's `grounding_docs` fact: one line per entry as
+`<path> — <role> — <binding|informative> — <summary>`, a directory entry's `members` following it as
+indented `- <path>` lines, and an entry whose `present` is false **omitted** (prep already raised it as
+attention; a sub-agent handed a dead path would report the absence as a finding about the work). An empty
+placeholder means the repo declares no grounding docs, and the sub-agent says so rather than inventing a
+path. Each prompt restates this shape at its input, because the sub-agent never reads this file.
+
 ## Ownership — user-owned
 
 The catalogue is **user-owned**, the `claude-code-stack-profile` posture: `setup` seeds it when
@@ -81,8 +92,8 @@ line that does not parse). It never rewords a summary a human wrote. Hand-edits 
 only ask is that the `<!-- … -->` marker pair stays intact.
 
 It differs from the stack profile in one way: this block **is machine-parsed**, so entries must hold
-the one-line grammar above. `setup` is the sole writer; the planner, drafter, slicer, and
-requirements-gatherer preps are the readers.
+the one-line grammar above. `setup` is the sole writer; the planner, drafter, slicer,
+requirements-gatherer, resolver, evaluator, and question-resolver preps are the readers.
 
 ## When the catalogue is absent
 
@@ -93,8 +104,11 @@ paths — a guessed doc layout is what this block exists to remove. Readers emit
 `DOC_CATALOGUE_ABSENT` notice so the gap is loud rather than silent, and the consequence differs by
 consumer:
 
-- **Planner, drafter** — proceed **ungrounded**, exactly as they did when a hardcoded path happened
-  not to exist. The absence is recorded, not fatal.
+- **Planner, drafter, resolver, evaluator, question-resolver** — proceed **ungrounded**, exactly as
+  they did when a hardcoded path happened not to exist. The absence is recorded, not fatal. Each of
+  these judges work whose substance comes from somewhere else — an issue, a diff, an operator's
+  decision — and uses the docs to check it; the question-resolver's constraint audit falls back to the
+  docs the question itself cites.
 - **A consumer whose whole output is derived from documents** — refuse, and say what would fix it.
   Decomposing or specifying against nothing invents scope, and invented scope becomes real issues.
 
@@ -104,7 +118,10 @@ consumer to match a proceeding one.
 ## Where the catalogue is read from
 
 The catalogue is read from **the same vantage as the documents it names** — the planner's asserted
-grounding checkout at its `plan_ref`, the drafter's ambient checkout. A branch that adds a document
+grounding checkout at its `plan_ref`; the resolver's audit view (its audit read workspace, else its
+work worktree — reported as `grounding_path`); the evaluator's PR-head worktree, so a PR that edits a
+doc or its entry is judged against its own copy; the drafter's, slicer's, requirements-gatherer's, and
+question-resolver's ambient checkout. A branch that adds a document
 *and* its catalogue entry must ground on both, and a branch that has not yet merged its entry must
 not. (Through v3 this was a deliberate exception: gate config was pinned to `origin/main` so a PR
 could not weaken the gates judging it, and the catalogue was called out as *grounding* config that

@@ -40,11 +40,19 @@ you're here to surface.
     --json …` and walk the thread.
 - **Repo root**: `<<repo_root>>` — absolute path (the drafter's current checkout, `facts.root.path`; the
   drafter grounds on the working tree — the checkout the session was started in IS the vantage by
-  design). Read `docs/prd.md`, `docs/architecture.md`,
-  `docs/constitution.md`, `CLAUDE.md` if they exist; grep the source tree from this root. Run **every**
+  design). Read the declared project docs and grep the source tree from this root. Run **every**
   grep/find/Read from this root **by absolute path — never a bare relative path in YOUR OWN ambient
   working directory**: a sub-agent's cwd is not the drafter's, and a relative read would silently
   ground your verdicts on the wrong tree.
+- **Declared project docs**: `<<catalogue_entries>>` — the documents this repo declares as its grounding
+  set (its doc catalogue), one per line as `<path> — <role> — <binding|informative> — <summary>`, paths
+  relative to `<<repo_root>>`. An entry naming a directory is a **document set**: its member files follow
+  it, one per indented `- <path>` line (the orchestrator lists them from the entry's `members` and omits
+  an entry whose `present` is false), each under the entry's authority — read the members the issue
+  touches and cite the member file, never the directory. A body contradicting a `binding` doc is a
+  BLOCKER-class finding; a tension with an `informative` doc is a judgment call. When this list is empty
+  the repo declares no grounding docs: judge doc coherence on the source tree and what the body itself
+  cites, and never invent a doc path.
 - **Review tier**: `<<review_tier>>` — `lean` or `full`. `lean`: this single pass is your only look —
   findings must be final and self-contained. `full`: the orchestrator may re-invoke you (see the
   changed-summary input below).
@@ -130,8 +138,9 @@ both altitudes (#16). This reviewer reads **one** issue; it never reasons across
 
 Each finding carries one severity:
 
-- **BLOCKER** — the issue is concretely wrong: a referenced API doesn't exist, the PRD directly
-  contradicts, a required template section is empty without an explicit `[to be filled in]` placeholder.
+- **BLOCKER** — the issue is concretely wrong: a referenced API doesn't exist, a `binding` doc (the PRD,
+  typically) directly contradicts it, a required template section is empty without an explicit
+  `[to be filled in]` placeholder.
 - **SUGGESTION** — would meaningfully improve clarity or alignment but isn't strictly wrong.
 - **NIT** — small polish (typo, slight rewording for searchability).
 
@@ -190,8 +199,8 @@ None.
 - `gh issue view <other-N> --json state,title,body,labels` — fetch a referenced sibling story.
 - `grep -rn "<symbol>" <repo_root>/<src-dir>` — verify a referenced API exists.
 - `find <repo_root> -name "<filename>"` — verify a referenced file path exists.
-- `Read <repo_root>/docs/prd.md` (and architecture.md, constitution.md, CLAUDE.md) — load doc context once,
-  then cite section names/headings when filing findings.
+- `Read <<repo_root>>/<path>` for each `<<catalogue_entries>>` entry the issue touches (a document set: its
+  member files) — load doc context once, then cite section names/headings when filing findings.
 
 Be efficient: read each doc at most once, cache section structure mentally, and use grep before re-reading
 source files. The orchestrator invokes you once (`lean` tier) or up to three times (`full` tier) per

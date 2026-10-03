@@ -4,8 +4,8 @@ docs/implementation.md S6). This is the **first prep script** — it pioneers th
 executors in-process, one facts block" pattern S8 locks for every later prep script.
 
 From-scratch v2 script (architecture.md §2/§9.2, docs/specs/evaluator.md): assembles the
-evaluator's entire starting state — PR facts, the closing issue's DoD, gate config pinned at the
-root ``main`` SHA, the CI rollup class, the health-cache hit/miss, PR-type detection, repo merge
+evaluator's entire starting state — PR facts, the closing issue's DoD, gate config and the doc
+catalogue read at the PR-head worktree, the CI rollup class, the health-cache hit/miss, PR-type detection, repo merge
 config, and the self-review fact — as ONE JSON envelope on stdout, so the evaluator session's
 state assembly is one Python process, never a subprocess chain and never more than one
 model-mediated round-trip (prd.md §9.2).
@@ -22,9 +22,16 @@ external processes any script may spawn are git/gh")::
                                              against code the checkout doesn't contain)
     parse.parse_dod_bullets(...)          -- the closing issue's ## Definition of done, parsed
     config_block.read_block_anywhere
-                                          -- the origin/main pin + the four gate-config blocks,
-                                             read from the pinned BLOBS — never any working tree,
-                                             so a PR cannot weaken its own gates
+                                          -- the four gate-config blocks, read from the asserted
+                                             PR-head worktree's WORKING TREE (the origin/main pin
+                                             that once kept a PR from weakening its own gates is
+                                             retired — architecture.md §6 rule 1)
+    doc_catalogue.read_catalogue          -- the consuming repo's `<!-- doc-catalogue -->`
+                                             grounding docs, read at the same PR-head worktree:
+                                             a PR that legitimately edits a doc (or its catalogue
+                                             entry) is judged against its own post-edit copy, and
+                                             — the same knowing trade as gate config — a PR could
+                                             also downgrade an entry's `binding` authority
 
 Every executor exposes a **pure, non-emitting core** — ``build_*(...) -> (payload, notices,
 decision|None)`` — as of the S8 pattern lock (docs/specs/baseline.md §5): ``gh_pr_gather``,
@@ -62,13 +69,14 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 import config_block  # noqa: E402  (import after sys.path setup, by necessity; in-process composition)
+import doc_catalogue  # noqa: E402  (the consuming repo's declared grounding docs)
 import gh_gather  # noqa: E402
 import gh_pr_gather  # noqa: E402
 import parse  # noqa: E402
 import plan_shipped  # noqa: E402  (the shipped-phase records a relocated plan's detail lives in)
 import workspace  # noqa: E402
 from pipelib import process  # noqa: E402
-from pipelib.decisions import AMBIGUOUS, needs_decision  # noqa: E402
+from pipelib.decisions import AMBIGUOUS, DOC_CATALOGUE_ABSENT, needs_decision  # noqa: E402
 from pipelib.envelope import EXIT_OK, EXIT_USAGE_ERROR, emit_needs_decision, emit_ok  # noqa: E402
 from pipelib.spill import read_section, spill_bytes  # noqa: E402
 from pipelib.thread import load_thread  # noqa: E402
@@ -796,6 +804,31 @@ def _suggested_playbook(pr_type, pr_state):
     return "standard.md"
 
 
+def _catalogue_attention(grounding_docs, catalogue_absent):
+    """The doc-catalogue attention lines, prep_planner's three-state shape: `grounding_docs` is `None`
+    on --refresh (no checkout read), `[]` when the catalogue was read and declares nothing, a list
+    otherwise. The evaluator proceeds ungrounded on an absent catalogue (S4's doc-grounding dimension
+    is skipped; skills/_shared/doc-catalogue.md), so these are attention, never a decision."""
+    if grounding_docs is None:
+        return []
+    attention = []
+    if catalogue_absent:
+        attention.append(
+            "no doc catalogue in the PR head — doc grounding is skipped; run /github-pipeline:setup "
+            "to declare this repo's grounding docs in docs/README.md"
+        )
+    elif not grounding_docs:
+        attention.append(
+            "doc catalogue declares no documents — doc grounding is skipped until it names some"
+        )
+    for missing in doc_catalogue.missing_entry_paths(grounding_docs):
+        attention.append(
+            "doc catalogue names '%s', absent in the PR head — a stale entry, or a doc this PR "
+            "removes" % missing
+        )
+    return attention
+
+
 def _build_attention(workspace_envelope, pr_envelope, blocked_by_by_issue=None):
     attention = []
     if workspace_envelope is not None:
@@ -875,6 +908,7 @@ def build_facts(pr_number, repo, root=".", scratch_dir=None, refresh=False, cwd=
     #    proceed), and re-runs the setup hooks from that worktree's own working tree — the same
     #    checkout the gate config below is read from.
     config_attention = []
+    grounding_docs, catalogue_notices = None, []
     if not refresh:
         workspace_envelope, _ws_notices, ws_decision = workspace._build_attach(
             cwd if cwd is not None else ".",
@@ -901,6 +935,11 @@ def build_facts(pr_number, repo, root=".", scratch_dir=None, refresh=False, cwd=
                 "gate config was read from a checkout with uncommitted changes (%s) — this PR is "
                 "being judged by the checks in that working tree" % gate_root
             )
+
+        # 3b) Grounding docs (skills/_shared/doc-catalogue.md), read at the same PR-head worktree,
+        #     so a PR that edits a doc — or its catalogue entry — is judged against its own copy
+        #     (S4's doc-grounding dimension). `None` on --refresh, which reads no checkout.
+        grounding_docs, catalogue_notices = doc_catalogue.read_catalogue(gate_root)
     else:
         # --refresh: re-derive only PR state + CI + health-cache hit/miss. Root freshness,
         # workspace ensure (and its setup hooks), and gate config are NOT re-run/re-read — the S6
@@ -1037,9 +1076,11 @@ def build_facts(pr_number, repo, root=".", scratch_dir=None, refresh=False, cwd=
         "blocked_by": blocked_by_by_issue,
         "deps_available": deps_available_by_issue,
         "plans": plans_by_issue,
+        "grounding_docs": grounding_docs if grounding_docs is not None else [],
         "attention": _build_attention(workspace_envelope, pr_envelope, blocked_by_by_issue)
-        + config_attention,
-        "notices": list(config_notices) + list(issue_gather_notices),
+        + config_attention
+        + _catalogue_attention(grounding_docs, DOC_CATALOGUE_ABSENT in catalogue_notices),
+        "notices": list(config_notices) + list(issue_gather_notices) + catalogue_notices,
     }
     if epic_facts is not None:
         facts["epic"] = epic_facts

@@ -113,6 +113,44 @@ class PrepQuestionResolverTestCase(unittest.TestCase):
         self.assertEqual(env["status"], "needs_decision")
         self.assertEqual(env["decision"]["code"], "MARKER_AMBIGUOUS")
 
+    # ---- grounding docs (the constraint audit's doc set) ----
+
+    def _seed_catalogue(self, interior):
+        docs = Path(self.root) / "docs"
+        docs.mkdir(parents=True, exist_ok=True)
+        (docs / "README.md").write_text(
+            "<!-- doc-catalogue -->\n%s<!-- /doc-catalogue -->\n" % interior, encoding="utf-8"
+        )
+
+    def test_catalogue_is_read_at_the_root_working_tree(self):
+        """The constraint audit's doc set is the repo's declared catalogue — until 4.27.0 a hardcoded
+        `docs/constitution.md` / `docs/prd.md` / … list. Read at the working tree, uncommitted edits
+        included (a question isn't tied to a branch)."""
+        self._seed_catalogue("- `docs/constitution.md` — constitution — binding — The rules.\n")
+        (Path(self.root) / "docs" / "constitution.md").write_text("# Rules\n", encoding="utf-8")
+        facts = self._facts(301, "prep_question_resolver_fresh")
+        (entry,) = facts["grounding_docs"]
+        self.assertEqual(entry["role"], "constitution")
+        self.assertTrue(entry["present"])
+        self.assertEqual(facts["notices"], [])
+        self.assertEqual([a for a in facts["attention"] if "catalogue" in a], [])
+
+    def test_absent_catalogue_is_attention_and_a_notice_and_the_audit_proceeds(self):
+        facts = self._facts(301, "prep_question_resolver_fresh")
+        self.assertEqual(facts["status"], "ok")
+        self.assertEqual(facts["grounding_docs"], [])
+        self.assertIn("DOC_CATALOGUE_ABSENT", facts["notices"])
+        self.assertTrue(
+            any("only the docs the question cites" in a for a in facts["attention"]),
+            facts["attention"],
+        )
+
+    def test_a_non_question_issue_reads_no_catalogue(self):
+        facts = self._facts(304, "prep_question_resolver_not_question")
+        self.assertEqual(facts["grounding_docs"], [])
+        self.assertNotIn("DOC_CATALOGUE_ABSENT", facts["notices"])
+        self.assertEqual([a for a in facts["attention"] if "catalogue" in a], [])
+
     # ---- guards / facts ----
 
     def test_not_a_question_issue_is_a_fact_not_a_decision(self):

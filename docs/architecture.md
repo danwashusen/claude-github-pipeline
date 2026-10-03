@@ -158,8 +158,9 @@ Every script emits exactly one JSON envelope on stdout.
   is unavailable the node data is the fallback, so the set still reports but rescope detection does
   not. `DOC_CATALOGUE_ABSENT` is a fourth: the consuming repo declares no grounding documents (no
   `docs/README.md`, or no `<!-- doc-catalogue -->` block in it — see
-  [`skills/_shared/doc-catalogue.md`](../skills/_shared/doc-catalogue.md)), so the planner and drafter
-  ground on none. It has **no fallback rung** by design — no built-in path list, no filesystem walk —
+  [`skills/_shared/doc-catalogue.md`](../skills/_shared/doc-catalogue.md)), so the planner, drafter,
+  resolver, evaluator, and question-resolver ground on none (the slicer and requirements-gatherer fall
+  back to operator-named sources). It has **no fallback rung** by design — no built-in path list, no filesystem walk —
   which is why the degradation is a loud notice rather than a silent default.
   `SUBISSUE_FIELD_UNAVAILABLE` is a fifth: a *read* of the relation could not retrieve the `parent`
   field, so a caller that needed an issue's CURRENT parent (`prep_slicer.py`'s adoption-candidate

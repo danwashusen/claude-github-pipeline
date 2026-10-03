@@ -118,7 +118,8 @@ when a convention is absent, but work best when the repo provides:
   authority (`binding` — contradicting it is a blocker — or `informative`), and a one-line summary. A
   line can also name a directory (`docs/architecture/`) to declare every document directly inside it
   under one role and authority.
-  The planner and drafter read it to align designs; the paths are **yours**, so a PRD at
+  Every stage that checks work against your docs — drafter, slicer, planner, resolver, evaluator — reads
+  it, as do the requirements-gatherer and question-resolver; the paths are **yours**, so a PRD at
   `docs/product/requirements.md` works as well as one at `docs/prd.md`. Setup derives a first draft
   from your `docs/README.md` and re-ingests your edits on re-run. Without it, those skills ground on
   no documents and say so — nothing is guessed.

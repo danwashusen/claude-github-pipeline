@@ -11,8 +11,8 @@ its §review-loop, its S6 DoD projection) that carry the same numbering v1 used,
   time and is rude.
 - **Don't take over someone else's PR silently.** If a PR by another author exists for this issue (a gated
   row), the router renders the gate before doing anything that would compete with or supersede it.
-- **Don't implement code without grounding in project docs.** If `docs/prd.md`, `docs/architecture.md`, or
-  `CLAUDE.md` exists, read it (from the read workspace) before designing the change and cite the relevant
+- **Don't implement code without grounding in project docs.** Read the docs the repo declares
+  (`facts.grounding_docs`, under `facts.grounding_path`) before designing the change and cite the relevant
   sections in the PR. Skipping this leads to implementations that violate non-negotiable project rules
   (layer boundaries, banned APIs, naming, scope) that the docs encode.
 - **Don't start non-trivial code work without a finalized plan.** The plan gate stops on a
@@ -237,7 +237,7 @@ its §review-loop, its S6 DoD projection) that carry the same numbering v1 used,
   person who reads the epic. Always tick them before (or as part of) closing. A native story set has no
   checkboxes to tick: GitHub's rollup follows issue state on its own.
 - **Don't restructure the epic body template.** The `## Goal` / `## Background` /
-  `## Definition of done` section names are load-bearing for traceability from `docs/prd.md`. Preserve them
+  `## Definition of done` section names are load-bearing for traceability from the repo's PRD. Preserve them
   exactly. Don't add a `## Stories` section to an epic that doesn't have one — the story set is the
   native sub-issue relation ([`../../_shared/epic-story-hierarchy.md`](../../_shared/epic-story-hierarchy.md)).
 - **Don't edit a parent epic's body from inside a story-target run.** The epic's body is authoritative

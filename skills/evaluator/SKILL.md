@@ -28,7 +28,8 @@ It returns one JSON **facts block** (`architecture.md §4`): `target`, `vector`,
 `fail_checks`), `health_cache` (`hit`/`sha`), `self_review`, `config` (the four gate blocks read from **the PR-head worktree's working tree**;
 `config.source` names the checkout/branch/SHA and its dirty state — this PR supplies the gates it
 is judged by, so report that source whenever it is dirty), `merge_config` (repo `allow_*` booleans), `dod`/`blocked_by`/`deps_available`
-(keyed per closing-issue number), `polish` (the PR body's `## Polish` ledger), `sections` (spilled
+(keyed per closing-issue number), `polish` (the PR body's `## Polish` ledger), `grounding_docs` (the
+repo's `<!-- doc-catalogue -->` entries, read at the same PR-head worktree), `sections` (spilled
 PR body/thread/reviews/marker paths), and `attention`. Consume every fact as **data** — never re-derive PR type, CI class, or cache-hit in
 prose; prep already did.
 

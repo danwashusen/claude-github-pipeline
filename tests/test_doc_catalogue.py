@@ -18,6 +18,7 @@ Two things this suite exists to protect:
     two.
 """
 
+import re
 import sys
 import tempfile
 import unittest
@@ -245,6 +246,57 @@ class EntryForRoleTests(unittest.TestCase):
             ]
         )
         self.assertEqual(doc_catalogue.entry_for_role(entries, "prd")["path"], "docs/prd.md")
+
+
+class CataloguePromptRoutingTests(unittest.TestCase):
+    """The prompt side of the catalogue (skills/_shared/doc-catalogue.md §"Handing the catalogue to a
+    sub-agent"): every context-blind doc checker receives `<<catalogue_entries>>` in the contract's shape,
+    and no skill reads a hardcoded doc list instead (4.27.0 retired the last four)."""
+
+    PROMPTS = (
+        "skills/planner/references/plan-reviewer-prompt.md",
+        "skills/resolver/references/issue-audit-prompt.md",
+        "skills/drafter/references/issue-reviewer-prompt.md",
+        "skills/question-resolver/references/constraint-audit-prompt.md",
+    )
+    # A fixed consuming-repo doc list, the shape every retired instruction had ("`docs/prd.md`,
+    # `docs/architecture.md`" / "docs/prd.md (and architecture.md"). doc-reviewer is exempt by design: it
+    # reviews the plugin's own five-doc taxonomy, chosen by `--guide <type>`, not a consumer's grounding set.
+    _DOC_LIST_RE = re.compile(r"docs/prd\.md`?\s*(,|\(and)\s*`?(docs/)?architecture\.md")
+
+    @staticmethod
+    def _flat(rel):
+        return " ".join((REPO_ROOT / rel).read_text(encoding="utf-8").split())
+
+    def test_every_doc_checking_prompt_receives_the_catalogue_in_the_contract_shape(self):
+        for rel in self.PROMPTS:
+            flat = self._flat(rel)
+            with self.subTest(prompt=rel):
+                self.assertIn("<<catalogue_entries>>", flat)
+                self.assertIn("`<path> — <role> — <binding|informative> — <summary>`", flat)
+                self.assertIn("omits an entry whose `present` is false", flat)
+                self.assertIn("never the directory", flat)
+
+    def test_the_constraint_audit_keeps_its_sections(self):
+        """A rewrap once flattened `## What to check` and `## Severity` into the inputs bullet; the
+        heading-level pins elsewhere never noticed."""
+        lines = (
+            (REPO_ROOT / "skills/question-resolver/references/constraint-audit-prompt.md")
+            .read_text(encoding="utf-8")
+            .splitlines()
+        )
+        for heading in ("## What to check", "## Severity"):
+            self.assertIn(heading, lines)
+
+    def test_no_skill_reads_a_hardcoded_doc_list(self):
+        offenders = []
+        for path in sorted((REPO_ROOT / "skills").rglob("*.md")):
+            rel = path.relative_to(REPO_ROOT).as_posix()
+            if rel.startswith("skills/doc-reviewer/"):
+                continue
+            if self._DOC_LIST_RE.search(" ".join(path.read_text(encoding="utf-8").split())):
+                offenders.append(rel)
+        self.assertEqual(offenders, [], "read the catalogue (`grounding_docs`), not a fixed doc list")
 
 
 if __name__ == "__main__":

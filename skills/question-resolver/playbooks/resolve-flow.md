@@ -16,10 +16,12 @@ Dispatch the question-status reader
 ## 2. Ground against the project docs (judgment)
 
 Read the docs the question's `## Constraints` / `## References` point at (targeted — not a blind sweep),
-plus `docs/constitution.md`. Extract, with citations, the **binding constraints**
+plus the `binding` entries of `facts.grounding_docs` it touches — always a `constitution`-role entry (a
+`kind: dir` entry's `members`; none, or `DOC_CATALOGUE_ABSENT`: ground on the question's own references
+and say so). Extract, with citations, the **binding constraints**
 (regulatory/legal/contractual/architectural — `constitution §N`, `PRD §N`, `path/to/file:NN`) and the
-**decision space** (viable options + what each commits the project to). Anti-fabrication: a constraint you
-can't cite to a doc §/line is not a constraint — don't invent one.
+**decision space** (viable options + what each commits the project to). Anti-fabrication: a constraint
+you can't cite to a doc §/line is not a constraint — don't invent one.
 
 ## 3. Present the evaluation and discuss — the operator decides
 
@@ -34,8 +36,9 @@ constraint rules out every option, or the reading was `AMBIGUOUS`, surface that 
 Once the operator settles, verify independently before recording — a constraint missed in discussion is
 the highest-cost failure here. Dispatch the constraint audit
 ([`../references/constraint-audit-prompt.md`](../references/constraint-audit-prompt.md)), filling its
-`<<...>>` (the question incl. `## Constraints`, the **chosen decision**, repo root, the doc set). A
-**BLOCKER** → return to §3, show the finding, re-decide (do not record). SUGGESTION/NIT inform, don't gate.
+`<<...>>` (the question incl. `## Constraints`, the **chosen decision**, repo root,
+`facts.grounding_docs` as `<<catalogue_entries>>`). A **BLOCKER** → return to §3, show the finding,
+re-decide (do not record). SUGGESTION/NIT inform, don't gate.
 
 ## 5. Record the decision
 
