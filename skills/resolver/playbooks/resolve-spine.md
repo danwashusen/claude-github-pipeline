@@ -108,11 +108,11 @@ can't be reconciled against, gate (`header: "Doc conflict"`): **Update the doc**
 
 Use `facts.phases` (prep parsed the plan's `## Phases`). Single-phase (empty or one entry with no
 `closes-dod`) → one push closes the DoD via the single-phase fallback. Multi-phase → the PR opens as a
-**draft** carrying a `## Phase tracker`, one phase ships per session, and the PR flips to ready only on
-the last-planned-phase-shipped handoff. On continue mode, the current phase is the first unticked entry
-in the existing PR's `## Phase tracker` whose `depends-on` is satisfied. An operator/decision-only
-phase (`kind: operator | decision-only`) ships no commits — surface it via the operator-phase handoff
-rather than running it.
+**draft** carrying a `## Phase tracker`, each phase ships in its own pass through S5–S7 (one session may
+run several — "Return to the routed playbook"), and the PR flips to ready only on the last-phase handoff.
+On continue mode, the current phase is the first unticked entry in the existing PR's `## Phase tracker`
+whose `depends-on` is satisfied. An operator/decision-only phase (`kind: operator | decision-only`) ships
+no commits — surface it via the operator-phase handoff rather than running it.
 
 **Reconcile the tracker before you read that cursor** (`facts.tracker.present`). A planner revise can
 insert a phase and renumber the unshipped tail (`skills/planner/references/revise-reconciliation.md`,
@@ -286,7 +286,7 @@ push and the reply both wait for S5.2. "Approved" is **not** the exit condition 
    - **Reset** — when a light re-review or the cold read reopens a settled loop with a defect, the next
      round counts as round 1 again: a fresh baseline and an unused grace round (the ceiling's count
      carries on).
-   - Settled and the cold read has **not** run this run — nor, per step 4's PR record, on this phase
+   - Settled and the cold read has **not** run on this phase — in this pass, nor per step 4's PR record
      at this HEAD → step 4. Settled and it **has** → S5.1 is done; go to S5.2.
 
    After `review`'s verdict text lands, your next emissions are the round's **operational beats** (the
@@ -301,10 +301,10 @@ push and the reply both wait for S5.2. "Approved" is **not** the exit condition 
    read:` record written, so the stalling round never ships unread; these follow-ups are filed right
    after S5.2's push — in fresh mode once `create-pr` returns the URL, so each has its parent PR; say so
    in the option's description) / **Abort**, plus **Re-plan** when churn fired (its round's fixes are
-   already committed, so it takes no independent-defect pass). The
-   same card renders, marked "ceiling reached", at the **emergency ceiling**: 8 `review` runs in S5.1,
-   light re-reviews and the post-cold-read run included. It is a backstop against a progress call the
-   model makes on its own work, not a budget — reaching it means the rule misfired.
+   already committed, so it takes no independent-defect pass). The same card renders, marked "ceiling
+   reached", at the **emergency ceiling**: 8 `review` runs in S5.1 per phase, light re-reviews and the
+   post-cold-read run included. It is a backstop against a progress call the model makes on its own work,
+   not a budget — reaching it means the rule misfired.
 
    **A guard rail's answer can end the run.** **Re-plan** and **Restructure** re-route to the planner,
    **Abort** / **Abort loop** stop the run: each leaves S5.1 immediately — no further `review`, no cold
@@ -331,7 +331,7 @@ triggered it. Only
    failure to the operator; never read it as "no findings". An empty `## Findings` → stage the
    `Cold read: phase <N> @ <sha>` line into the loop comment; S5.1 is done. Findings → run one fix round (step 2,
    those findings as the verdict; its reply carries the `Cold read:` line), then continue at step 1 under
-   step 3's rules — the cold read is never dispatched twice in one run, so the next settle ends S5.1.
+   step 3's rules — the cold read is never dispatched twice for one phase, so the next settle ends S5.1.
    `review` stays the terminal gate; the cold read supplements the reviewer, never substitutes for it.
 
 ### S5.2 — Push the phase, once
@@ -423,7 +423,9 @@ issue — one per **group** of related items — routes through the drafter prox
 
 ## Return to the routed playbook
 
-Capture the run's pushed range for the handoff's `Changes:` link: `facts.workspace.sha` (the session-entry HEAD) → `git rev-parse HEAD` in `facts.workspace.path`, read **after** the review loop settles and S5.2 has pushed — its fix rounds commit on top of the phase's work, so a HEAD read before the loop exits names a range that stops short of what this run actually shipped.
+Capture the session's pushed range for the handoff's `Changes:` link: `facts.workspace.sha` as the session's **first** prep reported it (the session-entry HEAD — a between-phase prep re-run moves the field, never this anchor) → `git rev-parse HEAD` in `facts.workspace.path`, read **after** the review loop settles and S5.2 has pushed — its fix rounds commit on top of the phase's work, so a HEAD read before the loop exits names a range that stops short of what this run actually shipped.
+
+A phase shipped and an unshipped phase remains: read [`../references/phase-continuation.md`](../references/phase-continuation.md) — it runs the next phase in this session (back to S1 after a fresh prep) or ends at the routed playbook's handoff.
 
 Multi-phase last-planned-phase shipped, or a revision run (S4): flip the PR draft → ready with
 `gh pr ready <N> --repo <owner/repo>` **immediately before** the handoff (without the flip the

@@ -1307,10 +1307,14 @@ class MainLoopReviewFixRoundTests(unittest.TestCase):
         self.assertIn("the round addressed nothing that keeps the loop open", self.flat)
         self.assertIn("a non-approving verdict whose every item classified as Explicitly-deferred", self.flat)
 
-    def test_the_cold_read_is_dispatched_at_most_once(self):
-        self.assertIn("the cold read has **not** run this run", self.flat)
+    def test_the_cold_read_is_dispatched_at_most_once_per_phase(self):
+        # Once per PHASE, not per run: a session that continues to the next phase in-session
+        # (references/phase-continuation.md) would otherwise skip every later phase's cold read.
+        self.assertIn("the cold read has **not** run on this phase", self.flat)
         self.assertIn("Settled and it **has** → S5.1 is done; go to S5.2", self.flat)
-        self.assertIn("never dispatched twice in one run", self.flat)
+        self.assertIn("never dispatched twice for one phase", self.flat)
+        self.assertNotIn("run this run", self.flat)
+        self.assertNotIn("twice in one run", self.flat)
 
     def test_terminating_guard_rail_answers_leave_the_loop(self):
         for text in (self.flat, " ".join(self.reference.read_text(encoding="utf-8").split())):
@@ -1897,6 +1901,108 @@ class ResolverCommandArgumentTests(unittest.TestCase):
             "refused as `TARGET_IS_PR`",
         ):
             self.assertTrue(phrase in flat, "handoff-format.md Authorship must state: %r" % phrase)
+
+
+
+class PhaseContinuationTests(unittest.TestCase):
+    """A session ships phases until a checkpoint (operator decisions, 2026-10-04): the planner's
+    `checkpoint:` key, a per-invocation `--pause`, and warning signs that only ever ADD a stop.
+
+    The governing rule is that an in-session continuation is a fresh continue-mode run in everything
+    but the conversation — a full prep re-run, a re-entry at S1, per-phase state seeded from GitHub —
+    because the improvised "type continue" path this replaced skipped every later phase's cold read
+    and ran on the first phase's prep facts.
+    """
+
+    REFERENCE = REFERENCES_DIR / "phase-continuation.md"
+    HANDOFF_FORMAT = REPO_ROOT / "skills" / "_shared" / "handoff-format.md"
+
+    def setUp(self):
+        self.text = self.REFERENCE.read_text(encoding="utf-8")
+        self.flat = " ".join(self.text.split())
+        self.spine = (PLAYBOOKS_DIR / SPINE).read_text(encoding="utf-8")
+
+    def test_reference_exists_and_is_not_a_sub_agent_prompt(self):
+        self.assertTrue(self.REFERENCE.is_file())
+        for pattern in ("*-prompt*.md", "*-sub-agent*.md"):
+            self.assertNotIn(self.REFERENCE, set(REFERENCES_DIR.glob(pattern)))
+
+    def test_the_spine_return_section_reads_it(self):
+        ret = self.spine.split("## Return to the routed playbook", 1)[1]
+        self.assertIn("../references/phase-continuation.md", ret)
+        self.assertIn("an unshipped phase remains", ret)
+
+    def test_prep_is_re_run_in_full_never_refresh(self):
+        self.assertIn("Re-run prep **in full**", self.flat)
+        self.assertIn("**no `--refresh`**", self.flat)
+        self.assertIn("no reachable `facts.tracker.last_shipped`", self.flat)
+        self.assertIn("Re-enter the spine at **S1** in continue mode", self.flat)
+        self.assertIn("starts over, seeded only from GitHub", self.flat)
+
+    def test_the_card_and_its_per_phase_link(self):
+        for phrase in (
+            'header: "Checkpoint"',
+            "**Continue here**",
+            "**End session**",
+            "scoped to **this phase's** push",
+            "this pass's prep `facts.workspace.sha`",
+            "link `<pr-url>/files`",
+        ):
+            self.assertIn(phrase, self.flat, phrase)
+
+    def test_stops_only_ever_get_added(self):
+        for phrase in (
+            "Warning signs only turn `continue` into a pause",
+            "Nothing turns a `pause` into `continue`",
+            "`null` (absent",
+            "the session holds `--pause`",
+            "`Loop stall`",
+            "`## Known failures`",
+            "`thread-vs-plan: refines`",
+        ):
+            self.assertIn(phrase, self.flat, phrase)
+
+    def test_hard_stops_and_staging_cleanup(self):
+        self.assertIn("the operator-phase handoff", self.flat)
+        self.assertIn("is a revision run", self.flat)
+        self.assertIn("A surviving fresh-mode `pr.md`", self.flat)
+
+    def test_disambiguated_from_the_follow_up_checkpoint(self):
+        self.assertIn("is not [`follow-up-tracking.md`](follow-up-tracking.md)'s end-of-loop checkpoint", self.flat)
+        self.assertIn("is never a reason to pause", self.flat)
+
+    def test_router_holds_the_override_and_gates_the_card(self):
+        router = ROUTER.read_text(encoding="utf-8")
+        flat = " ".join(router.split())
+        self.assertIn("A trailing `--pause`", flat)
+        self.assertIn("never passed to prep", flat)
+        self.assertIn("the phase checkpoint card", flat)
+        fence = router.split("```bash", 1)[1].split("```", 1)[0]
+        self.assertNotIn("--pause", fence, "prep's argparse rejects --pause; the router holds it")
+
+    def test_handoff_contract_carries_session_scope_and_a_trailing_pause(self):
+        flat = " ".join(self.HANDOFF_FORMAT.read_text(encoding="utf-8").split())
+        self.assertIn("the clickable review link for *what this session pushed*", flat)
+        self.assertIn("names each phase's range ahead of the link", flat)
+        self.assertIn("may also carry a **trailing** `--pause`", flat)
+        self.assertIn("Never a leading flag", flat)
+        # The trailing form still yields the issue number to the command scan.
+        self.assertEqual(
+            re.findall(r"/github-pipeline:resolver\s+(?:[a-z]+\s+)?#(\d+)", "/github-pipeline:resolver #640 --pause"),
+            ["640"],
+        )
+
+    def test_renderings_anchor_changes_on_the_first_prep(self):
+        flat = " ".join((REFERENCES_DIR / "handoff-renderings.md").read_text(encoding="utf-8").split())
+        self.assertIn("as the session's **first** prep reported it", flat)
+        self.assertIn("`/github-pipeline:resolver #<N> --pause`", flat)
+        self.assertIn("**End session** at the phase's checkpoint card", flat)
+        spine = " ".join(self.spine.split())
+        self.assertIn("`facts.workspace.sha` as the session's **first** prep reported it", spine)
+
+    def test_a_guard_rail_answer_settles_for_the_phase(self):
+        rfr = " ".join((REFERENCES_DIR / "review-fix-round.md").read_text(encoding="utf-8").split())
+        self.assertIn("An answer settles that gate for the phase", rfr)
 
 
 if __name__ == "__main__":

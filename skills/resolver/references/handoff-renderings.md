@@ -19,9 +19,11 @@ drafter re-routes and terminals (checkout-agnostic).
 `/github-pipeline:resolver #<N>` with `<N>` = `facts.target.number`: the issue this run resolved
 (the story or epic on those routes). Never `facts.prior_pr`'s number or the PR this run opened, and
 no `continue` keyword: the next prep re-derives continue mode from the issue's PR state, and a PR
-number is refused as `TARGET_IS_PR` (`_shared/handoff-format.md`, "Authorship").
+number is refused as `TARGET_IS_PR` (`_shared/handoff-format.md`, "Authorship"). When this session held
+`--pause` (SKILL.md §1), the command ends with it — `/github-pipeline:resolver #<N> --pause` — on every
+shape that hands back to the resolver (the non-final `Next:`, the operator-phase `Then:`).
 
-**`Changes:` lines** (the reviewable link to what *this run* pushed — see `_shared/handoff-format.md`) appear on every shape whose run pushed at least one commit, and are omitted on the no-push exits (the drafter re-routes, both terminals, and a PR-less planner re-route). Substitute the entry SHA from `facts.workspace.sha`, the head SHA from `git rev-parse HEAD` run in `facts.workspace.path` **after the review loop settles** (its fix rounds add commits of their own, pushed once at the spine's S5.2, so a HEAD read before the loop exits stops short of what the run shipped), and the PR url from `facts.prior_pr.url` (continue mode) or the `create-pr` envelope's `url` (fresh mode); SHAs are 7-char, matching `dod-annotations.md`. Render the range form `<pr-url>/files/<entry-sha>..<head-sha>` whenever the entry SHA is a commit **in** the PR (the usual continue-mode case). Render the whole-PR form `<pr-url>/files` when it isn't — the entry SHA is the PR's base commit, which GitHub 404s on the range form (the usual fresh-run case, where the whole PR is this run's changes), or an epic run's drift rebase rewrote it out of the history.
+**`Changes:` lines** (the reviewable link to what *this session* pushed — see `_shared/handoff-format.md`) appear on every shape whose session pushed at least one commit, and are omitted on the no-push exits (the drafter re-routes, both terminals, and a PR-less planner re-route). Substitute the entry SHA from `facts.workspace.sha` as the session's **first** prep reported it (a between-phase prep re-run, `phase-continuation.md`, moves the field but not this anchor), the head SHA from `git rev-parse HEAD` run in `facts.workspace.path` **after the review loop settles** (its fix rounds add commits of their own, pushed once at the spine's S5.2, so a HEAD read before the loop exits stops short of what the run shipped), and the PR url from `facts.prior_pr.url` (continue mode) or the `create-pr` envelope's `url` (fresh mode); SHAs are 7-char, matching `dod-annotations.md`. Render the range form `<pr-url>/files/<entry-sha>..<head-sha>` whenever the entry SHA is a commit **in** the PR (the usual continue-mode case). Render the whole-PR form `<pr-url>/files` when it isn't — the entry SHA is the PR's base commit, which GitHub 404s on the range form (the usual fresh-run case, where the whole PR is this run's changes), or an epic run's drift rebase rewrote it out of the history. A session that shipped more than one phase names each phase's range ahead of the link (`Phase 2: 4c1d80f..7b3e5a0 · Phase 3: 7b3e5a0..9f0a112`), each phase's entry being the prep that started its pass; the link stays last.
 
 **The `PR:` line's `review:`/`health:`/`merge:` markers are
 `not run` on every resolver-authored handoff whose PR hasn't reached the evaluator yet — forward exits
@@ -56,8 +58,10 @@ The default code-change outcome. For a story PR under an open epic, the `Issue:`
 
 ## Re-route — multi-phase, non-final code phase pushed
 
-A code-shipping phase landed on the draft PR; the plan's `## Phases` still lists unshipped phases. The
-next session continues the same multi-phase resolution.
+A code-shipping phase landed on the draft PR; the plan's `## Phases` still lists unshipped phases, and
+the operator answered **End session** at the phase's checkpoint card (`phase-continuation.md`). The next
+session continues the same multi-phase resolution. When this session shipped several phases, the `Why:`
+names each one.
 
 ```
 ## Handoff

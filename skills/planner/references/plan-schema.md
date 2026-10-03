@@ -145,6 +145,25 @@ When the target already has **sub-issues**, they are its **deliverable slices** 
 
 Omit the key entirely when the target has no sub-issues; plans authored before it existed parse without it. The pointer is **one-way, plan → sub-issue**: sub-issue bodies never cite phase numbers, and the planner never files, edits, or relabels a sub-issue. The cardinality rule the phase set must satisfy, the plan-versus-live diff, and the mismatch gate live in [`sub-issue-reconciliation.md`](sub-issue-reconciliation.md).
 
+## The `checkpoint:` phase key   (multi-phase — every `code-shipping` phase but the last)
+
+The resolver ships phases in one session until it reaches a checkpoint, so the plan says, per phase, whether a human reviews that phase's change set before later phases build on it. Each `code-shipping` phase except the **last** one carries the key, appended after `depends-on` (and after `sub-issue` when present):
+
+```
+   - checkpoint: <`pause` — the operator reviews this phase's pushed diff before the next phase starts — or `continue`>
+```
+
+**Grammar.** Exactly `pause` or `continue`, single-valued. Any other value is `PHASES_MALFORMED` — a typo must not read as either answer. An **absent** key means `pause`: every plan authored before the key existed keeps the one-phase-per-session behaviour it was written for. Omit the key on the last `code-shipping` phase (its shipping hands the PR to the evaluator, a human-gated step either way) and on `operator` / `decision-only` phases (the resolver cannot run them, so it always stops before one).
+
+**Choosing.** `pause` when the change set wants a human look before anything builds on it:
+- security — authentication, authorization, permissions, secrets, input crossing a trust boundary;
+- data — a migration, a schema change, a destructive or irreversible operation;
+- a contract — a public API, a wire or file format, or the seam a later phase builds on;
+- money — billing, payments, pricing;
+- a phase that puts a `provisional-default` open question or a `## Deviations from project docs` entry into effect.
+
+`continue` for mechanical, low-blast-radius change sets the resolver's review loop and the evaluator can judge alone — a rename, plumbing, tests, docs. When unsure, `pause`. The choice is the planner's; the resolver may add a stop (its warning signs) but never removes one, and the operator can force a stop after every phase with `--pause`. A revise keeps each surviving phase's `checkpoint` unless the change to that phase moves it into or out of a `pause` category, and gives every new `code-shipping` phase one.
+
 ## Phase numbering              (the `## Phases` head line and its reference values)
 
 **Grammar.** A phase head is `<N>. **Phase <N> — <title>**`, and both `<N>` are the **same integer**. The list ordinal and the `Phase N` label are parsed as two separate captures precisely so a renumbering slip is *detectable*, so a disagreement between them is malformed rather than a typo a reader silently repairs. Numbers run **1..n, sequential and non-duplicate**, which makes a phase's number and its position in the list the same fact — there is no way to append an entry numbered 7 and have it sit between 5 and 6. `closes-dod` and `depends-on` values are the literal `(none)` or a comma-separated list of **bare ints**, and nothing else: no prose, no parenthetical, no qualifier. `closes-dod: (none — it re-implements phase 4)` is malformed; that reason belongs in `deliverable`. (Why a bare int and not `#<N>`: the `sub-issue:` phase key above owns that rule.)

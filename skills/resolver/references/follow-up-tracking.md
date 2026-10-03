@@ -64,8 +64,9 @@ commits (TODO markers, skip-annotation reasons, PR-body cross-links).
 
 ## The end-of-loop checkpoint
 
-After the review loop reports approval and before the handoff, present the `file-at-checkpoint` items in
-the registry to the user:
+After the review loop reports approval and before the handoff — or before the phase's `Checkpoint` card
+when the session continues to the next phase (`phase-continuation.md`; a different checkpoint from this
+one) — present the `file-at-checkpoint` items in the registry to the user:
 
 > *"These follow-ups surfaced during this resolution but weren't filed in-flight. File them?"*
 >

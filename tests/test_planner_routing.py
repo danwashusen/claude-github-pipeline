@@ -1853,5 +1853,55 @@ class PolishReRouteTests(unittest.TestCase):
         self.assertIn("add **no** phase: fold the entries into the plan's one phase", text)
         self.assertIn("add **one new phase after the shipped ones**", text)
 
+
+class CheckpointPhaseKeyTests(unittest.TestCase):
+    """The `checkpoint:` phase key: the planner decides, per `code-shipping` phase, whether the
+    resolver asks the operator before continuing to the next phase in the same session.
+
+    Planner-only by operator decision (2026-10-04): no repo-level default, absent = `pause` (the
+    one-phase-per-session behaviour every older plan was written for). The reviewer's BLOCKER on a
+    `continue` over a pause category is what gives "security changes get a human look" its teeth.
+    """
+
+    def setUp(self):
+        self.schema = (REFERENCES_DIR / "plan-schema.md").read_text(encoding="utf-8")
+        self.flat_schema = " ".join(self.schema.split())
+        self.reviewer = " ".join(
+            (REFERENCES_DIR / "plan-reviewer-prompt.md").read_text(encoding="utf-8").split()
+        )
+
+    def test_section_sits_outside_the_frozen_fence_between_sub_issue_and_numbering(self):
+        heading = "## The `checkpoint:` phase key"
+        self.assertIn(heading, self.schema)
+        self.assertNotIn("checkpoint", _first_fenced_block(self.schema))
+        self.assertLess(self.schema.index("## The `sub-issue:` phase key"), self.schema.index(heading))
+        self.assertLess(self.schema.index(heading), self.schema.index("## Phase numbering"))
+
+    def test_grammar_default_and_tie_break(self):
+        for phrase in (
+            "Exactly `pause` or `continue`",
+            "Any other value is `PHASES_MALFORMED`",
+            "An **absent** key means `pause`",
+            "When unsure, `pause`",
+            "never removes one",
+            "`--pause`",
+        ):
+            self.assertIn(phrase, self.flat_schema, phrase)
+
+    def test_every_authoring_route_names_the_key(self):
+        for name in ("single.md", "story-jit.md", "revise.md"):
+            text = (PLAYBOOKS_DIR / name).read_text(encoding="utf-8")
+            self.assertIn("checkpoint", text, name)
+
+    def test_reviewer_blocks_a_continue_over_a_pause_category(self):
+        self.assertIn("**Checkpoints.**", self.reviewer)
+        self.assertIn("is a BLOCKER: that phase's change set would ship and be built on", self.reviewer)
+        self.assertIn("is a SUGGESTION only (absent reads as `pause`, so it fails safe)", self.reviewer)
+
+    def test_plan_summary_shows_where_the_resolver_stops(self):
+        summary = (SHARED_DIR / "plan-summary.md").read_text(encoding="utf-8")
+        self.assertIn("`· pauses after`", summary)
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -57,9 +57,10 @@ This is **not** a sub-agent prompt: no placeholders, no JSON return, and every g
   `pulls/<N>/comments` REST endpoints via `gh api`) and treat any reviewer comment or review — the evaluator's soft-reject review included, though a
   pipeline-authored `COMMENTED` review carries no operator header — as additional Addressable input
   alongside the verdict. Seed the refuted-items list from every `Settled (not
-  addressed):` block in prior round replies (step 8) — each phase is a fresh session, and that block is
-  the only carrier of what earlier phases refuted — **except** a `deferred-by-plan` entry whose phase is
-  the current phase or a ticked tracker row: its deferral has come due, and the finding classifies
+  addressed):` block in prior round replies (step 8) — each phase starts fresh (a new session, or an
+  in-session continuation after a fresh prep — `phase-continuation.md`), and that block is the only
+  carrier of what earlier phases refuted — **except** a `deferred-by-plan` entry whose phase is the
+  current phase or a ticked tracker row: its deferral has come due, and the finding classifies
   fresh. Seed the defect-fix record from every `Defect fixes: phase <N>` line for the current phase. Note
   any `Cold read: phase <N> @ <sha>` line for the current phase and whether its `<sha>` is
   HEAD or an ancestor of it (S5.1 step 4 reads both).
@@ -267,7 +268,8 @@ nothing else does.
    started CI on code the next round was about to change. That comment is the GitHub-side record — how
    a reviewer, and the next session, follows what this loop did without replaying the conversation. When the round settled anything new,
    the reply ends with this fixed block — the next session's resume re-read seeds its refuted-items list
-   from it (each phase is a fresh session; this comment is the only carrier):
+   from it (each phase starts fresh, in a new session or an in-session continuation; this comment is the
+   only carrier):
 
    ```
    Settled (not addressed):
@@ -298,7 +300,7 @@ nothing else does.
 ## Guard rails — direct cards
 
 Render each via `AskUserQuestion` per [`../../_shared/asking-the-user.md`](../../_shared/asking-the-user.md)
-at the point it fires. An answer settles that gate for the run — don't re-raise it on a later round.
+at the point it fires. An answer settles that gate for the phase — don't re-raise it on a later round.
 
 Two kinds of answer, and the difference is load-bearing. A **continuing** answer (Try another angle,
 Accept + defer, Fix it here, Keep settled, File as follow-up, Push with reds, Defer the tests, a named

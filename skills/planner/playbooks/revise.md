@@ -11,8 +11,7 @@ the row table re-selects it on the fresh run (steps 3–4).
 
 **Run the spine first.** Read [`plan-spine.md`](plan-spine.md) and execute it end to end, focused on
 **what changed** (re-walk the thread for newer direction, re-`Grep` the workspace for symbols the plan
-names that may have drifted, re-check open questions) — don't re-derive untouched sections. The deltas
-this route supplies:
+names that may have drifted, re-check open questions) — don't re-derive untouched sections. The deltas this route supplies:
 
 - **Re-check open questions.** An OQ the prior plan planned around whose companion `question` is now
   **resolved** (closed, or answered-in-thread via the tiered read in
@@ -44,7 +43,8 @@ this route supplies:
   Diff old plan vs new plan, classify **SOFT** vs **HARD**, and compute the body-edit diff against `facts.revise.phase_tracker`
   (a no-op when no draft PR exists: no projected ticks). An evaluator-rejection annotation is preserved verbatim —
   never auto-cleared. New work *between* a shipped and an unshipped phase follows that reference's renumbering rule:
-  the shipped prefix keeps its numbers, the unshipped tail shifts up — never a `5c`. `apply` entries in
+  the shipped prefix keeps its numbers, the unshipped tail shifts up — never a `5c`; every phase keeps its
+  `checkpoint` and a new `code-shipping` phase gets one, per plan-schema.md's key section. `apply` entries in
   `facts.revise.open_pr.polish` (an evaluator polish re-route) follow its polish rule: a new phase, or folded in when single-phase.
 - **Reconcile the phases against the live sub-issue set.** When `facts.slices` is present the target's
   sub-issues are its deliverable slices — an **input constraint** on the plan's shape, not an output of

@@ -923,6 +923,11 @@ class PhasesParsingTests(PrepResolverSandboxTestCase):
         self.assertEqual(len(envelope["phases"]), 2)
         self.assertEqual(envelope["phases"][0]["kind"], "code-shipping")
         self.assertEqual(envelope["phases"][1]["depends_on"], [1])
+        # `checkpoint` passes through verbatim; an absent line is `None`, which the spine reads as
+        # `pause` (references/phase-continuation.md).
+        self.assertEqual(
+            [p["checkpoint"] for p in envelope["phases"]], ["continue", None]
+        )
         self.assertIsNotNone(envelope["distiller_bundle"]["plan_marker_path"])
         self.assertTrue(Path(envelope["distiller_bundle"]["plan_marker_path"]).is_file())
 

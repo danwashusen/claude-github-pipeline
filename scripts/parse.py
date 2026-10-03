@@ -54,13 +54,16 @@ Subcommands, each `<subcommand> <body-file>`:
         Parses a plan's `## Phases` section per
         `skills/planner/references/plan-schema.md`'s numbered-list-with-structured-
         keys grammar. `ok` payload: `{"phases": [{"number", "title", "kind", "ships",
-        "closes_dod", "deliverable", "depends_on", "sub_issue"}, ...]}`. `kind` is one of the
+        "closes_dod", "deliverable", "depends_on", "sub_issue", "checkpoint"}, ...]}`. `kind` is one of the
         closed set of exactly three values (`code-shipping` | `operator` | `decision-only`);
         `closes_dod` is either the literal string `"(none)"` or a list of 1-based ints;
         `depends_on` is either the literal string `"(none)"` or a list of ints (phase numbers);
         `sub_issue` is tri-state — `None` when the optional `sub-issue:` line is absent
         (**unmapped**), the literal string `"(none)"` for an explicit **substrate** claim, or an
-        int (the one sub-issue this phase serves). No `## Phases` section is
+        int (the one sub-issue this phase serves). `checkpoint` is `None` when the optional
+        `checkpoint:` line is absent (the resolver reads that as `pause`), else `"pause"` or
+        `"continue"` — whether the resolver may continue to the next phase in the same session
+        once this one ships. No `## Phases` section is
         `ok` with `phases: []` — a plan legitimately omits `## Phases` for single-phase issues and
         epics (plan-schema.md: "multi-phase issues only — omit for single-phase; epics use the
         dedicated `## Story breakdown` / `## Integration strategy` sections"), so an absent
@@ -75,8 +78,9 @@ Subcommands, each `<subcommand> <body-file>`:
         A malformed `## Phases` section (a numbered entry missing a required structured key, an
         entry whose `kind:` value is outside the closed set, non-sequential/duplicate phase
         numbers, a `closes-dod`/`depends-on` value that isn't `(none)` and doesn't parse as the
-        documented reference-list shape, or a `sub-issue:` value that is neither `(none)` nor
-        exactly one `#<N>`) returns `PHASES_MALFORMED`.
+        documented reference-list shape, a `sub-issue:` value that is neither `(none)` nor
+        exactly one `#<N>`, or a `checkpoint:` value that is neither `pause` nor `continue`)
+        returns `PHASES_MALFORMED`.
 
 Envelope conformance (architecture.md §3) on every output: exactly one JSON object on stdout,
 `status` is `ok` or `needs_decision`, `notices: []` always present. Exit 0 on both `ok` and
@@ -736,13 +740,13 @@ _PHASE_HEAD_RE = re.compile(r"^(\d+)\.\s+\*\*Phase (\d+)\s*—\s*(.+?)\*\*\s*$")
 # indents these one level under the numbered head). `re.DOTALL` is not used — value is always the
 # rest of the line.
 _PHASE_KEY_RE = re.compile(
-    r"^\s*-\s+(kind|ships|closes-dod|deliverable|depends-on|sub-issue):\s*(.*)$"
+    r"^\s*-\s+(kind|ships|closes-dod|deliverable|depends-on|sub-issue|checkpoint):\s*(.*)$"
 )
 
-# `sub-issue` is deliberately absent: it is recognized-but-**not-required**, which is the whole
-# backward-compatibility mechanism. This grammar is bidirectionally closed (an unrecognized line
-# raises, and so does a missing required key), so making the key required would turn every plan
-# authored before it existed into `PHASES_MALFORMED` — and the planner's revise mode, the one path
+# `sub-issue` and `checkpoint` are deliberately absent: each is recognized-but-**not-required**,
+# which is the whole backward-compatibility mechanism. This grammar is bidirectionally closed (an
+# unrecognized line raises, and so does a missing required key), so making either key required
+# would turn every plan authored before it existed into `PHASES_MALFORMED` — and the planner's revise mode, the one path
 # that could repair such a plan, parses exactly those bodies.
 _REQUIRED_PHASE_KEYS = frozenset({"kind", "ships", "closes-dod", "deliverable", "depends-on"})
 
@@ -760,13 +764,19 @@ _REF_LIST_ITEM_RE = re.compile(r"^\d+$")
 # rather than a shorthand to be silently narrowed.
 _PHASE_SUB_ISSUE_RE = re.compile(r"^#(\d+)$")
 
+# `checkpoint:` values (plan-schema.md, "The `checkpoint:` phase key"): whether the resolver asks the
+# operator before continuing to the next phase in the same session. An absent line is `None`, which
+# the resolver reads as `pause` — the behaviour every plan authored before the key had.
+_PHASE_CHECKPOINT_VALUES = frozenset({"pause", "continue"})
+
 
 class _PhasesMalformed(Exception):
     """Internal signal: the `## Phases` section is present but does not parse — a phase entry
     missing a required key, a `kind:` value outside the closed set, non-sequential/duplicate phase
     numbers, a `closes-dod`/`depends-on` value that is neither `(none)` nor a well-formed
-    reference list, a `sub-issue:` value that is neither `(none)` nor a single `#<N>`, or a
-    numbered head whose ordinal and "Phase N" label disagree. Never escapes this module.
+    reference list, a `sub-issue:` value that is neither `(none)` nor a single `#<N>`, a
+    `checkpoint:` value that is neither `pause` nor `continue`, or a numbered head whose ordinal
+    and "Phase N" label disagree. Never escapes this module.
     """
 
     def __init__(self, reason, line_number, raw_line):
@@ -836,9 +846,25 @@ def _parse_sub_issue_field(value, phase_number, line_number, raw_line):
     return number
 
 
+def _parse_checkpoint_field(value, phase_number, line_number, raw_line):
+    """Parse a `checkpoint:` field value: exactly `pause` or `continue`, returned verbatim. Raises
+    `_PhasesMalformed` on an empty value or any other word — a typo must not read as either answer,
+    and `continue` on a phase the operator meant to review is the costly misreading.
+    """
+    value = value.strip()
+    if value not in _PHASE_CHECKPOINT_VALUES:
+        raise _PhasesMalformed(
+            "phase %d's 'checkpoint:' field is %r (must be 'pause' or 'continue')"
+            % (phase_number, value),
+            line_number,
+            raw_line,
+        )
+    return value
+
+
 def parse_phases(body_text):
     """Parse the `## Phases` section into a list of `{"number", "title", "kind", "ships",
-    "closes_dod", "deliverable", "depends_on", "sub_issue"}` dicts, in the order they appear in
+    "closes_dod", "deliverable", "depends_on", "sub_issue", "checkpoint"}` dicts, in the order they appear in
     the section (plan-schema.md's numbered list is itself the intended sequencing, mirrored here as
     list order — no independent sort is applied). Raises `_PhasesMalformed` on any parse failure.
 
@@ -849,6 +875,9 @@ def parse_phases(body_text):
                      existed, or a mapping never made). An absent key is NOT `(none)`.
       * `"(none)"` — `sub-issue: (none)`: **substrate**, explicitly claimed.
       * `int`      — `sub-issue: #214`: this phase serves that sub-issue.
+
+    `checkpoint` is `None` when the `checkpoint:` line is absent (read as `pause` by the resolver),
+    else `"pause"` or `"continue"`.
 
     No `## Phases` section: returns `[]` — this is a legitimate shape (single-phase issues and
     epics omit it entirely, plan-schema.md), never `PHASES_MALFORMED` on its own; only a
@@ -961,6 +990,13 @@ def parse_phases(body_text):
                 sub_issue_raw, phase_number, sub_issue_line, sub_issue_line_text
             )
 
+        checkpoint = None
+        if "checkpoint" in found_keys:
+            checkpoint_raw, checkpoint_line, checkpoint_line_text = found_keys["checkpoint"]
+            checkpoint = _parse_checkpoint_field(
+                checkpoint_raw, phase_number, checkpoint_line, checkpoint_line_text
+            )
+
         if phase_number in seen_numbers:
             raise _PhasesMalformed(
                 "phase number %d is used more than once" % phase_number,
@@ -988,6 +1024,9 @@ def parse_phases(body_text):
                 # Always present, `None` when the line is absent, so the dict's key set stays
                 # stable across the pre- and post-contract grammars.
                 "sub_issue": sub_issue,
+                # Same always-present convention: `None` (absent — the resolver pauses) or the
+                # literal `"pause"` / `"continue"`.
+                "checkpoint": checkpoint,
             }
         )
 
