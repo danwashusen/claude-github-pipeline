@@ -185,13 +185,19 @@ def _local_branch_exists(cwd, branch):
     return result.returncode == 0
 
 
+def _upstream_ref(cwd, branch, base_ref):
+    """The remote ref a branch's "not yet pushed" state is measured against: ``origin/<branch>``
+    when the branch has been published, else ``origin/<base_ref>`` (a never-pushed branch)."""
+    return "origin/%s" % (branch if _remote_branch_exists(cwd, branch) else base_ref)
+
+
 def _unpushed_commits(cwd, branch, base_ref):
     """Count commits on ``HEAD`` not yet on the remote. If ``origin/<branch>`` exists, count
     relative to it (the true "not yet pushed" count for a branch with some history already
     published). Otherwise the branch has never been pushed — count relative to
     ``origin/<base_ref>`` instead, so a freshly created worktree with zero new commits reports 0,
     not the entire base branch's history."""
-    upstream = "origin/%s" % (branch if _remote_branch_exists(cwd, branch) else base_ref)
+    upstream = _upstream_ref(cwd, branch, base_ref)
     return int(_git_stdout(["rev-list", "--count", "%s..HEAD" % upstream], cwd))
 
 
@@ -991,6 +997,7 @@ def _build_attach(
                 "setup": setup_result,
             }, [], None
 
+    unpushed_base = base_for_unpushed if base_for_unpushed is not None else default_branch(main_root)
     payload = {
         "op": "attach",
         "kind": "work",
@@ -1000,10 +1007,12 @@ def _build_attach(
         "main_root": main_root,
         "sha": sha,
         "dirty": _is_dirty(top),
-        "unpushed_commits": _unpushed_commits(
-            top,
-            branch,
-            base_for_unpushed if base_for_unpushed is not None else default_branch(main_root),
+        "unpushed_commits": _unpushed_commits(top, branch, unpushed_base),
+        # The pushed tip `unpushed_commits` counts from — `sha` itself whenever nothing is
+        # unpushed. The resolver's diff links anchor here, so an interrupted run's unpushed
+        # commits stay inside the range of the push that finally ships them.
+        "upstream_sha": _git_stdout(
+            ["rev-parse", _upstream_ref(top, branch, unpushed_base)], top
         ),
     }
     if setup_result is not None:

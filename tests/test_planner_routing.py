@@ -1888,6 +1888,18 @@ class CheckpointPhaseKeyTests(unittest.TestCase):
         ):
             self.assertIn(phrase, self.flat_schema, phrase)
 
+    def test_revise_rule_handles_the_last_phase_and_shipped_phases(self):
+        for phrase in (
+            "unless it is the new last `code-shipping` phase",
+            "an **unshipped** phase that stops being last",
+            "a phase that becomes last drops it",
+            "A shipped phase's key is moot",
+            "the session always stops after it",
+        ):
+            self.assertIn(phrase, self.flat_schema, phrase)
+        revise = (PLAYBOOKS_DIR / "revise.md").read_text(encoding="utf-8")
+        self.assertIn("the new last phase carries none", " ".join(revise.split()))
+
     def test_every_authoring_route_names_the_key(self):
         for name in ("single.md", "story-jit.md", "revise.md"):
             text = (PLAYBOOKS_DIR / name).read_text(encoding="utf-8")

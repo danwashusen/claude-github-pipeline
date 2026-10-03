@@ -153,7 +153,7 @@ The resolver ships phases in one session until it reaches a checkpoint, so the p
    - checkpoint: <`pause` — the operator reviews this phase's pushed diff before the next phase starts — or `continue`>
 ```
 
-**Grammar.** Exactly `pause` or `continue`, single-valued. Any other value is `PHASES_MALFORMED` — a typo must not read as either answer. An **absent** key means `pause`: every plan authored before the key existed keeps the one-phase-per-session behaviour it was written for. Omit the key on the last `code-shipping` phase (its shipping hands the PR to the evaluator, a human-gated step either way) and on `operator` / `decision-only` phases (the resolver cannot run them, so it always stops before one).
+**Grammar.** Exactly `pause` or `continue`, single-valued. Any other value is `PHASES_MALFORMED` — a typo must not read as either answer. An **absent** key means `pause`: every plan authored before the key existed keeps the one-phase-per-session behaviour it was written for. Omit the key on the last `code-shipping` phase (the session always stops after it — the ready flip and the human-gated evaluator, or the operator phase that follows it) and on `operator` / `decision-only` phases (the resolver cannot run them, so it always stops before one).
 
 **Choosing.** `pause` when the change set wants a human look before anything builds on it:
 - security — authentication, authorization, permissions, secrets, input crossing a trust boundary;
@@ -162,7 +162,7 @@ The resolver ships phases in one session until it reaches a checkpoint, so the p
 - money — billing, payments, pricing;
 - a phase that puts a `provisional-default` open question or a `## Deviations from project docs` entry into effect.
 
-`continue` for mechanical, low-blast-radius change sets the resolver's review loop and the evaluator can judge alone — a rename, plumbing, tests, docs. When unsure, `pause`. The choice is the planner's; the resolver may add a stop (its warning signs) but never removes one, and the operator can force a stop after every phase with `--pause`. A revise keeps each surviving phase's `checkpoint` unless the change to that phase moves it into or out of a `pause` category, and gives every new `code-shipping` phase one.
+`continue` for mechanical, low-blast-radius change sets the resolver's review loop and the evaluator can judge alone — a rename, plumbing, tests, docs. When unsure, `pause`. The choice is the planner's; the resolver may add a stop (its warning signs) but never removes one, and the operator can force a stop after every phase with `--pause`. **On a revise:** each surviving phase keeps its `checkpoint` unless the change to that phase moves it into or out of a `pause` category; a new `code-shipping` phase gets one unless it is the new last `code-shipping` phase; an **unshipped** phase that stops being last (new work appended after it) gains one; and a phase that becomes last drops it. A shipped phase's key is moot — it already shipped — so leave it as it was rather than adding or removing one.
 
 ## Phase numbering              (the `## Phases` head line and its reference values)
 

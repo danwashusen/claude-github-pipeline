@@ -1260,6 +1260,23 @@ class TrackerFactTests(PrepResolverSandboxTestCase):
         )
         self.assertEqual([row["phase"] for row in tracker["rows"]], [1, 2, 3, 4, 5, 6])
 
+    def test_an_inline_pr_body_is_staged_as_a_path(self):
+        # Staged paths, always: a continue-mode PR-body write needs a fetched base to restage from,
+        # and before this an inline (small) body was never emitted at all — only a spilled one was.
+        envelope = self._envelope(fixture_case="prep_resolver_tracker_clean")
+        tracker = envelope["tracker"]
+        self.assertEqual(tracker["body_mode"], "inline")
+        staged = Path(tracker["body_path"])
+        self.assertTrue(staged.is_file())
+        self.assertTrue(str(staged).startswith(envelope["scratch"]))
+        self.assertIn("## Phase tracker", staged.read_text(encoding="utf-8"))
+
+    def test_workspace_reports_the_pushed_tip(self):
+        # Nothing unpushed in the sandbox: the pushed tip IS the local HEAD.
+        workspace = self._envelope(fixture_case="prep_resolver_tracker_clean")["workspace"]
+        self.assertEqual(workspace["unpushed_commits"], 0)
+        self.assertEqual(workspace["upstream_sha"], workspace["sha"])
+
     def test_last_shipped_falls_back_unreachable_on_fixture_shas(self):
         # The fixture's SHAs are not commits in the sandbox, so nothing is an ancestor of HEAD: the
         # numerically last ticked row is reported with `reachable: false` and the spine falls back

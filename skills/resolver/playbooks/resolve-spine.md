@@ -212,7 +212,7 @@ deadlock check reads both) alongside the follow-up registry.
 **Scope.** The phase under review is **final** when the issue is single-phase, or when it is the last
 unshipped `kind: code-shipping` entry of `facts.phases` after S4 reconciliation — a trailing operator /
 decision-only phase ships no commits and never enters S5.1, so the last code phase carries the cumulative
-pass and is the one whose shipping flips the PR ready ("Return to the routed playbook"). A revision run
+pass, while the ready flip still waits for every phase ("Return to the routed playbook"). A revision run
 (S4) is final. Final → `review`'s target is the PR's **cumulative diff**, read from the
 local branch as `origin/<facts.workspace.base_ref>...HEAD` — nothing is pushed until S5.2, so the PR on
 GitHub still shows the last session's state: a correct-but-partial class fix reads as correct every
@@ -423,7 +423,7 @@ issue — one per **group** of related items — routes through the drafter prox
 
 ## Return to the routed playbook
 
-Capture the session's pushed range for the handoff's `Changes:` link: `facts.workspace.sha` as the session's **first** prep reported it (the session-entry HEAD — a between-phase prep re-run moves the field, never this anchor) → `git rev-parse HEAD` in `facts.workspace.path`, read **after** the review loop settles and S5.2 has pushed — its fix rounds commit on top of the phase's work, so a HEAD read before the loop exits names a range that stops short of what this run actually shipped.
+Capture the session's pushed range for the handoff's `Changes:` link: `facts.workspace.upstream_sha` as the session's **first** prep reported it (the session-entry pushed tip — its `facts.workspace.sha` unless an interrupted run left commits unpushed, which this session ships; a between-phase prep re-run moves the field, never this anchor) → `git rev-parse HEAD` in `facts.workspace.path`, read **after** the review loop settles and S5.2 has pushed — its fix rounds commit on top of the phase's work, so a HEAD read before the loop exits names a range that stops short of what this run actually shipped.
 
 A phase shipped and an unshipped phase remains: read [`../references/phase-continuation.md`](../references/phase-continuation.md) — it runs the next phase in this session (back to S1 after a fresh prep) or ends at the routed playbook's handoff.
 

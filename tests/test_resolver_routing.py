@@ -1945,7 +1945,8 @@ class PhaseContinuationTests(unittest.TestCase):
             "**Continue here**",
             "**End session**",
             "scoped to **this phase's** push",
-            "this pass's prep `facts.workspace.sha`",
+            "this pass's prep `facts.workspace.upstream_sha`",
+            "unless an interrupted run left commits unpushed",
             "link `<pr-url>/files`",
         ):
             self.assertIn(phrase, self.flat, phrase)
@@ -1994,11 +1995,53 @@ class PhaseContinuationTests(unittest.TestCase):
 
     def test_renderings_anchor_changes_on_the_first_prep(self):
         flat = " ".join((REFERENCES_DIR / "handoff-renderings.md").read_text(encoding="utf-8").split())
-        self.assertIn("as the session's **first** prep reported it", flat)
+        self.assertIn("from `facts.workspace.upstream_sha` as the session's **first** prep reported it", flat)
+        self.assertIn("each phase's entry being the `upstream_sha` of the prep that started its pass", flat)
         self.assertIn("`/github-pipeline:resolver #<N> --pause`", flat)
         self.assertIn("**End session** at the phase's checkpoint card", flat)
         spine = " ".join(self.spine.split())
-        self.assertIn("`facts.workspace.sha` as the session's **first** prep reported it", spine)
+        self.assertIn("`facts.workspace.upstream_sha` as the session's **first** prep reported it", spine)
+        self.assertIn("its `facts.workspace.sha` unless an interrupted run left commits unpushed", spine)
+
+    def test_refines_pauses_only_on_new_thread_evidence(self):
+        # `thread-vs-plan` is a whole-thread judgment: without the comment-count delta a refinement
+        # the thread carried at session start re-fires the card on every pass.
+        self.assertIn("`facts.sections.thread_comment_count` with the previous prep's", self.flat)
+        self.assertIn("citing one of those new comments", self.flat)
+        self.assertIn("never pauses a later pass", self.flat)
+
+    def test_restage_source_is_the_staged_pr_body(self):
+        self.assertIn("restages from `facts.tracker.body_path`", self.flat)
+
+    def test_a_trailing_operator_phase_stops_without_the_ready_flip(self):
+        self.assertIn("mid-plan, or trailing the last code phase", self.flat)
+        self.assertIn("the PR stays draft: the ready flip waits for every phase to be ticked", self.flat)
+        self.assertNotIn("The last code phase never reaches this file", self.flat)
+        spine = " ".join(self.spine.split())
+        self.assertIn("while the ready flip still waits for every phase", spine)
+        self.assertNotIn("is the one whose shipping flips the PR ready", spine)
+
+    def test_the_handoff_ends_the_session_never_a_pass(self):
+        router = " ".join(ROUTER.read_text(encoding="utf-8").split())
+        self.assertIn("One `## Handoff` block ends every clean session", router)
+        self.assertIn("Every clean session ends with a single `## Handoff` block", router)
+        self.assertNotIn("every clean run", router.lower())
+        self.assertIn("ends the **session** (SKILL.md §4), never a pass", self.flat)
+        self.assertIn('scope a rule to "this run" or "one run", it means this pass', self.flat)
+
+    def test_hooks_re_run_is_a_recorded_decision(self):
+        self.assertIn("The setup hooks re-run, deliberately: a phase can change what setup installs", self.flat)
+
+    def test_the_session_end_points_at_the_renderings_rather_than_restating(self):
+        end = self.text.split("## 6. Ending the session", 1)[1]
+        self.assertIn("[`handoff-renderings.md`](handoff-renderings.md)", end)
+        self.assertNotIn("<pr-url>", end)
+
+    def test_the_non_final_shape_covers_every_session_end_after_a_non_final_phase(self):
+        flat = " ".join((REFERENCES_DIR / "handoff-renderings.md").read_text(encoding="utf-8").split())
+        self.assertIn("or on any other exit that pushed a non-final phase (an `Abort` / `Abort loop` answer)", flat)
+        standard = " ".join((PLAYBOOKS_DIR / "standard.md").read_text(encoding="utf-8").split())
+        self.assertIn("or an `Abort` after S5.2 pushed", standard)
 
     def test_a_guard_rail_answer_settles_for_the_phase(self):
         rfr = " ".join((REFERENCES_DIR / "review-fix-round.md").read_text(encoding="utf-8").split())

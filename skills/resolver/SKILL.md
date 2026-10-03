@@ -130,12 +130,12 @@ Universal across every route:
 - **Faithful reporting.** Lead with the outcome; report failures verbatim with evidence; declare
   skipped work. Print each judgment sub-agent's rationale before acting on it — the plan summary is one
   such print, compressing the state-distiller's effective plan rather than restating its raw output.
-- **Handoff on clean exit** (§4). One `## Handoff` block ends every clean run; it replaces any ad-hoc narration. Separate from it, and at session **start** rather than exit, the code-shipping routes render the
+- **Handoff on clean exit** (§4). One `## Handoff` block ends every clean session; it replaces any ad-hoc narration. Separate from it, and at session **start** rather than exit, the code-shipping routes render the
   `## Plan summary` block ([`../_shared/plan-summary.md`](../_shared/plan-summary.md)) — the digest of the plan this run is about to build, focused on the phase it will ship.
 
 ## 4. Handoff
 
-Every clean run ends with a single `## Handoff` block — the only bridge to the next session. The
+Every clean session ends with a single `## Handoff` block — the only bridge to the next session. The
 schema, omission rules, and closed-set state-marker vocabulary are owned by
 [`../_shared/handoff-format.md`](../_shared/handoff-format.md); the resolver's per-outcome rubric and
 eleven worked shapes are in [`references/handoff-renderings.md`](references/handoff-renderings.md).

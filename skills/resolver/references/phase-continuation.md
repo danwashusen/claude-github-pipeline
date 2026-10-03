@@ -6,22 +6,26 @@ ships the next phase too or ends with the non-final handoff. This **phase checkp
 [`follow-up-tracking.md`](follow-up-tracking.md)'s end-of-loop checkpoint: that `file-at-checkpoint`
 batch ran at S7, minutes earlier, and is never a reason to pause.
 
-**The rule this file serves:** a continuation is a fresh continue-mode run in everything but the
-conversation. Each phase gets its own prep, push, tracker tick, DoD projection, cold read, and loop
-comment, seeded from GitHub exactly as a new session's would be — so the evaluator, the tracker, and a
-later session cannot tell which phases shared a session.
+**The rule this file serves:** a continuation is a new **pass** through the spine — a fresh
+continue-mode run in everything but the conversation. Each phase gets its own prep, push, tracker tick,
+DoD projection, cold read, and loop comment, seeded from GitHub exactly as a new session's would be — so
+the evaluator, the tracker, and a later session cannot tell which phases shared a session. Wherever the
+spine or its references scope a rule to "this run" or "one run", it means this pass. The `## Handoff`
+ends the **session** (SKILL.md §4), never a pass: a pass that continues emits none.
 
 ## 1. Hard stops — no card, the existing handoff
 
 The next phase is the first unticked row of the `## Phase tracker` S6 just wrote whose `depends-on` is
 satisfied — never selected by title.
 
-- The next phase is `operator` / `decision-only` → the operator-phase handoff. The resolver cannot run
-  it.
+- The next phase is `operator` / `decision-only` — mid-plan, or trailing the last code phase → the
+  operator-phase handoff. The resolver cannot run it, and the PR stays draft: the ready flip waits for
+  every phase to be ticked (the spine's "Return to the routed playbook").
 - The run is exiting on a re-route, or is a revision run → that run's own handoff; there is nothing to
   chain.
 
-The last code phase never reaches this file: the spine's ready flip and forward handoff own it.
+Only a shipped **last planned** phase skips this file — nothing remains, and the spine's ready flip and
+forward handoff own it.
 
 ## 2. Pause or continue
 
@@ -46,10 +50,12 @@ Deferred-by-plan, Refuted), and cold-read findings the loop fixed.
 ## 3. The phase link
 
 `<pr-url>/files/<entry-sha>..<head-sha>` — the PR's Files-changed view scoped to **this phase's** push.
-`<entry-sha>` is this pass's prep `facts.workspace.sha` (the phase's entry HEAD, not the session-entry
-SHA the handoff's `Changes:` line uses); `<head-sha>` is `git rev-parse HEAD` in `facts.workspace.path`
-after S5.2. When the entry SHA is not a commit in the PR — fresh-mode phase 1, where it is the PR's base
-commit and the whole PR is this phase — link `<pr-url>/files`: the discriminating test of
+`<entry-sha>` is this pass's prep `facts.workspace.upstream_sha` — the pushed tip the phase started
+from, which is `facts.workspace.sha` unless an interrupted run left commits unpushed (those are this
+phase's work, so the link must include them). It is not the session-entry anchor the handoff's
+`Changes:` line uses. `<head-sha>` is `git rev-parse HEAD` in `facts.workspace.path` after S5.2. When
+the entry SHA is not a commit in the PR — fresh-mode phase 1, where it is the PR's base commit and the
+whole PR is this phase — link `<pr-url>/files`: the discriminating test of
 [`../../_shared/handoff-format.md`](../../_shared/handoff-format.md)'s `Changes:` rule. The PR url is
 `facts.prior_pr.url`, or the `create-pr` envelope's `url` on a fresh first phase; SHAs in the text are
 7-char.
@@ -79,31 +85,33 @@ and continue.
 1. Delete this phase's staging files from `facts.scratch` — `pr.md`, `issue-body-projected.md`,
    `review-diff.patch`, `cold-read-diff.patch`, any `slice-<M>-ticked.md`. A surviving fresh-mode
    `pr.md` restaged by a later `edit-pr-body` would overwrite the tracker tick S6 just wrote. The next
-   pass's first PR-body write restages from the body the new prep fetched — at that point it *is* the
-   body this session last wrote — and S6's "restage from the body this run last wrote" rule governs every
-   write after that pass's own S5.2.
+   pass's first PR-body write restages from `facts.tracker.body_path` — the PR body the new prep
+   fetched, which at that point *is* the body this session last wrote — and S6's "restage from the body
+   this run last wrote" rule governs every write after that pass's own S5.2.
 2. Re-run prep **in full** — `prep_resolver.py <issue> <owner/repo>`, **no `--refresh`**. `--refresh`
    skips the workspace assertion, so it returns no `facts.workspace` and no reachable
-   `facts.tracker.last_shipped` (the next phase's review base). The setup hooks re-run; their
-   idempotence contract already covers that. The new facts block replaces the old one wholesale — it now
+   `facts.tracker.last_shipped` (the next phase's review base). The setup hooks re-run, deliberately: a
+   phase can change what setup installs (a new dependency), and a new session would re-run them too, so
+   skipping them would break the rule above. The new facts block replaces the old one wholesale — it now
    reads `vector.mode: continue` on this session's own PR — with one value carried over: the **first**
-   prep's `facts.workspace.sha`, the session-entry anchor the handoff's `Changes:` line needs (§6). Note
-   it before the first re-run; every later prep reports the next phase's entry instead.
+   prep's `facts.workspace.upstream_sha`, the session-entry anchor of the handoff's `Changes:` line. Note
+   it before the first re-run; every later prep reports the next phase's start instead.
 3. Re-enter the spine at **S1** in continue mode (S2 skips there, as it always does) and skip S1.5 —
    the printed line already named the phase. Every per-run state in the spine and its references starts
    over, seeded only from GitHub as a new session's would be: S5.1's loop-entry SHA, the addressed- and
    refuted-items lists, defect counts, the grace round and the ceiling count, the cold read, and any
    guard rail's settled answer.
-4. **Warning sign before building.** If this pass's distiller reports `thread-vs-plan: refines`, the
-   thread moved during the phase or at the card — a comment the plan never saw. Print the refinement and
-   render the `Checkpoint` card before S3, its question naming the refinement: **Continue here** builds
-   the plan as refined; **End session** hands off.
+4. **Warning sign before building.** The thread may have moved during the phase or at the card. Compare
+   this pass's `facts.sections.thread_comment_count` with the previous prep's: when it rose **and** this
+   pass's distiller reports `thread-vs-plan: refines` citing one of those new comments, print the
+   refinement and render the `Checkpoint` card before S3, its question naming the refinement —
+   **Continue here** builds the plan as refined; **End session** hands off. A refinement the thread
+   already carried when the session started never pauses a later pass: the session's first pass built
+   on it, and `refines` is a whole-thread judgment, so it would otherwise fire on every pass.
 
 ## 6. Ending the session
 
-End session (or a hard stop) → the routed playbook's handoff. Its `Changes:` line covers everything this
-session pushed — entry = the **first** prep's `facts.workspace.sha` — and, when the session shipped more
-than one phase, names each phase's range before the link ([`handoff-renderings.md`](handoff-renderings.md)).
-Every resolver re-entry command the handoff carries — the non-final shape's `Next:`, the operator-phase
-shape's `Then:` — ends with `--pause` when this session held it; the evaluator-bound shapes cannot carry
-it.
+End session (or a hard stop) → the routed playbook's handoff, composed per
+[`handoff-renderings.md`](handoff-renderings.md): it owns the session-wide `Changes:` line (anchored on
+the value step 2 carried, with per-phase ranges when the session shipped more than one phase) and the
+trailing `--pause` on resolver re-entry commands.
