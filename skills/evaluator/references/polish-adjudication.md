@@ -1,11 +1,19 @@
 # Polish adjudication (spine S5.5)
 
-The evaluator proposes, and the operator decides, what happens to the PR's `## Polish` ledger — the
-polish findings the resolver's review loop recorded and did not fix. Format, dispositions and ownership live in
-[`../../_shared/polish-ledger.md`](../../_shared/polish-ledger.md); this file is the evaluator's
-procedure. It runs **after the S5 verdict and before S7's post timing**, because under an `auto` merge
-policy an APPROVE posts and merges immediately — a ledger decided after that point could not stop the
-merge.
+The evaluator proposes, and the operator decides, what happens to the PR's `## Polish` ledger entries
+still undecided when the PR reaches it. Format, dispositions and ownership live in
+[`../../_shared/polish-ledger.md`](../../_shared/polish-ledger.md); the steps the evaluator shares with
+the resolver — re-check each claim at head, propose, group, the `Polish` card, record the answers — live
+in [`../../_shared/polish-triage.md`](../../_shared/polish-triage.md); this file is the evaluator's part.
+It runs **after the S5 verdict and before S7's post timing**, because under an `auto` merge policy an
+APPROVE posts and merges immediately — a ledger decided after that point could not stop the merge.
+
+This step is the **backstop**. The resolver's finalisation (`resolver/references/finalisation.md`)
+already put every entry its final pass left to the operator, before the push, so a decided entry —
+`file`, `drop`, `applied`, or `apply` — is the operator's answer and is never asked about again here,
+except the unfixed `apply` below. An `open` entry reaching this step is one finalisation left undecided:
+an operator's "leave for the evaluator" answer, polish its light re-review found, or a PR opened before
+finalisation existed.
 
 Input: `facts.polish` (prep's scan of the PR body), plus `facts.plans` and `facts.dod` for the scope and
 decision checks. Nothing to do when it is absent or carries no `open`, unfixed `apply`, or `file` entry.
@@ -14,45 +22,26 @@ never silently dropped.
 
 ## 1. Re-check each entry at head and propose a disposition
 
-First, every entry still marked `apply` — confirmed on an earlier run, but the revision run left it
-unfixed (an **Accept current** on its stall card, an abort). Still present at head → propose `apply`
-again and put it back in front of the operator at §2, marked `confirmed on a prior run, left unfixed`:
-skipping it would silently drop the operator's decision, and forcing it with no card would leave no way
-to release it once priorities change — the operator may re-apply, file it instead, or drop it. Gone
-at head → `drop` with the note `resolved otherwise at <short-sha>`. Next, every `file` entry — decided on
-an earlier run whose verdict sent the PR back, so still unfiled (filing runs only after the merge), and
-the revision since may have fixed it: still true at head → keep it, not asked again; gone → `drop` with
-`resolved otherwise at <short-sha>`, named in the review. Then the `open` entries:
-
-Read the entry's anchor in the workspace (`facts.workspace.path`, at `pr.headRefOid`) and check the
-entry's **claim**, not only that the anchor still exists — the reviewer wrote it against an earlier
-diff, and a later phase may have made it false or narrower. False as written → propose `drop` with the
-note `premise false at head — <why>`; true only in part → keep the item text and put what is actually
-true at head in the note (`narrowed: <what holds>`), so a filed follow-up carries the corrected claim,
-not the reviewer's. Then propose one of the following, with a one-line reason as the entry's note:
+First, every entry still marked `apply` — confirmed on an earlier run or at the resolver's finalisation,
+but left unfixed (an **Accept current** on its stall card, an abort). Still present at head → propose
+`apply` again and put it back in front of the operator at §2, marked
+`confirmed on a prior run, left unfixed`: skipping it would silently drop the operator's decision, and
+forcing it with no card would leave no way to release it once priorities change — the operator may
+re-apply, file it instead, or drop it. Gone at head → `drop` with the note
+`resolved otherwise at <short-sha>`. Next, every `file` entry — decided on an earlier run whose verdict
+sent the PR back, or at the resolver's finalisation, so still unfiled (filing runs only after the merge),
+and a later commit may have fixed it: still true at head → keep it, not asked again; gone → `drop` with
+`resolved otherwise at <short-sha>`, named in the review. Then the `open` entries: run
+[`../../_shared/polish-triage.md`](../../_shared/polish-triage.md) §1–§2 in the workspace
+(`facts.workspace.path`, at `pr.headRefOid`), the plan from `facts.plans`, with the evaluator's apply bar:
 
 - **`apply`** — the polish would be **actively bad to merge**: it meets
   [`../../_shared/polish-ledger.md`](../../_shared/polish-ledger.md) "Apply criteria". This bucket is
   meant to be near-empty: the resolver fixes polish matching those criteria in-loop and never ledgers it
   (`review-fix-round.md` "Classification rubric"), so an
-  `apply`-criteria entry here is a **resolver miss** — name it as one in the review body. A PR sent back
-  for polish costs a whole resolver session; if most entries want `apply`, the resolver's defect/polish
-  line is misplaced — say so rather than sending the PR round again and again.
-- **re-plan** — the entry sits inside this PR's scope (the plan's `## Changes` / phase `ships` in
-  `facts.plans`, or the issue's Definition of done in `facts.dod`) but its fix needs a decision the plan does not make:
-  it would make a plan decision bullet **false as written** (reverses a choice, redefines a term the plan
-  defines, moves work the plan places elsewhere — a list of required behaviour is a minimum, a
-  definition is not), or the plan and the Definition of done leave the intended behaviour open, so two
-  fixes fit, each serving a different intent. The note names the bullet, or the two intents. This is a
-  proposal, not a disposition: the operator's **Re-plan** answer records `apply` and routes to the
-  planner (§4).
-- **`file`** — worth doing, not worth holding the merge for. Filed after the merge by the routed
-  playbook's residual step, grouped per [`../../_shared/follow-up-filing.md`](../../_shared/follow-up-filing.md)
-  (polish groups file as `incomplete-feature`). An entry **outside** this PR's scope that also needs an
-  intent decided files too — the note states the open question, so the follow-up's planner answers it
-  rather than inheriting a guess.
-- **`drop`** — taste rather than improvement, a premise false at head, or **no longer applies at head**
-  (a later phase removed or rewrote the site). The note says which.
+  `apply`-criteria entry here is a **resolver miss** — name it as one in the review body. Applying here
+  costs a whole resolver session, which is why finalisation asks the operator first; propose `file` for
+  anything that is merely worth doing.
 
 An entry that turns out to be a real defect is not polish: it is a dimension failure in S4 (soft-reject
 on the evidence), and the entry is `drop`ped with the note `reclassified: defect — see review`.
@@ -66,43 +55,17 @@ call, not the evaluator's alone — asking only about `apply` left a ledger of `
 one line of the approval question, with no way to re-plan an entry. Ask **before** the S7-gate
 `Approve PR` card and before any S7-post, so the gate and the review see the final dispositions.
 
-Group the entries: one group per proposed follow-up (the `file` grouping of
-[`../../_shared/follow-up-filing.md`](../../_shared/follow-up-filing.md) — same type, same seam), one
-group for each `apply` or re-plan seam, and one group for all the `drop` proposals. Ask one `Polish` card
-(`header: "Polish"`) with one question per group — at most 4 questions per card; more groups ask a
-second card after the first is answered. Each question lists the group's entries (id, item, the
-evaluator's reason, and any `premise false` / `narrowed` correction) and offers four options, the
-evaluator's proposal first and marked recommended:
+Group, ask and record the answers per [`../../_shared/polish-triage.md`](../../_shared/polish-triage.md)
+§3–§4. A re-proposed `apply` joins its seam's group and says it was
+`confirmed on a prior run, left unfixed`.
 
-- **File as follow-up**
-- **Apply in this PR** — the resolver fixes it before the merge.
-- **Re-plan** — the planner revises the plan for it before the resolver continues.
-- **Drop**
-
-A re-proposed `apply` says it was `confirmed on a prior run, left unfixed`. The tool's "Other" takes a
-split answer by id ("file all but P1.3; re-plan P1.3"); apply it entry by entry.
-
-Answers:
-
-- **File as follow-up** → `file`, the note carrying `group: <the question's group label>` — the residual
-  step files one issue per recorded group, as the operator approved it
-  ([`../../_shared/polish-ledger.md`](../../_shared/polish-ledger.md) "Rules").
-- **Drop** → `drop`.
-- **Apply in this PR** → `apply`. On an entry proposed as re-plan because two intents fit, ask one
-  follow-up question first — one option per intent the note names — and record the answer as
-  `intent: <chosen>` in the note: the resolver implements that intent and never picks one itself.
-- **Re-plan** → `apply`, the note prefixed `operator: re-plan —`, which forces the planner route at §4
-  whatever its plan-change test says.
-
-When an answer differs from the proposal, the note leads with `operator: <answer>` and keeps the
-evaluator's reason after it. With no **Apply in this PR** or **Re-plan** answer, the verdict stands and
-S7 proceeds — under `ask` to the `Approve PR` card, which does not carry the ledger. With one, an
-APPROVE becomes COMMENT (§4). On a verdict that is **already** COMMENT — the evaluator's own soft-reject
-(red health, a failed dimension, an S4-untick) — the answers decide only which items go back with the
-PR: the review keeps the evaluator's header and the `COMMENT (soft-reject)` marker, and the route is the
-verdict's own, except that a **Re-plan** answer routes to `planner revise` as an S4-untick does. This
-card is the **only** limit on how often a PR goes back for polish — deliberately an operator decision,
-not a counter; do not add one.
+With no **Apply in this PR** or **Re-plan** answer, the verdict stands and S7 proceeds — under `ask` to
+the `Approve PR` card, which does not carry the ledger. With one, an APPROVE becomes COMMENT (§4). On a
+verdict that is **already** COMMENT — the evaluator's own soft-reject (red health, a failed dimension, an
+S4-untick) — the answers decide only which items go back with the PR: the review keeps the evaluator's
+header and the `COMMENT (soft-reject)` marker, and the route is the verdict's own, except that a
+**Re-plan** answer routes to `planner revise` as an S4-untick does. This card is the **only** limit on
+how often a PR goes back for polish — deliberately an operator decision, not a counter; do not add one.
 
 ## 3. Write the dispositions once
 

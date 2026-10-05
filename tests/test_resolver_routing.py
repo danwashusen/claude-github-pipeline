@@ -2048,5 +2048,86 @@ class PhaseContinuationTests(unittest.TestCase):
         self.assertIn("An answer settles that gate for the phase", rfr)
 
 
+class FinalisationTests(unittest.TestCase):
+    """The operator triages the `## Polish` ledger on the resolver's final pass, before the push
+    (operator decisions, 2026-10-05). Applying polish from the evaluator cost a soft-reject, a whole
+    revision session and a second evaluation, while the operator usually wanted it applied; here it
+    costs one fix round. The fixes take one light re-review, never a second finalisation, and the
+    evaluator's S5.5 stays the backstop for whatever is still `open`.
+    """
+
+    REFERENCE = REFERENCES_DIR / "finalisation.md"
+    SHARED = REPO_ROOT / "skills" / "_shared"
+
+    def setUp(self):
+        self.text = self.REFERENCE.read_text(encoding="utf-8")
+        self.flat = " ".join(self.text.split())
+        self.spine = " ".join((PLAYBOOKS_DIR / SPINE).read_text(encoding="utf-8").split())
+
+    def test_reference_exists_and_is_not_a_sub_agent_prompt(self):
+        self.assertTrue(self.REFERENCE.is_file())
+        for pattern in ("*-prompt*.md", "*-sub-agent*.md"):
+            self.assertNotIn(self.REFERENCE, set(REFERENCES_DIR.glob(pattern)))
+
+    def test_the_spine_runs_it_before_the_one_push_on_the_final_pass(self):
+        push = self.spine.split("### S5.2 — Push the phase, once", 1)[1].split("## S6 —", 1)[0]
+        self.assertIn("[`../references/finalisation.md`](../references/finalisation.md)", push)
+        self.assertIn("On the **final** pass (S5.1 \"Scope\"), a settle or **Accept current** exit first runs "
+                      "**finalisation** once", push)
+        # Before the push, so the #60 one-push rule still holds.
+        self.assertLess(push.index("finalisation.md"), push.index("git -C"))
+        self.assertIn("this is the phase's **only** push", push)
+        self.assertIn("gains an `open` entry per polish item the loop left", push)
+        self.assertIn("and finalisation's answers", push)
+        ret = self.spine.split("## Return to the routed playbook", 1)[1]
+        self.assertIn("a finalisation Re-plan → planner", ret)
+
+    def test_when_it_runs_and_when_it_skips(self):
+        self.assertIn("A terminating guard-rail answer (**Re-plan**, **Restructure**, **Abort**, **Abort loop**) "
+                      "skips it", self.flat)
+        self.assertIn("**Nothing to triage → skip it silently**", self.flat)
+        self.assertIn("go straight to the push — never a second finalisation", self.flat)
+        self.assertIn("A non-final phase's leftovers wait", self.flat)
+
+    def test_it_triages_through_the_shared_procedure(self):
+        self.assertIn("[`../../_shared/polish-triage.md`](../../_shared/polish-triage.md)", self.flat)
+        self.assertIn("every `facts.polish` entry marked `open`", self.flat)
+        self.assertIn("An `apply` entry is not triaged", self.flat)
+        self.assertIn("they stay `open`, and S5.5 asks about them", self.flat)
+        # The card's options live in the shared file, never restated here.
+        self.assertNotIn("- **File as follow-up**", self.flat)
+        triage = " ".join((self.SHARED / "polish-triage.md").read_text(encoding="utf-8").split())
+        self.assertIn("- **Resolver finalisation** — the entry is in this PR's scope", triage)
+        self.assertIn("not against the reason the loop left it", triage)
+
+    def test_applied_entries_take_one_light_re_review_never_a_second_card(self):
+        self.assertIn("run one fix round, S5.1 step 2", self.flat)
+        self.assertIn("step 3's one **light re-review** (`review` at `medium` over the round's commit)", self.flat)
+        self.assertIn("polish it finds goes to the ledger `open`, unfixed — for the evaluator, never back to "
+                      "this card", self.flat)
+        self.assertIn("The round counts toward S5.1's emergency ceiling", self.flat)
+        self.assertIn("`reclassified: defect — see loop comment`", self.flat)
+
+    def test_a_re_plan_re_routes_and_file_entries_wait_for_the_merge(self):
+        self.assertIn("`/github-pipeline:planner revise #<issue>` — no ready flip", self.flat)
+        self.assertIn("A **Re-plan** answer records `apply` with the note prefixed `operator: re-plan —`", self.flat)
+        self.assertIn("doubt means coupled", self.flat)
+        self.assertIn("`file` entries are filed after the merge by the evaluator's residual step, never here",
+                      self.flat)
+
+    def test_the_contracts_credit_finalisation(self):
+        router = " ".join((SKILL_DIR / "SKILL.md").read_text(encoding="utf-8").split())
+        self.assertIn("the phase checkpoint card, the finalisation `Polish` card", router)
+        ledger = " ".join((self.SHARED / "polish-ledger.md").read_text(encoding="utf-8").split())
+        self.assertIn("| `file` | the operator's answer — resolver (finalisation) or evaluator |", ledger)
+        self.assertIn("an `apply` item fixed — at finalisation or in a revision run", ledger)
+        self.assertIn("**The operator decides every disposition.**", ledger)
+        handoff = " ".join((self.SHARED / "handoff-format.md").read_text(encoding="utf-8").split())
+        self.assertIn("or the operator answered **Re-plan** on a polish entry at the resolver's finalisation",
+                      handoff)
+        renderings = " ".join((REFERENCES_DIR / "handoff-renderings.md").read_text(encoding="utf-8").split())
+        self.assertIn("**Finalisation in the `Why:`.**", renderings)
+
+
 if __name__ == "__main__":
     unittest.main()

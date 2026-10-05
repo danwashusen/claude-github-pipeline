@@ -123,10 +123,10 @@ Universal across every route:
   the comment/PR to check it landed (re-reads reintroduce races and burn context).
 - **Gates only for genuine decisions** (per [`../_shared/asking-the-user.md`](../_shared/asking-the-user.md)):
   the audit-blocker gate, the missing-plan gate, a doc conflict, an existing-PR contest, retry-ladder
-  escalation, review-loop guard rails, the loop-stall card, the phase checkpoint card — never to confirm a
-  fact prep derived. A judgment sub-agent (state-distiller, fitness audit, test-selection, cold-read audit)
-  never calls `AskUserQuestion`; it returns its typed result (a §3 decision code or its verdict) to this
-  loop, which asks.
+  escalation, review-loop guard rails, the loop-stall card, the phase checkpoint card, the finalisation
+  `Polish` card — never to confirm a fact prep derived. A judgment sub-agent (state-distiller, fitness audit,
+  test-selection, cold-read audit) never calls `AskUserQuestion`; it returns its typed result (a §3 decision
+  code or its verdict) to this loop, which asks.
 - **Faithful reporting.** Lead with the outcome; report failures verbatim with evidence; declare
   skipped work. Print each judgment sub-agent's rationale before acting on it — the plan summary is one
   such print, compressing the state-distiller's effective plan rather than restating its raw output.

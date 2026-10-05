@@ -45,7 +45,7 @@ names that may have drifted, re-check open questions) — don't re-derive untouc
   never auto-cleared. New work *between* a shipped and an unshipped phase follows that reference's renumbering rule:
   the shipped prefix keeps its numbers, the unshipped tail shifts up — never a `5c`; each phase's
   `checkpoint` follows plan-schema.md's revise rule (the new last phase carries none). `apply` entries in
-  `facts.revise.open_pr.polish` (an evaluator polish re-route) follow its polish rule: a new phase, or folded in when single-phase.
+  `facts.revise.open_pr.polish` (a polish re-route) follow its polish rule: a new phase, or folded in when single-phase.
 - **Reconcile the phases against the live sub-issue set.** When `facts.slices` is present the target's
   sub-issues are its deliverable slices — an **input constraint** on the plan's shape, not an output of
   it. Read [`../references/sub-issue-reconciliation.md`](../references/sub-issue-reconciliation.md)

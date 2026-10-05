@@ -1853,6 +1853,18 @@ class PolishReRouteTests(unittest.TestCase):
         self.assertIn("add **no** phase: fold the entries into the plan's one phase", text)
         self.assertIn("add **one new phase after the shipped ones**", text)
 
+    def test_the_resolver_finalisation_is_a_source_too(self):
+        # 4.30.0: a Re-plan answered on the resolver's finalisation card reaches the planner before the PR
+        # ever reached the evaluator; a trailing operator phase may still be pending then.
+        text = " ".join((REFERENCES_DIR / "revise-reconciliation.md").read_text(encoding="utf-8").split())
+        self.assertIn("When the evaluator — or the resolver's finalisation "
+                      "(`../../resolver/references/finalisation.md`), before the PR ever reached the evaluator — "
+                      "sends a PR here", text)
+        self.assertIn("Every code-shipping phase has shipped by the time either sends it here", text)
+        for name in ("revise.md", "story-jit.md"):
+            playbook = " ".join((REPO_ROOT / "skills" / "planner" / "playbooks" / name).read_text(encoding="utf-8").split())
+            self.assertNotIn("evaluator polish re-route", playbook, name)
+
 
 class CheckpointPhaseKeyTests(unittest.TestCase):
     """The `checkpoint:` phase key: the planner decides, per `code-shipping` phase, whether the

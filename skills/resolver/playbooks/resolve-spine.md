@@ -249,22 +249,20 @@ ledger at S5.2 ([`../../_shared/polish-ledger.md`](../../_shared/polish-ledger.m
 fixed iteration cap that could not tell a round of nits from a round of new bugs.
 
 1. Run `Skill(skill="review")` with the Invocation arguments above, **in this main conversation** (the
-   built-in command is unreachable from
-   inside an `Agent`-dispatched sub-agent — that design consistently failed on PR #607, forcing prose
-   instead of a real verdict). Its verdict text is this round's input.
+   built-in command is unreachable from inside an `Agent`-dispatched sub-agent — that design consistently
+   failed on PR #607, forcing prose instead of a real verdict). Its verdict text is this round's input.
 2. Run one **fix round** on it per the reference, in this conversation: classify and tier every listed
    item (iteration 1 also folds in human PR comments and reviews, seeds the refuted-items list from prior
    rounds' `Settled (not addressed):` blocks, and treats every `facts.polish` entry marked `apply` as
    Addressable whatever its tier), deadlock-check against both lists, list the **fix plan** for every
    item it will fix (the **fix-design** sub-agent designs a hot seam's lines) and check it as a set
-   before the first edit, fix
-   them, defect-inject every new or changed assertion, run the §10.6 pre-push gate (the same retry
-   ladder as §8, test-selection diff-base override = HEAD), commit, and stage the round's reply — the
-push and the reply both wait for S5.2. "Approved" is **not** the exit condition — you re-classify every listed item; soft politeness
-   ("not blocking") does not move an item out of Addressable. A guard rail (deadlock / architectural /
-   verification failure / grounding violation) is a direct `AskUserQuestion` card per the reference,
-   rendered at the point it fires. A **grounding-violation** item is never filed as a follow-up — the
-   hard block exists to stop the ship.
+   before the first edit, fix them, defect-inject every new or changed assertion, run the §10.6 pre-push
+   gate (the same retry ladder as §8, test-selection diff-base override = HEAD), commit, and stage the
+   round's reply — the push and the reply both wait for S5.2. "Approved" is **not** the exit condition —
+   you re-classify every listed item; soft politeness ("not blocking") does not move an item out of
+   Addressable. A guard rail (deadlock / architectural / verification failure / grounding violation) is a
+   direct `AskUserQuestion` card per the reference, rendered at the point it fires. A
+   **grounding-violation** item is never filed as a follow-up — the hard block exists to stop the ship.
 3. Branch on the round's **defect count**, not on the verdict's approval line:
    - **Zero** — the round addressed nothing that keeps the loop open: an approved verdict with no defect,
      *or* a non-approving verdict whose every item classified as Explicitly-deferred (filed),
@@ -310,10 +308,9 @@ push and the reply both wait for S5.2. "Approved" is **not** the exit condition 
    **Abort** / **Abort loop** stop the run: each leaves S5.1 immediately — no further `review`, no cold
    read; a **Re-plan** first fixes the round's independent defects (the reference's "Guard rails") —
    pushes what it has committed via S5.2 (in fresh mode that opens the PR; the remote ends where
-today's per-round pushes left it), then goes to the routed playbook's handoff, whose `Why:` quotes what
-triggered it. Only
-   the continuing answers (**Try another angle**, **Accept + defer**, **Push with reds**, **Defer the
-   tests**, a named architectural path, **Continue**) resume this loop.
+   today's per-round pushes left it), then goes to the routed playbook's handoff, whose `Why:` quotes
+   what triggered it. Only the continuing answers (**Try another angle**, **Accept + defer**,
+   **Push with reds**, **Defer the tests**, a named architectural path, **Continue**) resume this loop.
 4. **Cold-read audit — once per phase, after settle.** The PR is the record: the round reply carries
    `Cold read: phase <N> @ <sha>` (`<N>` the phase number, `1` for a single-phase issue; `<sha>` HEAD at
    dispatch — a local commit S5.2 pushes unchanged), surfaced by the iteration-1 re-read. A prior record for this phase whose `<sha>` **is**
@@ -338,8 +335,10 @@ triggered it. Only
 
 Every exit from S5.1 lands here — settle, **Accept current**, or a terminating guard-rail answer — and
 this is the phase's **only** push: the loop commits locally and never pushes, because each per-round
-push started CI on code the next round was about to change. Uncommitted edits are never pushed. Push
-from the workspace:
+push started CI on code the next round was about to change. Uncommitted edits are never pushed. On the
+**final** pass (S5.1 "Scope"), a settle or **Accept current** exit first runs **finalisation** once — the
+operator's triage of every undecided `## Polish` entry, the applied ones fixed in one more S5.1 round —
+per [`../references/finalisation.md`](../references/finalisation.md). Push from the workspace:
 
 ```bash
 git -C "<facts.workspace.path>" push -u origin "<facts.workspace.branch>"
@@ -357,10 +356,10 @@ ${CLAUDE_PLUGIN_ROOT}/scripts/gh_persist.py create-pr <owner/repo> "<facts.scrat
 when the loop added PR-body items (outstanding settled items, ledger entries, an `Accept current`
 override, `## Known failures`), stage the updated body and apply it with `edit-pr-body`. Either mode,
 the `## Polish` ledger ([`../../_shared/polish-ledger.md`](../../_shared/polish-ledger.md)) gains an
-`open` entry per polish item the loop left and `applied (commit <sha>)` on each `apply` item it fixed. Then post the loop comment — every
-round's staged reply, in order, one `comment` on the PR; a `BODY_TOO_LONG` decision splits it one
-comment per round. It is the GitHub-side record the next session's resume re-read seeds from. Delete
-`<facts.scratch>/loop-comment.md` once it is posted.
+`open` entry per polish item the loop left, `applied (commit <sha>)` on each `apply` item it fixed, and
+finalisation's answers. Then post the loop comment — every round's staged reply, in order, one `comment`
+on the PR; a `BODY_TOO_LONG` decision splits it one comment per round. It is the GitHub-side record the
+next session's resume re-read seeds from. Delete `<facts.scratch>/loop-comment.md` once it is posted.
 
 ## S6 — DoD projection on the push that shipped the phase
 
@@ -430,5 +429,6 @@ A phase shipped and an unshipped phase remains: read [`../references/phase-conti
 Multi-phase last-planned-phase shipped, or a revision run (S4): flip the PR draft → ready with
 `gh pr ready <N> --repo <owner/repo>` **immediately before** the handoff (without the flip the
 evaluator's draft-PR guard deadlocks the handoff). Then continue in the routed playbook (`standard.md`
-/ `story.md`) for its handoff shape. On a re-route exit (audit blocker → drafter, plan drift or a
-revision run's vetoed DoD → planner, doc conflict → drafter), skip straight to the routed playbook's re-route handoff.
+/ `story.md`) for its handoff shape. On a re-route exit (audit blocker → drafter, plan drift, a revision
+run's vetoed DoD or a finalisation Re-plan → planner, doc conflict → drafter), skip straight to the
+routed playbook's re-route handoff.

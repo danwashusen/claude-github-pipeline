@@ -47,7 +47,7 @@ this route supplies:
   before redrafting `## Phases`: it owns the SOFT/HARD classification, the DoD-annotation
   reconciliation, and the renumbering rule for work landing between a shipped phase and an unshipped
   one (the shipped prefix keeps its numbers). Keyed on the fact — no prior plan, nothing to reconcile.
-  On an evaluator polish re-route, the `apply` entries in `facts.revise.open_pr.polish` follow that
+  On a polish re-route, the `apply` entries in `facts.revise.open_pr.polish` follow that
   reference's polish rule — a new phase after the shipped ones, or folded in when single-phase.
 - **Relocate shipped phases.** Whenever `facts.plan.shipped.to_relocate` is non-empty or
   `facts.plan.shipped.restore` is present, run

@@ -227,9 +227,11 @@ evidently met by the accumulated diff (surface before approval).
 When `facts.polish` carries an `open`, unfixed `apply`, or `file` entry (the resolver's unfixed polish —
 [`../../_shared/polish-ledger.md`](../../_shared/polish-ledger.md)), adjudicate it per
 [`../references/polish-adjudication.md`](../references/polish-adjudication.md) **before S7's post
-timing** — under `auto` an APPROVE posts and merges at once. Re-check each entry's claim at head and
-propose `apply` / re-plan / `file` / `drop` with a reason (an unfixed `apply` from an earlier run is
-re-proposed, so the operator can release it). The operator decides **every** entry, on any verdict and
+timing** — under `auto` an APPROVE posts and merges at once. This is the backstop: the resolver's
+finalisation already put every entry its final pass left to the operator, and a decided entry is never
+re-asked. Re-check each entry's claim at head and propose `apply` / re-plan / `file` / `drop` with a
+reason (an unfixed `apply` from an earlier run is re-proposed, so the operator can release it). The
+operator decides **every** entry, on any verdict and
 under either policy — the reference's `Polish` card, one question per group, asked before the S7-gate
 card, which never carries the ledger. An answer that applies an entry makes the verdict COMMENT, routed
 to the resolver (`#<issue>`) or — on a re-plan, or when applying it changes the plan — `planner revise`.

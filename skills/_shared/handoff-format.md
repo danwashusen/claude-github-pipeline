@@ -134,7 +134,7 @@ Story PR clean merges are **not** terminal — they hand off to the **planner** 
 
 A re-route is a handoff whose `Next:` points at a prior skill — typically:
 
-- resolver → planner (the plan's locked decisions don't survive contact with the code, or the issue thread has moved past the plan; refresh the plan)
+- resolver → planner (the plan's locked decisions don't survive contact with the code, or the issue thread has moved past the plan; refresh the plan — or the operator answered **Re-plan** on a polish entry at the resolver's finalisation, `skills/resolver/references/finalisation.md`)
 - resolver → drafter (the issue body fails the resolver's fitness-to-implement audit, or contradicts a doc the resolver can't reconcile)
 - planner → researcher (the plan needs current external truth the model can't reliably recall — a dependency/API/version at or past the training cutoff; gather and verify the research first, then re-run the planner)
 - planner → (answer the open question) (every plannable part of the issue is gated by an unresolved open question the planner must not resolve itself; a human answers the companion `question` issue, then the planner re-runs). Terminal-style: the `Next:` names no follow-up skill — the decision is a human's — but carries a re-run breadcrumb. If no companion question is filed yet, point at the drafter to file it first.
@@ -153,7 +153,7 @@ A re-route is a handoff whose `Next:` points at a prior skill — typically:
 
 The schema does not change. The `Why:` line is the load-bearing piece — it must name the specific evidence so the user (and the prior skill, when re-run) can act without re-investigating:
 
-- Plan re-routes: quote the locked decision verbatim and cite the `file:line` where the contradiction surfaced. From the evaluator, quote each `… evaluator rejected: …` annotation for an un-tick, or the ledger item by id and the plan decision it would reverse for a polish `apply`.
+- Plan re-routes: quote the locked decision verbatim and cite the `file:line` where the contradiction surfaced. From the evaluator, quote each `… evaluator rejected: …` annotation for an un-tick, or the ledger item by id and the plan decision it would reverse for a polish `apply`; from the resolver's finalisation, each re-plan entry by id and the decision its note names (or the two intents).
 - Drafter re-routes: quote the body's claim verbatim, name the missing or contradictory symbol, and cite the closest-match `file:line`.
 - Researcher re-routes (planner → researcher): name the specific ungroundable fact verbatim (the dependency/API/version and what's unknown), so the researcher targets exactly that gap rather than re-researching the whole issue.
 - Open-question re-routes (planner → answer the question): name the blocking OQ id and the companion `question` issue `#N` (and its `audience:*`), so the reader knows exactly which decision unblocks the plan.

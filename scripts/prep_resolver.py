@@ -772,7 +772,8 @@ def build_revision(mode, phases, tracker, prior_pr_fact, vetoes, polish, reviewe
     to the planner — they never short-circuit the loop:
       - `dod_rejected` — a veto (`dod_vetoes`) no re-plan has reassigned yet: only a re-plan clears it.
         A reassigned veto is not a reason — the run builds its fix and the push projects it;
-      - `polish_apply` — a `## Polish` ledger entry the evaluator marked `apply`;
+      - `polish_apply` — a `## Polish` ledger entry marked `apply` (the operator's answer, recorded by the
+        evaluator or by the resolver's finalisation — e.g. a Re-plan the planner folded into phase 1);
       - `review_at_head` — a non-approving review posted on the current head of a **draft** PR (a
         soft-reject flips it to draft; the self-approval downgrade's COMMENTED review does not).
 
