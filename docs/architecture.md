@@ -454,8 +454,9 @@ tell a round of nits from a round of new bugs. Unfixed polish goes to the PR's `
 the final pass and before the push, puts every entry the loop left to the operator and fixes the applied
 ones in one more round with a light re-review, because applying polish from the evaluator cost a
 soft-reject, a revision session and a second evaluation. The **evaluator** stays the backstop — it
-re-checks every decided entry at head and asks about any still `open` — and its disposition rewrite stays
-its one PR-body write, through `gh_persist.py edit-pr-body`.
+re-checks at head every unfixed `apply`, every `file` and every `premise false` `drop` (a premise the
+code's author judged at finalisation), and asks about any entry still `open` — and its disposition rewrite
+stays its one PR-body write, through `gh_persist.py edit-pr-body`.
 
 ## §9 Skill anatomy
 

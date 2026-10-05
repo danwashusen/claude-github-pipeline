@@ -428,8 +428,9 @@ now the same rule everything else follows rather than an exception.
   (`open` / `applied` resolver-written; `apply` / `file` / `drop` the **operator's** answers, recorded by
   whichever skill asked). The operator decides every entry on a `Polish` card, first at the **resolver's
   finalisation** — on the final pass, before the push, so an applied entry costs one fix round, not a
-  revision session — and the **evaluator** is the backstop: it re-checks every decided entry at head and
-  asks about any still `open` (never folded into the approval card). An `apply` it confirms →
+  revision session — and the **evaluator** is the backstop: it re-checks at head every unfixed `apply`,
+  every `file`, and every `premise false` `drop` (that premise was judged by the code's author at
+  finalisation), and asks about any entry still `open` (never folded into the approval card). An `apply` it confirms →
   soft-reject to the resolver, or to the planner on a Re-plan or when applying it reverses a locked
   decision; a finalisation Re-plan re-routes the resolver's own handoff to the planner. An `apply` item is
   Addressable for the resolver whatever its tier, which is what stops a polish ping-pong. `file` entries

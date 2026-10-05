@@ -281,9 +281,9 @@ fixed iteration cap that could not tell a round of nits from a round of new bugs
      renders the **stall card**. **Churn** — at least 2 defects, most of them loop-induced — is the
      card's evidence and adds its **Re-plan** option. A round that rendered the `Review loop` or
      `Settled item` card does not also render the stall card — the repeated item is the more specific signal.
-   - **Reset** — when a light re-review or the cold read reopens a settled loop with a defect, the next
-     round counts as round 1 again: a fresh baseline and an unused grace round (the ceiling's count
-     carries on).
+   - **Reset** — when a light re-review, the cold read or finalisation's round reopens a settled loop with
+     a defect, the next round counts as round 1 again: a fresh baseline and an unused grace round (the
+     ceiling's count carries on).
    - Settled and the cold read has **not** run on this phase — in this pass, nor per step 4's PR record
      at this HEAD → step 4. Settled and it **has** → S5.1 is done; go to S5.2.
 
@@ -301,8 +301,8 @@ fixed iteration cap that could not tell a round of nits from a round of new bugs
    in the option's description) / **Abort**, plus **Re-plan** when churn fired (its round's fixes are
    already committed, so it takes no independent-defect pass). The same card renders, marked "ceiling
    reached", at the **emergency ceiling**: 8 `review` runs in S5.1 per phase, light re-reviews and the
-   post-cold-read run included. It is a backstop against a progress call the model makes on its own work,
-   not a budget — reaching it means the rule misfired.
+   post-cold-read run included (finalisation's light re-review excepted). It is a backstop against a
+   progress call the model makes on its own work, not a budget — reaching it means the rule misfired.
 
    **A guard rail's answer can end the run.** **Re-plan** and **Restructure** re-route to the planner,
    **Abort** / **Abort loop** stop the run: each leaves S5.1 immediately — no further `review`, no cold
@@ -355,11 +355,11 @@ ${CLAUDE_PLUGIN_ROOT}/scripts/gh_persist.py create-pr <owner/repo> "<facts.scrat
 `--base`/`--head` are always explicit facts from the workspace (never inferred from cwd). Continue mode:
 when the loop added PR-body items (outstanding settled items, ledger entries, an `Accept current`
 override, `## Known failures`), stage the updated body and apply it with `edit-pr-body`. Either mode,
-the `## Polish` ledger ([`../../_shared/polish-ledger.md`](../../_shared/polish-ledger.md)) gains an
-`open` entry per polish item the loop left, `applied (commit <sha>)` on each `apply` item it fixed, and
-finalisation's answers. Then post the loop comment — every round's staged reply, in order, one `comment`
-on the PR; a `BODY_TOO_LONG` decision splits it one comment per round. It is the GitHub-side record the
-next session's resume re-read seeds from. Delete `<facts.scratch>/loop-comment.md` once it is posted.
+the `## Polish` ledger ([`../../_shared/polish-ledger.md`](../../_shared/polish-ledger.md)) gains one
+entry per polish item the loop left — `open`, or finalisation's answer — and `applied (commit <sha>)` on
+each `apply` item it fixed. Then post the loop comment — every round's staged reply, in order, one
+`comment` on the PR; a `BODY_TOO_LONG` decision splits it one comment per round. It is the GitHub-side
+record the next session's resume re-read seeds from. Delete `<facts.scratch>/loop-comment.md` once posted.
 
 ## S6 — DoD projection on the push that shipped the phase
 
@@ -426,9 +426,9 @@ Capture the session's pushed range for the handoff's `Changes:` link: `facts.wor
 
 A phase shipped and an unshipped phase remains: read [`../references/phase-continuation.md`](../references/phase-continuation.md) — it runs the next phase in this session (back to S1 after a fresh prep) or ends at the routed playbook's handoff.
 
-Multi-phase last-planned-phase shipped, or a revision run (S4): flip the PR draft → ready with
-`gh pr ready <N> --repo <owner/repo>` **immediately before** the handoff (without the flip the
-evaluator's draft-PR guard deadlocks the handoff). Then continue in the routed playbook (`standard.md`
-/ `story.md`) for its handoff shape. On a re-route exit (audit blocker → drafter, plan drift, a revision
-run's vetoed DoD or a finalisation Re-plan → planner, doc conflict → drafter), skip straight to the
-routed playbook's re-route handoff.
+On a re-route exit (audit blocker → drafter, plan drift, a revision run's vetoed DoD or a finalisation
+Re-plan → planner, doc conflict → drafter), skip straight to the routed playbook's re-route handoff — no
+ready flip. Otherwise, multi-phase last-planned-phase shipped, or a revision run (S4): flip the PR draft →
+ready with `gh pr ready <N> --repo <owner/repo>` **immediately before** the handoff (without the flip the
+evaluator's draft-PR guard deadlocks the handoff). Then continue in the routed playbook (`standard.md` /
+`story.md`) for its handoff shape.

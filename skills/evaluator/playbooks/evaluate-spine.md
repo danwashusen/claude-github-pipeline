@@ -224,14 +224,15 @@ evidently met by the accumulated diff (surface before approval).
 
 ## S5.5 — Polish ledger
 
-When `facts.polish` carries an `open`, unfixed `apply`, or `file` entry (the resolver's unfixed polish —
-[`../../_shared/polish-ledger.md`](../../_shared/polish-ledger.md)), adjudicate it per
-[`../references/polish-adjudication.md`](../references/polish-adjudication.md) **before S7's post
+When `facts.polish` carries an `open`, unfixed `apply`, `file`, or `premise false` `drop` entry (the
+resolver's unfixed polish — [`../../_shared/polish-ledger.md`](../../_shared/polish-ledger.md)), adjudicate
+it per [`../references/polish-adjudication.md`](../references/polish-adjudication.md) **before S7's post
 timing** — under `auto` an APPROVE posts and merges at once. This is the backstop: the resolver's
-finalisation already put every entry its final pass left to the operator, and a decided entry is never
-re-asked. Re-check each entry's claim at head and propose `apply` / re-plan / `file` / `drop` with a
-reason (an unfixed `apply` from an earlier run is re-proposed, so the operator can release it). The
-operator decides **every** entry, on any verdict and
+finalisation already put every entry its final pass left to the operator, and a decided entry is not
+re-asked unless it is an unfixed `apply` or a `premise false` drop whose claim holds at head. Re-check each
+entry's claim at head and propose `apply` / re-plan / `file` / `drop` with a reason (an unfixed `apply`
+from an earlier run is re-proposed, so the operator can release it). The operator decides **every**
+entry, on any verdict and
 under either policy — the reference's `Polish` card, one question per group, asked before the S7-gate
 card, which never carries the ledger. An answer that applies an entry makes the verdict COMMENT, routed
 to the resolver (`#<issue>`) or — on a re-plan, or when applying it changes the plan — `planner revise`.

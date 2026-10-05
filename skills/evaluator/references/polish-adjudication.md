@@ -10,15 +10,15 @@ APPROVE posts and merges immediately — a ledger decided after that point could
 
 This step is the **backstop**. The resolver's finalisation (`resolver/references/finalisation.md`)
 already put every entry its final pass left to the operator, before the push, so a decided entry —
-`file`, `drop`, `applied`, or `apply` — is the operator's answer and is never asked about again here,
-except the unfixed `apply` below. An `open` entry reaching this step is one finalisation left undecided:
-an operator's "leave for the evaluator" answer, polish its light re-review found, or a PR opened before
-finalisation existed.
+`file`, `drop`, `applied`, or `apply` — is the operator's answer and is not asked about again here,
+except §1's unfixed `apply` and a `premise false` drop whose claim holds at head. An `open` entry reaching
+this step is one finalisation left undecided: an `operator: leave for evaluator` answer, polish its light
+re-review found, or a PR opened before finalisation existed.
 
 Input: `facts.polish` (prep's scan of the PR body), plus `facts.plans` and `facts.dod` for the scope and
-decision checks. Nothing to do when it is absent or carries no `open`, unfixed `apply`, or `file` entry.
-A line in `facts.polish.unparsed` is rewritten into grammar by this step's write, keeping its text;
-never silently dropped.
+decision checks. Nothing to do when it is absent or carries no `open`, unfixed `apply`, `file`, or
+`premise false` `drop` entry. A line in `facts.polish.unparsed` is rewritten into grammar by this step's
+write, keeping its text; never silently dropped.
 
 ## 1. Re-check each entry at head and propose a disposition
 
@@ -31,17 +31,21 @@ re-apply, file it instead, or drop it. Gone at head → `drop` with the note
 `resolved otherwise at <short-sha>`. Next, every `file` entry — decided on an earlier run whose verdict
 sent the PR back, or at the resolver's finalisation, so still unfiled (filing runs only after the merge),
 and a later commit may have fixed it: still true at head → keep it, not asked again; gone → `drop` with
-`resolved otherwise at <short-sha>`, named in the review. Then the `open` entries: run
-[`../../_shared/polish-triage.md`](../../_shared/polish-triage.md) §1–§2 in the workspace
+`resolved otherwise at <short-sha>`, named in the review. Next, every `drop` whose note leads
+`premise false at head` — a claim about the code, which at finalisation the session that wrote the code
+judged: re-read its anchor at head. Still false → keep it, not asked again; the claim holds after all →
+re-propose the entry at §2, marked `premise disputed: <what holds>`. A taste drop is the operator's own
+judgement and a `reclassified: defect` drop is S4's to judge, so neither is re-checked. Then the `open`
+entries: run [`../../_shared/polish-triage.md`](../../_shared/polish-triage.md) §1–§2 in the workspace
 (`facts.workspace.path`, at `pr.headRefOid`), the plan from `facts.plans`, with the evaluator's apply bar:
 
-- **`apply`** — the polish would be **actively bad to merge**: it meets
-  [`../../_shared/polish-ledger.md`](../../_shared/polish-ledger.md) "Apply criteria". This bucket is
-  meant to be near-empty: the resolver fixes polish matching those criteria in-loop and never ledgers it
-  (`review-fix-round.md` "Classification rubric"), so an
-  `apply`-criteria entry here is a **resolver miss** — name it as one in the review body. Applying here
-  costs a whole resolver session, which is why finalisation asks the operator first; propose `file` for
-  anything that is merely worth doing.
+- **`apply`** — the evaluator's rule in that file's "The apply bar": the ledger's "Apply criteria",
+  nothing lower; propose `file` for anything merely worth doing. This bucket is meant to be near-empty:
+  the resolver fixes polish matching those criteria in-loop and never ledgers it (`review-fix-round.md`
+  "Classification rubric"), so an `apply`-criteria entry here is a **resolver miss** — name it as one in
+  the review body. When most `open` entries reaching this step meet the criteria, the resolver's in-loop
+  defect/polish line is misplaced — say so in the review body rather than sending the PR round again and
+  again.
 
 An entry that turns out to be a real defect is not polish: it is a dimension failure in S4 (soft-reject
 on the evidence), and the entry is `drop`ped with the note `reclassified: defect — see review`.
@@ -57,7 +61,7 @@ one line of the approval question, with no way to re-plan an entry. Ask **before
 
 Group, ask and record the answers per [`../../_shared/polish-triage.md`](../../_shared/polish-triage.md)
 §3–§4. A re-proposed `apply` joins its seam's group and says it was
-`confirmed on a prior run, left unfixed`.
+`confirmed on a prior run, left unfixed`; a re-proposed drop says `premise disputed: <what holds>`.
 
 With no **Apply in this PR** or **Re-plan** answer, the verdict stands and S7 proceeds — under `ask` to
 the `Approve PR` card, which does not carry the ledger. With one, an APPROVE becomes COMMENT (§4). On a

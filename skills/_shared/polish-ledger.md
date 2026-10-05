@@ -18,8 +18,9 @@ by the operator, before merge. It is decided **first at the resolver's finalisat
 (`resolver/references/finalisation.md`) — on the final pass, before the push — because the operator
 usually wants polish applied, and applying it there costs one fix round in the same session; applying it
 from the evaluator costs a soft-reject, a whole revision session and a second evaluation. The evaluator
-stays the backstop: the reader that did not write the PR re-checks every decided entry at head and puts
-any entry still `open` to the operator. The resolver still fixes polish on merit; only what it leaves
+stays the backstop: the reader that did not write the PR re-checks at head every decided entry that
+rests on a claim about the code — an unfixed `apply`, a `file`, a `premise false` `drop` — and puts any
+entry still `open` to the operator. The resolver still fixes polish on merit; only what it leaves
 lands here.
 
 ## Format
@@ -49,7 +50,8 @@ example's paths mix Python, Ruby and Swift on purpose — the format is stack-ne
   follow-up descriptions).
 - **Note** — optional; required on `apply` / `file` / `drop` (the proposer's reason, led by
   `operator: <answer>` when the operator overrode it) and on `applied` when it records why the entry was
-  applied.
+  applied. An `open` entry carries `operator: leave for evaluator` when the operator answered that at
+  finalisation: no later finalisation asks again, and the evaluator does.
 
 ## Dispositions (closed set)
 
@@ -90,7 +92,8 @@ proposes `apply` against a lower bar — in scope, true at head, clearly right
   finalisation, the evaluator's for whatever is still `open` (on any verdict and under either merge
   policy, `evaluator/references/polish-adjudication.md`) — and the ledger records the answer. A decided
   entry is never asked about again, except an `apply` left unfixed, which the evaluator re-proposes so the
-  operator can release it. That is what lets the evaluator treat an `apply` left unfixed as still binding,
+  operator can release it, and a `premise false` `drop` whose claim the evaluator finds holds at head
+  (`premise disputed`) — at finalisation the proposer judging that premise wrote the code. That is what lets the evaluator treat an `apply` left unfixed as still binding,
   and it bounds the cycle: the operator's answer is the only limit on how often a PR goes back for polish.
   It is deliberately not a counter.
 - **A `file` entry files from its note too.** The residual filing briefs each `file` entry from its

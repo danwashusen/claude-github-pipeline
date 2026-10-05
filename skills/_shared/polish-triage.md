@@ -27,7 +27,7 @@ reviewer's.
 
 Propose one of the following, with a one-line reason as the entry's note:
 
-- **`apply`** — the entry clears the caller's **apply bar** (below).
+- **`apply`** — the entry clears the caller's **apply bar** ("The apply bar").
 - **re-plan** — the entry sits inside this PR's scope (the plan's `## Changes` / phase `ships`, or the
   issue's Definition of done in `facts.dod`) but its fix needs a decision the plan does not make: it would
   make a plan decision bullet **false as written** (reverses a choice, redefines a term the plan defines,
@@ -93,7 +93,9 @@ entry. A caller may give "Other" one reading of its own, named in its reference.
 
 When an answer differs from the proposal, the note leads with `operator: <answer>` and keeps the
 proposer's reason after it. Every answer is the operator's decision, so a later triage never asks about a
-decided entry again — the one exception is an `apply` the resolver left unfixed, which the evaluator
-re-proposes so the operator can release it. The caller writes the answers once, through the single write
+decided entry again, with two exceptions the evaluator owns: an `apply` the resolver left unfixed, which
+it re-proposes so the operator can release it, and a `premise false` drop whose claim it finds holds at
+head (`premise disputed`). An `open` entry noted `operator: leave for evaluator` is the operator's answer
+to wait for the evaluator: finalisation skips it. The caller writes the answers once, through the single write
 path; the ledger never records a decision the operator overrode, and entries are never deleted
 ([`polish-ledger.md`](polish-ledger.md) "Rules").

@@ -1295,7 +1295,7 @@ class MainLoopReviewFixRoundTests(unittest.TestCase):
 
     def test_the_ledger_is_written_at_the_phase_push(self):
         self.assertIn("the `## Polish` ledger", self.flat)
-        self.assertIn("gains an `open` entry per polish item the loop left", self.flat)
+        self.assertIn("gains one entry per polish item the loop left — `open`, or finalisation's answer", self.flat)
         self.assertIn("`applied (commit <sha>)` on each `apply` item it fixed", self.flat)
 
     def test_settle_covers_a_verdict_that_never_approves(self):
@@ -2077,10 +2077,24 @@ class FinalisationTests(unittest.TestCase):
         # Before the push, so the #60 one-push rule still holds.
         self.assertLess(push.index("finalisation.md"), push.index("git -C"))
         self.assertIn("this is the phase's **only** push", push)
-        self.assertIn("gains an `open` entry per polish item the loop left", push)
-        self.assertIn("and finalisation's answers", push)
+        # PR #71 review: "an `open` entry per item … and finalisation's answers" read as two lines per item.
+        self.assertIn("gains one entry per polish item the loop left — `open`, or finalisation's answer — and "
+                      "`applied (commit <sha>)`", push)
+        self.assertNotIn("gains an `open` entry per polish item the loop left", push)
         ret = self.spine.split("## Return to the routed playbook", 1)[1]
         self.assertIn("a finalisation Re-plan → planner", ret)
+        # PR #71 review: the re-route exit is read before the ready flip, so a Re-plan never flips the PR.
+        self.assertIn("skip straight to the routed playbook's re-route handoff — no ready flip", ret)
+        self.assertLess(ret.index("On a re-route exit"), ret.index("gh pr ready"))
+
+    def test_the_loop_rules_cover_finalisations_round(self):
+        # PR #71 review: Reset named only the light re-review and the cold read; and the ceiling counted
+        # finalisation's light re-review, re-firing the ceiling card after an Accept current at the ceiling.
+        self.assertIn("when a light re-review, the cold read or finalisation's round reopens a settled loop", self.spine)
+        self.assertIn("light re-reviews and the post-cold-read run included (finalisation's light re-review "
+                      "excepted)", self.spine)
+        self.assertIn("This light re-review is outside S5.1's emergency-ceiling count", self.flat)
+        self.assertIn("after a **settle** exit, re-enters the loop at step 2 under step 3's **Reset** rule", self.flat)
 
     def test_when_it_runs_and_when_it_skips(self):
         self.assertIn("A terminating guard-rail answer (**Re-plan**, **Restructure**, **Abort**, **Abort loop**) "
@@ -2093,7 +2107,13 @@ class FinalisationTests(unittest.TestCase):
         self.assertIn("[`../../_shared/polish-triage.md`](../../_shared/polish-triage.md)", self.flat)
         self.assertIn("every `facts.polish` entry marked `open`", self.flat)
         self.assertIn("An `apply` entry is not triaged", self.flat)
-        self.assertIn("they stay `open`, and S5.5 asks about them", self.flat)
+        # PR #71 review: a leave-open answer is recorded, so a later finalisation never re-asks it.
+        self.assertIn("they stay `open` with the note `operator: leave for evaluator`, so no later finalisation "
+                      "asks again", self.flat)
+        self.assertIn("Skip an `open` entry whose note is `operator: leave for evaluator`", self.flat)
+        # PR #71 review: an unparsed ledger line is triaged, never skipped.
+        self.assertIn("every line in `facts.polish.unparsed`", self.flat)
+        self.assertIn("never silently dropped", self.flat)
         # The card's options live in the shared file, never restated here.
         self.assertNotIn("- **File as follow-up**", self.flat)
         triage = " ".join((self.SHARED / "polish-triage.md").read_text(encoding="utf-8").split())
@@ -2103,9 +2123,9 @@ class FinalisationTests(unittest.TestCase):
     def test_applied_entries_take_one_light_re_review_never_a_second_card(self):
         self.assertIn("run one fix round, S5.1 step 2", self.flat)
         self.assertIn("step 3's one **light re-review** (`review` at `medium` over the round's commit)", self.flat)
-        self.assertIn("polish it finds goes to the ledger `open`, unfixed — for the evaluator, never back to "
+        self.assertIn("Polish it finds goes to the ledger `open`, unfixed — for the evaluator, never back to "
                       "this card", self.flat)
-        self.assertIn("The round counts toward S5.1's emergency ceiling", self.flat)
+        self.assertIn("Any round after it counts as usual", self.flat)
         self.assertIn("`reclassified: defect — see loop comment`", self.flat)
 
     def test_a_re_plan_re_routes_and_file_entries_wait_for_the_merge(self):
@@ -2114,6 +2134,25 @@ class FinalisationTests(unittest.TestCase):
         self.assertIn("doubt means coupled", self.flat)
         self.assertIn("`file` entries are filed after the merge by the evaluator's residual step, never here",
                       self.flat)
+
+    def test_accept_current_never_reopens_the_loop(self):
+        # PR #71 review: after Accept current (at the ceiling or not), finalisation's light re-review
+        # finding a defect reverts the round rather than reopening a loop the operator closed.
+        self.assertIn("after an **Accept current** exit, does **not** reopen the loop the operator closed", self.flat)
+        self.assertIn('git -C "<facts.workspace.path>" revert --no-edit <round sha>', self.flat)
+        self.assertIn("each note gaining `reverted: <the defect, one line>`", self.flat)
+        self.assertIn("in which case it becomes a follow-up, as that answer's still-open defects do", self.flat)
+        self.assertNotIn("reset --hard", self.flat)
+
+    def test_coupled_apply_entries_have_a_record(self):
+        # PR #71 review: an Apply waiting on a coupled re-plan had no slot in the record or the loop comment.
+        self.assertIn("its note gaining `waits on <re-plan id>`", self.flat)
+        self.assertIn("`apply` (a re-plan, an entry that `waits on` one, or an Accept-current revert)", self.flat)
+        self.assertIn("re-plan <ids>; apply waiting <ids>; reverted <ids>; left open <ids>", self.flat)
+
+    def test_no_positional_cross_references(self):
+        # CLAUDE.md "Stable §-anchors over positional cross-references".
+        self.assertNotRegex(self.flat, r"\((?:above|below)\)|`[^`]+` (?:above|below)\b")
 
     def test_the_contracts_credit_finalisation(self):
         router = " ".join((SKILL_DIR / "SKILL.md").read_text(encoding="utf-8").split())
