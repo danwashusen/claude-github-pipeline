@@ -399,6 +399,10 @@ class PolishAdjudicationTests(unittest.TestCase):
         self.reference = re.sub(
             r"\s+", " ", (SKILL_DIR / "references" / "polish-adjudication.md").read_text(encoding="utf-8")
         )
+        # The steps the evaluator shares with the resolver's finalisation (4.30.0) live in one file.
+        self.triage = re.sub(
+            r"\s+", " ", (REPO_ROOT / "skills" / "_shared" / "polish-triage.md").read_text(encoding="utf-8")
+        )
 
     def test_the_step_sits_before_the_post_timing(self):
         self.assertIn("## S5.5 — Polish ledger", self.spine)
@@ -408,18 +412,22 @@ class PolishAdjudicationTests(unittest.TestCase):
     def test_the_operator_decides_every_entry_on_its_own_card(self):
         # The #959 run (PR #1000): only `apply` got a card, and under `ask` it folded into the Approve
         # card — 17 file/drop entries reached the operator as one line, with no way to re-plan one.
-        self.assertIn('`header: "Polish"`', self.reference)
+        self.assertIn('`header: "Polish"`', self.triage)
         self.assertIn("the operator decides **every** entry §1 proposed a disposition for", self.reference)
         self.assertIn("`file` and `drop` included, on any verdict and under either merge policy", self.reference)
         for option in ("**File as follow-up**", "**Apply in this PR**", "**Re-plan**", "**Drop**"):
-            self.assertIn(option, self.reference)
-            # The reference owns the labels; the spine and CLAUDE.md point at the card, never restate it.
+            self.assertIn(option, self.triage)
+            # The shared triage owns the labels; the spine and CLAUDE.md point at the card, never restate it.
             self.assertNotIn(option, self.spine)
+        # The reference runs the shared card rather than restating its option list.
+        self.assertIn("../../_shared/polish-triage.md", self.reference)
+        self.assertNotIn("- **File as follow-up**", self.reference)
         claude_md = (REPO_ROOT / "CLAUDE.md").read_text(encoding="utf-8")
         self.assertNotIn("File / Apply in this PR / Re-plan / Drop", claude_md)
-        self.assertIn("the evaluator's proposal first and marked recommended", self.reference)
-        self.assertIn("one question per group — at most 4 questions per card", self.reference)
+        self.assertIn("the proposal first and marked recommended", self.triage)
+        self.assertIn("one question per group — at most 4 questions per card", self.triage)
         self.assertNotIn("ride along", self.reference)
+        self.assertNotIn("ride along", self.triage)
         self.assertNotIn("ride along", self.spine)
         # The operator's card is the only bound on polish round-trips — never a counter.
         self.assertIn("deliberately an operator decision, not a counter", self.reference)
@@ -436,7 +444,7 @@ class PolishAdjudicationTests(unittest.TestCase):
     def test_an_unfixed_apply_is_rechecked_not_skipped(self):
         # A revision run can leave a confirmed `apply` unfixed (Accept current / abort); skipping it
         # on the next run would merge past the operator's decision.
-        self.assertIn("an `open`, unfixed `apply`, or `file` entry", self.spine)
+        self.assertIn("an `open`, unfixed `apply`, `file`, or `premise false` `drop` entry", self.spine)
         # PR #62 review: forcing it with no card left no way to release it — it is re-proposed.
         self.assertIn("marked `confirmed on a prior run, left unfixed`", self.reference)
         self.assertNotIn("no new card", self.reference)
@@ -445,22 +453,22 @@ class PolishAdjudicationTests(unittest.TestCase):
 
     def test_the_recheck_verifies_the_claim_not_only_the_anchor(self):
         # PR #1000's P1.1 described what the code already did; the filed follow-up carried it.
-        self.assertIn("check the entry's **claim**, not only that the anchor still exists", self.reference)
-        self.assertIn("`premise false at head — <why>`", self.reference)
-        self.assertIn("`narrowed: <what holds>`", self.reference)
+        self.assertIn("check the entry's **claim**, not only that the anchor still exists", self.triage)
+        self.assertIn("`premise false at head — <why>`", self.triage)
+        self.assertIn("`narrowed: <what holds>`", self.triage)
         self.assertIn("Re-check each entry's claim at head", self.spine)
 
     def test_a_file_entry_is_rechecked_after_a_revision(self):
         # A `file` answered on a verdict that sent the PR back is still unfiled; the revision may fix it.
-        self.assertIn("Next, every `file` entry — decided on an earlier run whose verdict sent the PR back",
-                      self.reference)
+        self.assertIn("Next, every `file` entry — decided on an earlier run whose verdict sent the PR back, "
+                      "or at the resolver's finalisation", self.reference)
         self.assertIn("still true at head → keep it, not asked again; gone → `drop` with "
                       "`resolved otherwise at <short-sha>`", self.reference)
-        self.assertIn("carries no `open`, unfixed `apply`, or `file` entry", self.reference)
+        self.assertIn("carries no `open`, unfixed `apply`, `file`, or `premise false` `drop` entry", self.reference)
 
     def test_file_entries_carry_their_group_and_narrowed_claim_to_filing(self):
         # PR #65 review: the card's groups and a `narrowed:` claim must survive to the residual filing.
-        self.assertIn("the note carrying `group: <the question's group label>`", self.reference)
+        self.assertIn("the note carrying `group: <the question's group label>`", self.triage)
         ledger = re.sub(r"\s+", " ", (REPO_ROOT / "skills" / "_shared" / "polish-ledger.md").read_text(encoding="utf-8"))
         self.assertIn("a `narrowed:` note supersedes the item's claim", ledger)
         self.assertIn("one issue per recorded `group:`", ledger)
@@ -470,14 +478,15 @@ class PolishAdjudicationTests(unittest.TestCase):
             self.assertIn("one issue per recorded `group:`, each briefed from its item and note", text, name)
 
     def test_apply_on_a_two_intent_entry_records_the_chosen_intent(self):
-        self.assertIn("record the answer as `intent: <chosen>` in the note", self.reference)
+        self.assertIn("record the answer as `intent: <chosen>` in the note", self.triage)
         ledger = re.sub(r"\s+", " ", (REPO_ROOT / "skills" / "_shared" / "polish-ledger.md").read_text(encoding="utf-8"))
         self.assertIn("**An `apply` note's `intent:` is the operator's decision.**", ledger)
         fix_round = re.sub(
             r"\s+", " ",
             (REPO_ROOT / "skills" / "resolver" / "references" / "review-fix-round.md").read_text(encoding="utf-8"),
         )
-        self.assertIn("each evaluator `apply` item — built to its note's `intent:` when it carries one", fix_round)
+        # An `apply` may be recorded at the resolver's finalisation too, so the fix round names no recorder.
+        self.assertIn("each `apply` item — built to its note's `intent:` when it carries one", fix_round)
 
     def test_an_already_comment_verdict_keeps_its_own_marker_and_route(self):
         # The rewrite had dropped this: the evaluator's own soft-reject is not the operator's decision.
@@ -492,18 +501,18 @@ class PolishAdjudicationTests(unittest.TestCase):
         self.assertIn("on a Re-plan answer about an intent the plan leaves open, the two intents the note names", rubric)
 
     def test_an_in_scope_entry_needing_a_decision_is_proposed_as_re_plan(self):
-        self.assertIn("- **re-plan** — the entry sits inside this PR's scope", self.reference)
+        self.assertIn("- **re-plan** — the entry sits inside this PR's scope", self.triage)
         # The DoD is `facts.dod`; `facts.plans` carries only plan comments.
-        self.assertIn("or the issue's Definition of done in `facts.dod`", self.reference)
+        self.assertIn("or the issue's Definition of done in `facts.dod`", self.triage)
         self.assertIn("plus `facts.plans` and `facts.dod`", self.reference)
-        self.assertIn("a list of required behaviour is a minimum, a definition is not", self.reference)
-        self.assertIn("two fixes fit, each serving a different intent", self.reference)
+        self.assertIn("a list of required behaviour is a minimum, a definition is not", self.triage)
+        self.assertIn("two fixes fit, each serving a different intent", self.triage)
         # Out of scope files instead, carrying the open question to the follow-up's planner.
         self.assertIn("An entry **outside** this PR's scope that also needs an intent decided files too",
-                      self.reference)
+                      self.triage)
         # A Re-plan answer is recorded as `apply` (the closed disposition set is unchanged) and forces
         # the planner route.
-        self.assertIn("**Re-plan** → `apply`, the note prefixed `operator: re-plan —`", self.reference)
+        self.assertIn("**Re-plan** → `apply`, the note prefixed `operator: re-plan —`", self.triage)
         self.assertIn("the operator answered **Re-plan** on any entry", self.reference)
         ledger = re.sub(r"\s+", " ", (REPO_ROOT / "skills" / "_shared" / "polish-ledger.md").read_text(encoding="utf-8"))
         self.assertIn("**The operator decides every disposition.**", ledger)
@@ -529,11 +538,56 @@ class PolishAdjudicationTests(unittest.TestCase):
         self.assertIn('"Apply criteria"', self.reference)
         for copy in ("wrong user-visible copy", "a misleading name on a public"):
             self.assertNotIn(copy, self.reference)
+            self.assertNotIn(copy, self.triage)
             fix_round = (REPO_ROOT / "skills" / "resolver" / "references" / "review-fix-round.md").read_text(encoding="utf-8")
             self.assertNotIn(copy, fix_round)
 
     def test_an_apply_criteria_ledger_entry_is_a_resolver_miss(self):
         self.assertIn("an `apply`-criteria entry here is a **resolver miss**", self.reference)
+
+    def test_the_evaluator_is_the_backstop_after_finalisation(self):
+        # 4.30.0: the resolver's finalisation asks first; the evaluator never re-asks a decided entry,
+        # except an `apply` left unfixed (which it re-proposes so the operator can release it).
+        self.assertIn("This step is the **backstop**", self.reference)
+        self.assertIn("is the operator's answer and is not asked about again here, except §1's unfixed "
+                      "`apply` and a `premise false` drop whose claim holds at head", self.reference)
+        self.assertIn("confirmed on an earlier run or at the resolver's finalisation", self.reference)
+        self.assertIn("This is the backstop: the resolver's finalisation already put every entry", self.spine)
+        # PR #71 review: "never re-asked" contradicted the unfixed-`apply` re-proposal one sentence later.
+        self.assertIn("a decided entry is not re-asked unless it is an unfixed `apply` or a `premise false` drop "
+                      "whose claim holds at head", self.spine)
+        self.assertNotIn("a decided entry is never re-asked", self.spine)
+        # The one proposal rule that differs: the evaluator keeps the Apply criteria; finalisation's bar
+        # is lower, because applying there costs a fix round, not a revision session.
+        self.assertIn("### The apply bar", self.triage)
+        self.assertIn("- **Resolver finalisation** — the entry is in this PR's scope", self.triage)
+        self.assertIn("- **Evaluator** — the entry meets", self.triage)
+        # PR #71 review: the evaluator's bar lives once, in the shared file; the reference points at it and
+        # keeps only what is the evaluator's own — the resolver-miss naming and the tiering diagnostic.
+        self.assertIn("the evaluator's rule in that file's \"The apply bar\"", self.reference)
+        self.assertNotIn("Applying here costs a whole resolver session", self.reference)
+        self.assertIn("When most `open` entries reaching this step meet the criteria, the resolver's in-loop "
+                      "defect/polish line is misplaced", self.reference)
+        # `file` still files after the merge, whoever recorded it.
+        self.assertIn("Filed **after the merge**", self.triage)
+
+    def test_a_premise_false_drop_is_rechecked_at_head(self):
+        # PR #71 review: the docs said the evaluator re-checks every decided entry, but a `drop` the code's
+        # author proposed at finalisation (`premise false at head`) was never looked at again.
+        self.assertIn("Next, every `drop` whose note leads `premise false at head`", self.reference)
+        self.assertIn("re-propose the entry at §2, marked `premise disputed: <what holds>`", self.reference)
+        self.assertIn("a re-proposed drop says `premise disputed: <what holds>`", self.reference)
+        self.assertIn("a `premise false` drop whose claim it finds holds at head (`premise disputed`)", self.triage)
+        for path in (REPO_ROOT / "skills" / "_shared" / "polish-ledger.md", REPO_ROOT / "CLAUDE.md",
+                     REPO_ROOT / "docs" / "architecture.md"):
+            text = " ".join(path.read_text(encoding="utf-8").split())
+            self.assertNotIn("re-checks every decided entry", text, path.name)
+            self.assertIn("`premise false` `drop`", text, path.name)
+
+    def test_no_positional_cross_references(self):
+        # CLAUDE.md "Stable §-anchors over positional cross-references".
+        for text in (self.reference, self.triage):
+            self.assertNotRegex(text, r"\((?:above|below)\)|`[^`]+` (?:above|below)\b")
 
     def test_dispositions_are_written_once_after_the_answer(self):
         self.assertIn("gh_persist.py edit-pr-body", self.reference)

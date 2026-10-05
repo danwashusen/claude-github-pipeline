@@ -42,8 +42,9 @@ This is **not** a sub-agent prompt: no placeholders, no JSON return, and every g
   `marker_comment_*` entry of `facts.sections`) and `facts.phases`, with the current phase's number
   (the S4 cursor) and its `depends-on`. The two settled buckets cite these.
 - **The polish ledger** — `facts.polish` ([`../../_shared/polish-ledger.md`](../../_shared/polish-ledger.md)).
-  Every entry the evaluator marked `apply` is Addressable on iteration 1 whatever its tier — it has
-  been decided; recording it as `open` again would bounce the PR between the two skills.
+  Every entry marked `apply` is Addressable on iteration 1 whatever its tier — it is the operator's
+  answer, recorded by the evaluator or at [`finalisation.md`](finalisation.md), so it has been decided;
+  recording it as `open` again would bounce the PR between the two skills.
 - **Doc-grounding statement** (from S3) and any audit / plan overrides carried into the PR body — use them
   when defending an implementation choice in a PR reply.
 - **Test config**: `facts.config.static_checks` and `facts.config.test_target_raw`.
@@ -87,10 +88,11 @@ audited:
   mis-tiering is a test gap under-tiered as polish, which settles the loop early.
 - **polish** — everything else: naming, structure, comments, a small refactor. Fix it **on merit** —
   cheap (no new spec file, no fix-design dispatch), on code this phase already touches, and clearly
-  right rather than taste; otherwise leave it for the `## Polish` ledger, which the evaluator
-  adjudicates. A refactor touching a guard, a raise, or any fail-closed path is never cheap — a
-  polish refactor that dropped a non-nil assertion turned a raising path fail-open, unnoticed by
-  review. **Always fix in-loop, never ledger**, polish matching the evaluator's `apply` criteria
+  right rather than taste; otherwise leave it for the `## Polish` ledger, which the final pass's
+  finalisation puts to the operator ([`finalisation.md`](finalisation.md)) and the evaluator backstops.
+  A refactor touching a guard, a raise, or any fail-closed path is never cheap — a polish refactor that
+  dropped a non-nil assertion turned a raising path fail-open, unnoticed by review. **Always fix in-loop,
+  never ledger**, polish matching the evaluator's `apply` criteria
   ([`../../_shared/polish-ledger.md`](../../_shared/polish-ledger.md) "Apply criteria"), whatever it
   costs: parked, it only buys a revision session later.
   Polish never keeps the loop open. (This replaced the Cheap-fix-override bucket, which forced every
@@ -168,7 +170,7 @@ nothing else does.
    card only if that check leaves it standing — the reviewer's persistence is evidence the citation may
    not answer it.
 4. **Fix plan, then fix.** Before the first edit, list the intended change of every item you will fix
-   (each defect-tier Addressable item, each evaluator `apply` item — built to its note's `intent:` when
+   (each defect-tier Addressable item, each `apply` item — built to its note's `intent:` when
    it carries one — and each polish item you fix on merit) as text in this conversation — not in the
    PR reply, not in a file (on a hot seam, the
    fix-design dispatch below comes first and supplies those items' lines); one line per item:

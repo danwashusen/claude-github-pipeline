@@ -425,13 +425,23 @@ now the same rule everything else follows rather than an exception.
 - `polish-ledger.md` — the `## Polish` PR-body section: the polish findings the resolver's review loop
   tiered as `polish` and chose not to fix (the loop exits on **defect** progress alone, so polish never
   keeps it running). One line per item with a stable `P<phase>.<seq>` id and a closed disposition set
-  (`open` / `applied` resolver-written; `apply` / `file` / `drop` evaluator-written). The **evaluator**
-  proposes a disposition per entry before merge and the **operator** answers every one on a `Polish`
-  card (never folded into the approval card); an `apply` →
+  (`open` / `applied` resolver-written; `apply` / `file` / `drop` the **operator's** answers, recorded by
+  whichever skill asked). The operator decides every entry on a `Polish` card, first at the **resolver's
+  finalisation** — on the final pass, before the push, so an applied entry costs one fix round, not a
+  revision session — and the **evaluator** is the backstop: it re-checks at head every unfixed `apply`,
+  every `file`, and every `premise false` `drop` (that premise was judged by the code's author at
+  finalisation), and asks about any entry still `open` (never folded into the approval card). An `apply` it confirms →
   soft-reject to the resolver, or to the planner on a Re-plan or when applying it reverses a locked
-  decision; an `apply` item is Addressable for the resolver
-  whatever its tier, which is what stops a polish ping-pong. `parse.py`'s `scan_polish` reads it for
-  three preps; it never raises.
+  decision; a finalisation Re-plan re-routes the resolver's own handoff to the planner. An `apply` item is
+  Addressable for the resolver whatever its tier, which is what stops a polish ping-pong. `file` entries
+  file after the merge, whoever recorded them. `parse.py`'s `scan_polish` reads it for three preps; it
+  never raises.
+- `polish-triage.md` — the one procedure both `Polish` cards run (the resolver's finalisation, the
+  evaluator's S5.5): re-check each entry's claim at head, propose a disposition, group, ask, record the
+  answers. Each caller supplies its entries, checkout, plan and write; the one proposal rule that differs
+  is the **apply bar** — finalisation proposes `apply` for anything in scope, true at head and clearly
+  right (applying costs a fix round), the evaluator only for the ledger's "Apply criteria" (applying
+  costs a session). Never restate the card's options outside it.
 
 When changing behavior that touches handoffs, the plan summary, DoD annotations, the worktree block
 format, the epic delivery log, or the open-question contracts, edit the `_shared` file (the single

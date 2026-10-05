@@ -49,18 +49,20 @@ the **Judgment call** rule's `## Changes` block text edits. Judge only the entri
 
 ### A polish re-route: the ledger's `apply` items become a phase
 
-When the evaluator sends a PR here because a confirmed polish item would reverse a locked plan decision,
-or because the operator answered **Re-plan** on it (`../../_shared/polish-ledger.md`; its handoff `Why:`
-quotes the item and the decision, or the decision the plan leaves open), the work is in the open PR's
-ledger: every entry in `facts.revise.open_pr.polish` marked `apply`. Revise the decision the item
+When the evaluator — or the resolver's finalisation (`../../resolver/references/finalisation.md`), before
+the PR ever reached the evaluator — sends a PR here because a confirmed polish item would reverse a locked
+plan decision, or because the operator answered **Re-plan** on it (`../../_shared/polish-ledger.md`; its
+handoff `Why:` quotes the item and the decision, or the decision the plan leaves open), the work is in the
+open PR's ledger: every entry in `facts.revise.open_pr.polish` marked `apply`. Revise the decision the item
 reverses — or, for an entry whose note leads `operator: re-plan`, settle the decision the note names,
 asking the operator when it names two intents — and quote the ledger id in the new or changed
 `## Architecture decisions` / `## UI decisions` bullet so the change is traceable. Then place the work by
 the PR's shape:
 
 - **Multi-phase** (`facts.revise.phase_tracker` carries rows) — add **one new phase after the shipped
-  ones** whose `ships` / `deliverable` cover those entries by id. Every phase has shipped by the time the
-  evaluator runs, so it takes k+1 with no renumbering — **SOFT** ("New phases added beyond what's
+  ones** whose `ships` / `deliverable` cover those entries by id. Every code-shipping phase has shipped by the
+  time either sends it here (a trailing operator phase may still be pending — the new phase still takes
+  the next number), so it takes k+1 with no renumbering — **SOFT** ("New phases added beyond what's
   shipped"). The resolver builds it as the tracker's `missing` row in continue mode.
 - **Single-phase** (`facts.revise.phase_tracker` is empty — a single-phase PR carries no tracker) — add
   **no** phase: fold the entries into the plan's one phase (its `## Changes`). A new phase here would
