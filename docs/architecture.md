@@ -442,6 +442,16 @@ session's model and effort level (the v1 pins were removed 2026-08-01; reintrodu
 deviation through the normal gate). There are no mechanical-relay
 agents: if a task is deterministic it is a script, not a sub-agent.
 
+**The fix round classifies by provenance first (4.31.0).** Every finding is **introduced** (in or made
+reachable by this PR's lines), **adjacent** (the same change at a sibling site, or a one-site correction
+in a file the PR edits) or **pre-existing**, before its bucket and tier. Polish on introduced or adjacent
+code is fixed whatever its size; pre-existing polish and no-shown-cost findings go to the polish ledger;
+an introduced defect leaves only through an operator answer; and review-deferred follow-ups wait for the
+end-of-loop checkpoint card. The evidence was an audit of 503 `follow-up` issues in one consuming repo,
+where provenance — not size or cost — separated the deferrals that should have been fixes or plan gaps
+from the correct ones. This axis is **not** the `finding_provenance` tag 4.11.0 retired, which gated the
+cold read; it decides fix-or-defer only.
+
 **The review loop's exit is a tier, not a sub-agent (4.21.0).** The resolver's fix round tiers every
 Addressable finding `defect` or `polish`, and the loop runs while the defect count keeps falling (one
 grace round, then a stall card; an emergency ceiling of 8 `review` runs). This reintroduces a severity

@@ -244,7 +244,7 @@ and re-invoke naming that path.
 **Tiers and progress.** The fix round gives every Addressable item a **tier** — `defect` or `polish`
 (the reference's rubric) — and the loop runs on the **defect count**: the defect-tier Addressable items
 left after classification (Plan-settled, Deferred-by-plan, Refuted and Explicitly-deferred never count). Polish
-is fixed on merit and never keeps the loop running; what a round leaves goes to the PR's `## Polish`
+is fixed per the rubric and never keeps the loop running; what a round leaves goes to the PR's `## Polish`
 ledger at S5.2 ([`../../_shared/polish-ledger.md`](../../_shared/polish-ledger.md)). This replaced a
 fixed iteration cap that could not tell a round of nits from a round of new bugs.
 
@@ -265,7 +265,7 @@ fixed iteration cap that could not tell a round of nits from a round of new bugs
    **grounding-violation** item is never filed as a follow-up — the hard block exists to stop the ship.
 3. Branch on the round's **defect count**, not on the verdict's approval line:
    - **Zero** — the round addressed nothing that keeps the loop open: an approved verdict with no defect,
-     *or* a non-approving verdict whose every item classified as Explicitly-deferred (filed),
+     *or* a non-approving verdict whose every item classified as Explicitly-deferred (registered),
      Plan-settled, Deferred-by-plan, Refuted, or polish → the loop has **settled** (a reviewer that never approves
      must not spin an unchanged PR; name the outstanding items with their follow-up URLs or plan
      citations in the PR body — fresh mode: the staged `pr.md`). A round whose only fixes were polish

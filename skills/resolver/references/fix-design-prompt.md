@@ -72,8 +72,9 @@ what was missing, and stop.
    path: does the change alter what it permits or when it fires? A change that fixes the finding and
    silently widens or narrows a sibling is not a design.
 5. **Check scope and intent.** Before settling a design, read the plan and the issue's Definition of done.
-   A finding whose correct fix falls outside the code the scope diff touches, the plan's `## Changes` /
-   phase `ships`, **and** the Definition of done, or one where the plan and the Definition of done leave the intended behaviour
+   A finding whose correct fix falls outside the code the scope diff touches or its sibling sites (the same
+   change at a site in the same file or seam), the plan's `## Changes` / phase `ships`, **and** the
+   Definition of done, or one where the plan and the Definition of done leave the intended behaviour
    open — two designs fit, each serving a different intent — is not yours to decide: report it under
    `## Needs a plan decision` and design nothing for it. Do not pick an intent the plan never stated.
 
