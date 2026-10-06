@@ -1,8 +1,8 @@
 # Polish ledger — shared contract
 
 The **polish ledger** is the `## Polish` section of a PR body: the review findings the resolver's loop
-classified as **polish** and chose not to fix, carried on the PR so the operator can decide what happens to
-them. This file is the single source of truth for its format and ownership; the procedure that puts entries
+recorded instead of fixing — polish it left, polish in code the PR does not change, and findings with no
+shown cost — carried on the PR so the operator can decide what happens to them. This file is the single source of truth for its format and ownership; the procedure that puts entries
 to the operator is [`polish-triage.md`](polish-triage.md). Three skills cite it: `resolver` (writer of
 `open` / `applied`, and of the operator's `apply` / `file` / `drop` at its finalisation), `evaluator`
 (writer of the operator's `apply` / `file` / `drop` for whatever is still `open` when the PR reaches it),
@@ -20,7 +20,7 @@ usually wants polish applied, and applying it there costs one fix round in the s
 from the evaluator costs a soft-reject, a whole revision session and a second evaluation. The evaluator
 stays the backstop: the reader that did not write the PR re-checks at head every decided entry that
 rests on a claim about the code — an unfixed `apply`, a `file`, a `premise false` `drop` — and puts any
-entry still `open` to the operator. The resolver still fixes polish on merit; only what it leaves
+entry still `open` to the operator. The resolver fixes polish on the PR's own code; only what it leaves
 lands here.
 
 ## Format
@@ -77,10 +77,13 @@ proposes `apply` against a lower bar — in scope, true at head, clearly right
 
 ## Rules
 
-- **Only unfixed polish enters.** Polish the loop fixes itself is never recorded; a **defect** is never
-  recorded here — it is fixed, deferred with a filed follow-up, or escalated. Polish meeting the
-  "Apply criteria" never enters either: the resolver always fixes it in-loop, because parked it
-  only buys a revision session.
+- **Only what the loop chose not to fix enters** (`resolver/references/review-fix-round.md`
+  "Classification rubric"): polish on the PR's own code that hit one of the rubric's exceptions (a
+  guard-path refactor, a change beyond the PR's seam, taste), polish in code the PR does not change, and
+  findings with **no shown cost**, whose note leads `no shown cost: <why>` and which triage proposes as
+  `drop`. Polish the loop fixes itself is never recorded; a **defect** is never recorded here — it is
+  fixed, deferred with a filed follow-up, or escalated. Polish meeting the "Apply criteria" never enters
+  either: the resolver always fixes it in-loop, because parked it only buys a revision session.
 - **An `apply` item is Addressable for the resolver whatever its tier** (`review-fix-round.md`
   "Classification rubric"). It has already been decided; re-recording it as `open` would bounce the PR
   between the two skills indefinitely.

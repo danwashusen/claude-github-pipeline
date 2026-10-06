@@ -410,7 +410,8 @@ now the same rule everything else follows rather than an exception.
 - `follow-up-filing.md` — the drafter-proxy sub-agent protocol the resolver, the evaluator, and the
   planner (seam-disposition follow-ups) use to file a follow-up issue (never a hand-crafted
   `gh issue create` body). Related items file as **one issue per group** (same type, same seam,
-  ≤ ~5, one checkable bullet per item — the planner's seam follow-ups excepted), and one filing
+  ≤ ~5, one checkable bullet per item — the planner's seam follow-ups excepted; the resolver's **docs
+  lane**, one issue per owning docs process, is uncapped), and one filing
   moment's approved groups are spawned as **one concurrent batch, in a single message** — the groups
   are independent, and serial spawning cost the drafter's full round-trip each in series; same-target
   `revise-existing` items are the one exception.
@@ -422,9 +423,10 @@ now the same rule everything else follows rather than an exception.
   rule that keeps a posted plan reviewer-verified. Rendered by the **planner** (before its
   `## Handoff`, whenever the session posted or refreshed a plan) and by the **resolver** (at session
   start, focused on the phase this run ships). It is never part of the `## Handoff` block.
-- `polish-ledger.md` — the `## Polish` PR-body section: the polish findings the resolver's review loop
-  tiered as `polish` and chose not to fix (the loop exits on **defect** progress alone, so polish never
-  keeps it running). One line per item with a stable `P<phase>.<seq>` id and a closed disposition set
+- `polish-ledger.md` — the `## Polish` PR-body section: the findings the resolver's review loop recorded
+  instead of fixing — polish it left on the PR's own code, polish in code the PR does not change, and
+  findings with no shown cost (proposed `drop`) — per its provenance-first rubric (the loop exits on
+  **defect** progress alone, so polish never keeps it running). One line per item with a stable `P<phase>.<seq>` id and a closed disposition set
   (`open` / `applied` resolver-written; `apply` / `file` / `drop` the **operator's** answers, recorded by
   whichever skill asked). The operator decides every entry on a `Polish` card, first at the **resolver's
   finalisation** — on the final pass, before the push, so an applied entry costs one fix round, not a

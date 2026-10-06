@@ -244,7 +244,7 @@ and re-invoke naming that path.
 **Tiers and progress.** The fix round gives every Addressable item a **tier** — `defect` or `polish`
 (the reference's rubric) — and the loop runs on the **defect count**: the defect-tier Addressable items
 left after classification (Plan-settled, Deferred-by-plan, Refuted and Explicitly-deferred never count). Polish
-is fixed on merit and never keeps the loop running; what a round leaves goes to the PR's `## Polish`
+is fixed per the rubric and never keeps the loop running; what a round leaves goes to the PR's `## Polish`
 ledger at S5.2 ([`../../_shared/polish-ledger.md`](../../_shared/polish-ledger.md)). This replaced a
 fixed iteration cap that could not tell a round of nits from a round of new bugs.
 
@@ -265,7 +265,7 @@ fixed iteration cap that could not tell a round of nits from a round of new bugs
    **grounding-violation** item is never filed as a follow-up — the hard block exists to stop the ship.
 3. Branch on the round's **defect count**, not on the verdict's approval line:
    - **Zero** — the round addressed nothing that keeps the loop open: an approved verdict with no defect,
-     *or* a non-approving verdict whose every item classified as Explicitly-deferred (filed),
+     *or* a non-approving verdict whose every item classified as Explicitly-deferred (registered),
      Plan-settled, Deferred-by-plan, Refuted, or polish → the loop has **settled** (a reviewer that never approves
      must not spin an unchanged PR; name the outstanding items with their follow-up URLs or plan
      citations in the PR body — fresh mode: the staged `pr.md`). A round whose only fixes were polish
@@ -308,8 +308,8 @@ fixed iteration cap that could not tell a round of nits from a round of new bugs
    **Abort** / **Abort loop** stop the run: each leaves S5.1 immediately — no further `review`, no cold
    read; a **Re-plan** first fixes the round's independent defects (the reference's "Guard rails") —
    pushes what it has committed via S5.2 (in fresh mode that opens the PR; the remote ends where
-   today's per-round pushes left it), then goes to the routed playbook's handoff, whose `Why:` quotes
-   what triggered it. Only the continuing answers (**Try another angle**, **Accept + defer**,
+   today's per-round pushes left it) and runs S7, then goes to the routed playbook's handoff, whose
+   `Why:` quotes what triggered it. Only the continuing answers (**Try another angle**, **Accept + defer**,
    **Push with reds**, **Defer the tests**, a named architectural path, **Continue**) resume this loop.
 4. **Cold-read audit — once per phase, after settle.** The PR is the record: the round reply carries
    `Cold read: phase <N> @ <sha>` (`<N>` the phase number, `1` for a single-phase issue; `<sha>` HEAD at

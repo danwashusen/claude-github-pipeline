@@ -19,13 +19,15 @@ items it is about to file at this moment:
 - **A `bug` group only on a shared root cause** — the umbrella issue the retry ladder already allows for
   failures sharing one; unrelated bugs stay separate.
 - **At most ~5 items**, so the issue stays plannable in one pass. A `revise-existing` group never spans
-  two target issues.
+  two target issues. The one uncapped group is the resolver's **docs lane**: drift in docs the repo routes
+  through a named command or process files as one issue per owning process, one item per claim, because
+  that process edits them in one pass — and one issue per claim, re-filed per layer, never converged.
 - **A single item is a group of one** — grouping never forces unrelated items together.
 
-Who approves the grouping is the caller's: the resolver shows the proposed groups on its end-of-loop
-checkpoint card, and states the grouping in the round reply for review-deferred (`file-now`) items,
-which file immediately. The **planner's** seam-disposition follow-ups are not grouped — each boundary
-bullet cites its own `#M`.
+Who approves the grouping is the caller's: the resolver shows the proposed groups — review-deferred items
+included — on its end-of-loop checkpoint card, and states the grouping in the round reply only for the
+`file-now` items a commit needs a number for, which file immediately. The **planner's** seam-disposition
+follow-ups are not grouped — each boundary bullet cites its own `#M`.
 
 ## Protocol — sub-agent proxy-confirms via the drafter
 

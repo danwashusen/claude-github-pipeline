@@ -1272,8 +1272,12 @@ class MainLoopReviewFixRoundTests(unittest.TestCase):
 
     def test_polish_tier_bounds_and_must_fix_list(self):
         text = " ".join(self.reference.read_text(encoding="utf-8").split())
-        self.assertIn("cheap (no new spec file, no fix-design dispatch)", text)
-        self.assertIn("A refactor touching a guard, a raise, or any fail-closed path is never cheap", text)
+        # 4.31.0: the cost gate parked the PR's own small fixes as follow-ups (17 of 30 "not worth holding
+        # the merge" deferrals in one repo's audit should have been fixes), so polish on introduced or
+        # adjacent code is fixed whatever its size; the guard-path exception survives as an exception.
+        self.assertNotIn("cheap (no new spec file, no fix-design dispatch)", text)
+        self.assertIn("Size alone never parks it", text)
+        self.assertIn("it is a refactor touching a guard, a raise, or any fail-closed path, which is not fixed as polish", text)
         self.assertIn("**Always fix in-loop, never ledger**, polish matching the evaluator's `apply` criteria", text)
         self.assertIn("an unfinished `## Changes` entry of the phase being built", text)
         self.assertIn("**Tie-break:** when defect-vs-polish is unclear, tier it defect", text)
@@ -1330,7 +1334,7 @@ class MainLoopReviewFixRoundTests(unittest.TestCase):
         # A verdict whose every item is Plan-settled / Deferred-by-plan addresses nothing, so the
         # loop settles instead of spinning an unchanged PR.
         self.assertIn(
-            "a non-approving verdict whose every item classified as Explicitly-deferred (filed), "
+            "a non-approving verdict whose every item classified as Explicitly-deferred (registered), "
             "Plan-settled, Deferred-by-plan, Refuted, or polish",
             self.flat,
         )
@@ -1426,7 +1430,8 @@ class MainLoopReviewFixRoundTests(unittest.TestCase):
         # the plan never stated: scope creep and an open intent are a plan decision, not a design.
         self.assertIn("5. **Check scope and intent.**", prompt)
         self.assertIn(
-            "falls outside the code the scope diff touches, the plan's `## Changes` / phase `ships`, **and** the Definition of done",
+            "falls outside the code the scope diff touches or its sibling sites (the same change at a site in "
+            "the same file or seam), the plan's `## Changes` / phase `ships`, **and** the Definition of done",
             prompt,
         )
         self.assertIn("Do not pick an intent the plan never stated", prompt)
@@ -2166,6 +2171,170 @@ class FinalisationTests(unittest.TestCase):
                       handoff)
         renderings = " ".join((REFERENCES_DIR / "handoff-renderings.md").read_text(encoding="utf-8").split())
         self.assertIn("**Finalisation in the `Why:`.**", renderings)
+
+
+
+class RubricProvenanceTests(unittest.TestCase):
+    """The classification rubric is provenance-first (4.31.0, operator decisions 2026-10-06).
+
+    An audit of 503 `follow-up` issues in one consuming repo found provenance the best predictor of the
+    right call: findings a PR introduced were the ones wrongly deferred (fixable in the PR, or a plan gap),
+    while pre-existing ones were correctly deferred four times in five. It also found a cost gate parking
+    the PR's own polish, introduced defects leaving as "needs a design decision", standing kinds of
+    deferral (gated docs, one root cause, an unverified owner) filed claim by claim, and review-deferred
+    items filed mid-loop with no operator step.
+    """
+
+    def setUp(self):
+        self.raw = (REFERENCES_DIR / "review-fix-round.md").read_text(encoding="utf-8")
+        self.text = " ".join(self.raw.split())
+        self.rubric = self.text.split("## Classification rubric", 1)[1].split("## Steps", 1)[0]
+
+    def test_provenance_comes_first_and_has_three_values(self):
+        r = self.rubric
+        self.assertIn("Classify every listed item on three axes, in order: its **provenance**, its **bucket**", r)
+        order = [r.index(s) for s in ("- **introduced** —", "- **adjacent** —", "- **pre-existing** —",
+                                      "**Buckets:**")]
+        self.assertEqual(order, sorted(order))
+        self.assertIn("a test or control it wrote that cannot fail", r)
+        self.assertIn("the same change this PR made applies at a **sibling site**", r)
+        self.assertIn("Record provenance and tier beside each item in the round reply", r)
+
+    def test_addressable_is_introduced_or_adjacent(self):
+        r = self.rubric
+        self.assertIn("a concretely-named change that is **introduced** or **adjacent**", r)
+        # PR #72 review: an operator's `apply` outranks provenance, or a pre-existing entry they applied
+        # would bounce back to the ledger forever.
+        self.assertIn("A **pre-existing** item is not Addressable", r)
+        self.assertIn("except an entry the operator marked `apply`: their answer outranks provenance", r)
+        self.assertIn("marked `apply` is Addressable on iteration 1 whatever its tier or provenance", self.text)
+        # Fix design shares the scope test, sibling sites included.
+        fix_design = " ".join((REFERENCES_DIR / "fix-design-prompt.md").read_text(encoding="utf-8").split())
+        self.assertIn("the code the scope diff touches or its sibling sites", fix_design)
+
+    def test_own_polish_is_fixed_with_five_exceptions(self):
+        r = self.rubric
+        self.assertIn("On **introduced** or **adjacent** code, fix it this round", r)
+        self.assertIn("Five exceptions:", r)
+        for exception in ("it needs a decision the plan does not make → **Decision-required**",
+                          "which is not fixed as polish",
+                          "it reaches beyond this PR's seam",
+                          "the **docs lane** (Explicitly-deferred)",
+                          "it has no shown cost — taste"):
+            self.assertIn(exception, r)
+        self.assertIn('"Apply criteria"', r)
+        self.assertNotIn("is never cheap", r)
+
+    def test_an_introduced_defect_never_leaves_by_the_resolvers_own_filing(self):
+        r = self.rubric
+        self.assertIn("An **introduced** defect is fixed in this PR: it leaves only through an operator answer", r)
+        self.assertIn("never through a filing of your own", r)
+        self.assertIn("states why it was not fixed", r)
+        tracking = " ".join((REFERENCES_DIR / "follow-up-tracking.md").read_text(encoding="utf-8").split())
+        self.assertIn("its description states why it was not fixed here", tracking)
+        self.assertIn("Its **Accept current** description names each still-open defect with its provenance", self.text)
+
+    def test_pre_existing_and_no_shown_cost_go_to_the_ledger_not_the_tracker(self):
+        r = self.rubric
+        self.assertIn("polish → record it for the ledger, unfixed", r)
+        self.assertIn("A **security or privacy** defect", r)
+        self.assertIn("is its own follow-up group, never grouped with lower-severity items", r)
+        self.assertIn("When its fix is one site in a file this PR edits, fix it here, classified adjacent.", r)
+        self.assertIn("- **No shown cost** —", r)
+        self.assertIn("the note `no shown cost: <why>`, which finalisation proposes as `drop`; never file it", r)
+        ledger = " ".join((REPO_ROOT / "skills" / "_shared" / "polish-ledger.md").read_text(encoding="utf-8").split())
+        self.assertIn("**Only what the loop chose not to fix enters**", ledger)
+        self.assertNotIn("**Only unfixed polish enters.**", ledger)
+        triage = " ".join((REPO_ROOT / "skills" / "_shared" / "polish-triage.md").read_text(encoding="utf-8").split())
+        self.assertIn("An entry the loop recorded with a `no shown cost:` note is proposed `drop`", triage)
+        self.assertNotIn('"not cheap"', triage)
+
+    def test_a_plan_defect_is_not_settled(self):
+        r = self.rubric
+        self.assertIn("**A plan defect is not settled.** Run the test the other way too", r)
+        self.assertIn("Decision-required, **Re-plan** recommended — never settled, never filed", r)
+
+    def test_an_introduced_decision_offers_no_deferral(self):
+        self.assertIn("For an **introduced** item the card offers no deferral path", self.rubric)
+        guard_rails = self.text.split("## Guard rails", 1)[1]
+        self.assertIn("For an **introduced** item no deferral path is offered", guard_rails)
+
+    def test_explicitly_deferred_carries_four_rules_and_waits_for_the_checkpoint(self):
+        r = self.rubric
+        for rule in ("**Verify the owner.**", "**File the class, not the instance.**",
+                     "**Latent until X ships.**", "**The docs lane.**"):
+            self.assertIn(rule, r)
+        self.assertIn("filed mid-round only when this round's commit needs its number", r)
+        step4 = self.text.split("4. **Fix plan, then fix.**", 1)[1].split("5. **No edits**", 1)[0]
+        self.assertIn("urgency `file-at-checkpoint`", step4)
+        self.assertNotIn("(urgency `file-now`, type per the", step4)
+        tracking = " ".join((REFERENCES_DIR / "follow-up-tracking.md").read_text(encoding="utf-8").split())
+        self.assertIn("| Defer-by-review (review-loop deferred items) | `file-at-checkpoint`", tracking)
+        self.assertIn("## Before filing — verify the owner, search for the root cause", tracking)
+        self.assertIn("gh_persist.py link <owner/repo> <follow-up> --add-blocking <X>", tracking)
+        self.assertIn("gh_persist.py comment <owner/repo> issue <M>", tracking)
+        filing = " ".join((REPO_ROOT / "skills" / "_shared" / "follow-up-filing.md").read_text(encoding="utf-8").split())
+        self.assertIn("The one uncapped group is the resolver's **docs lane**", filing)
+        self.assertNotIn("for review-deferred (`file-now`) items, which file immediately", filing)
+
+    def test_planned_work_not_yet_built_is_introduced(self):
+        # PR #72 review: an unfinished `## Changes` entry sits in code the PR has not touched yet, so it
+        # read as pre-existing and would have been deferred instead of built.
+        r = self.rubric
+        self.assertIn("Or it is work the plan's `## Changes` / phase `ships` or the issue's Definition of done "
+                      "assigns to this PR, built or not", r)
+        self.assertIn("found in code this PR does not change and the plan does not assign to it", r)
+
+    def test_other_buckets_are_checked_before_addressable(self):
+        # PR #72 review: Addressable was reached first, so a no-shown-cost finding on the PR's own code was
+        # fixed as polish, and a sibling a later phase ships was pulled forward.
+        r = self.rubric
+        self.assertIn("**Buckets:** check the other buckets first", r)
+        self.assertLess(r.index("check the other buckets first"), r.index("- **Addressable** —"))
+        self.assertIn("unless a later phase in `facts.phases` ships that site, which is Deferred-by-plan", r)
+        self.assertIn("It applies whatever the provenance — the PR's own code included", r)
+        self.assertIn("A latent risk with a named trigger", r)
+        self.assertNotIn("with the note `no shown cost: taste`", r)
+
+    def test_adjacent_is_the_same_change_at_a_sibling_site_only(self):
+        # PR #72 review: "a one-site correction to a file this PR edits" made every nit in a touched file
+        # Addressable; the audit's adjacent cases were the same change at a sibling site.
+        self.assertNotIn("one-site correction to a file or doc this PR already edits", self.rubric)
+
+    def test_an_introduced_defect_exit_list_names_every_operator_answer(self):
+        defect = self.rubric.split("- **defect** —", 1)[1].split("- **polish** —", 1)[0]
+        for answer in ("**Re-plan**", "**Accept + defer**", "**Accept current**", "**Defer the tests**",
+                       "**Push with reds**", "**Restructure**", "**Abort**", "**Abort loop**"):
+            self.assertIn(answer, defect)
+        self.assertIn("their approval on the end-of-loop checkpoint card (step 6's unprovable assertion)", defect)
+        # Step 6 no longer files a PR-written unprovable assertion on its own.
+        self.assertIn("register the assertion as a `deferred-test` follow-up for the end-of-loop checkpoint", self.text)
+        self.assertNotIn("file the assertion as a `deferred-test` follow-up (step 4's filing protocol)", self.text)
+
+    def test_a_terminating_exit_still_runs_the_checkpoint(self):
+        # PR #72 review: batched follow-ups were dropped when Re-plan / Abort skipped S7.
+        spine = " ".join((PLAYBOOKS_DIR / SPINE).read_text(encoding="utf-8").split())
+        self.assertIn("and runs S7, then goes to the routed playbook's handoff", spine)
+        self.assertIn("so a terminating exit never drops one", self.text)
+        tracking = " ".join((REFERENCES_DIR / "follow-up-tracking.md").read_text(encoding="utf-8").split())
+        self.assertIn("or, on a terminating guard-rail answer (Re-plan, Restructure, Abort, Abort loop), "
+                      "before that exit's handoff", tracking)
+
+    def test_the_owner_is_read_through_the_fetch_envelope(self):
+        self.assertIn("read its body or Definition of done with `gh_gather.py`", self.rubric)
+        tracking = " ".join((REFERENCES_DIR / "follow-up-tracking.md").read_text(encoding="utf-8").split())
+        self.assertIn('${CLAUDE_PLUGIN_ROOT}/scripts/gh_gather.py <M> <owner/repo> "" "<facts.scratch>"', tracking)
+        self.assertNotIn("gh issue view <", tracking)
+
+    def test_finalisation_triages_every_item_the_rounds_recorded(self):
+        finalisation = " ".join((REFERENCES_DIR / "finalisation.md").read_text(encoding="utf-8").split())
+        self.assertIn("every item this pass's fix rounds recorded for the ledger (polish not fixed, "
+                      "pre-existing polish, no-shown-cost items with their note)", finalisation)
+        self.assertNotIn("this pass's unfixed polish", finalisation)
+
+    def test_the_file_keeps_nine_steps_and_no_positional_references(self):
+        self.assertEqual(len(re.findall(r"^\d+\. \*\*", self.raw, re.MULTILINE)), 9)
+        self.assertNotRegex(self.raw, r"\b(?:above|below)\b")
 
 
 if __name__ == "__main__":

@@ -42,7 +42,8 @@ Propose one of the following, with a one-line reason as the entry's note:
   an intent decided files too — the note states the open question, so the follow-up's planner answers it
   rather than inheriting a guess.
 - **`drop`** — taste rather than improvement, a premise false at head, or **no longer applies at head**
-  (a later phase removed or rewrote the site). The note says which.
+  (a later phase removed or rewrote the site). The note says which. An entry the loop recorded with a
+  `no shown cost:` note is proposed `drop` unless the re-check finds the cost it lacked.
 
 An entry that turns out to be a real defect is not polish; each caller's reference says what happens to
 it, and the card never asks about it.
@@ -55,8 +56,9 @@ The one proposal rule that differs by caller, because applying costs each a diff
   true at head, and clearly right rather than taste. Applying costs one fix round in this session, so
   size alone is not a reason to file: `file` is for an entry outside the scope, or one big enough to need
   its own plan (a new module, a cross-seam refactor). The proposer is the session whose loop left the
-  entry, so judge it against this bar, not against the reason the loop left it — "not cheap" and "not on
-  code this phase touched" were the loop's bar, not this one.
+  entry, so judge it against this bar, not against the reason the loop left it — a guard-path refactor,
+  a change beyond the PR's seam, or code the PR does not change were the loop's reasons to stop, not
+  reasons to file.
 - **Evaluator** — the entry meets [`polish-ledger.md`](polish-ledger.md) "Apply criteria": it would be
   **actively bad to merge**. Applying there costs a soft-reject, a whole resolver session and a second
   evaluation, and the operator has usually answered finalisation's card already.
