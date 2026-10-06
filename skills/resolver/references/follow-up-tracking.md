@@ -72,7 +72,8 @@ commits (TODO markers, skip-annotation reasons, PR-body cross-links).
 
 After the review loop reports approval and before the handoff — or before the phase's `Checkpoint` card
 when the session continues to the next phase (`phase-continuation.md`; a different checkpoint from this
-one) — present the `file-at-checkpoint` items in the registry to the user:
+one), or, on a terminating guard-rail answer (Re-plan, Restructure, Abort, Abort loop), before that exit's
+handoff — present the `file-at-checkpoint` items in the registry to the user:
 
 > *"These follow-ups surfaced during this resolution but weren't filed in-flight. File them?"*
 >
@@ -82,7 +83,20 @@ List a pre-existing security or privacy group first. The user batch-approves, ed
 (splits or merges groups), or drops items. Only after batch approval do you spawn the sub-agents — one per group, all in one message per the shared protocol. Then, once the whole batch has
 returned, weave URLs back into the handoff.
 
-## Before filing — search for the root cause
+## Before filing — verify the owner, search for the root cause
+
+**Verify the owner.** When an item names its owner ("owned by #M", "a later story"), read #M through the
+issue-fetch envelope — never a raw `gh issue view`, so a large body spills to a file instead of the
+conversation — and check its body or Definition of done carries the item:
+
+```bash
+${CLAUDE_PLUGIN_ROOT}/scripts/gh_gather.py <M> <owner/repo> "" "<facts.scratch>"
+```
+
+An owner that does not carry it is no owner: the item is a gap (`review-fix-round.md` "Classification
+rubric", Explicitly-deferred's first rule).
+
+**Search for the root cause.**
 
 For each group about to be filed (either urgency), search the repo's open issues for the same root cause,
 the shape [`retry-ladder.md`](retry-ladder.md) "The check" uses for a failing test — the class's
@@ -94,7 +108,7 @@ gh issue list --repo <owner/repo> --state open \
   --json number,title,url --limit 10
 ```
 
-Read a plausible match before deciding. An open issue that already tracks the class is **cited, never
+Read a plausible match before deciding, with the same `gh_gather.py` fetch. An open issue that already tracks the class is **cited, never
 re-filed**: the item takes its URL in the weaving below, and a site the issue does not name goes on it
 as one comment through the single write path (stage the body to `<facts.scratch>/followup-site.md`):
 

@@ -25,7 +25,8 @@ evaluator's S5.5 stays the backstop for whatever is still `open` when the PR rea
 
 - every `facts.polish` entry marked `open` — earlier phases' leftovers, from the PR body this pass's prep
   fetched (none in fresh mode);
-- this pass's unfixed polish, which the fix rounds held for S5.2. Mint each one's id now, per
+- every item this pass's fix rounds recorded for the ledger (polish not fixed, pre-existing polish,
+  no-shown-cost items with their note), held for S5.2. Mint each one's id now, per
   `polish-ledger.md` "Format": `P<phase>.<seq>`, a revision run recording under the last
   `kind: code-shipping` phase's number, `<seq>` continuing from the highest existing one;
 - every line in `facts.polish.unparsed` — ledger content prep could not read. Triage it as `open` unless

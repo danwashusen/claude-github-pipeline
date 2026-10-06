@@ -26,8 +26,8 @@ items it is about to file at this moment:
 
 Who approves the grouping is the caller's: the resolver shows the proposed groups — review-deferred items
 included — on its end-of-loop checkpoint card, and states the grouping in the round reply only for the
-`file-now` items a commit needs a number for, which file immediately. The **planner's** seam-disposition follow-ups are not grouped — each boundary
-bullet cites its own `#M`.
+`file-now` items a commit needs a number for, which file immediately. The **planner's** seam-disposition
+follow-ups are not grouped — each boundary bullet cites its own `#M`.
 
 ## Protocol — sub-agent proxy-confirms via the drafter
 

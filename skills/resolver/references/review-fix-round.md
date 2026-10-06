@@ -43,9 +43,9 @@ This is **not** a sub-agent prompt: no placeholders, no JSON return, and every g
   `marker_comment_*` entry of `facts.sections`) and `facts.phases`, with the current phase's number
   (the S4 cursor) and its `depends-on`. The plan-anchored settled buckets cite these.
 - **The polish ledger** — `facts.polish` ([`../../_shared/polish-ledger.md`](../../_shared/polish-ledger.md)).
-  Every entry marked `apply` is Addressable on iteration 1 whatever its tier — it is the operator's
-  answer, recorded by the evaluator or at [`finalisation.md`](finalisation.md), so it has been decided;
-  recording it as `open` again would bounce the PR between the two skills.
+  Every entry marked `apply` is Addressable on iteration 1 whatever its tier or provenance — it is the
+  operator's answer, recorded by the evaluator or at [`finalisation.md`](finalisation.md), so it has been
+  decided; recording it as `open` again would bounce the PR between the two skills.
 - **Doc-grounding statement** (from S3) and any audit / plan overrides carried into the PR body — use them
   when defending an implementation choice in a PR reply.
 - **Test config**: `facts.config.static_checks` and `facts.config.test_target_raw`.
@@ -71,29 +71,34 @@ This is **not** a sub-agent prompt: no placeholders, no JSON return, and every g
 
 Classify every listed item on three axes, in order: its **provenance**, its **bucket**, and — for an
 Addressable item — its **tier**. Provenance comes first because it predicts the right call best: an
-audit of one repo's review-loop follow-ups found the findings a PR introduced the ones most often
-wrongly deferred (fixable in the PR, or a plan gap), and the ones it did not introduce correctly deferred
-four times in five. Record provenance and tier beside each item in the round reply, so the call can be
+audit of one repo's review-loop follow-ups found that the findings a PR introduced were the ones most
+often wrongly deferred (fixable in the PR, or a plan gap), and that the ones it did not introduce were
+correctly deferred four times in five. Record provenance and tier beside each item in the round reply, so the call can be
 audited.
 
 **Provenance** — whose problem it is:
 
 - **introduced** — the finding's site is in lines this PR adds or changes, or this PR's change is what
   makes it reachable or untrue: a path the PR opens, a comment or doc its change made false, a test or
-  control it wrote that cannot fail.
+  control it wrote that cannot fail. Or it is work the plan's `## Changes` / phase `ships` or the issue's
+  Definition of done assigns to this PR, built or not — an unfinished planned change is this PR's, not
+  pre-existing.
 - **adjacent** — not in this PR's lines, but the same change this PR made applies at a **sibling site** —
-  the same invariant, guard, helper, contract row or ruling, in the same file or seam — or it is a
-  one-site correction to a file or doc this PR already edits.
-- **pre-existing** — neither: found while reading code this PR does not change.
+  the same invariant, guard, helper, contract row or ruling, in the same file or seam — unless a later
+  phase in `facts.phases` ships that site, which is Deferred-by-plan.
+- **pre-existing** — neither: found in code this PR does not change and the plan does not assign to it.
 
-**Buckets:**
+**Buckets:** check the other buckets first — a finding that fits Plan-settled, Refuted, Deferred-by-plan,
+No shown cost or Decision-required takes that bucket. Addressable is the default for the introduced and
+adjacent findings none of them fits.
 
 - **Addressable** — a concretely-named change that is **introduced** or **adjacent**, or within the
   plan's `## Changes` / phase `ships` or the issue's Definition of done — the same scope test fix
   design applies (`fix-design-prompt.md` step 5), so the two never disagree. The DEFAULT for any
   concretely-named change with that provenance. Soft politeness ("could be fast-follow", "not blocking",
-  "future PR") does NOT by itself move an item out of Addressable. A **pre-existing** item is never
-  Addressable: it takes the **Pre-existing** bucket.
+  "future PR") does NOT by itself move an item out of Addressable. A **pre-existing** item is not
+  Addressable — it takes the **Pre-existing** bucket — except an entry the operator marked `apply`: their
+  answer outranks provenance.
 
   Every Addressable item also gets a **tier**:
 
@@ -104,9 +109,10 @@ audited.
     is unclear, tier it defect if the finding cites a plan decision or shows a test that could not fail,
     and record the doubt in the round reply — the likely mis-tiering is a test gap under-tiered as polish,
     which settles the loop early. An **introduced** defect is fixed in this PR: it leaves only through an
-    operator answer — a `Decision` card's **Re-plan**, **Accept + defer** on the `Review loop` card,
-    **Accept current** on the stall card — never through a filing of your own, and the follow-up it
-    becomes states why it was not fixed.
+    operator answer — a guard-rail card's **Re-plan**, **Accept + defer**, **Accept current**, **Defer the
+    tests**, **Push with reds**, **Restructure**, **Abort** or **Abort loop**, or their approval on the
+    end-of-loop checkpoint card (step 6's unprovable assertion) — never through a filing of your own, and
+    the follow-up it becomes states why it was not fixed.
   - **polish** — everything else: naming, structure, comments, a small refactor. On **introduced** or
     **adjacent** code, fix it this round — Fix it **on merit**, where the merit is the polish being right,
     not cheap: a follow-up costs an issue, a plan and a session, more than the edit, and the audit found
@@ -120,8 +126,9 @@ audited.
       PR does not touch) → record it for the ledger;
     - it is a doc the repo routes through a named command or process this session may not run → the
       **docs lane** (Explicitly-deferred);
-    - it is taste — two reasonable forms, and the reviewer prefers the other → record it for the ledger
-      with the note `no shown cost: taste`.
+    - it has no shown cost — taste (two reasonable forms, and the reviewer prefers the other), a
+      speculative performance or memoisation win, hardening code the plan is removing → record it for the
+      ledger with the note `no shown cost: <why>` (the **No shown cost** bucket).
 
     **Always fix in-loop, never ledger**, polish matching the evaluator's `apply` criteria
     ([`../../_shared/polish-ledger.md`](../../_shared/polish-ledger.md) "Apply criteria"), whatever it
@@ -143,20 +150,24 @@ audited.
   - a defect or latent risk → **Explicitly-deferred**. A **security or privacy** defect (exposed personal
     data, an authorisation gap, a secret in a log) is its own follow-up group, never grouped with
     lower-severity items, and leads the handoff's "Follow-ups filed" bullet. When its fix is one site in a
-    file this PR edits, it is **adjacent**: fix it.
+    file this PR edits, fix it here, classified adjacent.
   - polish → record it for the ledger, unfixed; finalisation puts it to the operator.
 - **No shown cost** — a claim with no reachable path or demonstrated cost: a speculative performance or
   memoisation win, a bypass with no instance, hardening code the plan is removing, a dev-only tool with no
   failure. Record it for the ledger with the note `no shown cost: <why>`, which finalisation proposes as
-  `drop`; never file it. It is not Refuted: Refuted needs evidence the claim is false, and this one may be
-  true and still not worth doing.
+  `drop`; never file it. It applies whatever the provenance — the PR's own code included, which the polish
+  rule's no-shown-cost exception routes here. It is not Refuted: Refuted needs evidence the claim is false,
+  and this one may be true and still not worth doing. A latent risk with a named trigger (a later issue, a
+  second caller, a config change) is not no shown cost: it is Explicitly-deferred, latent until that
+  trigger.
 - **Explicitly-deferred** — routed elsewhere with a concrete tracking target (filed as #M, depends on an
   un-landed sibling, a citable PRD/scope exclusion). Record it in the follow-up registry for the
   end-of-loop checkpoint ([`follow-up-tracking.md`](follow-up-tracking.md)) — filed mid-round only when
   this round's commit needs its number. Four rules before it is recorded:
   - **Verify the owner.** A target named as "owned by #M" or "a later story" must carry the item: read its
-    body or Definition of done. When it doesn't, the item is a gap — Addressable when introduced or
-    adjacent, else Decision-required, **Re-plan** recommended.
+    body or Definition of done with `gh_gather.py` ([`follow-up-tracking.md`](follow-up-tracking.md)
+    "Before filing"). When it doesn't, the item is a gap — Addressable when introduced or adjacent, else
+    Decision-required, **Re-plan** recommended.
   - **File the class, not the instance.** Items sharing a root cause are one entry naming the class and
     every known site. Before it files, search open issues for that root cause
     ([`follow-up-tracking.md`](follow-up-tracking.md) "Before filing"): a match is cited, never re-filed,
@@ -321,9 +332,12 @@ audited.
    distinct-site injections into one run — never the full selected suite per assertion. Green-against-the-
    defect means the test is vacuous — the usual shapes are "bad" state constructed after the code under
    test already read the good state, and an absence-assertion with no positive control proving it can ever
-   fail. Rewrite and re-inject, at most twice per assertion; still green after that, file the assertion as
-   a `deferred-test` follow-up (step 4's filing protocol) instead of looping. Injection runs verify the
-   test, not the diff, and do not count against the retry ladder's 3-run cap (`retry-ladder.md`).
+   fail. Rewrite and re-inject, at most twice per assertion; still green after that, register the
+   assertion as a `deferred-test` follow-up for the end-of-loop checkpoint — its description says the
+   injection stayed green after two rewrites — instead of looping; it files `file-now` only when a skip
+   annotation in this round's commit needs its number, and the checkpoint card still lists it. Injection
+   runs verify the test, not the diff, and do not count against the retry ladder's 3-run cap
+   (`retry-ladder.md`).
 7. **Run the §10.6 pre-push verification gate** (static checks → test-selection sub-agent → test
    execution). Dispatch the test-selection sub-agent with its **diff-base override** set to current HEAD
    (`git rev-parse HEAD` in the workspace): your commits wait for step 8, so HEAD is still the last committed,
@@ -382,8 +396,9 @@ is acted on inside this round, which then finishes normally. A **terminating** a
 the `Decision`, `Grounding` or `Settled item` card, or the stall card's churn option) and
 **Restructure** (re-route to the planner), **Abort** and **Abort loop** — ends the round *and* S5.1 on
 the spot, except "The Re-plan independent-defect pass": stop fixing, run no further gate, and hand
-back to S5.2 (it pushes what is committed) and then the routed playbook's handoff, quoting the trigger in
-the `Why:`. Don't try to satisfy a re-route inside the round; there is nothing here that can.
+back to S5.2 (it pushes what is committed), then S7 — the end-of-loop checkpoint for the follow-ups this
+loop registered, so a terminating exit never drops one — and then the routed playbook's handoff, quoting
+the trigger in the `Why:`. Don't try to satisfy a re-route inside the round; there is nothing here that can.
 
 **The Re-plan independent-defect pass.** A Re-plan leaves the round's other defects behind, and some are
 unrelated to what the re-plan will reshape — a run once handed the planner two such defects it could have

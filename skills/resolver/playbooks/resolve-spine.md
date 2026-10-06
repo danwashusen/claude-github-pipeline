@@ -308,8 +308,8 @@ fixed iteration cap that could not tell a round of nits from a round of new bugs
    **Abort** / **Abort loop** stop the run: each leaves S5.1 immediately — no further `review`, no cold
    read; a **Re-plan** first fixes the round's independent defects (the reference's "Guard rails") —
    pushes what it has committed via S5.2 (in fresh mode that opens the PR; the remote ends where
-   today's per-round pushes left it), then goes to the routed playbook's handoff, whose `Why:` quotes
-   what triggered it. Only the continuing answers (**Try another angle**, **Accept + defer**,
+   today's per-round pushes left it) and runs S7, then goes to the routed playbook's handoff, whose
+   `Why:` quotes what triggered it. Only the continuing answers (**Try another angle**, **Accept + defer**,
    **Push with reds**, **Defer the tests**, a named architectural path, **Continue**) resume this loop.
 4. **Cold-read audit — once per phase, after settle.** The PR is the record: the round reply carries
    `Cold read: phase <N> @ <sha>` (`<N>` the phase number, `1` for a single-phase issue; `<sha>` HEAD at
