@@ -26,6 +26,10 @@ processes any script may spawn are git/gh")::
                                                plan-versus-live diff. BEST-EFFORT: a malformed
                                                section is reported as a fact, never as
                                                `PHASES_MALFORMED` (step 4.5)
+    parse.dod_summary                       -- `facts.dod`: the issue DoD's shape (present / count /
+                                               a checklist under another heading) + the body staged
+                                               at `dod.body_path`. Never raises — no annotation is
+                                               parsed, so a malformed one never stops a revise
     doc_catalogue.read_catalogue            -- the CONSUMING repo's `<!-- doc-catalogue -->` block
                                                (its declared grounding docs), read at the grounding
                                                checkout. Replaces this module's former hardcoded
@@ -1401,6 +1405,38 @@ def _extract_body(envelope, key):
     return body or ""
 
 
+def _build_dod_facts(issue_body, scratch_dir):
+    """`facts.dod` — the issue DoD's shape (`parse.dod_summary`: `present` / `count` /
+    `other_checklists`) plus `body_path`, the issue body staged at a FIXED scratch path.
+
+    `body_path` is ALWAYS a file, unlike `sections.issue_body`, which is inline when small. Two
+    consumers need a path: the spine's S7 `parse.py phases --issue-body` (the `closes-dod` coverage
+    check), and the session's issue-body edits — the S1 DoD-heading rename edits this file and S8's
+    pointer staging starts from it, so a whole-body `edit-body` never writes the session-start body
+    back over a rename made minutes earlier.
+
+    Lenient by design: `dod_summary` never parses annotations, so a malformed one (which the
+    resolver and evaluator refuse on) leaves this fact intact — a revise run is how annotations get
+    repaired, the same posture as the prior plan's best-effort `## Phases` parse.
+    """
+    body_path = Path(scratch_dir) / "issue-body.md"
+    with open(body_path, "w", encoding="utf-8", newline="") as fh:
+        fh.write(issue_body)
+    dod = parse.dod_summary(issue_body)
+    dod["body_path"] = str(body_path)
+    return dod
+
+
+def _dod_attention(dod_facts):
+    note = parse.misplaced_dod_note(dod_facts)
+    if note is None:
+        return []
+    return [
+        note + " — no reader parses it as the DoD, so `closes-dod` has nothing to index; resolve "
+        "the DoD-heading card (plan-schema.md, \"The `closes-dod` target\") before planning"
+    ]
+
+
 def build_facts(issue_number, repo, root=".", scratch_dir=None, refresh=False, cwd=None):
     """Assemble the planner's complete facts block and return the envelope dict WITHOUT printing
     it (the testable core, mirroring `prep_resolver.build_facts` / `prep_evaluator.build_facts`).
@@ -1882,6 +1918,7 @@ def build_facts(issue_number, repo, root=".", scratch_dir=None, refresh=False, c
 
     suggested_playbook = _suggested_playbook(issue_type, mode, parent_epic_open)
     vector = {"type": issue_type, "mode": mode, "plan_ref_row": plan_ref_row}
+    dod_facts = _build_dod_facts(issue_body, scratch_dir)
 
     facts = {
         "repo": repo,
@@ -1913,6 +1950,7 @@ def build_facts(issue_number, repo, root=".", scratch_dir=None, refresh=False, c
         "grounding_docs": grounding_docs,
         "open_questions": open_question_entries,
         "open_question_candidates": open_question_candidates,
+        "dod": dod_facts,
         "attention": _build_attention(
             open_question_candidates,
             epic_facts,
@@ -1928,6 +1966,7 @@ def build_facts(issue_number, repo, root=".", scratch_dir=None, refresh=False, c
         facts["story"] = story_facts
     if revise_facts is not None:
         facts["revise"] = revise_facts
+    facts["attention"].extend(_dod_attention(dod_facts))
     facts["attention"].extend(shipped_attention)
     if slices_facts is not None:
         # Named `slices`, not `sub_issues`: `target.sub_issues` already carries the raw relation

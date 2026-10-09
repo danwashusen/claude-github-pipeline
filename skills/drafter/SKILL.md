@@ -28,9 +28,9 @@ spine offers), `target` (revise: number/title/state/labels/`blocked_by`/ `blocki
 `config.oq_markers` (the `<!-- drafter-open-question-markers -->` block, or `heuristics_active` — a **detection
 hint**, never a gate), `repo_context` (issue templates, `gh label list`, and `docs` — the repo's own `<!--
 doc-catalogue -->` entries plus its `prd`), `open_questions` + `open_question_candidates` (the search-before-file
-tracker de-dup on the target body), `revise` mode facts, `sections` (spilled issue-body/ thread/plan-marker paths),
-and `attention`. Consume every fact as **data** — never re-derive the mode, the target's type, or the tracker
-candidates in prose; prep already did.
+tracker de-dup on the target body), `revise` mode facts (`revise.dod`: the body's DoD shape), `sections` (spilled
+issue-body/ thread/plan-marker paths), and `attention`. Consume every fact as **data** — never re-derive the mode,
+the target's type, or the tracker candidates in prose; prep already did.
 
 **Decision card rule.** If prep exits with `status: needs_decision`, render its `decision` as one
 `AskUserQuestion` card (per [`../_shared/asking-the-user.md`](../_shared/asking-the-user.md)), act on the
@@ -93,8 +93,7 @@ Universal across every route:
   (`EMPTY_BODY_FILE`) and returns `body_sha256` — the #626/#627 empty-body race fix (the body never
   travels through a dispatch prompt). The drafter has **no** scriptless
   raw-`gh` executor; if a real op doesn't fit a subcommand, that's a gap to report, not a raw call to roll.
-- **Successful write is self-confirming.** A zero exit with a URL *is* the confirmation; never re-read the
-  issue to check it landed.
+- **Successful write is self-confirming.** A zero exit with a URL *is* the confirmation; never re-read it.
 - **Never silently freeze an untracked OQ.** An OQ that gates a build issue's scope gets a Step-3.5
   disposition + a tracked companion (matched or filed) before it enters the body — the falsifiable rule in
   [`playbooks/draft-spine.md`](playbooks/draft-spine.md); absorbing one silently is a defect.
@@ -106,8 +105,7 @@ Universal across every route:
 - **Gates only for genuine decisions** (per [`../_shared/asking-the-user.md`](../_shared/asking-the-user.md)):
   issue size, ambiguous classification/reference, PRD conflict, OQ disposition, companion reuse-vs-file,
   the ambient-branch relationship, the filing gate, revise state-summary + diff confirmation, closed-issue
-  handling, review-loop tie-break.
-  A judgment sub-agent (the issue reviewer) never calls `AskUserQuestion`; it returns findings to this loop.
+  handling, review-loop tie-break. The issue reviewer sub-agent never calls `AskUserQuestion`; it returns findings.
 - **Handoff on clean exit** (§4). One `## Handoff` block ends every clean run; it replaces any bullet-list
   summary. Don't add anything after it.
 

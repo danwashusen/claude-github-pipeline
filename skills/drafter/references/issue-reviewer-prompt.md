@@ -124,15 +124,18 @@ both altitudes (#16). This reviewer reads **one** issue; it never reasons across
    author has agreed to a different approach. Compare the issue body to that direction. If the body still
    describes a superseded approach, flag it.
 
-6. **Completeness.** For drafts especially: are the required template sections present? User story for
-   features. Definition of done for stories. Steps to reproduce + expected vs. actual for bugs. Goal +
-   Background + Definition of done for Epics (an Epic body does **not** list its stories — that's the
-   native sub-issue relation). Question + Audience + Context for questions (a question with no Context,
-   or whose References cite nothing a reader could follow, is incomplete). If a section is missing, flag
-   it; if a section exists but is empty or a placeholder, flag that too — with one exception: a bookend
-   story's explicit deferral placeholder ("specified at planning time" / "grounded on the epic delivery
-   log") is the sanctioned form for content the planner owns, not an empty section; don't flag it. The
-   drafter no longer authors bookend stories, but it still **revises** them, so the carve-out stays.
+6. **Completeness.** For drafts especially: are the required template sections present? User story +
+   Definition of done for features. Definition of done for stories — criteria under any other heading
+   (`## Acceptance criteria`) are a BLOCKER: no downstream stage parses them as the DoD (a deliverable
+   slice — a sub-issue of a non-epic — is the exception: its `## Acceptance criteria` is the slicer's by
+   design). Steps to reproduce + expected vs. actual for bugs. Goal + Background + Definition of done for
+   Epics (an Epic body does **not** list its stories — that's the native sub-issue relation). Question +
+   Audience + Context for questions (a question with no Context, or whose References cite nothing a reader
+   could follow, is incomplete). If a section is missing, flag it; if a section exists but is empty or a
+   placeholder, flag that too — with one exception: a bookend story's explicit deferral placeholder
+   ("specified at planning time" / "grounded on the epic delivery log") is the sanctioned form for content
+   the planner owns, not an empty section; don't flag it. The drafter no longer authors bookend stories,
+   but it still **revises** them, so the carve-out stays.
 
 ## Severity
 

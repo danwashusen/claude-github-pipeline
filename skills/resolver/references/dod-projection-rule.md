@@ -36,9 +36,9 @@ on the issue body's `## Definition of done`. The resolver never reads the issue 
 decide routing — only to compute the diff between expected and current state.
 
 **Single-phase fallback.** When the plan has no `## Phases` section (single-phase issue), or `## Phases`
-contains a single entry with no `closes-dod`, fall back to "tick every top-level DoD bullet" on the
-run's **one push** (spine S5.2) only. Re-entry reconciliation re-applies if that push's `edit-body`
-failed.
+contains a single entry with no `closes-dod`, fall back to "tick every top-level `## Definition of done`
+bullet" (`facts.dod` — never another heading's checklist) on the run's **one push** (spine S5.2) only.
+Re-entry reconciliation re-applies if that push's `edit-body` failed.
 
 **Operator-phase hybrid detection.** Operator and decision-only phases (`kind: operator` |
 `decision-only`) ship no commits — the resolver doesn't run them. On a re-entry where the next phase is
@@ -113,14 +113,24 @@ becomes `- [x] Phase 2-measurement (operator phase 2, applied 2026-06-04)`. No i
   plan-revision drift: bullet 3 was ticked by phase 1 under the prior plan; current plan reassigns to
   phase 4.`
 - *Bullet count drift* (issue body has more or fewer top-level DoD bullets than the plan's max-referenced
-  index): block projection this run, surface in the state summary, route back to the planner via the
-  `Re-route → planner` handoff (the bullet shift breaks the planner's dimension-7 invariant).
+  index — including **no** `## Definition of done` section while the plan claims indexes): prep reports it
+  as `facts.dod_coverage.drift`, with an `attention` line naming what it found. Block projection this run,
+  surface it in the session output, and route back to the planner via the `Re-route → planner` handoff (the
+  bullet shift breaks the planner's dimension-7 invariant; its `Why:` carries the `attention` line, and the
+  planner's DoD-heading card offers the rename when the criteria sit under another heading).
 - *`closes-dod: (none)` phase*: PR Phase tracker still ticks normally; zero issue-body edits. Log `DoD
   projection: phase <N> closes (none) — no DoD edits.`
-- *Issue with no `## Definition of done` section*: skip projection silently with state-summary line `DoD
-  projection: issue has no \`## Definition of done\` section — projection skipped.` (Multi-phase issues
-  without a DoD section are impossible past planner dimension-7 review; if detected, treat as bullet-count
-  drift and re-route to planner.)
+- *Issue with no `## Definition of done` section, and no index claimed* (`facts.dod_coverage` null — the
+  single-phase fallback — or every phase `closes-dod: (none)`): skip projection and say so in the session
+  output: `DoD projection: issue has no \`## Definition of done\` section — projection skipped.` A phase that
+  *does* claim an index against such an issue is drift (above), never this case — a plan reviewer can pass
+  one, so its arrival here is a fact to act on, not an impossibility.
+- *A checklist under another heading* (e.g. `## Acceptance criteria`; named by
+  `facts.dod_coverage.other_checklists` when the plan claims indexes): never project onto it, the
+  single-phase fallback included. On the issue this run resolves, only `## Definition of done` is the DoD
+  (`facts.dod`) — a tick written elsewhere is read by no parser, so the evaluator never verifies it and the
+  next session's reconciliation never sees it. (A deliverable slice's own `## Acceptance criteria` is a different
+  surface, closed by the slice-closing rung below.)
 
 Slice-closing edge cases (the S6 rung that closes a deliverable slice as its last serving phase ships):
 

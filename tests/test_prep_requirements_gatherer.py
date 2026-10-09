@@ -160,12 +160,44 @@ class DodFactsTests(unittest.TestCase):
             dod,
             {
                 "present": False,
+                "other_checklists": [],
                 "bullet_count": 0,
                 "annotated_count": 0,
                 "next_req_seq": 1,
                 "bullets": [],
             },
         )
+
+    def test_a_checklist_under_another_heading_is_reported_not_adopted(self):
+        """The criteria live under `## Acceptance criteria`: the fact names them, and the parsed
+        bullets stay empty — appending a second checklist is what gather.md must not do."""
+        body = "## Acceptance criteria\n- [ ] one\n- [ ] two\n"
+        dod, decision = prep._parse_dod(body, 7)
+        self.assertIsNone(decision)
+        self.assertFalse(dod["present"])
+        self.assertEqual(dod["bullets"], [])
+        self.assertEqual(
+            dod["other_checklists"], [{"heading": "Acceptance criteria", "count": 2}]
+        )
+
+    def test_a_misplaced_checklist_surfaces_the_drafter_route(self):
+        dod, _ = prep._parse_dod("## Acceptance criteria\n- [ ] one\n", 7)
+        attention = prep._build_attention(
+            {"number": 7}, [], dod, {"present": False}, [], False, []
+        )
+        self.assertTrue(
+            any("`## Acceptance criteria` (1 bullet)" in i and "drafter revise #7" in i
+                for i in attention),
+            attention,
+        )
+
+    def test_a_refused_slice_gets_no_rename_route(self):
+        # A slice's `## Acceptance criteria` is the slicer's by design — never "rename it".
+        dod, _ = prep._parse_dod("## Acceptance criteria\n- [ ] one\n", 7)
+        attention = prep._build_attention(
+            {"number": 7}, [prep.REFUSAL_SLICE_TARGET], dod, {"present": False}, [], False, []
+        )
+        self.assertFalse(any("drafter revise" in i for i in attention), attention)
 
     def test_present_section_with_plain_and_annotated_bullets(self):
         body = (

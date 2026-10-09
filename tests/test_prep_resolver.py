@@ -185,7 +185,8 @@ class HappyPathFactsSchemaTests(PrepResolverSandboxTestCase):
         for key in (
             "repo", "scratch", "root", "target", "vector", "suggested_playbook", "workspace",
             "config", "sections", "attention", "notices", "plan", "phases", "dod",
-            "open_questions", "open_questions_gate", "audit_ref", "distiller_bundle", "tracker",
+            "dod_coverage", "open_questions", "open_questions_gate", "audit_ref",
+            "distiller_bundle", "tracker",
         ):
             self.assertIn(key, envelope, "missing architecture.md §4 facts-block key %r" % key)
 
@@ -1881,6 +1882,54 @@ class UsageErrorTests(unittest.TestCase):
         )
         self.assertNotEqual(result.returncode, 0)
         self.assertEqual(result.stdout, "")
+
+
+class DodDriftAttentionTests(unittest.TestCase):
+    """`facts.dod_coverage.drift` is the projection rule's bullet-count drift as a fact. Before it,
+    `dod-projection-rule.md` assumed a multi-phase plan against a DoD-less issue could not get past
+    the plan reviewer; a session that met one projected the plan's indexes onto `## Acceptance
+    criteria`, where neither the evaluator nor the next resolver session could see them."""
+
+    @staticmethod
+    def _coverage(body, phases):
+        return parse.dod_coverage(
+            [{"number": n, "closes_dod": c} for n, c in phases], parse.dod_summary(body)
+        )
+
+    def test_claims_against_acceptance_criteria_name_the_heading_and_block(self):
+        cov = self._coverage(
+            "## Acceptance criteria\n- [ ] a\n- [ ] b\n", [(1, [1]), (2, [2])]
+        )
+        (line,) = prep_resolver._dod_drift_attention(cov)
+        self.assertIn("`## Acceptance criteria` (2 bullets)", line)
+        self.assertIn("re-route to the planner", line)
+        self.assertIn("never project onto another heading", line)
+
+    def test_a_dod_grown_past_the_plan_names_the_count(self):
+        cov = self._coverage(
+            "## Definition of done\n- [ ] a\n- [ ] b\n- [ ] c\n", [(1, [1]), (2, [2])]
+        )
+        (line,) = prep_resolver._dod_drift_attention(cov)
+        self.assertIn("has 3 bullet(s)", line)
+
+    def test_claims_against_a_body_with_no_checklist_at_all(self):
+        cov = self._coverage("## Description\nprose only\n", [(1, [1]), (2, [2])])
+        (line,) = prep_resolver._dod_drift_attention(cov)
+        self.assertIn("the issue body has no `## Definition of done`", line)
+
+    def test_a_plan_claiming_nothing_says_so(self):
+        cov = self._coverage(
+            "## Definition of done\n- [ ] a\n", [(1, "(none)"), (2, "(none)")]
+        )
+        (line,) = prep_resolver._dod_drift_attention(cov)
+        self.assertIn("the plan claims no `closes-dod` index", line)
+
+    def test_exact_coverage_and_the_single_phase_fallback_say_nothing(self):
+        dod = "## Definition of done\n- [ ] a\n- [ ] b\n"
+        self.assertEqual(
+            prep_resolver._dod_drift_attention(self._coverage(dod, [(1, [1]), (2, [2])])), []
+        )
+        self.assertEqual(prep_resolver._dod_drift_attention(self._coverage(dod, [])), [])
 
 
 if __name__ == "__main__":

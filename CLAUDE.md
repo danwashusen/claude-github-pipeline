@@ -265,7 +265,13 @@ per [architecture.md §7](docs/architecture.md)'s mapping table).
   decision code (`DOD_MALFORMED`, `PHASES_MALFORMED`). `phases` also reports the staged body's `size`
   against `BODY_CHAR_LIMIT` (`pipelib.limits.body_size`, the shape `plan_shipped.py check`'s `main`
   shares) — the planner's size read on every staging, including a fresh draft with no prior plan to
-  hand `check`; never a decision. Plus two import-only scanners for renderings the
+  hand `check`; never a decision. The DoD's **shape** is a fact too (4.32.0): `dod` also reports
+  `present` and `other_checklists` (`dod_summary` — checkbox lists under any other `##` heading, the
+  legacy epic `## Stories` excepted; the drafter's post-staging check), and `phases --issue-body <path>`
+  adds `dod_coverage` (`dod_coverage` — out-of-range / unclaimed / doubly-claimed `closes-dod` indexes
+  and `drift`, `dod-annotations.md`'s index-stability invariant as written). The planner's prep reports
+  `facts.dod` (with the body staged at `dod.body_path`), the resolver's `facts.dod_coverage`. Never a
+  decision: the heading is the contract, and a checklist under `## Acceptance criteria` is not the DoD. Plus two import-only scanners for renderings the
   pipeline rebuilds — the PR's `## Phase tracker` and `## Polish` ledger — which never raise (an
   unparseable line is rewritten, never a stop), so they have no subcommand and no decision code.
 - `plan_shipped.py` — the shipped-phase records (`skills/_shared/plan-shipped-phases.md`). Import
@@ -326,7 +332,10 @@ now the same rule everything else follows rather than an exception.
   the parser. Three skills share it: the **resolver** projects ticks as phases ship, the
   **evaluator** verifies and writes sticky-veto un-ticks, the **planner** reconciles during revise
   mode. Annotation form and checkbox state must always agree; a bullet never stacks two
-  annotations.
+  annotations. The heading is part of the contract: a checklist under any other heading is never
+  indexed or projected onto — the drafter files criteria under `## Definition of done`, and the
+  planner's DoD-heading card offers to rename one that isn't (a deliverable slice's
+  `## Acceptance criteria` is the slicer's, deliberately outside it).
 - `worktree-lifecycle.md` — the **external** `<!-- worktree-setup -->` / `<!-- worktree-teardown -->`
   block format a consuming repo declares, and what those commands must guarantee (setup idempotent
   because it runs at workspace-open *and* on every resolver/evaluator session entry, discovered in

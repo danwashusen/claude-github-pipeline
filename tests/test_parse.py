@@ -1101,6 +1101,193 @@ class ParsePhasesCliTests(unittest.TestCase):
 
 
 # ============================================================================================
+# DoD shape + closes-dod coverage — the checks that stop a plan indexing a non-DoD checklist
+# ============================================================================================
+
+
+def _phase(number, closes_dod):
+    return {"number": number, "closes_dod": closes_dod}
+
+
+class DodSummaryModuleTests(unittest.TestCase):
+    """`dod_summary`: the DoD heading is the contract, so a checklist under any other heading is
+    reported by name rather than read as the DoD (the drafter's pre-4.32 feature template wrote
+    `## Acceptance criteria`, and every stage downstream then saw "no DoD")."""
+
+    def test_a_dod_body_reports_its_count_and_no_other_checklist(self):
+        body = "## Definition of done\n- [ ] a\n- [x] b (closed by commit abc1234)\n  - [ ] sub\n"
+        self.assertEqual(
+            parse.dod_summary(body), {"present": True, "count": 2, "other_checklists": []}
+        )
+
+    def test_acceptance_criteria_is_named_not_adopted(self):
+        body = "## User story\nx\n\n## Acceptance criteria\n- [ ] a\n- [ ] b\n\n## Related issues\n"
+        self.assertEqual(
+            parse.dod_summary(body),
+            {
+                "present": False,
+                "count": 0,
+                "other_checklists": [{"heading": "Acceptance criteria", "count": 2}],
+            },
+        )
+
+    def test_legacy_stories_checklist_is_never_reported(self):
+        # Legacy epics carry `## Stories` and often no DoD; flagging it would prompt a rename on
+        # every one of them (`_shared/epic-story-hierarchy.md` reads it as the checklist tier).
+        body = "## Goal\nx\n\n## Stories\n- [ ] #12 — one\n- [x] #13 — two\n"
+        self.assertEqual(parse.dod_summary(body)["other_checklists"], [])
+
+    def test_sub_bullets_and_prose_do_not_make_a_checklist(self):
+        body = "## Notes\n- plain bullet\n  - [ ] indented checkbox\n"
+        self.assertEqual(parse.dod_summary(body)["other_checklists"], [])
+
+    def test_an_h3_inside_a_section_stays_in_it_as_the_section_finder_reads_it(self):
+        # `_find_section` ends a section only at `##`, so the DoD parser would index this bullet
+        # too after a rename — the reported count must be the count the rename yields.
+        body = "## Acceptance criteria\n- [ ] a\n### Detail\n- [ ] b\n"
+        self.assertEqual(
+            parse.dod_summary(body)["other_checklists"],
+            [{"heading": "Acceptance criteria", "count": 2}],
+        )
+
+    def test_a_malformed_annotation_is_still_counted(self):
+        # The planner's prep stays lenient (a revise repairs annotations), so the count must not
+        # depend on the annotation parse that raises.
+        body = "## Definition of done\n- [x] a (closed by phase one, commit zzz)\n- [ ] b\n"
+        with self.assertRaises(parse._DodMalformed):  # noqa: SLF001
+            parse.parse_dod_bullets(body)
+        self.assertEqual(parse.dod_summary(body)["count"], 2)
+
+    def test_a_dod_and_another_checklist_both_report(self):
+        body = "## Definition of done\n- [ ] a\n\n## Acceptance criteria\n- [ ] b\n"
+        summary = parse.dod_summary(body)
+        self.assertTrue(summary["present"])
+        self.assertEqual(summary["count"], 1)
+        self.assertEqual(
+            summary["other_checklists"], [{"heading": "Acceptance criteria", "count": 1}]
+        )
+        self.assertIsNone(parse.misplaced_dod_note(summary))
+
+    def test_the_misplaced_note_names_each_heading(self):
+        note = parse.misplaced_dod_note(
+            parse.dod_summary("## Acceptance criteria\n- [ ] a\n")
+        )
+        self.assertIn("`## Acceptance criteria` (1 bullet)", note)
+
+
+class DodCoverageModuleTests(unittest.TestCase):
+    AC_ONLY = parse.dod_summary("## Acceptance criteria\n- [ ] a\n- [ ] b\n")
+    THREE = parse.dod_summary("## Definition of done\n- [ ] a\n- [ ] b\n- [ ] c\n")
+
+    def test_single_phase_fallback_claims_nothing(self):
+        self.assertIsNone(parse.dod_coverage([], self.THREE))
+        self.assertIsNone(parse.dod_coverage([_phase(1, "(none)")], self.THREE))
+
+    def test_exact_coverage_is_clean(self):
+        cov = parse.dod_coverage([_phase(1, [1, 2]), _phase(2, [3])], self.THREE)
+        self.assertEqual(
+            (cov["out_of_range"], cov["unclaimed"], cov["claimed_more_than_once"], cov["drift"]),
+            ([], [], [], False),
+        )
+
+    def test_claims_against_an_absent_dod_are_out_of_range_and_drift(self):
+        # The reported failure: indexes written against `## Acceptance criteria`.
+        cov = parse.dod_coverage([_phase(1, [1]), _phase(2, [2])], self.AC_ONLY)
+        self.assertFalse(cov["present"])
+        self.assertEqual(cov["out_of_range"], [1, 2])
+        self.assertTrue(cov["drift"])
+        self.assertEqual(cov["other_checklists"], [{"heading": "Acceptance criteria", "count": 2}])
+
+    def test_a_single_claiming_phase_is_still_checked(self):
+        cov = parse.dod_coverage([_phase(1, [1, 2])], self.AC_ONLY)
+        self.assertTrue(cov["drift"])
+
+    def test_planning_without_a_dod_is_clean(self):
+        # The card's "Plan without a DoD" arm: every phase `(none)`, nothing claimed, no drift.
+        cov = parse.dod_coverage([_phase(1, "(none)"), _phase(2, "(none)")], self.AC_ONLY)
+        self.assertEqual((cov["out_of_range"], cov["drift"]), ([], False))
+
+    def test_a_plan_claiming_nothing_against_a_real_dod_is_drift(self):
+        # Deliberate: max claimed 0 vs 3 bullets — no tick would ever land, and only a re-plan fixes it.
+        cov = parse.dod_coverage([_phase(1, "(none)"), _phase(2, "(none)")], self.THREE)
+        self.assertEqual((cov["max_claimed"], cov["unclaimed"], cov["drift"]), (0, [1, 2, 3], True))
+
+    def test_a_mid_gap_is_unclaimed_but_not_drift(self):
+        # Drift is the written invariant (count vs max index); a gap is the reviewer's BLOCKER.
+        cov = parse.dod_coverage([_phase(1, [1]), _phase(2, [3])], self.THREE)
+        self.assertEqual(cov["unclaimed"], [2])
+        self.assertFalse(cov["drift"])
+
+    def test_a_dod_grown_past_the_plan_is_drift(self):
+        cov = parse.dod_coverage([_phase(1, [1]), _phase(2, [2])], self.THREE)
+        self.assertEqual(cov["unclaimed"], [3])
+        self.assertTrue(cov["drift"])
+
+    def test_a_doubly_claimed_index_is_reported(self):
+        cov = parse.dod_coverage([_phase(1, [1, 2]), _phase(2, [2, 3])], self.THREE)
+        self.assertEqual(cov["claimed_more_than_once"], [2])
+        self.assertFalse(cov["drift"])
+
+    def test_index_zero_is_out_of_range(self):
+        cov = parse.dod_coverage([_phase(1, [0, 1, 2, 3])], self.THREE)
+        self.assertEqual(cov["out_of_range"], [0])
+        self.assertTrue(cov["drift"])
+
+
+class DodShapeCliTests(unittest.TestCase):
+    def _write(self, tmp, name, text):
+        path = Path(tmp) / name
+        path.write_text(text, encoding="utf-8")
+        return str(path)
+
+    def test_dod_reports_presence_and_other_checklists(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            body = self._write(tmp, "issue.md", "## Acceptance criteria\n- [ ] a\n")
+            rc, out, err = _run_cli(["dod", body])
+        envelope = _parse_one_envelope(out)
+        envelope_asserts.assert_full_envelope_conformance(envelope)
+        self.assertEqual(envelope["dod"], [])
+        self.assertFalse(envelope["present"])
+        self.assertEqual(
+            envelope["other_checklists"], [{"heading": "Acceptance criteria", "count": 1}]
+        )
+
+    def test_phases_without_issue_body_carries_no_coverage_key(self):
+        rc, out, err = _run_cli(["phases", str(PHASES_FIXTURES_DIR / "well_formed_multi_phase.md")])
+        self.assertNotIn("dod_coverage", _parse_one_envelope(out))
+
+    def test_phases_with_issue_body_reports_coverage(self):
+        # well_formed_multi_phase.md claims 1, 2 (phase 2) and 3 (phase 3).
+        with tempfile.TemporaryDirectory() as tmp:
+            good = self._write(
+                tmp, "good.md", "## Definition of done\n- [ ] a\n- [ ] b\n- [ ] c\n"
+            )
+            misplaced = self._write(
+                tmp, "ac.md", "## Acceptance criteria\n- [ ] a\n- [ ] b\n- [ ] c\n"
+            )
+            plan = str(PHASES_FIXTURES_DIR / "well_formed_multi_phase.md")
+            _, good_out, _ = _run_cli(["phases", plan, "--issue-body", good])
+            _, ac_out, _ = _run_cli(["phases", plan, "--issue-body", misplaced])
+        good_env, ac_env = _parse_one_envelope(good_out), _parse_one_envelope(ac_out)
+        envelope_asserts.assert_full_envelope_conformance(good_env)
+        self.assertFalse(good_env["dod_coverage"]["drift"])
+        self.assertEqual(ac_env["status"], "ok")
+        self.assertTrue(ac_env["dod_coverage"]["drift"])
+        self.assertEqual(ac_env["dod_coverage"]["out_of_range"], [1, 2, 3])
+
+    def test_phases_single_phase_plan_reports_null_coverage(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            body = self._write(tmp, "issue.md", "## Definition of done\n- [ ] a\n")
+            rc, out, err = _run_cli(
+                ["phases", str(PHASES_FIXTURES_DIR / "no_section_single_phase.md"),
+                 "--issue-body", body]
+            )
+        envelope = _parse_one_envelope(out)
+        self.assertIn("dod_coverage", envelope)
+        self.assertIsNone(envelope["dod_coverage"])
+
+
+# ============================================================================================
 # Cross-cutting: usage errors, subcommand dispatch
 # ============================================================================================
 

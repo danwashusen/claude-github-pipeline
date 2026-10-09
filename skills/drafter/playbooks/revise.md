@@ -42,6 +42,14 @@ review → confirm → apply). The deltas this route supplies:
   prose gate — a diff, not a fresh draft card).
 - **Preserve the plan pointer.** Keep any `> 📋 **Implementation plan:**` pointer line verbatim in the
   revised body — don't drop, duplicate, or touch the `<!-- implementation-plan:v1 -->` comment it links to.
+- **Criteria under another heading.** When `facts.revise.dod.present` is false and
+  `facts.revise.dod.other_checklists` names a heading (`## Acceptance criteria` on a feature filed before the
+  templates' checklist heading rule), rename that heading to `## Definition of done` — the bullets stay as
+  written, in order, so a live plan's `closes-dod` indexes still point at them — and show it in the diff. Only
+  when `facts.revise.dod.slice` is `false`: a deliverable slice (`true`) keeps the slicer's `## Acceptance
+  criteria`, and when its parent could not be typed (`null`) leave the heading — the planner's DoD-heading
+  card still offers the rename. This is the fix a planner re-route (`DoD heading — re-route to the drafter`)
+  asks for.
 
 ## Step R4 — Apply
 

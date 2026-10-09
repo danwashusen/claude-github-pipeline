@@ -12,6 +12,9 @@ thread may have moved past the body — the latest accepted direction wins. `fac
 the existing DoD as current state: these are already-recorded requirements; you extend the set,
 never redraft it. `facts.attention` may carry open blockers or the mid-flight warning (an
 implementation plan or annotated bullets) — surface each to the operator up front, one line each.
+**Criteria under another heading** (`facts.dod.present` false, `facts.dod.other_checklists` non-empty):
+stop here — appending a second checklist would leave those criteria out of every DoD reader. The
+summary names `/github-pipeline:drafter revise #<N>` (it renames the heading); re-run this skill after.
 
 ## 2. Gate G1 — grounding selection
 

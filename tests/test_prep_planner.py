@@ -212,7 +212,7 @@ class HappyPathFactsSchemaTests(PrepPlannerSandboxTestCase):
         for key in (
             "repo", "scratch", "root", "target", "vector", "suggested_playbook", "plan_ref",
             "plan", "research", "grounding_docs", "open_questions", "open_question_candidates",
-            "grounding", "sections", "attention", "notices",
+            "dod", "grounding", "sections", "attention", "notices",
         ):
             self.assertIn(key, envelope, "missing architecture.md §4 facts-block key %r" % key)
 
@@ -1836,6 +1836,65 @@ class ComposedCoreNoticesTests(PrepPlannerSandboxTestCase):
         emitted = json.loads(buffer.getvalue().strip())
         self.assertEqual(emitted["status"], "needs_decision")
         self.assertEqual(emitted["notices"], ["SUBISSUES_UNSUPPORTED"])
+
+
+class DodFactsTests(PrepPlannerSandboxTestCase):
+    """`facts.dod`: the issue DoD's shape + the staged working copy of the body. Before it, the
+    planner indexed `closes-dod` by eye against whatever checklist the body had — including
+    `## Acceptance criteria`, which no DoD reader parses — and nothing downstream could tell."""
+
+    def _facts_for_body(self, body):
+        # The same stubbed gather envelope ComposedCoreNoticesTests drives (not inherited, so its
+        # tests don't run twice).
+        envelope = ComposedCoreNoticesTests._stub_envelope(self, [])
+        envelope["issue_body"] = body
+        with mock.patch.object(prep_planner.gh_gather, "run", return_value=(0, envelope)):
+            return prep_planner.build_facts(
+                "200", "octo/widgets", root=str(self.root), scratch_dir=self.scratch, refresh=True
+            )
+
+    def test_a_dod_body_reports_its_shape_and_no_attention(self):
+        facts = self._facts_for_body("Small body.\n\n## Definition of done\n- [ ] a\n- [ ] b\n")
+        self.assertTrue(facts["dod"]["present"])
+        self.assertEqual(facts["dod"]["count"], 2)
+        self.assertEqual(facts["dod"]["other_checklists"], [])
+        self.assertFalse(any("Definition of done" in a for a in facts["attention"]))
+
+    def test_body_path_holds_the_exact_body(self):
+        # The working copy every issue-body edit this session starts from (S1 rename, S8 pointer).
+        body = "Body with CRLF\r\n\r\n## Definition of done\r\n- [ ] a\r\n"
+        facts = self._facts_for_body(body)
+        with open(facts["dod"]["body_path"], encoding="utf-8", newline="") as fh:
+            self.assertEqual(fh.read(), body)
+        self.assertTrue(facts["dod"]["body_path"].startswith(self.scratch))
+
+    def test_acceptance_criteria_body_raises_the_card_attention(self):
+        facts = self._facts_for_body(
+            "## User story\nx\n\n## Acceptance criteria\n- [ ] a\n- [ ] b\n"
+        )
+        self.assertFalse(facts["dod"]["present"])
+        self.assertEqual(
+            facts["dod"]["other_checklists"], [{"heading": "Acceptance criteria", "count": 2}]
+        )
+        self.assertTrue(
+            any("`## Acceptance criteria` (2 bullets)" in a and "DoD-heading card" in a
+                for a in facts["attention"]),
+            facts["attention"],
+        )
+
+    def test_a_legacy_epic_stories_checklist_raises_nothing(self):
+        # 12 planner fixtures carry `## Goal` + `## Stories` and no DoD; none may gain a line.
+        facts = self._facts_for_body("## Goal\nx\n\n## Stories\n- [ ] #12 — one\n")
+        self.assertEqual(facts["dod"]["other_checklists"], [])
+        self.assertFalse(any("Definition of done" in a for a in facts["attention"]))
+
+    def test_a_malformed_annotation_never_stops_the_planner(self):
+        # Lenient like the prior plan's `## Phases` parse: a revise is how annotations get repaired.
+        facts = self._facts_for_body(
+            "## Definition of done\n- [x] a (closed by phase one, commit zzz)\n"
+        )
+        self.assertIsNotNone(facts)
+        self.assertEqual(facts["dod"]["count"], 1)
 
 
 class PureHelperUnitTests(unittest.TestCase):

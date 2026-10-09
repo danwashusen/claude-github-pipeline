@@ -134,8 +134,10 @@ Walk the captured body annotations against the new plan's `closes-dod` mappings 
   resolver run re-routes back here — a single-phase issue looped planner → resolver → planner forever. A
   plan that does not re-plan the veto leaves the annotation untouched.
 
-Stage the reconciled body to `<facts.scratch>/issue-body-reconciled.md` and, after the user confirms at
-S8, apply it via the single write path:
+Stage the reconciled body to `<facts.scratch>/issue-body-reconciled.md` — built from the body this session
+last wrote (`facts.dod.body_path` unless the S1 DoD-heading rename already wrote it; `plan-schema.md`, "The
+`closes-dod` target"), never `facts.sections`' session-start copy — and, after the user confirms at S8, apply
+it via the single write path:
 
 ```bash
 ${CLAUDE_PLUGIN_ROOT}/scripts/gh_persist.py edit-body <owner/repo> <issue> \
@@ -203,8 +205,8 @@ happens **first**, `plan_ref` is **re-selected** off the row table against a fre
    tracker state), each to the predecessor annotation `- [ ] <text> (previously claimed by phase X,
    commit <sha> on closed PR #<M>)` (per `../../_shared/dod-annotations.md`; an evaluator-rejection
    annotation is rewritten to this predecessor form — the closed PR makes the rejection no longer
-   load-bearing). Stage to `<facts.scratch>/issue-body-reconciled.md` and apply via `gh_persist.py
-   edit-body`.
+   load-bearing). Stage to `<facts.scratch>/issue-body-reconciled.md`, from the body this session last
+   wrote (same rule as the SOFT path), and apply via `gh_persist.py edit-body`.
 
 Leave the closed PR's branch in place — the `## Predecessor` reminder is the user's cue to clean it up
 after the new PR lands.

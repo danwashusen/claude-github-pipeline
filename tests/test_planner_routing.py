@@ -321,13 +321,14 @@ class SubIssueReconciliationRuleTests(unittest.TestCase):
         self.assertIn("sub-issue reconciliation", text)
 
     def test_spine_is_unchanged_at_its_recorded_length(self):
-        # The 251 bar is a knife edge (router 120 + spine 130 = 250). Fail at the CAUSE — a spine
+        # The 251 bar is a knife edge (router 120 + spine 131 = 251). Fail at the CAUSE — a spine
         # edit — rather than only at the sum, whose message implicates whichever file was touched
-        # last. #45 is the authorized offset: the S7 parse gate cost the spine +6, paid back with
-        # -4 in its intro and -3 in SKILL.md. Stays assertEqual — assertLessEqual would delete the
-        # tripwire rather than re-arm it.
+        # last. Authorized offsets: #45 (the S7 parse gate cost the spine +6, paid back with -4 in
+        # its intro and -3 in SKILL.md); 4.32.0 (the S1 DoD-heading card cost the spine +1, paid with
+        # -1 in SKILL.md). Stays assertEqual — assertLessEqual would delete the tripwire rather than
+        # re-arm it.
         n = len((PLAYBOOKS_DIR / SPINE).read_text(encoding="utf-8").splitlines())
-        self.assertEqual(n, 130, "plan-spine.md is %d lines; the 251 bar assumes 130" % n)
+        self.assertEqual(n, 131, "plan-spine.md is %d lines; the 251 bar assumes 131" % n)
 
 
 class ShapeTriageOffRampTests(unittest.TestCase):
@@ -1279,7 +1280,7 @@ class PhaseNumberingRuleTests(unittest.TestCase):
         self.schema = (REFERENCES_DIR / "plan-schema.md").read_text(encoding="utf-8")
         self.flat = " ".join(self.schema.split())
         self.section = self.schema.partition("## Phase numbering")[2].split(
-            "## Epic-plan and story-under-epic sections"
+            "## The `closes-dod` target"
         )[0]
 
     def test_grammar_states_integer_labels_and_ordinal_equals_label(self):
@@ -1333,7 +1334,7 @@ class PhaseNumberingRuleTests(unittest.TestCase):
         s1 = _first_fenced_block(S1_PLAN_CAPTURE.read_text(encoding="utf-8"))
         self.assertEqual(ours, s1)
         self.assertEqual(
-            len((PLAYBOOKS_DIR / SPINE).read_text(encoding="utf-8").splitlines()), 130
+            len((PLAYBOOKS_DIR / SPINE).read_text(encoding="utf-8").splitlines()), 131
         )
 
 
@@ -1925,6 +1926,75 @@ class CheckpointPhaseKeyTests(unittest.TestCase):
     def test_plan_summary_shows_where_the_resolver_stops(self):
         summary = (SHARED_DIR / "plan-summary.md").read_text(encoding="utf-8")
         self.assertIn("`· pauses after`", summary)
+
+
+class ClosesDodTargetTests(unittest.TestCase):
+    """4.32.0: `closes-dod` indexes `## Definition of done` and nothing else, checked by script.
+
+    The plan reviewer used to read "acceptance criteria / Definition of Done" as one thing, so a plan
+    indexing an `## Acceptance criteria` list passed review, and the resolver received indexes against
+    a DoD its prep parsed as empty.
+    """
+
+    def setUp(self):
+        self.schema = (REFERENCES_DIR / "plan-schema.md").read_text(encoding="utf-8")
+        self.section = " ".join(
+            self.schema.partition("## The `closes-dod` target")[2]
+            .split("## Epic-plan and story-under-epic sections")[0]
+            .split()
+        )
+        self.spine = " ".join((PLAYBOOKS_DIR / SPINE).read_text(encoding="utf-8").split())
+        self.router = " ".join(ROUTER.read_text(encoding="utf-8").split())
+        self.reviewer = " ".join(
+            (REFERENCES_DIR / "plan-reviewer-prompt.md").read_text(encoding="utf-8").split()
+        )
+
+    def test_the_section_sits_outside_the_frozen_fence(self):
+        self.assertNotIn("closes-dod` target", _first_fenced_block(self.schema))
+        self.assertLess(
+            self.schema.index("## Phase numbering"), self.schema.index("## The `closes-dod` target")
+        )
+
+    def test_the_rule_names_the_heading_and_the_absent_case(self):
+        self.assertIn("**`## Definition of done`** section", self.section)
+        self.assertIn("With no `## Definition of done` section, every phase is `closes-dod: (none)`", self.section)
+
+    def test_the_card_offers_rename_first_and_verifies_it(self):
+        self.assertIn('`header: "DoD heading"`', self.section)
+        rename = self.section.index("**Rename to `## Definition of done` (recommended).**")
+        self.assertLess(rename, self.section.index("**Plan without a DoD.**"))
+        self.assertLess(self.section.index("**Plan without a DoD.**"), self.section.index("**Re-route to the drafter.**"))
+        self.assertIn('parse.py dod "<facts.dod.body_path>"', self.section)
+
+    def test_the_card_runs_at_s1_and_says_why(self):
+        s1 = self.spine.partition("## S1")[2].split("## S2")[0]
+        self.assertIn("`facts.dod.other_checklists`", s1)
+        self.assertIn("**Why at S1.**", self.section)
+
+    def test_s7_checks_coverage_against_the_issue_body(self):
+        self.assertIn(
+            '${CLAUDE_PLUGIN_ROOT}/scripts/parse.py phases "<facts.scratch>/plan.md" --issue-body '
+            '"<facts.dod.body_path>"',
+            self.spine,
+        )
+        self.assertIn("`dod_coverage` findings", self.spine)
+
+    def test_issue_body_writes_start_from_the_last_written_body(self):
+        # S8's whole-body pointer write must not revert the S1 rename.
+        self.assertIn("**Every issue-body write starts from the body this session last wrote.**", self.section)
+        s8 = self.spine.partition("## S8")[2]
+        self.assertIn("stage the body this session last wrote", s8)
+
+    def test_the_router_lists_the_fact_the_gate_and_the_handoff_shape(self):
+        self.assertIn("`dod` (DoD `present`/`count`", self.router)
+        self.assertIn("DoD heading,", self.router)
+        self.assertIn("DoD heading → drafter", self.router)
+        renderings = (REFERENCES_DIR / "handoff-renderings.md").read_text(encoding="utf-8")
+        self.assertIn("**DoD heading — re-route to the drafter.**", renderings)
+
+    def test_the_reviewer_indexes_the_dod_heading_only(self):
+        self.assertIn("issue body's `## Definition of done` section 1-based — that heading only", self.reviewer)
+        self.assertIn("so any index claimed against such an issue is a BLOCKER", self.reviewer)
 
 
 if __name__ == "__main__":

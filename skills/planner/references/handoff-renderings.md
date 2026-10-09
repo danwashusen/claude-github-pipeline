@@ -286,6 +286,24 @@ answers), with a re-run breadcrumb. `plan: ✗`.
 **Why:** every part of #142 is gated by `OQ-08` (phone vs video), tracked in question #212 (audience:clinical, audience:business). Planning now would lock a guess. Answer #212 in its thread, then re-run `/github-pipeline:planner #142`. (If no companion question existed, this would instead point at `/github-pipeline:drafter` to file one first.)
 ```
 
+**DoD heading — re-route to the drafter.** The DoD-heading card's third arm (`plan-schema.md`, "The
+`closes-dod` target"): the issue's criteria sit under a heading no DoD reader parses and the operator chose
+to have the body fixed upstream rather than renamed here. Abort shape — no plan posted, no `planned`
+label, `plan: ✗` — pointing at a drafter revise, whose rename makes the criteria the `## Definition of
+done`; then re-plan.
+
+```
+## Handoff
+
+**Issue:** #142 — Add CSV export · open · feature · plan: ✗
+
+**Next:** revise the issue so its criteria are its Definition of done, then re-plan.
+
+    /github-pipeline:drafter revise #142
+
+**Why:** #142's twelve criteria sit under `## Acceptance criteria`, which no DoD reader parses — a plan's `closes-dod` would index nothing the resolver can tick or the evaluator can verify. The operator chose a drafter revise over renaming the heading here; it renames the section (the bullets stay as written), then re-run `/github-pipeline:planner #142`.
+```
+
 **Revise mode — plan refreshed.** Same forward shape; the `Issue:` line carries the plan comment's
 **unchanged** URL — a revise updates that comment in place (`gh_persist.py edit-comment`), so the URL a
 prior handoff published still resolves. The worked example below is the **SOFT / continue**

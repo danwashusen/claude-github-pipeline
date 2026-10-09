@@ -106,13 +106,13 @@ can't be reconciled against, gate (`header: "Doc conflict"`): **Update the doc**
 
 ## S4 — Detect phases
 
-Use `facts.phases` (prep parsed the plan's `## Phases`). Single-phase (empty or one entry with no
-`closes-dod`) → one push closes the DoD via the single-phase fallback. Multi-phase → the PR opens as a
-**draft** carrying a `## Phase tracker`, each phase ships in its own pass through S5–S7 (one session may
-run several — "Return to the routed playbook"), and the PR flips to ready only on the last-phase handoff.
-On continue mode, the current phase is the first unticked entry in the existing PR's `## Phase tracker`
-whose `depends-on` is satisfied. An operator/decision-only phase (`kind: operator | decision-only`) ships
-no commits — surface it via the operator-phase handoff rather than running it.
+Use `facts.phases`; `facts.dod_coverage.drift` → re-route to the planner before any code (projection rule,
+"Bullet count drift"). Single-phase (empty or one entry with no `closes-dod`) → one push closes the DoD via
+the single-phase fallback. Multi-phase → the PR opens as a **draft** carrying a `## Phase tracker`, each phase
+ships in its own pass through S5–S7 (one session may run several — "Return to the routed playbook"), and the
+PR flips to ready only on the last-phase handoff. On continue mode, the current phase is the first unticked
+entry in the existing PR's `## Phase tracker` whose `depends-on` is satisfied. An operator/decision-only phase
+(`kind: operator | decision-only`) ships no commits — surface it via the operator-phase handoff, never run it.
 
 **Reconcile the tracker before you read that cursor** (`facts.tracker.present`). A planner revise can
 insert a phase and renumber the unshipped tail (`skills/planner/references/revise-reconciliation.md`,

@@ -202,6 +202,10 @@ def _parse_dod(issue_body, issue_number):
         )
     return {
         "present": parse.has_dod_section(issue_body),
+        # A checklist under another heading (`parse.dod_summary`): when `present` is false this is
+        # where the issue's criteria actually live, and appending a fresh `## Definition of done`
+        # beside it would leave them out of every DoD reader (gather.md stops instead).
+        "other_checklists": parse.dod_summary(issue_body)["other_checklists"],
         "bullet_count": len(bullets),
         "annotated_count": sum(1 for b in bullets if b.get("annotation") is not None),
         "next_req_seq": highest_seq + 1,
@@ -266,6 +270,16 @@ def _build_attention(target, refusals, dod, plan, grounding_docs, catalogue_abse
             attention.append(
                 "target #%s is closed — criteria on delivered work can never be projected or "
                 "verified" % target["number"]
+            )
+    # Not on a refused target: a slice's `## Acceptance criteria` is the slicer's by design, and the
+    # refusal line already says where to gather instead.
+    if dod is not None and not refusals:
+        note = parse.misplaced_dod_note(dod)
+        if note is not None:
+            attention.append(
+                note + " — appending a second checklist would leave those criteria out of every "
+                "DoD reader; stop and route to /github-pipeline:drafter revise #%s, which renames "
+                "the heading, then re-run" % target["number"]
             )
     if dod is not None and dod["annotated_count"]:
         attention.append(

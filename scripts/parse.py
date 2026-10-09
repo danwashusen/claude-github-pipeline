@@ -24,7 +24,10 @@ Subcommands, each `<subcommand> <body-file>`:
         form's own fields (`phase`, `sha`, `date`, `reason`, `pr` as applicable — see
         `_ANNOTATION_FORMS` below for the exact field set per form). No `## Definition of done`
         section in the body is not an error — `ok` with `dod: []` (dod-annotations.md's "Edge
-        cases": "Skip projection silently").
+        cases"). The payload also carries `present` (whether the section exists, which `dod: []`
+        alone cannot say) and `other_checklists` (`[{"heading", "count"}]` — checkbox lists under
+        any other `##` heading, `## Stories` excepted; see `dod_summary`): the drafter's
+        post-staging check that its checklist landed under the one heading every reader parses.
 
         An **unknown annotation** (the trailing `(...)` doesn't start with one of the three
         recognized prefix words) or **two annotations stacked** on one bullet (a second
@@ -50,7 +53,7 @@ Subcommands, each `<subcommand> <body-file>`:
         — `ok` with `open_questions: []` (open-question-links.md's Format section: "Omit the
         whole section when no OQ gates the issue").
 
-    parse.py phases <body-file>
+    parse.py phases <body-file> [--issue-body <issue-body-file>]
         Parses a plan's `## Phases` section per
         `skills/planner/references/plan-schema.md`'s numbered-list-with-structured-
         keys grammar. `ok` payload: `{"phases": [{"number", "title", "kind", "ships",
@@ -74,6 +77,12 @@ Subcommands, each `<subcommand> <body-file>`:
         here, carried because this is the call the planner already runs after every staging, fresh
         draft included: a separate size call is one the session forgets, and then hand-counts.
         Size is never a decision — an over-cap body is still `ok`, and fixing it is the planner's.
+
+        `--issue-body`: the issue the plan is for. The payload then also carries `dod_coverage` —
+        `dod_coverage(phases, dod_summary(issue body))`, `null` under the single-phase fallback —
+        so a `closes-dod` index pointing past the DoD, or at a DoD that does not exist, is caught
+        by the same call that proves the grammar, before the plan reviewer runs. Findings, never a
+        decision, exactly like `size`.
 
         A malformed `## Phases` section (a numbered entry missing a required structured key, an
         entry whose `kind:` value is outside the closed set, non-sequential/duplicate phase
@@ -336,9 +345,134 @@ def has_dod_section(body_text):
     `parse_dod_bullets` returning `[]`, which conflates "no section" with "a section holding no
     top-level checkbox bullets". A caller that must decide whether to *create* the section (the
     requirements-gatherer's DoD write) keys off this; a caller that only projects onto existing
-    bullets never needs the distinction (dod-annotations.md's "Skip projection silently").
+    bullets never needs the distinction (dod-annotations.md's "Skip projection").
     """
     return _find_section(body_text.splitlines(), _DOD_HEADING_PATTERN) is not None
+
+
+# Any `##` heading (never `###`), its text captured. The same `^##(?!#)` boundary `_find_section`
+# ends a section on, read in the other direction: "which sections exist" instead of "where is this
+# one" — so a section's extent here and there can never disagree.
+_ANY_SECTION_HEADING_RE = re.compile(r"^##(?!#)\s*(.*?)\s*$")
+
+# Checklists that are NOT a misplaced DoD, so `dod_summary` never reports them. `## Stories` is the
+# legacy epic hierarchy checklist (`skills/_shared/epic-story-hierarchy.md`): an epic filed before
+# the native sub-issue relation carries it, often with no DoD, and it has its own reader — flagging
+# it would put a "rename your checklist" prompt on every legacy epic.
+_NON_DOD_CHECKLIST_HEADING_RE = re.compile(r"^Stories\s*(?:\(.*\))?$", re.IGNORECASE)
+
+
+def _count_top_level_checkboxes(lines, start, end):
+    """Count `lines[start:end]`'s top-level checkbox bullets — the lines `parse_dod_bullets` would
+    index — WITHOUT parsing annotations, so the count is known even when an annotation is malformed
+    (`parse_dod_bullets` raises at the first one)."""
+    count = 0
+    for line in lines[start:end]:
+        match = _DOD_BULLET_RE.match(line)
+        if match and _TOP_LEVEL_INDENT_RE.match(match.group(1)):
+            count += 1
+    return count
+
+
+def dod_summary(body_text):
+    """The DoD's SHAPE, as a fact: ``{"present", "count", "other_checklists"}``. Never raises.
+
+    - ``present`` — `has_dod_section`.
+    - ``count`` — the DoD's top-level checkbox bullets, i.e. the 1-based index space every
+      ``closes-dod`` value refers to (0 when the section is absent).
+    - ``other_checklists`` — ``[{"heading", "count"}]`` for every OTHER `##` section holding at least
+      one top-level checkbox bullet (`## Stories` excepted, above), in body order.
+
+    Why ``other_checklists`` exists: the DoD heading is the contract (`dod-annotations.md`'s
+    "Section finder"), and a body whose criteria sit under `## Acceptance criteria` parses as "no
+    DoD". Before this fact, the planner indexed those bullets by eye, the plan reviewer accepted it,
+    and the resolver — handed `closes-dod` indexes and `dod: []` — ticked the other heading's
+    bullets, which no parser downstream reads. Naming the heading is what lets each stage say so.
+    """
+    lines = body_text.splitlines()
+    dod_section = _find_section(lines, _DOD_HEADING_PATTERN)
+    count = _count_top_level_checkboxes(lines, *dod_section) if dod_section else 0
+
+    headings = [
+        (i, m.group(1))
+        for i, m in ((i, _ANY_SECTION_HEADING_RE.match(line)) for i, line in enumerate(lines))
+        if m
+    ]
+    other_checklists = []
+    for position, (heading_index, heading_text) in enumerate(headings):
+        start = heading_index + 1
+        if dod_section is not None and start == dod_section[0]:
+            continue
+        if _NON_DOD_CHECKLIST_HEADING_RE.match(heading_text):
+            continue
+        end = headings[position + 1][0] if position + 1 < len(headings) else len(lines)
+        section_count = _count_top_level_checkboxes(lines, start, end)
+        if section_count:
+            other_checklists.append({"heading": heading_text, "count": section_count})
+
+    return {"present": dod_section is not None, "count": count, "other_checklists": other_checklists}
+
+
+def misplaced_dod_note(summary):
+    """The one wording every prep uses for "this body's checklist is not under the DoD heading" —
+    `None` unless the DoD is absent AND another checklist exists (`summary` is `dod_summary`'s).
+    Each prep appends its own consequence; the fact itself is stated identically everywhere."""
+    if summary["present"] or not summary["other_checklists"]:
+        return None
+    where = ", ".join(
+        "`## %s` (%d bullet%s)" % (c["heading"], c["count"], "" if c["count"] == 1 else "s")
+        for c in summary["other_checklists"]
+    )
+    return "issue body has no `## Definition of done` — its checklist sits under %s" % where
+
+
+def dod_coverage(phases, summary):
+    """How a plan's ``closes-dod`` claims line up with the issue's DoD (``summary`` is
+    `dod_summary`'s). Returns ``None`` when the resolver's single-phase fallback applies — no phases,
+    or one phase claiming ``(none)`` (`skills/resolver/references/dod-projection-rule.md`,
+    "Single-phase fallback") — because no index is claimed there at all.
+
+    Otherwise ``{"present", "dod_count", "other_checklists", "max_claimed", "out_of_range",
+    "unclaimed", "claimed_more_than_once", "drift"}``:
+
+    - ``out_of_range`` — claimed indexes outside ``1..dod_count`` (every claim, when the DoD is
+      absent);
+    - ``unclaimed`` — DoD indexes no phase claims (the plan reviewer's exact-coverage BLOCKER);
+    - ``claimed_more_than_once`` — indexes two or more phases claim (the reviewer judges these);
+    - ``drift`` — `dod-annotations.md`'s index-stability invariant exactly as written: an index is
+      out of range, or the DoD's bullet count differs from the plan's highest claimed index. A gap
+      below the maximum is ``unclaimed`` but NOT drift — that is a planning defect the reviewer owns,
+      and widening the resolver's block to it would change a contract the planner's revise relies on.
+      A multi-phase plan claiming NOTHING (every phase ``(none)``) against a DoD that has bullets IS
+      drift, deliberately: its highest claimed index is 0, so no tick would ever land, and the plan
+      breaks the exact-coverage rule — only the planner can fix it. Against an absent DoD (the
+      DoD-heading card's "plan without a DoD" arm) both sides are 0 and nothing drifts.
+
+    Always data, never a decision: the planner fixes findings in its own staged plan, the resolver
+    re-routes on ``drift``.
+    """
+    if not phases or (len(phases) == 1 and phases[0]["closes_dod"] == "(none)"):
+        return None
+    dod_count = summary["count"]
+    claims = {}
+    for phase in phases:
+        if phase["closes_dod"] == "(none)":
+            continue
+        for index in phase["closes_dod"]:
+            claims.setdefault(index, []).append(phase["number"])
+    claimed = sorted(claims)
+    max_claimed = claimed[-1] if claimed else 0
+    out_of_range = [i for i in claimed if i < 1 or i > dod_count]
+    return {
+        "present": summary["present"],
+        "dod_count": dod_count,
+        "other_checklists": summary["other_checklists"],
+        "max_claimed": max_claimed,
+        "out_of_range": out_of_range,
+        "unclaimed": [i for i in range(1, dod_count + 1) if i not in claims],
+        "claimed_more_than_once": [i for i in claimed if len(claims[i]) > 1],
+        "drift": bool(out_of_range) or dod_count != max_claimed,
+    }
 
 
 def dod_malformed_decision(exc, **context):
@@ -368,8 +502,9 @@ def parse_dod_bullets(body_text):
     `None`). Raises `_DodMalformed` on the first unrecognized or stacked annotation found — the
     caller turns that into a `DOD_MALFORMED` needs_decision envelope.
 
-    No `## Definition of done` section: returns `[]` (dod-annotations.md's "Edge cases": "Skip
-    projection silently").
+    No `## Definition of done` section: returns `[]` (dod-annotations.md's "Edge cases"). A caller
+    that must tell "absent" from "empty", or see a checklist under another heading, reads
+    `dod_summary`.
     """
     lines = body_text.splitlines()
     section = _find_section(lines, _DOD_HEADING_PATTERN)
@@ -469,7 +604,14 @@ def run_dod(args):
     if args.render:
         emit_ok(payload={"rendered": render_dod_bullets(bullets)})
     else:
-        emit_ok(payload={"dod": bullets})
+        summary = dod_summary(body_text)
+        emit_ok(
+            payload={
+                "dod": bullets,
+                "present": summary["present"],
+                "other_checklists": summary["other_checklists"],
+            }
+        )
     sys.exit(EXIT_OK)
 
 
@@ -1054,7 +1196,12 @@ def run_phases(args):
         emit_needs_decision(decision)
         sys.exit(EXIT_OK)
 
-    emit_ok(payload={"phases": phases, "size": body_size(body_text)})
+    payload = {"phases": phases, "size": body_size(body_text)}
+    if args.issue_body is not None:
+        payload["dod_coverage"] = dod_coverage(
+            phases, dod_summary(_read_text_or_die(args.issue_body))
+        )
+    emit_ok(payload=payload)
     sys.exit(EXIT_OK)
 
 
@@ -1283,6 +1430,7 @@ def build_parser():
 
     p_phases = sub.add_parser("phases")
     p_phases.add_argument("body_file")
+    p_phases.add_argument("--issue-body", default=None)
 
     return parser
 
