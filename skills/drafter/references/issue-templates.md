@@ -11,6 +11,16 @@ an issue mandates is what invalidates them. Sole carve-out: a line number inside
 output (a stack trace, a failing-test line) — evidence of an observed event, not a claim about current
 source.
 
+**Checklist heading rule (every template, repo template included).** An issue's checkable criteria live
+under **`## Definition of done`** — the one heading the planner, resolver, and evaluator parse
+([`../../_shared/dod-annotations.md`](../../_shared/dod-annotations.md), "Section finder"). A checklist under
+any other heading (`## Acceptance criteria`, a repo template's own name for it) reads downstream as "no DoD":
+the planner's `closes-dod` indexes nothing the resolver can tick or the evaluator can verify. So when the
+repo's template names its checklist otherwise, keep that template's other sections and title the checklist
+`## Definition of done`. The bug template carries no checklist, and a question none
+([`../../_shared/question-issue.md`](../../_shared/question-issue.md)). The deliverable slice's
+`## Acceptance criteria` is the slicer's, not a drafter template.
+
 **Grounding altitude — freeze judgment, not facts.** Capture what took judgment and won't be re-derived:
 dispositions, rulings, exemption classes, constraints, the why, an outcome-level Definition of done. Do
 **not** freeze mechanically re-derivable facts — grep output, enumerated hit lists, current-state code
@@ -22,9 +32,9 @@ the resolver's build-time grounding, re-derived fresh (≤2 examples marked non-
 
 **Grouped follow-up** (a proxy-filed brief naming several related items — `_shared/follow-up-filing.md`
 "Grouping"): one issue, never an epic to decompose. Every item gets its own checkable bullet in the
-template's checkable section — `## Definition of done`, or `## Acceptance criteria` for a feature; a
-bug group (items sharing one root cause) states the shared cause once and lists each symptom. Dropping
-or merging an item is the proxy's check (c) failure.
+template's checkable section — `## Definition of done`; a bug group (items sharing one root cause) states
+the shared cause once and lists each symptom. Dropping or merging an item is the proxy's check (c)
+failure.
 
 **Bug template:**
 
@@ -82,7 +92,7 @@ As a **<persona>**, I want **<capability>** so that **<benefit>**.
 ## Background
 <why this matters — the underlying motivation>
 
-## Acceptance criteria
+## Definition of done
 - [ ] <criterion>
 - [ ] <criterion>
 
@@ -164,6 +174,6 @@ and the native-`blocked by` rule live in [`../../_shared/open-question-links.md`
    the gated part cleanly out-of-scope (and out of the DoD). Only OQ-driven scope-outs are auto-added;
    trigger 1's anti-extrapolation rule still governs everything else.
 
-Default to omitting. Acceptance criteria already define what's in scope; don't pad the issue with
+Default to omitting. The Definition of done already defines what's in scope; don't pad the issue with
 speculative exclusions. Inventing out-of-scope items the user never mentioned is a form of hallucination —
 resist it.

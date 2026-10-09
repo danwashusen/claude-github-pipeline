@@ -1066,5 +1066,50 @@ class ReviewTierAndAnchorRuleTests(unittest.TestCase):
         self.assertIn(self.HANDSHAKE, revise_text)
 
 
+class DodHeadingContractTests(unittest.TestCase):
+    """4.32.0: the drafter files criteria under `## Definition of done` and proves it before the gate.
+
+    The New-feature template used to head its checklist `## Acceptance criteria`, so every feature the
+    drafter filed reached the planner with "no DoD": the planner indexed the other heading by eye, and
+    the resolver — handed `closes-dod` indexes against `dod: []` — ticked bullets no parser reads.
+    """
+
+    def setUp(self):
+        self.templates = (REFERENCES_DIR / "issue-templates.md").read_text(encoding="utf-8")
+        self.spine = " ".join((PLAYBOOKS_DIR / SPINE).read_text(encoding="utf-8").split())
+        self.revise = " ".join((PLAYBOOKS_DIR / "revise.md").read_text(encoding="utf-8").split())
+
+    def test_no_built_in_template_heads_a_checklist_acceptance_criteria(self):
+        headings = [
+            line.strip() for line in self.templates.splitlines() if line.startswith("## ")
+        ]
+        self.assertNotIn("## Acceptance criteria", headings)
+
+    def test_the_feature_template_carries_a_dod(self):
+        feature = self.templates.partition("**New feature template")[2].split("**Epic template")[0]
+        self.assertIn("## Definition of done", feature)
+
+    def test_the_heading_rule_binds_repo_templates_too(self):
+        flat = " ".join(self.templates.split())
+        self.assertIn("**Checklist heading rule (every template, repo template included).**", flat)
+        self.assertIn("title the checklist `## Definition of done`", flat)
+
+    def test_the_spine_proves_the_staged_body_before_the_filing_gate(self):
+        check = '${CLAUDE_PLUGIN_ROOT}/scripts/parse.py dod "<facts.scratch>/<name>.md"'
+        self.assertIn(check, self.spine)
+        self.assertIn("no criteria left in `other_checklists`", self.spine)
+        # A repo template's non-criteria confirmation list must survive the check.
+        self.assertIn("a repo template's confirmation list may stay", self.spine)
+        self.assertLess(self.spine.index(check), self.spine.index('(`header: "File issue?"`)'))
+
+    def test_revise_renames_only_off_a_slice(self):
+        self.assertIn("rename that heading to `## Definition of done`", self.revise)
+        self.assertIn("Only when `facts.revise.dod.slice` is `false`", self.revise)
+
+    def test_follow_up_filing_offers_no_other_heading(self):
+        text = " ".join((SHARED / "follow-up-filing.md").read_text(encoding="utf-8").split())
+        self.assertNotIn("or `## Acceptance criteria` for a", text)
+
+
 if __name__ == "__main__":
     unittest.main()

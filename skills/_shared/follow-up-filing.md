@@ -74,8 +74,8 @@ Steps:
    clearly so the drafter has them at classification time. With more
    than one item, state that this is **one grouped follow-up**: one
    issue, with one checkable bullet per item in its checkable section
-   (`## Definition of done`, or `## Acceptance criteria` for a
-   `feature`) — not an epic to decompose. Also state that this is a
+   (`## Definition of done`, whatever the type) — not an epic to
+   decompose. Also state that this is a
    **proxy-filed follow-up (lean review)** — the drafter's lean tier:
    one review pass, suggestions surfaced unapplied at its gate. Also relay the attribution rule: any claim describing
    what the parent PR introduces (state not yet on the default branch)

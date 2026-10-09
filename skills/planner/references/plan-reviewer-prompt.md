@@ -120,7 +120,8 @@ Run only the dimensions named in the inputs.
    (constitution §2).
 
 3. **Goal coherence.** Read the issue's acceptance criteria / Definition of Done, then check the plan
-   delivers them. Every criterion maps to something in `## Changes` or `## Test plan`? A `## Changes` item
+   delivers them (a checklist under another heading still states goals — but only `## Definition of
+   done` is a `closes-dod` target; Dimension 7). Every criterion maps to something in `## Changes` or `## Test plan`? A `## Changes` item
    with no criterion is scope creep. Does `## Test plan` cover the behaviours the project's testing rules
    require (e.g. constitution §5)? A criterion with no coverage is a BLOCKER; an orphaned change is a
    SUGGESTION — except a contract-only seam pin whose boundary bullet defers the body to `#M`
@@ -211,9 +212,12 @@ Run only the dimensions named in the inputs.
 7. **Phase coherence** *(multi-phase only; fires on a `## Phases` section — an epic uses `## Story
    contracts` with Dimensions 5/8)*. Read each phase's bullets and check: **all required keys present**
    (`kind` closed enum `code-shipping | operator | decision-only`, `ships`, `closes-dod`, `deliverable`,
-   `depends-on` — a missing key is a BLOCKER); **DoD coverage is exact** (index the issue body's DoD
-   checklist 1-based; the union of every phase's `closes-dod` must cover each index exactly once — an
-   unclaimed bullet is a BLOCKER, a doubly-claimed one a SUGGESTION unless both phases are `code-shipping`
+   `depends-on` — a missing key is a BLOCKER); **DoD coverage is exact** (index the top-level checkbox
+   bullets of the issue body's `## Definition of done` section 1-based — that heading only: a checklist
+   under any other heading, `## Acceptance criteria` included, is not the DoD, no downstream parser reads
+   it, and with no `## Definition of done` section every phase must be `closes-dod: (none)`, so any index
+   claimed against such an issue is a BLOCKER; the union of every phase's `closes-dod` must cover each
+   index exactly once — an unclaimed bullet is a BLOCKER, a doubly-claimed one a SUGGESTION unless both phases are `code-shipping`
    with overlapping diffs, then BLOCKER); **`depends-on` is acyclic and backward-only** (a forward/cyclic
    reference is a BLOCKER); **at least one `code-shipping` phase exists** (else it's a discussion, not an
    implementation — BLOCKER); **each `operator`/`decision-only` `deliverable` is actionable prose** the

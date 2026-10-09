@@ -29,6 +29,11 @@ processes any script may spawn are git/gh")::
                                                        in (`facts.ambient`), so a session invoked
                                                        from inside `epic/<N>-<slug>` can offer a
                                                        relationship instead of filing an orphan
+    parse.dod_summary (+ branching.classify_parent)  -- `facts.revise.dod`: the target body's DoD
+                                                       shape, so the revise renames a checklist
+                                                       under another heading; the parent lookup
+                                                       runs ONLY when that rename would fire, to
+                                                       exempt a deliverable slice
 
 Every executor composed here exposes a **pure, non-emitting core** — ``build_*(...) -> (payload,
 notices, decision|None)`` (docs/specs/baseline.md §5, the S8 pattern lock). This prep calls those
@@ -176,6 +181,7 @@ import config_block  # noqa: E402  (import after sys.path setup, by necessity; i
 import doc_catalogue  # noqa: E402  (the consuming repo's declared grounding docs)
 import gh_gather  # noqa: E402
 import oq_tracker  # noqa: E402
+import parse  # noqa: E402  (the DoD-shape core, `dod_summary`)
 from pipelib import process  # noqa: E402
 from pipelib.decisions import AUTH_REQUIRED, DOC_CATALOGUE_ABSENT, needs_decision  # noqa: E402
 from pipelib.envelope import EXIT_OK, emit_needs_decision, emit_ok  # noqa: E402
@@ -397,6 +403,33 @@ def _extract_body(envelope, key):
     return body or ""
 
 
+def _build_revise_dod(issue_body, target, repo, cwd=None):
+    """`facts.revise.dod` — the body's DoD shape (`parse.dod_summary`) plus `slice`, and the
+    notice `branching.classify_parent` returned, if any.
+
+    The revise playbook renames a checklist sitting under another heading to `## Definition of
+    done` — the one heading the planner, resolver and evaluator parse — EXCEPT on a deliverable
+    slice, whose `## Acceptance criteria` is the slicer's deliberate shape
+    (`skills/slicer/references/slicing-method.md`). A slice is "a sub-issue of a non-epic" by
+    construction, and the parent node carries no labels, so telling the two apart costs one `gh`
+    read. `slice` is therefore resolved LAZILY — only when the rename would otherwise fire (no DoD,
+    another checklist, a parent) — and is `false` when it cannot apply, `true`/`false` from the
+    parent's type, or `null` when that lookup failed (the playbook then leaves the heading alone — the
+    planner's DoD-heading card still offers the rename, so an unknown never costs a card here).
+    """
+    dod = parse.dod_summary(issue_body)
+    dod["slice"] = False
+    notice = None
+    parent = (target or {}).get("parent")
+    if not dod["present"] and dod["other_checklists"] and parent:
+        kind, notice = branching.classify_parent(repo, parent["number"], cwd=cwd)
+        dod["slice"] = {
+            branching.PARENT_KIND_EPIC: False,
+            branching.PARENT_KIND_NON_EPIC: True,
+        }.get(kind)
+    return dod, notice
+
+
 def _build_revise_facts(issue_envelope):
     """Assemble revise-mode-only facts (docs/specs/drafter.md "Revise-mode gather"): the plan-marker's presence + staged
     body (grounds the revise against the planner's approach; lets the router decide whether Step
@@ -603,6 +636,9 @@ def build_facts(repo, issue=None, root=".", scratch_dir=None, cwd=None):
 
         # 4) Mode-specific facts. Every `--issue` run is a revise, epic targets included (#16).
         revise_facts = _build_revise_facts(issue_envelope)
+        revise_facts["dod"], dod_notice = _build_revise_dod(issue_body, target, repo, cwd=cwd)
+        if dod_notice and dod_notice not in notices:
+            notices.append(dod_notice)
 
         sections = {
             key: value

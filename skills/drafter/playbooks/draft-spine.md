@@ -12,7 +12,7 @@ thinner issue. The per-type minimum-viable set is a **fact of the classification
 - **Bug** — what happened, what was expected, and repro (or at least what they were doing); ask about
   environment only when it could plausibly matter.
 - **Incomplete feature** — what works today, what's missing, what "done" looks like.
-- **New feature** — persona, goal, the "so that" motivation; acceptance criteria are a stretch, not a gate.
+- **New feature** — persona, goal, the "so that" motivation; a Definition of done is a stretch, not a gate.
 - **Question** — the question, the audience(s), enough context to answer it cold, the grounding
   references, what the answer unblocks, and any **hard external constraints** (regulation, legal, SLA,
   platform limits) each paired with the force that fixes it (`../_shared/question-issue.md` `## Constraints`).
@@ -61,14 +61,14 @@ back to `scoped-out` or a **prose-only** blocker (`question: (not filed)`, no na
 ## Draft against the template
 
 Follow the repo's own issue template verbatim when one exists (`facts.repo_context.templates.present`) —
-templates encode the team's expectations. Otherwise use the built-in fallbacks in
-[`../references/issue-templates.md`](../references/issue-templates.md). Map the feedback to the repo's
-**existing** labels (`facts.repo_context.labels`) — don't invent `bug` when the repo uses `kind/bug`, or
-`priority:high` when it uses `P1`. Three labels max unless asked. Title conventions and the routed
-playbook's schema sections (`## Open questions`, `## Related issues`, `## PRD impact`, the Story
-`**Epic:**` backlink) are named by the routed playbook. **Anchor rule + grounding altitude** (top of
-that reference, binding every body): durable anchors only, never an authored `path:line`; DoD sweeps
-state criterion + exemption classes, never a frozen hit list; freeze judgment, not re-derivable facts.
+templates encode the team's expectations — but its criteria go under `## Definition of done`. Otherwise use
+the built-in fallbacks in [`../references/issue-templates.md`](../references/issue-templates.md). Map the
+feedback to the repo's **existing** labels (`facts.repo_context.labels`) — don't invent `bug` when the repo
+uses `kind/bug`, or `priority:high` when it uses `P1`. Three labels max unless asked. Title conventions and
+the routed playbook's schema sections (`## Open questions`, `## Related issues`, `## PRD impact`, the Story
+`**Epic:**` backlink) are named by the routed playbook. **Anchor rule + grounding altitude** (top of that
+reference, binding every body): durable anchors only, never an authored `path:line`; DoD sweeps state
+criterion + exemption classes, never a frozen hit list; freeze judgment, not re-derivable facts.
 
 **PRD tension → `## PRD impact`.** When the repo declares a PRD (`facts.repo_context.docs.prd` — its
 catalogue's `prd` entry, at whatever path it names; for a directory, read the `members` the feedback
@@ -124,9 +124,11 @@ stated tier; a **proxy-filed follow-up (lean review)** invocation is always **le
 
 Present the full draft (title, labels, priority, body between `---` fences), plus any unresolved review
 findings. **Before asking, stage the approved body to disk** — write the exact rendered body to
-`<facts.scratch>/<name>.md`; the staged file *is* the body. Then gate (`header: "File issue?"`): **File
-it** / **Keep iterating**. Treat anything other than an explicit "File it" as keep-iterating — never file
-without that go-ahead.
+`<facts.scratch>/<name>.md`; the staged file *is* the body — and prove its criteria parse as the DoD:
+`${CLAUDE_PLUGIN_ROOT}/scripts/parse.py dod "<facts.scratch>/<name>.md"` → `ok`, `present: true` when the
+template has criteria, and no criteria left in `other_checklists` (a repo template's confirmation list may
+stay; `revise.md` owns a slice's); fix and re-run. Then gate (`header: "File issue?"`): **File it** / **Keep
+iterating**. Anything but an explicit "File it" is keep-iterating — never file without it.
 
 ## Staged filing — the single write path
 

@@ -2337,5 +2337,39 @@ class RubricProvenanceTests(unittest.TestCase):
         self.assertNotRegex(self.raw, r"\b(?:above|below)\b")
 
 
+class DodDriftFactTests(unittest.TestCase):
+    """4.32.0: bullet-count drift is a prep fact, and the resolver never ticks another heading.
+
+    The rule used to call a multi-phase plan against a DoD-less issue "impossible past planner
+    dimension-7 review" — it was not, and a session meeting one projected the plan's indexes onto
+    `## Acceptance criteria`, which neither the evaluator nor the next session could see.
+    """
+
+    def setUp(self):
+        self.rule = " ".join(
+            (REFERENCES_DIR / "dod-projection-rule.md").read_text(encoding="utf-8").split()
+        )
+
+    def test_the_false_impossibility_claim_is_gone(self):
+        self.assertNotIn("impossible past planner dimension-7 review", self.rule)
+
+    def test_drift_keys_on_the_prep_fact(self):
+        self.assertIn("`facts.dod_coverage.drift`", self.rule)
+
+    def test_drift_re_routes_before_any_code(self):
+        # The S6 block alone would ship a phase first; S4 reads the fact before the work starts.
+        spine = " ".join((PLAYBOOKS_DIR / SPINE).read_text(encoding="utf-8").split())
+        s4 = spine.partition("## S4 — Detect phases")[2]
+        self.assertIn(
+            "`facts.dod_coverage.drift` → re-route to the planner before any code", s4[:400]
+        )
+
+    def test_another_headings_checklist_is_never_projected_onto(self):
+        self.assertIn("*A checklist under another heading*", self.rule)
+        self.assertIn("never project onto it, the single-phase fallback included", self.rule)
+        # The slice-closing rung still ticks a slice's own `## Acceptance criteria`.
+        self.assertIn("Slice body with no `## Acceptance criteria` section", self.rule)
+
+
 if __name__ == "__main__":
     unittest.main()

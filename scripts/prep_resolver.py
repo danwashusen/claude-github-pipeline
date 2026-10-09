@@ -32,6 +32,10 @@ processes any script may spawn are git/gh")::
                                                     -- the plan's ## Phases, the issue's
                                                        ## Definition of done, and its
                                                        ## Open questions section
+    parse.dod_summary / parse.dod_coverage         -- `facts.dod_coverage`: the plan's
+                                                       `closes-dod` claims against the DoD's
+                                                       shape, `drift` the projection rule's
+                                                       bullet-count drift as a fact
 
 Every executor composed here exposes a **pure, non-emitting core** — ``build_*(...) -> (payload,
 notices, decision|None)`` (docs/specs/baseline.md §5, the S8 pattern lock). This prep calls those
@@ -470,6 +474,28 @@ def _catalogue_attention(grounding_docs, catalogue_absent):
             "branch has not merged yet" % missing
         )
     return attention
+
+
+def _dod_drift_attention(dod_coverage):
+    """One line when `facts.dod_coverage.drift` — projection is blocked this run and the handoff
+    re-routes to the planner (`dod-projection-rule.md`, "Bullet count drift")."""
+    if not dod_coverage or not dod_coverage["drift"]:
+        return []
+    note = parse.misplaced_dod_note(dod_coverage)
+    if note is not None:
+        found = note
+    elif not dod_coverage["present"]:
+        found = "the issue body has no `## Definition of done`"
+    else:
+        found = "the issue's `## Definition of done` has %d bullet(s)" % dod_coverage["dod_count"]
+    if dod_coverage["max_claimed"]:
+        claimed = "claims `closes-dod` up to %d" % dod_coverage["max_claimed"]
+    else:
+        claimed = "claims no `closes-dod` index"
+    return [
+        "DoD drift: the plan %s but %s — projection is blocked; re-route to the planner, never "
+        "project onto another heading" % (claimed, found)
+    ]
 
 
 def _build_attention(work_workspace_envelope, prior_pr_row, epic_facts, story_epic_matches):
@@ -1107,6 +1133,13 @@ def build_facts(issue_number, repo, root=".", scratch_dir=None, refresh=False, c
         )
         return None
 
+    #    ...and how the plan's `closes-dod` claims line up with it (`parse.dod_coverage`, `None`
+    #    under the single-phase fallback). `drift` is the projection rule's "bullet count drift" as a
+    #    FACT: before it, the rule assumed a multi-phase plan against a DoD-less issue could not get
+    #    past the plan reviewer, so a session that met one improvised — projecting the plan's indexes
+    #    onto an `## Acceptance criteria` list no downstream parser reads.
+    dod_coverage = parse.dod_coverage(phases, parse.dod_summary(issue_body))
+
     # 6) Open-question facts (parse.parse_oq_links joined with tracker state + native blocked_by).
     blocked_by = issue_envelope.get("blocked_by") or []
     open_questions, oq_blocked, oq_decision = _build_open_question_facts(
@@ -1398,6 +1431,7 @@ def build_facts(issue_number, repo, root=".", scratch_dir=None, refresh=False, c
         ),
         "dod": dod,
         "dod_vetoes": dod_vetoes(dod),
+        "dod_coverage": dod_coverage,
         "open_questions": open_questions,
         "open_questions_gate": open_questions_gate,
         "audit_ref": audit_ref,
@@ -1409,7 +1443,8 @@ def build_facts(issue_number, repo, root=".", scratch_dir=None, refresh=False, c
         "attention": _build_attention(
             work_workspace_envelope, prior_pr_row, epic_facts, story_epic_matches
         ) + config_attention + shipped_attention
-        + _catalogue_attention(grounding_docs, DOC_CATALOGUE_ABSENT in catalogue_notices),
+        + _catalogue_attention(grounding_docs, DOC_CATALOGUE_ABSENT in catalogue_notices)
+        + _dod_drift_attention(dod_coverage),
         "notices": list(config_notices) + link_notices + epic_notices + tracker_notices
         + catalogue_notices,
     }

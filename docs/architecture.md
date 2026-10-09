@@ -46,7 +46,7 @@ scripts/
   workspace.py        # ensure / attach / remove / gc / lint; default-branch derivation
   branching.py        # import-only: branch naming, type detection, prior-PR rows, linked branches,
                       #   ambient-branch issue detection
-  parse.py            # dod | oq-links | phases subcommands (phases also reports body size); import-only tracker + polish-ledger scanners
+  parse.py            # dod | oq-links | phases subcommands (dod also reports DoD presence + other checklists; phases also reports body size, and DoD coverage with --issue-body); import-only tracker + polish-ledger scanners
   gh_gather.py  gh_pr_gather.py  gh_persist.py  config_block.py   # executor ports (S21)
   prep_drafter.py  prep_researcher.py  prep_slicer.py  prep_planner.py  prep_resolver.py  prep_evaluator.py
   prep_question_sweep.py  prep_question_resolver.py  prep_requirements_gatherer.py
@@ -268,6 +268,18 @@ strategy, audit SHA) appear as facts so playbooks consume them as data (§5). Am
 can detect but not resolve surface in `attention` or as a `needs_decision` — never as prompt-side
 re-derivation. Inline-mode sections carry the content in the bare field (`issue_body`) alongside
 `*_bytes`; additional named read workspaces ride under `read_workspaces`, keyed by purpose.
+
+**The DoD's shape is a fact (4.32.0).** `## Definition of done` is the one heading every DoD reader
+parses, and a checklist under any other heading (`## Acceptance criteria`) reads as "no DoD". Until 4.32.0
+nothing said so: the drafter's feature template wrote that heading, the planner indexed its bullets by eye,
+the plan reviewer accepted it, and the resolver — handed `closes-dod` indexes against `dod: []` — ticked
+bullets no downstream parser reads. `parse.dod_summary` (`present` / `count` / `other_checklists`, the
+legacy epic `## Stories` excepted) and `parse.dod_coverage` (out-of-range / unclaimed / doubly-claimed
+indexes, plus `drift` — the index-stability invariant exactly as `dod-annotations.md` states it) are now
+facts at every stage that writes or consumes `closes-dod`: the drafter proves its staged body with
+`parse.py dod`; the planner's prep reports `dod` with the body staged at `dod.body_path`, its S1
+DoD-heading card offers the rename, and its S7 `parse.py phases --issue-body` checks the plan against the
+DoD; the resolver's prep reports `dod_coverage`, and `drift` blocks projection and re-routes to the planner.
 
 ## §5 Routing & playbooks
 

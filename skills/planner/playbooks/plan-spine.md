@@ -6,14 +6,15 @@ comes from prep (SKILL.md §1).
 
 ## S1 — Classify + confirm direction
 
-Read the issue body + thread from `facts.sections` (spilled paths). Classify per `facts.vector.type`
-and **scale to the work** (a one-line fix needs no plan — say so and route to the resolver; a small bug
-gets Approach + Changes + Test plan + `## Coverage gap` — the escape-and-regression-test detail is
-`single.md`'s delta; a feature gets the full machinery). Walk the thread for the **latest decision
-direction** (a maintainer may have settled a different approach downthread) and confirm it before
-researching (gate, freeform — "body proposes X; thread settled on W, plan toward W?"). **Detect
-open-question dependencies** from `facts.open_questions`, `facts.open_question_candidates`, and
-`facts.target.blocked_by` — each is a human-owned decision, not a design choice you resolve.
+Read the issue body + thread from `facts.sections` (spilled paths). Classify per `facts.vector.type` and
+**scale to the work** (a one-line fix needs no plan — say so and route to the resolver; a small bug gets
+Approach + Changes + Test plan + `## Coverage gap` — the escape-and-regression-test detail is `single.md`'s
+delta; a feature gets the full machinery). Walk the thread for the **latest decision direction** (a
+maintainer may have settled a different approach downthread) and confirm it before researching (gate,
+freeform — "body proposes X; thread settled on W, plan toward W?"). **Detect open-question dependencies**
+from `facts.open_questions`, `facts.open_question_candidates`, and `facts.target.blocked_by` — each is a
+human-owned decision, not a design choice you resolve. **DoD heading:** `facts.dod.other_checklists` set
+while `facts.dod.present` is false → that card first (plan-schema.md, "The `closes-dod` target").
 
 ## S2 — Ingest research + external sources
 
@@ -94,10 +95,10 @@ its `## Risks & watchpoints` entry.
 ## S7 — Verify the plan
 
 Stage the plan body to `<facts.scratch>/plan.md`, then **prove `## Phases` parses** —
-`${CLAUDE_PLUGIN_ROOT}/scripts/parse.py phases "<facts.scratch>/plan.md"` — after **every** staging (this
-one, each review-pass restage, S8's before the post). Both exit 0: read `status`, proceed only on `ok`.
-`PHASES_MALFORMED` is yours to fix, never a gate — repair at `context.line_number` (`raw_line` quotes it),
-restage, re-validate. An absent section is `ok` with `phases: []`, so this is unconditional. Reviewer
+`${CLAUDE_PLUGIN_ROOT}/scripts/parse.py phases "<facts.scratch>/plan.md" --issue-body "<facts.dod.body_path>"` —
+after **every** staging (this one, each review-pass restage, S8's before the post). Both exit 0: read `status`,
+proceed only on `ok`. `PHASES_MALFORMED` is yours to fix, never a gate — repair at `context.line_number`
+(`raw_line` quotes it), restage, re-validate; so are `dod_coverage` findings (plan-schema.md, "The `closes-dod` target"). An absent section is `ok` with `phases: []`, so this is unconditional. Reviewer
 dimensions are semantic and structurally cannot catch a grammar break; the resolver's prep runs this same
 parser two stages later, on a comment nobody may hand-edit. Then dispatch the isolated, context-blind
 plan-reviewer `Explore` sub-agent per [`../references/plan-reviewer-prompt.md`](../references/plan-reviewer-prompt.md)
@@ -121,8 +122,8 @@ ${CLAUDE_PLUGIN_ROOT}/scripts/gh_persist.py comment <owner/repo> issue <issue> \
   "<facts.scratch>/plan.md"   # fresh only — revise.md / story-jit.md name the in-place update op
 ```
 
-Capture the returned comment URL, then ensure the issue-body plan pointer: stage the body with the
-idempotent line `> 📋 **Implementation plan:** see [the implementation-plan comment](<url>) — authored
+Capture the returned comment URL, then ensure the issue-body plan pointer: stage the body this session last
+wrote (plan-schema.md, "The `closes-dod` target") with the idempotent line `> 📋 **Implementation plan:** see [the implementation-plan comment](<url>) — authored
 by \`github-issue-planner\`; re-run that skill to revise.` inserted or its URL refreshed, and apply via
 `gh_persist.py edit-body <owner/repo> <issue> "<facts.scratch>/issue-body-pointer.md"`. Finally apply the
 idempotent `planned` label — `gh_persist.py edit-labels <owner/repo> <issue> --add planned` — low-stakes:

@@ -33,6 +33,7 @@ import subprocess
 import sys
 import tempfile
 import unittest
+from unittest import mock
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
@@ -211,6 +212,8 @@ class ReviseModeVectorTests(PrepDrafterSandboxTestCase):
         self.assertEqual(envelope["revise"]["open_prs"], [])
         self.assertEqual(envelope["revise"]["closed_by_pull_requests_references"], [])
         self.assertEqual(envelope["revise"]["project_items"], [])
+        self.assertIn("dod", envelope["revise"])
+        self.assertIs(envelope["revise"]["dod"]["slice"], False)
 
 
 class ReviseFactsTests(PrepDrafterSandboxTestCase):
@@ -783,6 +786,52 @@ class UsageErrorTests(unittest.TestCase):
         )
         self.assertEqual(result.returncode, 2)
         self.assertEqual(result.stdout, "")
+
+
+class ReviseDodFactTests(unittest.TestCase):
+    """`facts.revise.dod`: the revise renames a checklist under another heading to `## Definition of
+    done` — except on a deliverable slice, whose `## Acceptance criteria` is the slicer's. Telling a
+    slice from a story costs one `gh` read, so it is made only when the rename would fire."""
+
+    AC_BODY = "## Acceptance criteria\n- [ ] a\n"
+    PARENT = {"parent": {"number": 41}}
+
+    def _dod(self, body, target, kind=None, notice=None):
+        calls = []
+
+        def fake_classify(repo, number, cwd=None):
+            calls.append(number)
+            return kind, notice
+
+        with mock.patch.object(prep_drafter.branching, "classify_parent", fake_classify):
+            dod, got_notice = prep_drafter._build_revise_dod(body, target, "octo/widgets")
+        return dod, got_notice, calls
+
+    def test_a_dod_body_never_looks_up_the_parent(self):
+        dod, _, calls = self._dod("## Definition of done\n- [ ] a\n", self.PARENT)
+        self.assertEqual((dod["present"], dod["slice"], calls), (True, False, []))
+
+    def test_no_parent_means_no_lookup_and_not_a_slice(self):
+        dod, _, calls = self._dod(self.AC_BODY, {"parent": None})
+        self.assertEqual((dod["slice"], calls), (False, []))
+        self.assertEqual(dod["other_checklists"], [{"heading": "Acceptance criteria", "count": 1}])
+
+    def test_a_story_parent_marks_a_slice(self):
+        dod, _, calls = self._dod(self.AC_BODY, self.PARENT, kind=prep_drafter.branching.PARENT_KIND_NON_EPIC)
+        self.assertEqual((dod["slice"], calls), (True, [41]))
+
+    def test_an_epic_parent_is_a_story_not_a_slice(self):
+        dod, _, _ = self._dod(self.AC_BODY, self.PARENT, kind=prep_drafter.branching.PARENT_KIND_EPIC)
+        self.assertIs(dod["slice"], False)
+
+    def test_an_unknown_parent_is_null_with_its_notice(self):
+        dod, notice, _ = self._dod(
+            self.AC_BODY, self.PARENT,
+            kind=prep_drafter.branching.PARENT_KIND_UNKNOWN,
+            notice=prep_drafter.branching.PARENT_KIND_UNAVAILABLE,
+        )
+        self.assertIsNone(dod["slice"])
+        self.assertEqual(notice, prep_drafter.branching.PARENT_KIND_UNAVAILABLE)
 
 
 if __name__ == "__main__":

@@ -274,8 +274,9 @@ Any provisional-default open question carried by the behaviour this slice delive
 contract three skills own — the resolver projects ticks onto it, the evaluator verifies them with
 sticky vetoes, the planner reconciles them — and all three operate on the issue the resolver is
 running on, which under slice-as-phase is the **parent**. A DoD on a slice would be a checkbox set
-nothing ticks. The checkbox form here is the drafter's existing `## Acceptance criteria` shape plus a
-stable id per criterion.
+nothing ticks. The checkbox form here is a DoD's checkbox shape plus a stable id per criterion — under
+a heading no DoD reader parses, which is the point (and why the drafter's revise and the planner's
+DoD-heading card leave a slice's `## Acceptance criteria` alone).
 
 **The `AC-N` ids are useful even though nothing ticks them per-criterion:** a plan phase's
 `deliverable` line can cite `AC-2, AC-3` in prose, with no grammar change. Stable ids beat positional
