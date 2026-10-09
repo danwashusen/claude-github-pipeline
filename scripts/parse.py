@@ -374,6 +374,30 @@ def _count_top_level_checkboxes(lines, start, end):
     return count
 
 
+# A CommonMark fence opener/closer: three or more backticks or tildes, up to three spaces of indent.
+_FENCE_RE = re.compile(r"^ {0,3}(`{3,}|~{3,})")
+
+
+def _blank_fenced_lines(lines):
+    """`lines` with every fenced-code line (fence markers included) replaced by `""`. A fence closes
+    on a marker of the same character at least as long as its opener; an unclosed fence runs to EOF."""
+    out = []
+    opener = None
+    for line in lines:
+        match = _FENCE_RE.match(line)
+        if opener is None:
+            if match:
+                opener = match.group(1)
+                out.append("")
+            else:
+                out.append(line)
+            continue
+        out.append("")
+        if match and match.group(1)[0] == opener[0] and len(match.group(1)) >= len(opener):
+            opener = None
+    return out
+
+
 def dod_summary(body_text):
     """The DoD's SHAPE, as a fact: ``{"present", "count", "other_checklists"}``. Never raises.
 
@@ -381,7 +405,7 @@ def dod_summary(body_text):
     - ``count`` — the DoD's top-level checkbox bullets, i.e. the 1-based index space every
       ``closes-dod`` value refers to (0 when the section is absent).
     - ``other_checklists`` — ``[{"heading", "count"}]`` for every OTHER `##` section holding at least
-      one top-level checkbox bullet (`## Stories` excepted, above), in body order.
+      one top-level checkbox bullet (`## Stories` excepted — `_NON_DOD_CHECKLIST_HEADING_RE`), in body order.
 
     Why ``other_checklists`` exists: the DoD heading is the contract (`dod-annotations.md`'s
     "Section finder"), and a body whose criteria sit under `## Acceptance criteria` parses as "no
@@ -391,13 +415,20 @@ def dod_summary(body_text):
     """
     lines = body_text.splitlines()
     dod_section = _find_section(lines, _DOD_HEADING_PATTERN)
+    # The DoD count keeps `parse_dod_bullets`' exact reading (no fence awareness), so it is always the
+    # index space `closes-dod` refers to.
     count = _count_top_level_checkboxes(lines, *dod_section) if dod_section else 0
 
-    headings = [
-        (i, m.group(1))
-        for i, m in ((i, _ANY_SECTION_HEADING_RE.match(line)) for i, line in enumerate(lines))
-        if m
-    ]
+    # Other checklists are read OUTSIDE fenced code only: an issue that quotes a markdown sample
+    # (```` ```markdown ```` holding `## Acceptance criteria` + `- [ ] x`) must not report a phantom
+    # checklist — the drafter's check would fail on it and the planner would offer to rename example
+    # text. Fenced lines are blanked, so they are neither headings nor checkboxes here.
+    visible = _blank_fenced_lines(lines)
+    headings = []
+    for index, line in enumerate(visible):
+        match = _ANY_SECTION_HEADING_RE.match(line)
+        if match:
+            headings.append((index, match.group(1)))
     other_checklists = []
     for position, (heading_index, heading_text) in enumerate(headings):
         start = heading_index + 1
@@ -405,8 +436,8 @@ def dod_summary(body_text):
             continue
         if _NON_DOD_CHECKLIST_HEADING_RE.match(heading_text):
             continue
-        end = headings[position + 1][0] if position + 1 < len(headings) else len(lines)
-        section_count = _count_top_level_checkboxes(lines, start, end)
+        end = headings[position + 1][0] if position + 1 < len(headings) else len(visible)
+        section_count = _count_top_level_checkboxes(visible, start, end)
         if section_count:
             other_checklists.append({"heading": heading_text, "count": section_count})
 

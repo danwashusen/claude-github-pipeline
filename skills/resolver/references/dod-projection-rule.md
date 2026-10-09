@@ -123,14 +123,14 @@ becomes `- [x] Phase 2-measurement (operator phase 2, applied 2026-06-04)`. No i
 - *Issue with no `## Definition of done` section, and no index claimed* (`facts.dod_coverage` null — the
   single-phase fallback — or every phase `closes-dod: (none)`): skip projection and say so in the session
   output: `DoD projection: issue has no \`## Definition of done\` section — projection skipped.` A phase that
-  *does* claim an index against such an issue is drift (above), never this case — a plan reviewer can pass
+  *does* claim an index against such an issue is *Bullet count drift*, never this case — a plan reviewer can pass
   one, so its arrival here is a fact to act on, not an impossibility.
 - *A checklist under another heading* (e.g. `## Acceptance criteria`; named by
   `facts.dod_coverage.other_checklists` when the plan claims indexes): never project onto it, the
   single-phase fallback included. On the issue this run resolves, only `## Definition of done` is the DoD
   (`facts.dod`) — a tick written elsewhere is read by no parser, so the evaluator never verifies it and the
   next session's reconciliation never sees it. (A deliverable slice's own `## Acceptance criteria` is a different
-  surface, closed by the slice-closing rung below.)
+  surface, closed by the S6 slice-closing rung — "Slice-closing edge cases".)
 
 Slice-closing edge cases (the S6 rung that closes a deliverable slice as its last serving phase ships):
 

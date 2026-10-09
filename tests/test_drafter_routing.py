@@ -1097,7 +1097,9 @@ class DodHeadingContractTests(unittest.TestCase):
     def test_the_spine_proves_the_staged_body_before_the_filing_gate(self):
         check = '${CLAUDE_PLUGIN_ROOT}/scripts/parse.py dod "<facts.scratch>/<name>.md"'
         self.assertIn(check, self.spine)
-        self.assertIn("`other_checklists: []`", self.spine)
+        self.assertIn("no criteria left in `other_checklists`", self.spine)
+        # A repo template's non-criteria confirmation list must survive the check.
+        self.assertIn("a repo template's confirmation list may stay", self.spine)
         self.assertLess(self.spine.index(check), self.spine.index('(`header: "File issue?"`)'))
 
     def test_revise_renames_only_off_a_slice(self):

@@ -22,7 +22,8 @@ processes any script may spawn are git/gh")::
     branching.detect_type_with_question -- the shared epic/story/question/standard core (import-only)
     parse.parse_dod_bullets          -- the existing DoD, parsed with 1-based indexes so the flow
                                         appends after the last top-level bullet, never re-counting
-    parse.has_dod_section            -- whether the section exists at all (create-vs-append fact)
+    parse.dod_summary                -- whether the section exists at all (create-vs-append fact),
+                                        and any checklist under another heading
     parse.dod_malformed_decision     -- the shared DOD_MALFORMED decision builder
     pipelib.spill.read_section       -- the inline|path read-back for the spilled body
     doc_catalogue.read_catalogue     -- the consuming repo's `<!-- doc-catalogue -->` grounding docs
@@ -172,7 +173,7 @@ def _req_id_facts(text, issue_number):
 
 
 def _parse_dod(issue_body, issue_number):
-    """Compose `parse.parse_dod_bullets` + `parse.has_dod_section` (pure cores — architecture.md
+    """Compose `parse.parse_dod_bullets` + `parse.dod_summary` (pure cores — architecture.md
     §2's in-process composition). `parse._DodMalformed` is caught here and turned into the same
     `DOD_MALFORMED` decision the CLI path emits, exactly as `prep_evaluator._parse_closing_issue_dod`
     does. Returns `(dod_facts, decision_or_none)`.
@@ -200,12 +201,13 @@ def _parse_dod(issue_body, issue_number):
                 "req_id": req_id,
             }
         )
+    shape = parse.dod_summary(issue_body)
     return {
-        "present": parse.has_dod_section(issue_body),
-        # A checklist under another heading (`parse.dod_summary`): when `present` is false this is
-        # where the issue's criteria actually live, and appending a fresh `## Definition of done`
-        # beside it would leave them out of every DoD reader (gather.md stops instead).
-        "other_checklists": parse.dod_summary(issue_body)["other_checklists"],
+        "present": shape["present"],
+        # A checklist under another heading: when `present` is false this is where the issue's
+        # criteria actually live, and appending a fresh `## Definition of done` beside it would leave
+        # them out of every DoD reader (gather.md stops instead).
+        "other_checklists": shape["other_checklists"],
         "bullet_count": len(bullets),
         "annotated_count": sum(1 for b in bullets if b.get("annotation") is not None),
         "next_req_seq": highest_seq + 1,

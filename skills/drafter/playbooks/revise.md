@@ -43,8 +43,9 @@ review → confirm → apply). The deltas this route supplies:
 - **Preserve the plan pointer.** Keep any `> 📋 **Implementation plan:**` pointer line verbatim in the
   revised body — don't drop, duplicate, or touch the `<!-- implementation-plan:v1 -->` comment it links to.
 - **Criteria under another heading.** When `facts.revise.dod.present` is false and
-  `facts.revise.dod.other_checklists` names a heading (`## Acceptance criteria` on a feature filed before the
-  templates' checklist heading rule), rename that heading to `## Definition of done` — the bullets stay as
+  `facts.revise.dod.other_checklists` names a heading holding the issue's criteria (`## Acceptance criteria` on a
+  feature filed before the templates' checklist heading rule — not a repo template's confirmation list), rename
+  that heading to `## Definition of done` — the bullets stay as
   written, in order, so a live plan's `closes-dod` indexes still point at them — and show it in the diff. Only
   when `facts.revise.dod.slice` is `false`: a deliverable slice (`true`) keeps the slicer's `## Acceptance
   criteria`, and when its parent could not be typed (`null`) leave the heading — the planner's DoD-heading

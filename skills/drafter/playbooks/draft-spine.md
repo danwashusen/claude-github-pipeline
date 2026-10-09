@@ -125,10 +125,10 @@ stated tier; a **proxy-filed follow-up (lean review)** invocation is always **le
 Present the full draft (title, labels, priority, body between `---` fences), plus any unresolved review
 findings. **Before asking, stage the approved body to disk** — write the exact rendered body to
 `<facts.scratch>/<name>.md`; the staged file *is* the body — and prove its criteria parse as the DoD:
-`${CLAUDE_PLUGIN_ROOT}/scripts/parse.py dod "<facts.scratch>/<name>.md"` → `ok`, `other_checklists: []` (a
-slice's own excepted — `revise.md`), and `present: true` when the template has criteria; fix and re-run.
-Then gate (`header: "File issue?"`): **File it** / **Keep iterating**. Treat anything other than an explicit
-"File it" as keep-iterating — never file without that go-ahead.
+`${CLAUDE_PLUGIN_ROOT}/scripts/parse.py dod "<facts.scratch>/<name>.md"` → `ok`, `present: true` when the
+template has criteria, and no criteria left in `other_checklists` (a repo template's confirmation list may
+stay; `revise.md` owns a slice's); fix and re-run. Then gate (`header: "File issue?"`): **File it** / **Keep
+iterating**. Anything but an explicit "File it" is keep-iterating — never file without it.
 
 ## Staged filing — the single write path
 

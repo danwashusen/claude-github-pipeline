@@ -1150,6 +1150,22 @@ class DodSummaryModuleTests(unittest.TestCase):
             [{"heading": "Acceptance criteria", "count": 2}],
         )
 
+    def test_a_fenced_markdown_sample_is_not_a_checklist(self):
+        body = (
+            "## Context\nOur template looks like:\n\n```markdown\n## Acceptance criteria\n"
+            "- [ ] a\n```\n\n## Definition of done\n- [ ] real\n"
+        )
+        summary = parse.dod_summary(body)
+        self.assertEqual(summary["other_checklists"], [])
+        self.assertEqual(summary["count"], 1)
+
+    def test_a_tilde_fence_and_a_longer_closer_both_close(self):
+        body = "~~~\n## Acceptance criteria\n- [ ] a\n~~~~\n\n## Acceptance criteria\n- [ ] b\n"
+        self.assertEqual(
+            parse.dod_summary(body)["other_checklists"],
+            [{"heading": "Acceptance criteria", "count": 1}],
+        )
+
     def test_a_malformed_annotation_is_still_counted(self):
         # The planner's prep stays lenient (a revise repairs annotations), so the count must not
         # depend on the annotation parse that raises.

@@ -24,6 +24,7 @@ Coverage matrix (S9 DoD):
 
 import json
 import os
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -916,6 +917,37 @@ class DistillerBundleThresholdTests(PrepResolverSandboxTestCase):
 
 class PhasesParsingTests(PrepResolverSandboxTestCase):
     ambient_default = "100-fix-the-widget"
+
+    def _with_issue_body(self, body):
+        """`prep_resolver_plan_with_phases` (phases claim `(none)` then `1`) with the issue body swapped."""
+        src = shimenv.fixture_case_dir("prep_resolver_plan_with_phases")
+        dst = Path(tempfile.mkdtemp(prefix="gh-resolver-dodcov-"))
+        self.addCleanup(lambda: shutil.rmtree(dst, ignore_errors=True))
+        for f in src.iterdir():
+            (dst / f.name).write_bytes(f.read_bytes())
+        view = json.loads((dst / "issue_view.json").read_text(encoding="utf-8"))
+        view["body"] = body
+        (dst / "issue_view.json").write_text(json.dumps(view), encoding="utf-8")
+        return self._envelope(fixtures_dir=dst)
+
+    def test_dod_coverage_reads_the_issue_body_against_the_plan(self):
+        envelope = self._envelope(fixture_case="prep_resolver_plan_with_phases")
+        cov = envelope["dod_coverage"]
+        self.assertEqual((cov["present"], cov["dod_count"], cov["max_claimed"]), (True, 1, 1))
+        self.assertFalse(cov["drift"])
+        self.assertFalse(any(a.startswith("DoD drift") for a in envelope["attention"]))
+
+    def test_claims_against_acceptance_criteria_reach_the_envelope_as_drift(self):
+        envelope = self._with_issue_body(
+            "## Summary\nDo the thing.\n\n## Acceptance criteria\n- [ ] Widget fixed"
+        )
+        self.assertEqual(envelope["dod"], [])
+        self.assertTrue(envelope["dod_coverage"]["drift"])
+        self.assertTrue(
+            any(a.startswith("DoD drift") and "`## Acceptance criteria`" in a
+                for a in envelope["attention"]),
+            envelope["attention"],
+        )
 
     def test_plan_with_phases_is_parsed_and_sha_extracted(self):
         envelope = self._envelope(fixture_case="prep_resolver_plan_with_phases")
