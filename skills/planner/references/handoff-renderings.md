@@ -4,7 +4,10 @@
 where that session must start — `(none yet — run /github-pipeline:workspace-open <N> first)`
 when the operator hasn't opened the issue's worktree (the usual plan-before-open case), or the
 existing worktree's path when one is already open (e.g. the resume-implementation shape).
-Planner-bound and terminal shapes omit the line (a `main`-ref planner run is checkout-agnostic).
+Planner-bound and terminal shapes omit the line (a `main`-ref planner run accepts any current checkout
+of `main`, or the issue's own branch containing its tip). Name the issue's **own** worktree: take
+`facts.grounding.path` only when `grounding.basis` is `own_branch` — on `identical` / `accepted` this
+session sat in another issue's checkout, which the resolver's prep would refuse.
 
 Every clean run of the planner ends with a single `## Handoff` block. The schema, omission rules, and
 closed-set state-marker vocabulary are owned by [`../../_shared/handoff-format.md`](../../_shared/handoff-format.md);
@@ -24,9 +27,11 @@ The plan-comment footer (`plan-spine.md` S5) and the handoff `Grounding:` line r
 
 - `<plan-ref>` renders **`origin/<default-branch>`** for the default branch (`origin/main` in every
   example below — read the repo's own name off `facts.root.default_branch`, never assume `main`), and
-  the **bare, un-truncated** branch otherwise — `epic/<N>-<slug>`, a story's own branch (row
-  `story-own-branch` or `open-pr-head`), or the open PR's `headRefName` (the `origin/` prefix is dropped
-  for a non-default branch). Never emit a bare `main@<sha>` — the default branch always carries the
+  the **bare, un-truncated** branch otherwise — `epic/<N>-<slug>`, the issue's own branch (row
+  `story-own-branch`, `own-branch` or `open-pr-head`), the open PR's `headRefName`, or an operator-accepted
+  checkout (row `ambient-accepted`) — the `origin/` prefix is dropped for a non-default branch. Render
+  `facts.plan_ref`, never `facts.grounding.branch`: on `grounding.basis: identical` the checkout is another
+  branch at `plan_ref`'s exact tip, and the footer still names `plan_ref`. Never emit a bare `main@<sha>` — the default branch always carries the
   `origin/` prefix; every other branch never does. This string names the ref the plan was GROUNDED on,
   which is not always the resolver's PR base (a story grounded on its own branch still bases its PR on
   the epic branch), so eliding the branch loses the one fact it carries.
@@ -311,9 +316,10 @@ shape — `Grounding:` still reads the open PR head (`142-add-csv-export@e5f6a7b
 revise never closes that PR. On a HARD "Start fresh" the skill closes the superseded PR via
 `gh_persist.py close-pr` with the staged `Re-plan superseded this PR` supersession comment, re-runs prep,
 and re-grounds *after* the close (`revise.md`'s HARD sequence) — so `Grounding:` instead reads the
-**re-selected** ref (`origin/main@<fresh-sha>` for a standalone issue; for a story, the epic branch — or
-the story's own branch when this checkout is it and already contains the epic tip, row `story-own-branch`),
-never the closed branch; `Why:` names the closed PR # and that it carries the supersession note.
+**re-selected** ref (`origin/main@<fresh-sha>` for a standalone issue, the epic branch for a story — or the
+issue's own branch when the fresh run sits in its worktree and it already contains that base tip, row
+`own-branch` / `story-own-branch`, prep's attention line naming the closed PR), never the closed branch's
+pre-close `open-pr-head` selection; `Why:` names the closed PR # and that it carries the supersession note.
 When the revise **renumbered the unshipped tail** to insert a phase
 (`revise-reconciliation.md`, "Inserting a phase after work has shipped"), `Why:` names the shift so the
 operator is not surprised by it — e.g. "phase 6 is new; the former phase 6 (end-to-end proof) is now

@@ -177,7 +177,7 @@ GATE_CARDS = {
 STALE_ACTIVITY_DAYS = 14
 
 
-def search_closed_prs(repo, issue_number, cwd=None):
+def search_closed_prs(repo, issue_number, cwd=None, fatal=True):
     """Targeted closed/merged-PR search referencing this issue (docs/specs/resolver.md step-5
     table's two "closed" rows; mirrors the spec's own predecessor-PR-detection search convention:
     `gh pr list --state closed --search "<N> in:body"`). Returns `(prs, decision_or_none)`; each
@@ -193,6 +193,10 @@ def search_closed_prs(repo, issue_number, cwd=None):
     references `#<N>` survives on purpose, because `prep_workspace_close.py`'s issue-to-branch
     ladder needs to *report* the heads it rejected. Narrowing to the issue's own PRs is
     :func:`prior_prs_for_issue`'s job, applied by :func:`classify_prior_pr_row`.
+
+    ``fatal=False`` turns every failure — auth included — into ``(None, None)`` for a caller whose
+    use of the result is a convenience fact (`prep_planner.py`'s closed-PR attention line), where
+    a lookup that cannot be answered must degrade, never stop the run.
     """
     result = process.run(
         [
@@ -210,6 +214,14 @@ def search_closed_prs(repo, issue_number, cwd=None):
         ],
         cwd=cwd,
     )
+    if not fatal:
+        try:
+            items = json.loads(result.stdout) if result.returncode == 0 else None
+        except ValueError:
+            items = None
+        if items is None:
+            return None, None
+        return gh_gather._filter_and_strip_reference_fields(items, issue_number), None
     if result.auth_required:
         return None, needs_decision(
             AUTH_REQUIRED,

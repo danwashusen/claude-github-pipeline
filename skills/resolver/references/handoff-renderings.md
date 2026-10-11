@@ -11,8 +11,9 @@ namespaced `/github-pipeline:<name>`. **`Workspace:` lines** (the v3 "start the 
 here" carrier — see `_shared/handoff-format.md`) substitute `<workspace-path>` from
 `facts.workspace.path`: present on every route whose next session must run inside this PR's
 worktree (→ evaluator, → resolver in continue mode, → planner revise **with** a draft PR, whose plan
-grounds on the PR head); on a planner revise **without** a PR the planner grounds on `main`,
-so render `**Workspace:** any clean main checkout — not this worktree` instead; omitted on
+grounds on the PR head); on a planner revise **without** a PR the planner grounds on `main` or on
+this worktree's branch while it still contains `main`'s tip, so render `**Workspace:** <workspace-path>
+(rebase onto origin/main first if main has moved), or any current main checkout` instead; omitted on
 drafter re-routes and terminals (checkout-agnostic).
 
 **The resolver's own command** — every shape that hands back to the resolver — is
@@ -236,8 +237,10 @@ branch after the plan is refreshed.
 **Why:** the plan's `## Architecture decisions` line "<quoted decision>" assumed <X>, but `<path:line>` reveals <Y>. The plan-currency check failed (alternatively: the plan-invalidation gate fired mid-implementation). Refresh the plan against today's surface before resuming. The draft PR stays open; re-run the resolver in continue mode after the plan revise lands.
 ```
 
-If no PR was opened yet, omit the PR and `Changes:` lines entirely, render `**Workspace:** any clean main
-checkout — not this worktree` (a PR-less revise grounds on `main`). Either way the resolver later
+If no PR was opened yet, omit the PR and `Changes:` lines entirely, render `**Workspace:** <workspace-path>
+(rebase onto origin/main first if main has moved), or any current main checkout` (a PR-less revise grounds
+on `main`, or on this issue's own branch while it contains `main`'s tip — row `own-branch`; a branch behind
+it is refused). Either way the resolver later
 re-enters with `/github-pipeline:resolver #142` — the issue, whether or not a PR exists.
 
 ## Re-route → drafter (fitness audit)

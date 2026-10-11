@@ -60,6 +60,7 @@ prep-owned direct calls.
 Usage::
 
     prep_planner.py <issue-number> <owner/repo> [--root PATH] [--scratch-dir PATH] [--refresh]
+                    [--ground-ambient]
     prep_planner.py <issue-number> <owner/repo> --oq-query "<topic>" [--oq-query "<topic>" ...]
 
 ``--root`` defaults to ``.`` (the project root — architecture.md §6's read-only trust vantage).
@@ -82,13 +83,18 @@ an operator gate — grounding is always safe (a detached, read-only view), unli
 work worktree, which can impersonate another author's in-flight branch.
 
 **`plan_ref` selection — the FULL v1 table (docs/specs/planner.md Step 4.5), moved into code.**
-Seven distinct facts (:func:`_select_plan_ref`), collapsing to the same v1 table (whose row 5
+Distinct facts (:func:`_select_plan_ref`), collapsing to the same v1 table (whose row 5
 bundles two cases this module reports as two distinct, independently-testable facts) — precedence
 is fixed: when more than one row applies (a story under an open epic that ALSO has an open PR),
 the open-PR-head row always wins (v1's documented rationale: that head is a strict superset of the
-epic branch, and is what the resolver actually continues on). Within the story arm, the own-branch
-row (4) wins over the two rows it is eligible against (5 and 6) whenever BOTH its preconditions
-hold:
+epic branch, and is what the resolver actually continues on) — outranked only by row 0, the
+operator's explicit answer. The own-branch rows (4 and 7b) win over every base row they are
+eligible against (:data:`ROWS_ELIGIBLE_FOR_OWN_BRANCH`: 5, 6, 7, 8) whenever BOTH their
+preconditions hold:
+
+  0. ``PLAN_REF_ROW_AMBIENT_ACCEPTED`` — the ambient checkout is another branch carrying commits
+     beyond the base tip, and the operator answered the card with ``--ground-ambient`` -> that
+     branch. Never derived; only the flag sets it, and only for a checkout containing the tip.
 
   1. ``PLAN_REF_ROW_OPEN_PR_HEAD`` — an open PR already exists for this issue -> that PR's
      `headRefName`. Checked FIRST, unconditionally, so it wins the precedence rule for free.
@@ -108,7 +114,7 @@ hold:
      more truth, never less. It is probed offline (:func:`workspace.contains_commit`, never a
      fetch); a branch that is behind or diverged, and a base tip this checkout never fetched, both
      fall through to rows 5/6 and refuse exactly as before (notices
-     ``STORY_BRANCH_BEHIND_BASE_TIP`` / ``BASE_TIP_CONTAINMENT_UNAVAILABLE``) — a later story must
+     ``OWN_BRANCH_BEHIND_BASE_TIP`` / ``BASE_TIP_CONTAINMENT_UNAVAILABLE``) — a later story must
      never ground on code a predecessor has since moved past, and that is a containment property,
      not a naming one. The base it was measured against rides out as
      `story.own_branch_base_ref`, so ONE row label carries both eligible cases without losing
@@ -128,12 +134,21 @@ hold:
      "facts are data, never re-derived" invariant applied to the row label itself.
   7. ``PLAN_REF_ROW_STORY_NO_PARENT`` — story with NO parent epic found, or a CLOSED one -> `main`.
      Distinguished from row 6 by `parent_epic_open` (`False` here, `True` there) — both still ride
-     the same `plan_ref` (`main`), but the row now says which reality produced it. NOT eligible for
-     row 4: with no live epic above it this is the same case as row 8, and the two belong together
-     in a follow-up (row 7 also carries an `attention` line — "grounding at main" — that a firing
-     own-branch row would contradict).
+     the same `plan_ref` (`main`), but the row now says which reality produced it. Eligible for
+     row 4 since 4.33.0; its "grounding at main" attention tail is dropped whenever the checkout
+     is not `main` itself, so the two never contradict.
+  7b. ``PLAN_REF_ROW_OWN_BRANCH`` — row 4's argument for a standalone issue: the ambient checkout
+     is this issue's own branch and contains the default branch's tip -> that branch. Its own
+     label, because `story-own-branch` on a non-story would be a row name denying the facts (D4).
   8. ``PLAN_REF_ROW_DEFAULT`` — everything else (standalone bug/feature/incomplete/multi-phase,
-     no open PR) -> `main`. Not eligible for row 4; see row 7.
+     no open PR) -> `main`.
+
+**Content, not names (4.33.0).** Whatever row answered, the planner accepts the ambient checkout
+by what it CONTAINS (:func:`_probe_ambient`): `plan_ref` itself; this issue's own branch containing
+the base tip (rows 4/7b); another branch whose HEAD IS the tip (`grounding.basis: identical` —
+the same code, so `plan_ref` and the footer stand); another branch with commits beyond the tip
+only by the operator's answer (row 0). Behind, diverged, or unfetched still refuses. The resolver
+and evaluator keep exact-branch attach: there the branch is what they push or judge.
 
 Every row (:func:`build_facts`) ends the same way regardless of which fired: an unconditional
 ``workspace._build_ensure_read(root, plan_ref)`` — the plan's (and eventually the handoff's)
@@ -555,23 +570,30 @@ def _fetch_story_state(repo, story_number, cwd=None):
 # timestamps and bodies do not (notices are open by contract, pipelib/decisions.py).
 SUBISSUE_DETAIL_UNSUPPORTED = "SUBISSUE_DETAIL_UNSUPPORTED"
 
-# Non-blocking, both emitted only on the `story-own-branch` probe's fall-through paths (module
-# docstring row 4). The run that emits either ALSO ends `needs_decision` with no facts block — the
+# Non-blocking, both emitted only on the own-branch probe's fall-through paths (module docstring
+# row 4). The run that emits either ALSO ends `needs_decision` with no facts block — the
 # `WORKSPACE_MISMATCH` card is built generically inside `workspace._build_attach` and forwarded
 # verbatim, so prep cannot enrich its `options`. `_forward_decision(..., notices=notices)` carries
 # these into that envelope, making them the only machine-readable channel that survives to say WHY
-# a story worktree was refused.
+# the issue's own worktree was refused.
 #
-# The ambient checkout IS this story's own branch, but its HEAD does not contain the base ref's tip
+# The ambient checkout IS this issue's own branch, but its HEAD does not contain the base ref's tip
 # — behind, or diverged. Grounding falls back to the base ref, which this checkout is not. Remedy:
-# rebase this branch onto `origin/<base_ref>`.
-STORY_BRANCH_BEHIND_BASE_TIP = "STORY_BRANCH_BEHIND_BASE_TIP"
+# rebase this branch onto `origin/<base_ref>`. (Named STORY_BRANCH_BEHIND_BASE_TIP until the row
+# widened past stories in 4.33.0; notices are an open set, and no prompt reads the old name.)
+OWN_BRANCH_BEHIND_BASE_TIP = "OWN_BRANCH_BEHIND_BASE_TIP"
 
 # Same fall-through, different cause: the base tip commit is not in this checkout's object DB (it
 # was never fetched — typically another machine pushed it), so containment is UNANSWERABLE here.
 # Never escalates and never triggers a fetch; a prep does not mutate the operator's checkout to
 # answer a question.
 BASE_TIP_CONTAINMENT_UNAVAILABLE = "BASE_TIP_CONTAINMENT_UNAVAILABLE"
+
+# The own-branch row fired, and the closed-PR lookup that says whether that branch heads a closed,
+# unmerged PR (a Start-fresh's predecessor) could not be answered. Only the attention line naming
+# that PR is lost: the row stands, because re-grounding in place on such a branch is the operator's
+# chosen behaviour, and a convenience fact must never stop a run that grounds fine without it.
+CLOSED_PR_LOOKUP_UNAVAILABLE = "CLOSED_PR_LOOKUP_UNAVAILABLE"
 
 
 def _fetch_sub_issue_details(repo, issue_number, env=None, cwd=None):
@@ -1119,13 +1141,22 @@ PLAN_REF_ROW_STORY_OWN_BRANCH = "story-own-branch"
 PLAN_REF_ROW_STORY_PARENT_BRANCH = "story-under-open-epic"
 PLAN_REF_ROW_STORY_PARENT_BOOTSTRAP = "story-parent-epic-bootstrap"
 PLAN_REF_ROW_STORY_NO_PARENT = "story-no-open-parent-epic"
+PLAN_REF_ROW_OWN_BRANCH = "own-branch"
 PLAN_REF_ROW_DEFAULT = "no-open-pr-default-branch"
+PLAN_REF_ROW_AMBIENT_ACCEPTED = "ambient-accepted"
 
-# The rows the `story-own-branch` row may displace: a story under a LIVE open epic, whether or not
-# the epic's integration branch has bootstrapped. Rows 7/8 (`plan_ref = main` with no epic above
-# them) are deliberately excluded — see the module docstring's row 7.
-STORY_ROWS_ELIGIBLE_FOR_OWN_BRANCH = frozenset(
-    (PLAN_REF_ROW_STORY_PARENT_BRANCH, PLAN_REF_ROW_STORY_PARENT_BOOTSTRAP)
+# The rows an own-branch row may displace: every row whose `plan_ref` is a BASE the issue's own
+# branch descends from — the three story rows and the standalone default. The story arm reports the
+# substitution as `story-own-branch`, the default arm as `own-branch`, so a standalone issue is
+# never labelled a story (the D4 row-truthfulness rule). Excluded: `open-pr-head` and the two epic
+# rows, where `plan_ref` already IS the issue's own branch (or none exists yet).
+ROWS_ELIGIBLE_FOR_OWN_BRANCH = frozenset(
+    (
+        PLAN_REF_ROW_STORY_PARENT_BRANCH,
+        PLAN_REF_ROW_STORY_PARENT_BOOTSTRAP,
+        PLAN_REF_ROW_STORY_NO_PARENT,
+        PLAN_REF_ROW_DEFAULT,
+    )
 )
 
 
@@ -1137,6 +1168,7 @@ def _select_plan_ref(
     parent_epic_open=False,
     *,
     own_branch_at_base_tip=None,
+    accepted_ambient=None,
 ):
     """Pure lookup table: `(issue_type, epic_branch_name, open_pr_headref, parent_epic_open)` ->
     `(plan_ref, plan_ref_row)`. `epic_branch_name` is the discovered branch (or `None` on
@@ -1158,8 +1190,16 @@ def _select_plan_ref(
     branch that fails either one is a caller bug: this stays a pure table and cannot re-verify the
     second, which needs git. Keyword-only so the four-positional call form the unit tests use
     cannot silently absorb it; `parent_epic_open` deliberately stays ahead of the `*`, since
-    narrowing an existing parameter's calling convention is not part of this change.
+    narrowing an existing parameter's calling convention is not part of this change. The default
+    arm honours it too (row `own-branch`); the caller only passes it for a base row in
+    :data:`ROWS_ELIGIBLE_FOR_OWN_BRANCH`.
+
+    `accepted_ambient` is the ambient branch the OPERATOR accepted (`--ground-ambient`) after the
+    card for a checkout carrying commits beyond the base tip. It outranks every row, the open-PR
+    head included: it is an explicit answer about this session's vantage, not a derived fact.
     """
+    if accepted_ambient:
+        return accepted_ambient, PLAN_REF_ROW_AMBIENT_ACCEPTED
     if open_pr_headref:
         return open_pr_headref, PLAN_REF_ROW_OPEN_PR_HEAD
     if issue_type == "epic":
@@ -1178,50 +1218,133 @@ def _select_plan_ref(
         if parent_epic_open:
             return root_branch, PLAN_REF_ROW_STORY_PARENT_BOOTSTRAP
         return root_branch, PLAN_REF_ROW_STORY_NO_PARENT
+    if own_branch_at_base_tip:
+        return own_branch_at_base_tip, PLAN_REF_ROW_OWN_BRANCH
     return root_branch, PLAN_REF_ROW_DEFAULT
 
 
-def _probe_own_branch(base_ref, base_row, epic_branch_facts, root, issue_number, cwd):
-    """Row 4's two preconditions, evaluated once. Returns
-    ``(own_branch_at_base_tip, probe_facts, notices)``.
+def _probe_ambient(base_ref, base_row, epic_branch_facts, root, issue_number, cwd):
+    """Classify the AMBIENT checkout against ``base_ref`` — the ref the row table chose before any
+    substitution — by content, not by branch name. Returns ``(probe, notices)``.
 
-    ``own_branch_at_base_tip`` is the ambient branch when it is this issue's own AND already
-    contains ``base_ref``'s tip, else ``None`` — it is the only thing :func:`_select_plan_ref` is
-    handed, because the table cannot re-verify a containment test that needs git.
-    ``probe_facts`` publishes what was observed (`ambient_branch`, `ambient_contains_base_tip`,
-    `own_branch_base_ref`), so the row label stays data a reader consumes rather than re-derives;
-    an unset value means that step was never reached, not that it was false.
+    ``probe["kind"]`` is ``None`` when there is nothing to classify (no readable branch — detached
+    HEAD, not a repo — or the ambient branch already IS ``base_ref``, the canonical posture, which
+    therefore costs no extra call), else one of:
 
-    Never fetches: a base tip absent from this checkout's object DB yields the unanswerable notice
-    and today's refusal, not a network round-trip that would mutate the operator's checkout.
+    - ``own`` — this issue's own branch (`branching.branch_belongs_to_issue`), ``base_row`` in
+      :data:`ROWS_ELIGIBLE_FOR_OWN_BRANCH`, and HEAD contains the base tip -> the own-branch row.
+    - ``identical`` — any other branch whose HEAD IS the base tip: the same code, so grounding there
+      leaves ``plan_ref`` and the footer true.
+    - ``foreign_ahead`` — any other branch containing the tip plus ``ahead_commits`` more: code that
+      may never ship with this issue, so only the operator's ``--ground-ambient`` admits it.
+    - ``not_contained`` / ``unanswerable`` — behind or diverged, or a tip this checkout never
+      fetched. Both fall through to today's refusal; for the issue's own branch they carry the
+      notice that says which (rebase vs fetch).
+
+    Containment is what makes any substitution sound — a contained base tip means the checkout is a
+    superset of that ref, so grounding on it sees more truth, never less. Never fetches:
+    :func:`workspace.contains_commit` is tri-state, and a prep does not mutate the operator's
+    checkout to answer a question.
     """
-    facts = {"ambient_branch": None, "ambient_contains_base_tip": None, "own_branch_base_ref": None}
-    if base_row not in STORY_ROWS_ELIGIBLE_FOR_OWN_BRANCH:
-        return None, facts, []
+    probe = {
+        "kind": None,
+        "ambient_branch": None,
+        "base_ref": base_ref,
+        "base_tip_sha": None,
+        "contains": None,
+        "own": False,
+        "ahead_commits": None,
+    }
     probe_cwd = Path(cwd if cwd is not None else ".").resolve()
     ambient_branch = _ambient_branch(probe_cwd)
-    facts["ambient_branch"] = ambient_branch
-    if not branching.branch_belongs_to_issue(ambient_branch, issue_number):
-        return None, facts, []
-    # The epic branch's tip is already in hand from `_discover_epic_branch`'s ls-remote; only the
-    # bootstrap base (the default branch) costs a second one.
+    probe["ambient_branch"] = ambient_branch
+    if ambient_branch is None or ambient_branch == base_ref:
+        return probe, []
+    probe["own"] = bool(
+        base_row in ROWS_ELIGIBLE_FOR_OWN_BRANCH
+        and branching.branch_belongs_to_issue(ambient_branch, issue_number)
+    )
+    # The epic branch's tip is already in hand from `_discover_epic_branch`'s ls-remote; any other
+    # base costs one `ls-remote` — on this non-canonical path only.
     base_tip_sha = (
         epic_branch_facts.get("sha")
-        if base_row == PLAN_REF_ROW_STORY_PARENT_BRANCH and epic_branch_facts
-        else _remote_tip_sha(root, base_ref)
-    )
+        if epic_branch_facts and epic_branch_facts.get("branch") == base_ref
+        else None
+    ) or _remote_tip_sha(root, base_ref)
     if not base_tip_sha:
-        return None, facts, []
+        return probe, []
+    probe["base_tip_sha"] = base_tip_sha
     contains = workspace.contains_commit(probe_cwd, base_tip_sha)
-    facts["ambient_contains_base_tip"] = contains
-    if contains:
-        facts["own_branch_base_ref"] = base_ref
-        return ambient_branch, facts, []
-    # Both fall-throughs end in the SAME refusal the pre-row behaviour produced; the notice is what
-    # distinguishes "rebase this branch" from "this checkout has never seen that commit".
-    return None, facts, [
-        STORY_BRANCH_BEHIND_BASE_TIP if contains is False else BASE_TIP_CONTAINMENT_UNAVAILABLE
-    ]
+    probe["contains"] = contains
+    if contains is not True:
+        probe["kind"] = "not_contained" if contains is False else "unanswerable"
+        if not probe["own"]:
+            return probe, []
+        # Both end in the SAME refusal the pre-row behaviour produced; the notice is what
+        # distinguishes "rebase this branch" from "this checkout has never seen that commit".
+        return probe, [
+            OWN_BRANCH_BEHIND_BASE_TIP if contains is False else BASE_TIP_CONTAINMENT_UNAVAILABLE
+        ]
+    if probe["own"]:
+        probe["kind"] = "own"
+        return probe, []
+    count = process.run(
+        ["git", "rev-list", "--count", "%s..HEAD" % base_tip_sha], cwd=str(probe_cwd)
+    )
+    ahead = int(count.stdout.strip()) if count.returncode == 0 else None
+    probe["ahead_commits"] = ahead
+    probe["kind"] = "identical" if ahead == 0 else "foreign_ahead"
+    return probe, []
+
+
+def _closed_pr_for_branch(repo, issue_number, branch, cwd):
+    """The closed, UNMERGED PR of this issue whose head is ``branch`` — a Start-fresh's predecessor
+    — or ``None``. Returns ``(pr_or_none, notices)``. Asked only when the own-branch row fired, so a
+    canonical run pays nothing; any failure degrades to :data:`CLOSED_PR_LOOKUP_UNAVAILABLE`."""
+    prs, decision = branching.search_closed_prs(repo, issue_number, cwd=cwd, fatal=False)
+    if decision is not None or prs is None:
+        return None, [CLOSED_PR_LOOKUP_UNAVAILABLE]
+    for pr in branching.prior_prs_for_issue(prs, issue_number):
+        if pr.get("headRefName") == branch and pr.get("state") != "MERGED":
+            return pr, []
+    return None, []
+
+
+def _foreign_checkout_decision(probe, plan_ref, root, root_branch, cwd):
+    """The card for a checkout carrying commits beyond ``plan_ref``'s tip that is not this issue's
+    own branch. Built here rather than by :func:`workspace._build_attach` because only prep knows
+    the containment facts and the ``--ground-ambient`` remedy; the reason stays ``branch_mismatch``,
+    so the closed attach-reason set is unchanged."""
+    branch = probe["ambient_branch"]
+    ahead = probe["ahead_commits"]
+    probe_cwd = str(Path(cwd if cwd is not None else ".").resolve())
+    top = process.run(["git", "rev-parse", "--show-toplevel"], cwd=probe_cwd)
+    elsewhere = (
+        "start this session in a current %s checkout (the project root serves) instead" % root_branch
+        if plan_ref == root_branch
+        else "start this session inside the worktree for %r instead" % plan_ref
+    )
+    return workspace._workspace_mismatch(
+        "branch_mismatch",
+        summary="session checkout is on branch %r, which contains %r's tip plus %s commit(s) that "
+        "%r does not have" % (branch, plan_ref, "more" if ahead is None else ahead, plan_ref),
+        context={
+            "path": top.stdout.strip() if top.returncode == 0 else probe_cwd,
+            "actual_branch": branch,
+            "expected_branch": plan_ref,
+            "plan_ref": plan_ref,
+            "base_tip_sha": probe["base_tip_sha"],
+            "ahead_commits": ahead,
+            "main_root": root,
+        },
+        options=[
+            "plan against this checkout anyway: re-run prep with --ground-ambient (carry it on every "
+            "later prep run this session, --refresh included); the plan footer records %r, and the "
+            "plan may cite code from those commits that %r does not have" % (branch, plan_ref),
+            elsewhere,
+            "if this checkout is intentional, re-run against the issue this branch belongs to",
+        ],
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -1337,10 +1460,18 @@ def _build_attention(
     story_facts,
     grounding_docs=None,
     catalogue_absent=False,
+    grounding_basis="plan_ref",
+    probe=None,
+    plan_ref=None,
+    closed_pr=None,
 ):
     """`grounding_docs` is `None` when the catalogue was never read (`--refresh`, which skips the
     whole grounding assertion), `[]` when it was read and declared nothing, and a list otherwise —
     three distinct states, because "we didn't look" must not render as "the repo declared nothing".
+
+    `grounding_basis` / `probe` / `plan_ref` / `closed_pr` word the vantage lines: whenever the
+    checkout is not `plan_ref`'s own branch, say which checkout was read and why that is honest —
+    and never claim "grounding at main" while the plan grounds elsewhere.
     """
     attention = []
     if grounding_docs is not None:
@@ -1375,21 +1506,41 @@ def _build_attention(
         # derived from the same union the reader grounds on.
         if not (epic_facts.get("delivery_log") or {}).get("present", False):
             attention.append("no epic delivery-log entries yet — no story has merged")
-    if story_facts is not None:
-        if story_facts.get("ambient_contains_base_tip") and story_facts.get("ambient_branch"):
+    probe = probe or {}
+    base_ref = probe.get("base_ref")
+    if grounding_basis == "own_branch":
+        attention.append(
+            "grounding on this issue's own branch '%s' — it already contains '%s' tip, so the plan "
+            "footer records '%s', not '%s'" % (plan_ref, base_ref, plan_ref, base_ref)
+        )
+        if closed_pr is not None:
             attention.append(
-                "grounding on this story's own branch '%s' — it already contains '%s' tip, so the "
-                "plan footer records the story branch, not '%s'"
-                % (
-                    story_facts["ambient_branch"],
-                    story_facts.get("own_branch_base_ref"),
-                    story_facts.get("own_branch_base_ref"),
-                )
+                "grounding on '%s', the head of closed PR #%s — its commits are visible to this plan"
+                % (plan_ref, closed_pr.get("number"))
             )
+    elif grounding_basis == "identical":
+        attention.append(
+            "grounding from the checkout of '%s', identical to '%s' tip — the plan footer records '%s'"
+            % (probe.get("ambient_branch"), plan_ref, plan_ref)
+        )
+    elif grounding_basis == "accepted":
+        attention.append(
+            "grounding on '%s' by the operator's answer — its %s commit(s) beyond '%s' tip are "
+            "visible to this plan and may not ship with this issue"
+            % (plan_ref, probe.get("ahead_commits"), base_ref)
+        )
+    at_main = grounding_basis in ("plan_ref", "identical")
+    if story_facts is not None:
         if story_facts.get("parent_epic") is None:
-            attention.append("no parent epic found referencing this story — grounding at main")
+            attention.append(
+                "no parent epic found referencing this story"
+                + (" — grounding at main" if at_main else "")
+            )
         elif not story_facts.get("parent_epic_open"):
-            attention.append("parent epic is closed — grounding at main, not the epic branch")
+            attention.append(
+                "parent epic is closed"
+                + (" — grounding at main, not the epic branch" if at_main else "")
+            )
     return attention
 
 
@@ -1437,7 +1588,9 @@ def _dod_attention(dod_facts):
     ]
 
 
-def build_facts(issue_number, repo, root=".", scratch_dir=None, refresh=False, cwd=None):
+def build_facts(
+    issue_number, repo, root=".", scratch_dir=None, refresh=False, cwd=None, ground_ambient=False
+):
     """Assemble the planner's complete facts block and return the envelope dict WITHOUT printing
     it (the testable core, mirroring `prep_resolver.build_facts` / `prep_evaluator.build_facts`).
     Returns `None` after a `needs_decision` envelope has already been emitted on stdout.
@@ -1834,46 +1987,94 @@ def build_facts(issue_number, repo, root=".", scratch_dir=None, refresh=False, c
 
     # 5) plan_ref selection (docs/specs/planner.md Step 4.5's FULL table — see module docstring).
     #    Two passes over the SAME pure table, never a second copy of the row logic: pass 1 answers
-    #    "which ref would this have grounded on", which is exactly the ref the row-4 containment
-    #    probe has to measure against; pass 2 re-runs it with the verified branch. The table stays
-    #    the single source of the row set, `_select_plan_ref` stays pure, and the one impure step
-    #    (reading the ambient checkout, probing containment) sits here, in the open.
+    #    "which ref would this have grounded on", which is exactly the ref the ambient probe has to
+    #    measure against; pass 2 re-runs it with what the probe verified. The table stays the single
+    #    source of the row set, `_select_plan_ref` stays pure, and the one impure step (reading the
+    #    ambient checkout, probing containment) sits here, in the open. The probe runs on
+    #    `--refresh` too: a row that applied on the full run but not on refresh would flip
+    #    plan_ref mid-session and make the rendered footer lie.
     base_ref, base_row = _select_plan_ref(
         issue_type, epic_branch_name, open_pr_headref, root_branch,
         parent_epic_open=parent_epic_open,
     )
-    own_branch_at_base_tip, probe_facts, probe_notices = _probe_own_branch(
+    probe, probe_notices = _probe_ambient(
         base_ref, base_row, epic_branch_facts, root, issue_number, cwd
     )
     _merge_notices(notices, probe_notices)
+    kind = probe["kind"]
     if story_facts is not None:
-        story_facts.update(probe_facts)
+        if base_row in ROWS_ELIGIBLE_FOR_OWN_BRANCH:
+            story_facts["ambient_branch"] = probe["ambient_branch"]
+        if probe["own"]:
+            story_facts["ambient_contains_base_tip"] = probe["contains"]
+        if kind == "own":
+            story_facts["own_branch_base_ref"] = base_ref
+    accepted = kind == "foreign_ahead" and ground_ambient
     plan_ref, plan_ref_row = _select_plan_ref(
         issue_type, epic_branch_name, open_pr_headref, root_branch,
         parent_epic_open=parent_epic_open,
-        own_branch_at_base_tip=own_branch_at_base_tip,
+        own_branch_at_base_tip=probe["ambient_branch"] if kind == "own" else None,
+        accepted_ambient=probe["ambient_branch"] if accepted else None,
     )
+    if kind == "foreign_ahead" and not accepted:
+        # Full run AND refresh: a refresh that silently fell back to the base ref here would flip
+        # an accepted session's plan_ref, so a missing flag re-asks instead.
+        _forward_decision(
+            _foreign_checkout_decision(probe, plan_ref, root, root_branch, cwd), notices=notices
+        )
+        return None
+    # `facts.grounding.basis` — why the asserted checkout is an honest vantage for `plan_ref`, a
+    # closed set. `plan_ref`: the checkout IS `plan_ref` (or the project root on the default
+    # branch). `own_branch`: the issue's own branch, containing the base ref's tip (rows
+    # `story-own-branch` / `own-branch`). `identical`: another branch whose HEAD is exactly
+    # `plan_ref`'s tip — the same code, so `plan_ref` and the footer stand. `accepted`: another
+    # branch carrying commits beyond the tip, grounded on only because the operator answered the
+    # card with `--ground-ambient`.
+    basis = {"own": "own_branch", "identical": "identical"}.get(
+        kind, "accepted" if accepted else "plan_ref"
+    )
+    closed_pr = None
+    # Not on `--refresh`: the line it feeds cannot change mid-session, and a refresh must stay cheap.
+    if basis == "own_branch" and not refresh:
+        closed_pr, closed_notices = _closed_pr_for_branch(
+            repo, issue_number, probe["ambient_branch"], cwd
+        )
+        _merge_notices(notices, closed_notices)
 
     # 6) Ambient grounding (v3): the planner grounds on the CHECKOUT THE SESSION WAS STARTED IN,
-    #    asserted against the selected plan_ref — never a script-created read worktree. For a
-    #    default-branch plan_ref (the fresh-standard default), any up-to-date checkout of it —
-    #    including the project root — passes (`allow_main_root`; plan-before-open is the canonical
-    #    posture). For a non-main plan_ref (the parent-epic branch for a story, an open plan-PR's
-    #    head on the revise row, the epic branch for epic-level planning) the operator must sit
-    #    inside the matching worktree, or the assertion is a WORKSPACE_MISMATCH decision. A
-    #    checkout strictly behind origin/<plan_ref> is WORKSPACE_MISMATCH(stale_checkout) — a
-    #    stale footer SHA would be an immediate `plan: stale` downstream. No hooks (grounding is
-    #    read-only; unchanged from the read-workspace era). Skipped on --refresh, mirroring
-    #    prep_resolver.py's / prep_evaluator.py's identical contract. `root` reports the main
-    #    checkout's path and the derived default branch — uniform across the three stage preps;
-    #    the grounding SHA a plan footer renders is `grounding.sha`, this checkout's own HEAD.
+    #    asserted by CONTENT against the selected plan_ref — never a script-created read worktree.
+    #    - basis `plan_ref`: the checkout must be plan_ref itself. For a default-branch plan_ref,
+    #      any up-to-date checkout of it — including the project root — passes (`allow_main_root`;
+    #      plan-before-open is the canonical posture). Otherwise branch_mismatch / at_project_root,
+    #      exactly as before.
+    #    - `own_branch` / `accepted`: plan_ref IS the ambient branch; staleness is measured against
+    #      that branch's own remote, the ref the footer names.
+    #    - `identical`: plan_ref stays the base; staleness is measured against the base tip the probe
+    #      already compared — never `origin/<ambient-branch>`, which is the wrong reference here.
+    #    A checkout strictly behind its reference is WORKSPACE_MISMATCH(stale_checkout) — a stale
+    #    footer SHA would be an immediate `plan: stale` downstream. No hooks (grounding is
+    #    read-only). Skipped on --refresh, mirroring prep_resolver.py's / prep_evaluator.py's
+    #    identical contract. `root` reports the main checkout's path and the derived default branch
+    #    — uniform across the three stage preps; the grounding SHA a plan footer renders is
+    #    `grounding.sha`, this checkout's own HEAD.
     if not refresh:
+        if basis == "plan_ref":
+            attach_kwargs = {
+                "allow_main_root": plan_ref == root_branch,
+                "check_remote_staleness": True,
+            }
+            expected_branch = plan_ref
+        elif basis == "identical":
+            attach_kwargs = {"allow_main_root": True, "expected_remote_sha": probe["base_tip_sha"]}
+            expected_branch = probe["ambient_branch"]
+        else:
+            attach_kwargs = {"allow_main_root": True, "check_remote_staleness": True}
+            expected_branch = probe["ambient_branch"]
         grounding_envelope, gw_notices, gw_decision = workspace._build_attach(
             cwd if cwd is not None else ".",
-            plan_ref,
+            expected_branch,
             run_hooks=False,
-            allow_main_root=(plan_ref == root_branch),
-            check_remote_staleness=True,
+            **attach_kwargs
         )
         if _forward_decision(gw_decision, notices=notices):
             return None
@@ -1957,6 +2158,10 @@ def build_facts(issue_number, repo, root=".", scratch_dir=None, refresh=False, c
             story_facts,
             grounding_docs=None if refresh else grounding_docs,
             catalogue_absent=DOC_CATALOGUE_ABSENT in notices,
+            grounding_basis=basis,
+            probe=probe,
+            plan_ref=plan_ref,
+            closed_pr=closed_pr,
         ),
         "notices": notices,
     }
@@ -1984,6 +2189,12 @@ def build_facts(issue_number, repo, root=".", scratch_dir=None, refresh=False, c
             "branch": grounding_envelope.get("branch"),
             "sha": grounding_envelope.get("sha"),
             "dirty": grounding_envelope.get("dirty"),
+            # Why this checkout is an honest vantage for `ref` (see `basis` above), and the base the
+            # content check measured it against — `base_tip_sha` is `None` when no check ran
+            # (basis `plan_ref`: the checkout is the ref itself).
+            "basis": basis,
+            "base_ref": base_ref,
+            "base_tip_sha": probe["base_tip_sha"] if basis != "plan_ref" else None,
         }
         if grounding_envelope.get("dirty"):
             facts["attention"].append(
@@ -2042,6 +2253,14 @@ def main(argv):
         "identical --cwd knob",
     )
     parser.add_argument(
+        "--ground-ambient",
+        action="store_true",
+        help="the operator's answer to the WORKSPACE_MISMATCH card for a checkout that contains "
+        "plan_ref's tip plus commits of another branch: ground on that checkout (row "
+        "ambient-accepted). Honoured only when the checkout contains the tip; carry it on every "
+        "later prep run this session, --refresh included",
+    )
+    parser.add_argument(
         "--oq-query",
         action="append",
         default=None,
@@ -2068,6 +2287,7 @@ def main(argv):
         scratch_dir=args.scratch_dir,
         refresh=args.refresh,
         cwd=args.cwd,
+        ground_ambient=args.ground_ambient,
     )
     if facts is None:
         return EXIT_OK

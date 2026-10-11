@@ -301,11 +301,14 @@ state, merged-PR-aware, refused from inside the target). Resolver/evaluator sess
 **inside** it; their preps observe + assert the ambient checkout (`workspace.py attach` — wrong
 branch / project root / detached / stale are `WORKSPACE_MISMATCH` decisions) and re-run the
 `<!-- worktree-setup -->` hooks on every entry, discovered in that worktree's own working tree. The
-planner grounds on its asserted ambient checkout (`facts.grounding`; a default-branch plan_ref
-passes from any current checkout of it including the project root — plan-before-open, and a story's
-own branch is its own plan_ref when that checkout already CONTAINS the tip of the ref it would
-otherwise have grounded on — row `story-own-branch`, the containment probe standing in for the
-branch-name equality check that refused a bit-identical checkout). A `read` workspace
+planner grounds on its asserted ambient checkout (`facts.grounding`), asserted by **content**, never
+branch name (`grounding.basis`): `plan_ref` itself (a default-branch plan_ref passes from any current
+checkout of it including the project root — plan-before-open); the issue's own branch when it already
+CONTAINS the tip of the ref it would otherwise have grounded on (rows `story-own-branch` /
+`own-branch` — the containment probe standing in for the name check that refused a bit-identical
+checkout, and refused every standalone issue's own worktree until 4.33.0); any branch exactly at that
+tip (`identical`); and another branch carrying commits beyond it only on the operator's
+`--ground-ambient` card answer (row `ambient-accepted`). Behind or diverged still refuses. A `read` workspace
 is `.worktrees/ro-<ref-slug>` (detached HEAD at `origin/<ref>`, reset on every ensure, `gc`'d by
 age — and only `ro-*` is ever gc'd): script-internal plumbing for the resolver's audit view.
 

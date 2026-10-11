@@ -256,7 +256,8 @@ recomputes the rollup from issue state) and where its next-story routing reads f
 `read_workspaces` is present only for a skill that grounds on a second ref (the resolver's audit
 read — script-internal `ro-*` plumbing); a skill with no second view (the evaluator above) omits
 the key entirely; the planner reports its asserted checkout as the top-level `grounding` fact
-(`{path, ref, branch, sha, dirty}`) instead.
+(`{path, ref, branch, sha, dirty, basis, base_ref, base_tip_sha}` — `basis` says why the checkout
+serves: `plan_ref` / `own_branch` / `identical` / `accepted`, §6) instead.
 
 Rules: every fact is **re-derivable** — prep supports `--refresh` and is re-run at the points
 where currency matters (e.g. pre-merge PR state); `--refresh` re-derives only the volatile facts
@@ -314,14 +315,26 @@ workspace is opened by the operator (`/github-pipeline:workspace-open <issue>` �
 **observe and assert** the ambient checkout (`workspace.py attach`: expected branch, not the
 project root, not detached, not stale against the expected remote state — every mismatch a
 `WORKSPACE_MISMATCH` decision) and re-run the setup hooks on every session entry; they never
-create work worktrees. The planner grounds the same way on its asserted ambient checkout
-(`facts.grounding`); a default-branch plan_ref accepts any current checkout of it including the
-project root — fresh planning happens *before* workspace-open (plan-before-open). A story's own
-branch is likewise its own plan_ref (the `story-own-branch` row) when that checkout already
-**contains** the tip of the ref it would otherwise have grounded on — a strict superset, so it sees
-more truth, not less — rather than being refused for a ref it is frequently bit-identical to. The
-containment probe, not the branch name, is what enforces "a later story never grounds on code a
-predecessor has since moved": behind or diverged still refuses.
+create work worktrees. The planner grounds on its asserted ambient checkout too
+(`facts.grounding`), but asserts it by **content**, not branch name — the resolver and evaluator
+keep the name check because their branch is what they push or judge; the planner only reads. Four
+outcomes, whatever row chose `plan_ref` (`facts.grounding.basis`):
+
+- **`plan_ref` itself** — a default-branch plan_ref accepts any current checkout of it including
+  the project root: fresh planning happens *before* workspace-open (plan-before-open).
+- **The issue's own branch, containing the tip of the ref it would otherwise have grounded on** —
+  that branch becomes `plan_ref` (rows `story-own-branch` / `own-branch`, for a story or a
+  standalone issue alike). A strict superset sees more truth, not less, where the name check
+  refused a checkout it was frequently bit-identical to.
+- **Any branch sitting exactly at that tip** (`identical`) — the same code, so `plan_ref` and the
+  footer stand.
+- **Another branch carrying commits beyond the tip** — code that may never ship with this issue,
+  so it is a `WORKSPACE_MISMATCH` card; only the operator's `--ground-ambient` answer admits it
+  (row `ambient-accepted`, the footer naming that branch). A refresh without the flag re-asks
+  rather than silently flipping `plan_ref`.
+
+The containment probe, not the branch name, is what enforces "a later story never grounds on code
+a predecessor has since moved": behind or diverged still refuses, and the probe never fetches.
 
 **The default branch is derived, never assumed** — `workspace.default_branch` reads `git
 symbolic-ref refs/remotes/origin/HEAD`, falling back to `gh repo view --json defaultBranchRef`, and

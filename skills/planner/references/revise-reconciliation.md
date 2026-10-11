@@ -181,9 +181,9 @@ happens **first**, `plan_ref` is **re-selected** off the row table against a fre
 
 3. **Stop and hand off** (`revise.md` step 3's rule verbatim): with the PR closed, `plan_ref`
    re-selects deterministically off the row table (`main` for a standalone issue, the parent
-   epic's branch or the story's own branch for a story — never hardcoded). A story whose own
-   worktree this is re-grounds in place (row `story-own-branch`); otherwise this session's ambient
-   checkout no longer matches and a prep re-run here would refuse with `WORKSPACE_MISMATCH`. The
+   epic's branch for a story, or the issue's own branch for either — never hardcoded). An issue whose
+   own worktree this is re-grounds in place (row `own-branch` / `story-own-branch`) unless it is behind
+   the base tip, where a prep re-run here would refuse with `WORKSPACE_MISMATCH`. The
    handoff names the target checkout on its `Workspace:` line and carries the captured
    predecessor facts.
 
