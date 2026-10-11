@@ -256,7 +256,8 @@ recomputes the rollup from issue state) and where its next-story routing reads f
 `read_workspaces` is present only for a skill that grounds on a second ref (the resolver's audit
 read — script-internal `ro-*` plumbing); a skill with no second view (the evaluator above) omits
 the key entirely; the planner reports its asserted checkout as the top-level `grounding` fact
-(`{path, ref, branch, sha, dirty}`) instead.
+(`{path, ref, branch, sha, dirty, basis, base_ref, base_tip_sha}` — `basis` says why the checkout
+serves: `plan_ref` / `own_branch` / `identical` / `accepted`, §6) instead.
 
 Rules: every fact is **re-derivable** — prep supports `--refresh` and is re-run at the points
 where currency matters (e.g. pre-merge PR state); `--refresh` re-derives only the volatile facts

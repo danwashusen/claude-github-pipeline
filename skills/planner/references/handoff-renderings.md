@@ -5,7 +5,9 @@ where that session must start — `(none yet — run /github-pipeline:workspace-
 when the operator hasn't opened the issue's worktree (the usual plan-before-open case), or the
 existing worktree's path when one is already open (e.g. the resume-implementation shape).
 Planner-bound and terminal shapes omit the line (a `main`-ref planner run accepts any current checkout
-containing `main`'s tip).
+of `main`, or the issue's own branch containing its tip). Name the issue's **own** worktree: take
+`facts.grounding.path` only when `grounding.basis` is `own_branch` — on `identical` / `accepted` this
+session sat in another issue's checkout, which the resolver's prep would refuse.
 
 Every clean run of the planner ends with a single `## Handoff` block. The schema, omission rules, and
 closed-set state-marker vocabulary are owned by [`../../_shared/handoff-format.md`](../../_shared/handoff-format.md);

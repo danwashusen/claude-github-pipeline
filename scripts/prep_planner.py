@@ -1159,14 +1159,6 @@ ROWS_ELIGIBLE_FOR_OWN_BRANCH = frozenset(
     )
 )
 
-# `facts.grounding.basis` — why the asserted checkout is an honest vantage for `plan_ref`, a closed
-# set. `plan_ref`: the checkout IS `plan_ref` (or the project root on the default branch).
-# `own_branch`: the issue's own branch, containing the base ref's tip (rows `story-own-branch` /
-# `own-branch`). `identical`: another branch whose HEAD is exactly `plan_ref`'s tip — the same code,
-# so `plan_ref` and the footer stand. `accepted`: another branch carrying commits beyond the tip,
-# grounded on only because the operator answered the card with `--ground-ambient`.
-GROUNDING_BASES = ("plan_ref", "own_branch", "identical", "accepted")
-
 
 def _select_plan_ref(
     issue_type,
@@ -1257,7 +1249,6 @@ def _probe_ambient(base_ref, base_row, epic_branch_facts, root, issue_number, cw
     probe = {
         "kind": None,
         "ambient_branch": None,
-        "path": None,
         "base_ref": base_ref,
         "base_tip_sha": None,
         "contains": None,
@@ -1283,8 +1274,6 @@ def _probe_ambient(base_ref, base_row, epic_branch_facts, root, issue_number, cw
     if not base_tip_sha:
         return probe, []
     probe["base_tip_sha"] = base_tip_sha
-    top = process.run(["git", "rev-parse", "--show-toplevel"], cwd=str(probe_cwd))
-    probe["path"] = top.stdout.strip() if top.returncode == 0 else str(probe_cwd)
     contains = workspace.contains_commit(probe_cwd, base_tip_sha)
     probe["contains"] = contains
     if contains is not True:
@@ -1321,13 +1310,15 @@ def _closed_pr_for_branch(repo, issue_number, branch, cwd):
     return None, []
 
 
-def _foreign_checkout_decision(probe, plan_ref, root, root_branch):
+def _foreign_checkout_decision(probe, plan_ref, root, root_branch, cwd):
     """The card for a checkout carrying commits beyond ``plan_ref``'s tip that is not this issue's
     own branch. Built here rather than by :func:`workspace._build_attach` because only prep knows
     the containment facts and the ``--ground-ambient`` remedy; the reason stays ``branch_mismatch``,
     so the closed attach-reason set is unchanged."""
     branch = probe["ambient_branch"]
     ahead = probe["ahead_commits"]
+    probe_cwd = str(Path(cwd if cwd is not None else ".").resolve())
+    top = process.run(["git", "rev-parse", "--show-toplevel"], cwd=probe_cwd)
     elsewhere = (
         "start this session in a current %s checkout (the project root serves) instead" % root_branch
         if plan_ref == root_branch
@@ -1338,7 +1329,7 @@ def _foreign_checkout_decision(probe, plan_ref, root, root_branch):
         summary="session checkout is on branch %r, which contains %r's tip plus %s commit(s) that "
         "%r does not have" % (branch, plan_ref, "more" if ahead is None else ahead, plan_ref),
         context={
-            "path": probe["path"],
+            "path": top.stdout.strip() if top.returncode == 0 else probe_cwd,
             "actual_branch": branch,
             "expected_branch": plan_ref,
             "plan_ref": plan_ref,
@@ -2029,14 +2020,22 @@ def build_facts(
         # Full run AND refresh: a refresh that silently fell back to the base ref here would flip
         # an accepted session's plan_ref, so a missing flag re-asks instead.
         _forward_decision(
-            _foreign_checkout_decision(probe, plan_ref, root, root_branch), notices=notices
+            _foreign_checkout_decision(probe, plan_ref, root, root_branch, cwd), notices=notices
         )
         return None
+    # `facts.grounding.basis` — why the asserted checkout is an honest vantage for `plan_ref`, a
+    # closed set. `plan_ref`: the checkout IS `plan_ref` (or the project root on the default
+    # branch). `own_branch`: the issue's own branch, containing the base ref's tip (rows
+    # `story-own-branch` / `own-branch`). `identical`: another branch whose HEAD is exactly
+    # `plan_ref`'s tip — the same code, so `plan_ref` and the footer stand. `accepted`: another
+    # branch carrying commits beyond the tip, grounded on only because the operator answered the
+    # card with `--ground-ambient`.
     basis = {"own": "own_branch", "identical": "identical"}.get(
         kind, "accepted" if accepted else "plan_ref"
     )
     closed_pr = None
-    if basis == "own_branch":
+    # Not on `--refresh`: the line it feeds cannot change mid-session, and a refresh must stay cheap.
+    if basis == "own_branch" and not refresh:
         closed_pr, closed_notices = _closed_pr_for_branch(
             repo, issue_number, probe["ambient_branch"], cwd
         )
@@ -2190,7 +2189,7 @@ def build_facts(
             "branch": grounding_envelope.get("branch"),
             "sha": grounding_envelope.get("sha"),
             "dirty": grounding_envelope.get("dirty"),
-            # Why this checkout is an honest vantage for `ref` (GROUNDING_BASES), and the base the
+            # Why this checkout is an honest vantage for `ref` (see `basis` above), and the base the
             # content check measured it against — `base_tip_sha` is `None` when no check ran
             # (basis `plan_ref`: the checkout is the ref itself).
             "basis": basis,

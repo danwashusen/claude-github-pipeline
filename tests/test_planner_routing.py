@@ -179,6 +179,8 @@ class RouterRoutingTableTests(unittest.TestCase):
         self.assertIn("--ground-ambient", self.router_text)
         self.assertRegex(self.router_text, r"carry that flag on every later prep run this session, `--refresh` included")
         self.assertIn("never a reason to ground on the checkout yourself", self.router_text)
+        # The run that answers the card must be a FULL prep: --refresh skips grounding entirely.
+        self.assertIn("re-run the **full** prep with `--ground-ambient`", self.router_text)
         prep_source = Path(prep_planner.__file__).read_text(encoding="utf-8")
         self.assertIn('"--ground-ambient"', prep_source, "prep must define the flag the router names")
 
