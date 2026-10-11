@@ -1029,19 +1029,119 @@ class GroundingMismatchTests(PrepPlannerSandboxTestCase):
         self.assertEqual(envelope["status"], "ok")
         self.assertEqual(envelope["plan_ref"], "main")
 
-    def test_main_plan_ref_from_a_non_main_checkout_is_a_mismatch(self):
+    def _advance(self, branch):
+        """Push one commit onto `origin/<branch>` from its worktree, so that tip is in the shared
+        object DB but no other checkout contains it."""
+        wt = self._mk_ambient(branch)
+        self._commit_in(wt, "advanced.txt", "advance %s" % branch)
+        _git(["push", "origin", branch], wt)
+
+    def test_another_branch_at_the_identical_main_sha_passes(self):
+        # Content, not names: a just-opened worktree for another issue holds exactly main's tip,
+        # so grounding there reads the same code and the footer (`main@<sha>`) stays true.
+        envelope = self._envelope(
+            fixture_case="prep_planner_row_default", ambient="999-unrelated-work"
+        )
+        self.assertEqual(envelope["status"], "ok")
+        self.assertEqual(envelope["plan_ref"], "main")
+        self.assertEqual(envelope["vector"]["plan_ref_row"], prep_planner.PLAN_REF_ROW_DEFAULT)
+        self.assertEqual(envelope["grounding"]["basis"], "identical")
+        self.assertEqual(envelope["grounding"]["ref"], "main")
+        self.assertEqual(envelope["grounding"]["branch"], "999-unrelated-work")
+        self.assertTrue(
+            any("identical to 'main' tip" in item for item in envelope["attention"]),
+            envelope["attention"],
+        )
+
+    def test_another_branch_ahead_of_main_is_a_card_offering_ground_ambient(self):
+        # Another issue's commits on top of main: code that may never ship with THIS issue, so the
+        # operator decides — the card says how many commits and how to accept them.
+        wt = self._mk_ambient("999-unrelated-work")
+        self._commit_in(wt, "other.txt", "someone else's work")
         envelope = self._envelope(
             fixture_case="prep_planner_row_default", ambient="999-unrelated-work"
         )
         self._mismatch(envelope, "branch_mismatch")
-        self.assertEqual(envelope["decision"]["context"]["expected_branch"], "main")
+        context = envelope["decision"]["context"]
+        self.assertEqual(context["expected_branch"], "main")
+        self.assertEqual(context["actual_branch"], "999-unrelated-work")
+        self.assertEqual(context["ahead_commits"], 1)
+        self.assertEqual(len(context["base_tip_sha"]), 40)
+        self.assertIn("--ground-ambient", envelope["decision"]["options"][0])
+
+    def test_ground_ambient_accepts_a_checkout_ahead_of_main(self):
+        wt = self._mk_ambient("999-unrelated-work")
+        head = self._commit_in(wt, "other.txt", "someone else's work")
+        envelope = self._envelope(
+            fixture_case="prep_planner_row_default", ambient="999-unrelated-work",
+            extra_args=["--ground-ambient"],
+        )
+        self.assertEqual(envelope["status"], "ok")
+        self.assertEqual(
+            envelope["vector"]["plan_ref_row"], prep_planner.PLAN_REF_ROW_AMBIENT_ACCEPTED
+        )
+        self.assertEqual(envelope["plan_ref"], "999-unrelated-work")
+        self.assertEqual(envelope["grounding"]["basis"], "accepted")
+        self.assertEqual(envelope["grounding"]["base_ref"], "main")
+        self.assertEqual(envelope["grounding"]["sha"], head)
+        self.assertTrue(
+            any("operator's answer" in item for item in envelope["attention"]), envelope["attention"]
+        )
+
+    def test_ground_ambient_never_admits_a_checkout_behind_main(self):
+        # The flag answers "extra commits are fine", never "stale code is fine".
+        self._mk_ambient("999-unrelated-work")
+        other = gitsandbox.mk_clone(self.origin)
+        self.addCleanup(other.cleanup)
+        _write(Path(other.path) / "moved.txt", "origin moved\n")
+        _git(["add", "moved.txt"], other.path)
+        _git(["commit", "-m", "origin-side commit"], other.path)
+        _git(["push", "origin", "HEAD:main"], other.path)
+        envelope = self._envelope(
+            fixture_case="prep_planner_row_default", ambient="999-unrelated-work",
+            extra_args=["--ground-ambient"],
+        )
+        self._mismatch(envelope, "branch_mismatch")
+        self.assertNotIn("ahead_commits", envelope["decision"]["context"])
+
+    def test_refresh_keeps_an_accepted_plan_ref_and_re_asks_without_the_flag(self):
+        # A refresh that silently fell back to `main` would flip plan_ref mid-session — the footer
+        # lie the probe-on-refresh invariant exists to prevent. With the flag it holds; without it
+        # the card comes back rather than a quiet fallback.
+        wt = self._mk_ambient("999-unrelated-work")
+        self._commit_in(wt, "other.txt", "someone else's work")
+        held = self._envelope(
+            fixture_case="prep_planner_row_default", ambient="999-unrelated-work",
+            extra_args=["--refresh", "--ground-ambient"],
+        )
+        self.assertEqual(held["plan_ref"], "999-unrelated-work")
+        self.assertEqual(
+            held["vector"]["plan_ref_row"], prep_planner.PLAN_REF_ROW_AMBIENT_ACCEPTED
+        )
+        dropped = self._envelope(
+            fixture_case="prep_planner_row_default", ambient="999-unrelated-work",
+            extra_args=["--refresh"],
+        )
+        self._mismatch(dropped, "branch_mismatch")
+
+    def test_identical_root_checkout_passes_for_a_freshly_bootstrapped_epic(self):
+        # The epic branch was just cut from main and carries nothing yet: the project root holds
+        # the same code, so it is an honest vantage for `epic/<N>-<slug>@<sha>`.
+        self._push_branch("epic/100-sandbox-fixture")
+        envelope = self._envelope(issue="202", fixture_case="prep_planner_row_story_under_epic")
+        self.assertEqual(envelope["status"], "ok")
+        self.assertEqual(envelope["plan_ref"], "epic/100-sandbox-fixture")
+        self.assertEqual(envelope["grounding"]["basis"], "identical")
+        self.assertEqual(envelope["grounding"]["branch"], "main")
 
     def test_non_main_plan_ref_from_the_project_root_is_a_mismatch(self):
         # A story under an open epic grounds on the epic branch — sitting at the root's main
         # checkout is the wrong vantage (a stale footer SHA / wrong-tree read otherwise). The
         # at-root check fires first, and its card carries the expected branch the operator
-        # should open.
+        # should open. The epic carries a commit `main` lacks — at the identical sha the root
+        # checkout holds the same code and passes (see the `identical` test below).
         self._push_branch("epic/100-sandbox-fixture")
+        self._advance("epic/100-sandbox-fixture")
         envelope = self._envelope(issue="202", fixture_case="prep_planner_row_story_under_epic")
         self._mismatch(envelope, "at_project_root")
         self.assertEqual(
@@ -1216,7 +1316,7 @@ class StoryOwnBranchPlanRefTests(PrepPlannerSandboxTestCase):
         self.assertEqual(envelope["decision"]["context"]["expected_branch"], self.EPIC_BRANCH)
         # The notice is the ONLY machine-readable channel that survives a needs_decision exit —
         # the mismatch card is built generically inside workspace.py and forwarded verbatim.
-        self.assertIn(prep_planner.STORY_BRANCH_BEHIND_BASE_TIP, envelope["notices"])
+        self.assertIn(prep_planner.OWN_BRANCH_BEHIND_BASE_TIP, envelope["notices"])
         self.assertNotIn(prep_planner.BASE_TIP_CONTAINMENT_UNAVAILABLE, envelope["notices"])
 
     def test_unfetched_epic_tip_falls_through_with_the_unanswerable_notice(self):
@@ -1233,17 +1333,19 @@ class StoryOwnBranchPlanRefTests(PrepPlannerSandboxTestCase):
         self.assertEqual(envelope["status"], "needs_decision")
         self.assertEqual(envelope["decision"]["context"]["reason"], "branch_mismatch")
         self.assertIn(prep_planner.BASE_TIP_CONTAINMENT_UNAVAILABLE, envelope["notices"])
-        self.assertNotIn(prep_planner.STORY_BRANCH_BEHIND_BASE_TIP, envelope["notices"])
+        self.assertNotIn(prep_planner.OWN_BRANCH_BEHIND_BASE_TIP, envelope["notices"])
 
     # --- the probe must not fire where it has no business firing -------------------------
 
     def test_project_root_never_probes_and_still_refuses(self):
         # The companion to test_non_main_plan_ref_from_the_project_root_is_a_mismatch: `main` is
-        # not this issue's branch, so the probe never runs and neither notice can appear.
+        # not this issue's branch, so neither own-branch notice can appear. The epic branch is
+        # advanced first: at the identical sha the root would pass (`identical`, content-equal).
         self._push_branch(self.EPIC_BRANCH)
+        self._advance_epic_branch()
         envelope = self._envelope(issue="202", fixture_case="prep_planner_row_story_under_epic")
         self.assertEqual(envelope["decision"]["context"]["reason"], "at_project_root")
-        self.assertNotIn(prep_planner.STORY_BRANCH_BEHIND_BASE_TIP, envelope["notices"])
+        self.assertNotIn(prep_planner.OWN_BRANCH_BEHIND_BASE_TIP, envelope["notices"])
         self.assertNotIn(prep_planner.BASE_TIP_CONTAINMENT_UNAVAILABLE, envelope["notices"])
 
     def test_sitting_in_the_epic_worktree_is_unchanged(self):
@@ -1277,6 +1379,98 @@ class StoryOwnBranchPlanRefTests(PrepPlannerSandboxTestCase):
         )
         self.assertEqual(refreshed["plan_ref"], story)
         self.assertNotIn("grounding", refreshed)
+
+
+class OwnBranchDefaultRowTests(PrepPlannerSandboxTestCase):
+    """Rows `own-branch` (standalone issue) and `story-own-branch` over `story-no-open-parent-epic`:
+    the 4.33.0 widening. Before it, a standalone issue's own worktree was refused for a `main`
+    plan_ref it already contained — the attach gate's branch-name check standing in for the content
+    check it never performed (seen live on #1275, "main plus 13 docs commits")."""
+
+    OWN = "200-fix-the-gadget"
+
+    def test_own_branch_with_unpushed_work_grounds_on_itself(self):
+        self._push_branch(self.OWN)
+        wt = self._mk_ambient(self.OWN)
+        head = self._commit_in(wt, "gadget.txt", "fixing the gadget")
+        envelope = self._envelope(fixture_case="prep_planner_row_default_own_branch", ambient=self.OWN)
+        self.assertEqual(envelope["status"], "ok")
+        self.assertEqual(envelope["vector"]["plan_ref_row"], prep_planner.PLAN_REF_ROW_OWN_BRANCH)
+        self.assertEqual(envelope["plan_ref"], self.OWN)
+        self.assertEqual(envelope["grounding"]["basis"], "own_branch")
+        self.assertEqual(envelope["grounding"]["base_ref"], "main")
+        self.assertEqual(envelope["grounding"]["sha"], head)
+        self.assertEqual(envelope["notices"], [])
+        self.assertTrue(
+            any("this issue's own branch" in item for item in envelope["attention"]),
+            envelope["attention"],
+        )
+        self.assertNotIn("story", envelope)
+        self.assertEqual(envelope["suggested_playbook"], "single.md")
+
+    def test_own_branch_behind_main_refuses_with_the_rebase_notice(self):
+        self._push_branch(self.OWN)
+        self._mk_ambient(self.OWN)
+        # Move main forward from a worktree of the sandbox clone, so the new tip is in the shared
+        # object DB: genuinely `behind`, not `unanswerable`.
+        mover = self._mk_ambient("mover")
+        self._commit_in(mover, "main-moved.txt", "main moved on")
+        _git(["push", "origin", "HEAD:main"], mover)
+        envelope = self._envelope(fixture_case="prep_planner_row_default", ambient=self.OWN)
+        self.assertEqual(envelope["status"], "needs_decision")
+        self.assertEqual(envelope["decision"]["context"]["reason"], "branch_mismatch")
+        self.assertEqual(envelope["decision"]["context"]["expected_branch"], "main")
+        self.assertIn(prep_planner.OWN_BRANCH_BEHIND_BASE_TIP, envelope["notices"])
+
+    def test_own_branch_heading_a_closed_pr_re_grounds_in_place_and_says_so(self):
+        # After a Start-fresh the closed PR's branch is still the issue's own: the operator chose
+        # re-grounding in place, so the row stands and an attention line names the PR.
+        self._push_branch(self.OWN)
+        envelope = self._envelope(
+            fixture_case="prep_planner_row_default_closed_pr", ambient=self.OWN
+        )
+        self.assertEqual(envelope["status"], "ok")
+        self.assertEqual(envelope["vector"]["plan_ref_row"], prep_planner.PLAN_REF_ROW_OWN_BRANCH)
+        self.assertTrue(
+            any("closed PR #210" in item for item in envelope["attention"]), envelope["attention"]
+        )
+
+    def test_closed_pr_lookup_failure_is_a_notice_never_a_stop(self):
+        # The canonical default case has no closed-PR entry, so the shim's un-fixtured miss stands
+        # in for any lookup failure.
+        self._push_branch(self.OWN)
+        envelope = self._envelope(fixture_case="prep_planner_row_default", ambient=self.OWN)
+        self.assertEqual(envelope["status"], "ok")
+        self.assertEqual(envelope["vector"]["plan_ref_row"], prep_planner.PLAN_REF_ROW_OWN_BRANCH)
+        self.assertIn(prep_planner.CLOSED_PR_LOOKUP_UNAVAILABLE, envelope["notices"])
+
+    def test_story_with_no_parent_grounds_on_its_own_branch_without_claiming_main(self):
+        # Row 7 was deliberately left out of 4.12.0 because its "grounding at main" attention line
+        # would contradict a firing own-branch row; the widening reconciles the two.
+        self._push_branch("204-orphaned-slice")
+        envelope = self._envelope(
+            issue="204", fixture_case="prep_planner_row_story_no_parent",
+            ambient="204-orphaned-slice",
+        )
+        self.assertEqual(envelope["status"], "ok")
+        self.assertEqual(
+            envelope["vector"]["plan_ref_row"], prep_planner.PLAN_REF_ROW_STORY_OWN_BRANCH
+        )
+        self.assertEqual(envelope["story"]["own_branch_base_ref"], "main")
+        self.assertIn("no parent epic found referencing this story", envelope["attention"])
+        self.assertFalse(
+            any("grounding at main" in item for item in envelope["attention"]),
+            envelope["attention"],
+        )
+
+    def test_story_with_no_parent_from_main_still_says_grounding_at_main(self):
+        envelope = self._envelope(issue="204", fixture_case="prep_planner_row_story_no_parent")
+        self.assertEqual(
+            envelope["vector"]["plan_ref_row"], prep_planner.PLAN_REF_ROW_STORY_NO_PARENT
+        )
+        self.assertIn(
+            "no parent epic found referencing this story — grounding at main", envelope["attention"]
+        )
 
 
 class RefreshModeTests(PrepPlannerSandboxTestCase):
@@ -2031,18 +2225,49 @@ class PureHelperUnitTests(unittest.TestCase):
         with self.assertRaises(TypeError):
             prep_planner._select_plan_ref("story", "epic/1-x", None, "main", True, "42-thing")
 
-    def test_eligible_base_rows_are_the_two_live_epic_story_rows(self):
-        # Rows 7/8 (`main` with no epic above them) are deliberately excluded — widening this set
-        # is the follow-up, and doing it here would contradict row 7's own "grounding at main"
-        # attention line.
+    def test_eligible_base_rows_are_every_row_whose_ref_is_a_base(self):
+        # 4.33.0 widened the set past the two live-epic story rows: a standalone issue's own branch
+        # descends from `main` exactly as a story's descends from its epic branch, so the same
+        # containment argument holds. `open-pr-head` and the epic rows stay out — there `plan_ref`
+        # already IS the issue's own branch, or none exists yet.
         self.assertEqual(
-            prep_planner.STORY_ROWS_ELIGIBLE_FOR_OWN_BRANCH,
+            prep_planner.ROWS_ELIGIBLE_FOR_OWN_BRANCH,
             frozenset(
                 (
                     prep_planner.PLAN_REF_ROW_STORY_PARENT_BRANCH,
                     prep_planner.PLAN_REF_ROW_STORY_PARENT_BOOTSTRAP,
+                    prep_planner.PLAN_REF_ROW_STORY_NO_PARENT,
+                    prep_planner.PLAN_REF_ROW_DEFAULT,
                 )
             ),
+        )
+
+    def test_select_plan_ref_default_arm_own_branch_row(self):
+        # A standalone issue's own branch gets its OWN label — never `story-own-branch`, which
+        # would claim a story where there is none (the D4 row-truthfulness rule).
+        self.assertEqual(
+            prep_planner._select_plan_ref(
+                "standard", None, None, "main", own_branch_at_base_tip="42-thing",
+            ),
+            ("42-thing", prep_planner.PLAN_REF_ROW_OWN_BRANCH),
+        )
+
+    def test_select_plan_ref_story_with_no_parent_keeps_the_story_label(self):
+        self.assertEqual(
+            prep_planner._select_plan_ref(
+                "story", None, None, "main", own_branch_at_base_tip="42-thing",
+            ),
+            ("42-thing", prep_planner.PLAN_REF_ROW_STORY_OWN_BRANCH),
+        )
+
+    def test_select_plan_ref_accepted_ambient_outranks_every_row(self):
+        # The operator's explicit answer about this session's vantage — even an open PR's head
+        # does not override it.
+        self.assertEqual(
+            prep_planner._select_plan_ref(
+                "story", "epic/1-x", "42-thing-pr", "main", accepted_ambient="99-other",
+            ),
+            ("99-other", prep_planner.PLAN_REF_ROW_AMBIENT_ACCEPTED),
         )
 
     def test_parse_stories_section_filed_and_placeholder(self):

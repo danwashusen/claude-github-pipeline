@@ -2,8 +2,9 @@
 
 Route for a fresh **standalone** issue — a bug, feature, incomplete feature, multi-phase issue, or a
 story with no open parent epic (v1's "Everything else"). `facts.plan_ref` is `main` (row
-`no-open-pr-default-branch` or `story-no-open-parent-epic`); the plan lands on `main` via the resolver's
-PR.
+`no-open-pr-default-branch` or `story-no-open-parent-epic`) — or, when this session sits in the issue's own
+worktree and it already contains `main`'s tip, that branch (row `own-branch` / `story-own-branch`); either
+way the plan lands on `main` via the resolver's PR.
 
 **Run the spine first.** Read [`plan-spine.md`](plan-spine.md) and execute it end to end (classify →
 ground → gates → draft → hedge sweep → verify → show → persist). The deltas this route supplies:
@@ -40,7 +41,7 @@ Read [`../references/handoff-renderings.md`](../references/handoff-renderings.md
 `## Plan summary` block per its predicate at `focus: none`, then match the outcome:
 
 - **Single-issue plan posted** (default): `Issue:` line (`plan: ✓ (<url>)`) + `Grounding:` (`read at
-  <plan-ref>@<short-sha> · <docs>` — `origin/main` here) + `**Open questions:**` when the plan carries
+  <plan-ref>@<short-sha> · <docs>` — `origin/main`, or the bare own branch) + `**Open questions:**` when the plan carries
   that section + `Next: /github-pipeline:resolver #<N>`, `Why:`.
 - **Trivial change — no plan** (S1 scale-to-work declined): `Issue:` line `plan: ✗`, no `Grounding:`;
   `Next: /github-pipeline:resolver #<N>`.

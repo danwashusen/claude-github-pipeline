@@ -170,6 +170,18 @@ class RouterRoutingTableTests(unittest.TestCase):
                 expected, table_basenames, "the router table must route to %s" % expected
             )
 
+    def test_workspace_mismatch_rule_is_content_based_and_carries_ground_ambient(self):
+        # 4.33.0: the router states the content rule, names the flag the "plan anyway" answer sets,
+        # and requires carrying it on refresh — prep re-asks rather than silently flipping
+        # plan_ref, so dropping the flag mid-session would re-raise the card. And the live failure
+        # this closes: a session that grounded on its checkout itself after prep refused.
+        self.assertIn("by **content**, never by branch name", self.router_text)
+        self.assertIn("--ground-ambient", self.router_text)
+        self.assertRegex(self.router_text, r"carry that flag on every later prep run this session, `--refresh` included")
+        self.assertIn("never a reason to ground on the checkout yourself", self.router_text)
+        prep_source = Path(prep_planner.__file__).read_text(encoding="utf-8")
+        self.assertIn('"--ground-ambient"', prep_source, "prep must define the flag the router names")
+
     def test_all_four_playbooks_read_the_shared_spine(self):
         # For the planner, author-and-verify-a-plan is shared across every route; each routed playbook
         # reads the one shared spine (architecture.md §5).

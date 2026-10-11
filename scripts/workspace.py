@@ -873,7 +873,10 @@ def _build_attach(
        False (the "operator forgot workspace-open" surface; the planner passes True for a ``main``
        plan_ref, where planning from the project root is the canonical posture).
     2. ``detached_head`` — always a mismatch, ``allow_main_root`` or not.
-    3. ``branch_mismatch`` — ambient branch != ``expected_branch``. With
+    3. ``branch_mismatch`` — ambient branch != ``expected_branch`` (a NAME check, right for the
+       resolver and evaluator, whose branch is what they push or judge; the planner settles its
+       vantage by content first — ``prep_planner._probe_ambient`` — and names the branch it
+       accepted here). With
        ``accept_branch_pattern`` (a regex string), a pattern match on the ambient branch passes
        instead of exact equality — the resolver's `-vN` no-recompute rule: it accepts any ambient
        `^<N>-` branch rather than re-running collision naming against a branch workspace-open

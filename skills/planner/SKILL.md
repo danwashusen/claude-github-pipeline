@@ -24,7 +24,7 @@ It returns one JSON **facts block** (`architecture.md §4`): `target` (number/ti
 `research` (dossier present + staged path), `grounding_docs` (the repo's declared docs, resolved at `plan_ref`
 — `role`/`authority`/`present`/`kind`, a `dir` entry's `members`), `open_questions` +
 `open_question_candidates` (the Bug (a) tracker search), `grounding` (the observed ambient checkout, asserted
-against `plan_ref`; its `sha` the footer records), `epic`/`story` (stories + state; parent epic + plan +
+by content against `plan_ref` — `basis` says why it serves; its `sha` the footer records), `epic`/`story` (stories + state; parent epic + plan +
 delivery log), `revise` (prior-plan SHA vs grounding SHA + any open PR's `## Phase tracker`), `slices` (the
 deliverable sub-issue set, staged bodies, and the plan-versus-live `diff`), `dod` (DoD `present`/`count`,
 `other_checklists` under another heading, and `body_path` — the session's working copy of the body),
@@ -35,10 +35,9 @@ never re-derive the type, mode, `plan_ref`, row, tracker candidates, or sub-issu
 `AskUserQuestion` card (per [`../_shared/asking-the-user.md`](../_shared/asking-the-user.md)), act on
 the answer, and re-run prep (`--refresh` for volatile facts). This is the single universal handler for
 every closed-set code (`AUTH_REQUIRED`, `MARKER_AMBIGUOUS`, `WORKSPACE_MISMATCH`, `AMBIGUOUS`, `TARGET_IS_SLICE` on a slice of a non-epic parent, …).
-`WORKSPACE_MISMATCH`: the checkout isn't `plan_ref`'s vantage — a default-branch `plan_ref` passes from any current checkout of it
-**including the project root** (plan-before-open; only staleness is checked, never uncommitted changes); a non-default one (parent-epic
-branch / plan-PR head / epic branch) needs its worktree, except a story's own branch already **containing** its base ref's tip, which prep
-grounds on directly (row `story-own-branch`); one *behind* that tip still refuses — rebase onto `origin/<base-ref>` rather than moving. The operator fixes it — never you.
+`WORKSPACE_MISMATCH`: prep accepts a checkout by **content**, never by branch name — `plan_ref` itself (a default-branch one from any current checkout **including the project root**: plan-before-open; only staleness is checked, never uncommitted changes), this issue's own branch already **containing** its base ref's tip (rows `story-own-branch` / `own-branch`), or any branch sitting exactly at that tip (`grounding.basis: identical`).
+A checkout *behind* the tip still refuses — rebase onto `origin/<base-ref>` rather than moving. One carrying another branch's commits beyond the tip is a card: on **plan against this checkout anyway**, re-run prep with `--ground-ambient` (row `ambient-accepted`) and carry that flag on every later prep run this session, `--refresh` included — dropping it re-asks.
+A refused prep is a card to render, never a reason to ground on the checkout yourself: no facts block, no plan. Any other answer — the operator fixes it, never you.
 
 **Newly-detected OQ lookup.** When grounding surfaces an open question the issue body does **not**
 already record (so prep's body-driven `open_question_candidates` never searched it), run the tracker

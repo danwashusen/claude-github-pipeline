@@ -104,5 +104,21 @@
       "labels,title"
     ],
     "stdout_file": "parent_classify.json"
+  },
+  {
+    "argv": [
+      "pr",
+      "list",
+      "--repo",
+      "octo/widgets",
+      "--state",
+      "closed",
+      "--search",
+      "203 in:body",
+      "--json",
+      "number,title,author,state,mergedAt,headRefName,headRefOid,url,updatedAt,body,closingIssuesReferences"
+    ],
+    "stdout_file": "closed_prs_empty.json",
+    "exit_code": 0
   }
 ]
