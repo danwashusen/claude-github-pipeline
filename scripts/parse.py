@@ -1452,13 +1452,20 @@ def absent_polish():
 # side — membership in this checklist, never a mention anywhere else in the epic body, is the legacy
 # parent edge).
 #
-# The filed-bullet grammar matches `prep_evaluator`'s: the separator is optional (`—`, `--`, `-`) and
-# the title may be empty, because the checklist is hand-maintained and a ticked `- [x] #151` is still
-# story #151. `#151abc` is not a number (`\b`), so it falls through to a placeholder.
-_STORY_FILED_RE = re.compile(r"^-\s*\[( |x|X)\]\s*#(\d+)\b\s*(?:(?:—|--|-)\s*)?(.*)$")
+# A filed bullet is `#NN`, then either nothing or a separator (`—`, `--`, `-`) and a title: the
+# checklist is hand-maintained, so a ticked `- [x] #151` is still story #151. `#NN` followed straight
+# by prose (`- [ ] #3 lanes of work`, `- [ ] #151abc`) is NOT a filed story — reading it as one would
+# send the planner and slicer to fetch an issue nobody filed (a fatal `gh issue view` on a missing
+# number) — so it falls through to a placeholder. The heading is the one `dod_summary` already
+# excepts: `## Stories` or `## Stories (…)`, so a hand-annotated heading keeps its story set.
+_STORY_FILED_RE = re.compile(r"^-\s*\[( |x|X)\]\s*#(\d+)\s*(?:(?:—|--|-)\s*(.*))?$")
 _STORY_PLAIN_RE = re.compile(r"^-\s*\[( |x|X)\]\s*(.+)$")
-_STORIES_HEADING_RE = re.compile(r"^##\s+Stories\s*$", re.IGNORECASE)
 _LEVEL2_HEADING_RE = re.compile(r"^##(?!#)")
+
+
+def _is_stories_heading(line):
+    match = _ANY_SECTION_HEADING_RE.match(line)
+    return bool(match) and bool(_NON_DOD_CHECKLIST_HEADING_RE.match(match.group(1)))
 
 
 def parse_stories_section(issue_body):
@@ -1466,7 +1473,7 @@ def parse_stories_section(issue_body):
     `number` is `None` for a placeholder bullet (a story not yet filed). No section returns `[]` —
     a fresh epic (native children only) or a non-epic body both legitimately lack one."""
     lines = (issue_body or "").splitlines()
-    start = next((i + 1 for i, line in enumerate(lines) if _STORIES_HEADING_RE.match(line)), None)
+    start = next((i + 1 for i, line in enumerate(lines) if _is_stories_heading(line)), None)
     if start is None:
         return []
     end = next((j for j in range(start, len(lines)) if _LEVEL2_HEADING_RE.match(lines[j])), len(lines))
@@ -1479,7 +1486,7 @@ def parse_stories_section(issue_body):
             entries.append(
                 {
                     "number": int(filed_match.group(2)),
-                    "title": filed_match.group(3).strip(),
+                    "title": (filed_match.group(3) or "").strip(),
                     "checked": filed_match.group(1) in ("x", "X"),
                 }
             )

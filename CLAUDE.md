@@ -276,8 +276,9 @@ per [architecture.md §7](docs/architecture.md)'s mapping table).
   pipeline rebuilds — the PR's `## Phase tracker` and `## Polish` ledger — which never raise (an
   unparseable line is rewritten, never a stop), so they have no subcommand and no decision code. And
   one import-only scanner for a contract it only reads: the legacy epic `## Stories` checklist
-  (`parse_stories_section` / `stories_checklist_lists` — the planner's and slicer's story set and
-  branching's legacy parent edge share this one copy; each prep carried its own until 4.33.1).
+  (`parse_stories_section` / `stories_checklist_lists` — the planner's, slicer's and evaluator's
+  story set and branching's legacy parent edge share this one copy; each prep carried its own, with
+  diverging grammars, until 4.33.1).
 - `plan_shipped.py` — the shipped-phase records (`skills/_shared/plan-shipped-phases.md`). Import
   core `collect(thread, pr)` (a thread scan, keyed (PR, phase), duplicate → `MARKER_AMBIGUOUS`),
   `read_pointed` (every PR the plan's pointer bullets name — read leniently, so a reworded pointer

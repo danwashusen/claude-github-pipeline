@@ -494,6 +494,9 @@ def count_commits_ahead(root, branch, base_ref):
         return None, COMMITS_AHEAD_UNAVAILABLE
 
 
+PARENT_EPIC_SEARCH_LIMIT = 1000
+
+
 def search_parent_epic(repo, story_number, native_parent=None, cwd=None):
     """Story parent-epic lookup. Returns `(matches, decision_or_none)` where `matches` is a
     `gh issue list`-shaped result list (empty on zero genuine matches).
@@ -539,6 +542,10 @@ def search_parent_epic(repo, story_number, native_parent=None, cwd=None):
             "#%s in:body" % story_number,
             "--json",
             "number,title,state,body",
+            # Membership is filtered client-side, so a capped candidate set could drop the real
+            # parent behind mention-only epics; gh's default cap is 30.
+            "--limit",
+            str(PARENT_EPIC_SEARCH_LIMIT),
         ],
         cwd=cwd,
     )

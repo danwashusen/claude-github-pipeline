@@ -138,13 +138,6 @@ _EPIC_BRANCH_RE = re.compile(r"^epic/\d+-.+$")
 # epic is derivable without a search.
 _EPIC_BRANCH_NUMBER_RE = re.compile(r"^epic/(\d+)-.+$")
 
-# `## Stories` heading + filed-story bullet grammar, for the `checklist` source of the story-set read
-# (skills/_shared/epic-story-hierarchy.md). Restated locally, like prep_drafter's copy — there is no
-# shared parse.py subcommand for this grammar, and it is only reached for an epic filed before the
-# native sub-issue relation was written.
-_STORIES_HEADING_RE = re.compile(r"^##\s+Stories\s*$", re.IGNORECASE)
-_ANY_HEADING_RE = re.compile(r"^##\s+\S")
-_STORY_FILED_BULLET_RE = re.compile(r"^-\s*\[([ xX])\]\s*#(\d+)\b\s*(?:—|--|-)?\s*(.*)$")
 
 
 # ---------------------------------------------------------------------------
@@ -360,37 +353,11 @@ def _detect_pr_type(base_ref_name, head_ref_name, root_branch):
 
 def _parse_stories_checklist(epic_body):
     """Filed-story entries in a legacy epic's ``## Stories`` section — the ``checklist`` source of the
-    story-set read.
-    Best-effort and non-raising, like every other block-scan with no dedicated decision code.
-    Placeholder bullets (no ``#NN`` yet) are skipped: this reader answers "which stories exist and
-    are they closed", and an unfiled bullet is neither.
+    story-set read, through the one shared scanner (`parse.parse_stories_section`; this module kept
+    its own grammar until 4.33.1). Placeholder bullets (no ``#NN`` yet) are skipped: this reader
+    answers "which stories exist and are they closed", and an unfiled bullet is neither.
     """
-    lines = (epic_body or "").splitlines()
-    start = None
-    for index, line in enumerate(lines):
-        if _STORIES_HEADING_RE.match(line):
-            start = index + 1
-            break
-    if start is None:
-        return []
-    end = len(lines)
-    for index in range(start, len(lines)):
-        if _ANY_HEADING_RE.match(lines[index]):
-            end = index
-            break
-
-    entries = []
-    for raw_line in lines[start:end]:
-        match = _STORY_FILED_BULLET_RE.match(raw_line.strip())
-        if match:
-            entries.append(
-                {
-                    "number": int(match.group(2)),
-                    "title": match.group(3).strip(),
-                    "checked": match.group(1) in ("x", "X"),
-                }
-            )
-    return entries
+    return [entry for entry in parse.parse_stories_section(epic_body) if entry["number"] is not None]
 
 
 # The thread read-back lives in `pipelib.thread` (three preps scan threads; one home).

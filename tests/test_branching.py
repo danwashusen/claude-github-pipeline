@@ -68,9 +68,36 @@ class SearchParentEpicLegacyTierTests(unittest.TestCase):
         matches, _ = self._search([_epic(100, "## Related\n- [ ] #12 — tracked elsewhere\n")])
         self.assertEqual(matches, [])
 
+    def test_an_annotated_stories_heading_still_lists_the_story(self):
+        matches, _ = self._search([_epic(100, "## Stories (wave 1)\n- [ ] #12 — the story\n")])
+        self.assertEqual([m["number"] for m in matches], [100])
+
     def test_neighbouring_numbers_are_not_membership(self):
         matches, _ = self._search([_epic(100, "## Stories\n- [ ] #120 — x\n- [ ] #1 — y\n")])
         self.assertEqual(matches, [])
+
+
+class ResolveParentEpicBranchTests(unittest.TestCase):
+    """The shared entry prep_resolver and prep_workspace_open reach the legacy tier through: a
+    mention-only epic yields no parent, and so no epic-branch discovery and no epic base."""
+
+    def test_a_mention_only_epic_gives_no_parent_and_no_branch_lookup(self):
+        calls = []
+
+        def fake_run(argv, cwd=None, env=None, input_text=None, check=False):
+            calls.append(list(argv))
+            return process.CommandResult(0, json.dumps([_epic(100, MENTIONS_12)]), "")
+
+        with mock.patch.object(branching.process, "run", side_effect=fake_run):
+            facts, notices, decision = branching.resolve_parent_epic_branch(
+                ".", "octo/widgets", 12, "story", None
+            )
+        self.assertIsNone(decision)
+        self.assertEqual(notices, [])
+        self.assertEqual(facts, {"parent_epic": None, "branch_facts": None, "parent_kind": None})
+        # Only the candidate search ran: no `git ls-remote` for an epic branch to base on.
+        self.assertEqual(len(calls), 1)
+        self.assertEqual(calls[0][:2], ["gh", "issue"])
 
 
 if __name__ == "__main__":

@@ -69,7 +69,9 @@
       "--search",
       "#101 in:body",
       "--json",
-      "number,title,state,body"
+      "number,title,state,body",
+      "--limit",
+      "1000"
     ],
     "stdout_file": "parent_epic_search.json"
   },

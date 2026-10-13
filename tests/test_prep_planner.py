@@ -2452,8 +2452,10 @@ class ParentEpicNativeShortCircuitTests(unittest.TestCase):
         self.assertEqual(matches[0]["state"], "OPEN")
         self.assertEqual(matches[0]["title"], "Epic: Public patient funnel")
 
-    def test_prep_planner_copy_short_circuits_without_a_gh_call(self):
-        self._assert_short_circuits(prep_planner)
+    def test_prep_planner_uses_the_branching_core_not_a_copy(self):
+        # The planner carried a byte-for-byte copy of this search until 4.33.1 — how the
+        # mention-is-parent bug lived in two places. One implementation now.
+        self.assertIs(prep_planner._search_parent_epic, branching.search_parent_epic)
 
     def test_branching_core_short_circuits_without_a_gh_call(self):
         self._assert_short_circuits(branching)
@@ -2473,6 +2475,11 @@ class ParentEpicNativeShortCircuitTests(unittest.TestCase):
         self.assertEqual(matches, [])
         self.assertEqual(len(calls), 1)
         self.assertIn("--search", calls[0])
+        # gh's default cap is 30; membership is filtered client-side, so the candidate set must not
+        # be truncated behind mention-only epics.
+        self.assertEqual(
+            calls[0][calls[0].index("--limit") + 1], str(branching.PARENT_EPIC_SEARCH_LIMIT)
+        )
 
 
 if __name__ == "__main__":

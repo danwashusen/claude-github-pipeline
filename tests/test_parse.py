@@ -947,18 +947,39 @@ class StoriesSectionParseTests(unittest.TestCase):
         self.assertEqual([e["number"] for e in parse.parse_stories_section(body)], [151, 152])
 
     def test_hand_maintained_bullet_shapes_still_read_as_filed(self):
-        # The evaluator's grammar: separator optional, `--` accepted, title may be empty. A ticked
-        # `- [x] #151` with no title is still story #151, not a placeholder named "#151".
-        body = "## Stories\n- [x] #151\n- [ ] #152 -- B\n- [ ] #153 C\n- [ ] #154abc\n"
+        # `#NN` alone, or a separator (`—`, `--`, `-`) and a title: a ticked `- [x] #151` with no
+        # title is still story #151, not a placeholder named "#151".
+        body = "## Stories\n- [x] #151\n- [ ] #152 -- B\n- [ ] #153-C\n"
         self.assertEqual(
             parse.parse_stories_section(body),
             [
                 {"number": 151, "title": "", "checked": True},
                 {"number": 152, "title": "B", "checked": False},
                 {"number": 153, "title": "C", "checked": False},
+            ],
+        )
+
+    def test_hash_number_followed_by_prose_is_a_placeholder_not_a_story(self):
+        # Reading `#3 lanes` as story #3 would send the planner and slicer to fetch an issue nobody
+        # filed — a fatal `gh issue view` on a missing number.
+        body = "## Stories\n- [ ] #3 lanes of work\n- [ ] #154abc\n"
+        self.assertEqual(
+            parse.parse_stories_section(body),
+            [
+                {"number": None, "title": "#3 lanes of work", "checked": False},
                 {"number": None, "title": "#154abc", "checked": False},
             ],
         )
+
+    def test_annotated_stories_heading_is_the_same_section(self):
+        # The heading `dod_summary` already excepts: `## Stories` or `## Stories (…)`.
+        for heading in ("## Stories", "## stories", "## Stories (wave 1)", "##Stories"):
+            self.assertEqual(
+                [e["number"] for e in parse.parse_stories_section(heading + "\n- [ ] #7 — x\n")],
+                [7],
+                heading,
+            )
+        self.assertEqual(parse.parse_stories_section("## User stories\n- [ ] #7 — x\n"), [])
 
     def test_stories_checklist_lists_is_membership_not_mention(self):
         listed = "## Stories\n- [ ] #12 — the story\n"
