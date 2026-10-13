@@ -318,34 +318,6 @@ class PlaceholderChildTests(unittest.TestCase):
         self.assertEqual(children["source"], "sub-issues")
 
 
-class StoriesSectionParseTests(unittest.TestCase):
-    """The legacy `## Stories` checklist grammar — byte-identical to `prep_planner.py`'s copy."""
-
-    def test_filed_and_placeholder_entries(self):
-        body = (
-            "## Stories\n"
-            "- [x] #151 — Story A\n"
-            "- [ ] #152 — Story B\n"
-            "- [ ] Story C placeholder (not filed)\n"
-        )
-        self.assertEqual(
-            prep_slicer._parse_stories_section(body),
-            [
-                {"number": 151, "title": "Story A", "checked": True},
-                {"number": 152, "title": "Story B", "checked": False},
-                {"number": None, "title": "Story C placeholder (not filed)", "checked": False},
-            ],
-        )
-
-    def test_absent_section(self):
-        self.assertEqual(prep_slicer._parse_stories_section("## Goal\n- [ ] not stories\n"), [])
-
-    def test_stops_at_the_next_heading(self):
-        body = "## Stories\n- [ ] #151 — A\n\n## Definition of done\n- [ ] #999 — not a story\n"
-        entries = prep_slicer._parse_stories_section(body)
-        self.assertEqual([e["number"] for e in entries], [151])
-
-
 class BlockerFilterTests(unittest.TestCase):
     def test_only_open_native_blockers_gate(self):
         """A closed blocker is a stale recorded claim, not a gate — live state decides."""

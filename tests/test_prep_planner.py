@@ -1512,6 +1512,19 @@ class OwnBranchDefaultRowTests(PrepPlannerSandboxTestCase):
             envelope["attention"],
         )
 
+    def test_an_epic_that_only_mentions_the_story_is_not_its_parent(self):
+        # The legacy tier's candidate search returns an OPEN epic whose body says "Unlike #204" and
+        # whose `## Stories` lists #205 only. Before 4.33.1 that made it #204's parent — grounding on
+        # its branch and routing to story-jit.md. The fixture deliberately answers none of a parent
+        # epic's follow-up calls, so a regression is a shim miss, not a quiet wrong row.
+        envelope = self._envelope(issue="204", fixture_case="prep_planner_story_epic_mention_only")
+        self.assertEqual(envelope["status"], "ok")
+        self.assertIsNone(envelope["story"]["parent_epic"])
+        self.assertEqual(
+            envelope["vector"]["plan_ref_row"], prep_planner.PLAN_REF_ROW_STORY_NO_PARENT
+        )
+        self.assertEqual(envelope["suggested_playbook"], "single.md")
+
     def test_story_with_no_parent_from_main_still_says_grounding_at_main(self):
         envelope = self._envelope(issue="204", fixture_case="prep_planner_row_story_no_parent")
         self.assertEqual(
@@ -2318,29 +2331,6 @@ class PureHelperUnitTests(unittest.TestCase):
             ),
             ("99-other", prep_planner.PLAN_REF_ROW_AMBIENT_ACCEPTED),
         )
-
-    def test_parse_stories_section_filed_and_placeholder(self):
-        body = "## Stories\n- [ ] #2 — Story A\n- [x] #3 — Story B\n\n## Definition of done\n- [ ] x\n"
-        self.assertEqual(
-            prep_planner._parse_stories_section(body),
-            [
-                {"number": 2, "title": "Story A", "checked": False},
-                {"number": 3, "title": "Story B", "checked": True},
-            ],
-        )
-
-    def test_parse_stories_section_placeholder_bullets(self):
-        body = "## Stories\n- [ ] Story one\n- [ ] Story two\n"
-        self.assertEqual(
-            prep_planner._parse_stories_section(body),
-            [
-                {"number": None, "title": "Story one", "checked": False},
-                {"number": None, "title": "Story two", "checked": False},
-            ],
-        )
-
-    def test_parse_stories_section_absent(self):
-        self.assertEqual(prep_planner._parse_stories_section("no stories section here"), [])
 
     def test_parse_phase_tracker_ticked_and_unticked(self):
         body = "## Phase tracker\n- [x] Phase 1 — substrate (commit abc1234)\n- [ ] Phase 2 — harness\n"

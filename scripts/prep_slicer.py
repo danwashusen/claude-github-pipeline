@@ -157,14 +157,6 @@ _EPIC_LABEL = "epic"
 # why `next_index` falls back to "one past the child count".
 _SLICE_DESIGNATOR_RE = re.compile(r"^\s*(\d+)\s*/\s*S(\d+)\b")
 
-# The legacy `## Stories` checklist grammar — byte-identical to `prep_planner.py`'s (and to the copy
-# `prep_drafter.py` carried until #16 moved epic decomposition here), restated locally per
-# `prep_planner.py`'s "no prep-to-prep imports" convention. No shared `parse.py` subcommand covers
-# this grammar (only `dod`/`oq-links`/`phases` are named in architecture.md §3's decision-code table),
-# so the scan is best-effort and non-raising like every other block-scan without a decision code.
-_STORY_FILED_RE = re.compile(r"^-\s*\[( |x|X)\]\s*#(\d+)\s*(?:—|-)\s*(.+)$")
-_STORY_PLAIN_RE = re.compile(r"^-\s*\[( |x|X)\]\s*(.+)$")
-_SECTION_HEADING_RE = re.compile(r"^##(?!#)")
 
 # The closed refusal set (see the module docstring for each token's rationale). There is deliberately
 # no `epic-target`: #16 made an epic the epic-altitude happy path.
@@ -378,49 +370,6 @@ def _detect_altitude(target_type, promote=False):
     return "epic" if (target_type == "epic" or promote) else "story"
 
 
-def _parse_stories_section(issue_body):
-    """The legacy `## Stories` checklist entries of an epic body — the `checklist` tier of
-    `epic-story-hierarchy.md`'s two-tier read. A FILED bullet (`- [ ] #NN — <title>`) yields its
-    number; a PLACEHOLDER bullet yields `number: None`. Relocated from `prep_drafter.py` with #16."""
-    lines = (issue_body or "").splitlines()
-    start = None
-    for i, line in enumerate(lines):
-        if re.match(r"^##\s+Stories\s*$", line, re.IGNORECASE):
-            start = i + 1
-            break
-    if start is None:
-        return []
-    end = len(lines)
-    for j in range(start, len(lines)):
-        if _SECTION_HEADING_RE.match(lines[j]):
-            end = j
-            break
-
-    entries = []
-    for raw_line in lines[start:end]:
-        stripped = raw_line.strip()
-        filed_match = _STORY_FILED_RE.match(stripped)
-        if filed_match:
-            entries.append(
-                {
-                    "number": int(filed_match.group(2)),
-                    "title": filed_match.group(3).strip(),
-                    "checked": filed_match.group(1) in ("x", "X"),
-                }
-            )
-            continue
-        plain_match = _STORY_PLAIN_RE.match(stripped)
-        if plain_match:
-            entries.append(
-                {
-                    "number": None,
-                    "title": plain_match.group(2).strip(),
-                    "checked": plain_match.group(1) in ("x", "X"),
-                }
-            )
-    return entries
-
-
 def _build_story_set(sub_issues, issue_body, repo, cwd=None):
     """The epic's existing story set through `epic-story-hierarchy.md`'s two-tier read, with `source`
     reporting which tier answered so the flow knows whether there are checkboxes to reconcile at all.
@@ -444,7 +393,7 @@ def _build_story_set(sub_issues, issue_body, repo, cwd=None):
             }
         )
 
-    checklist_entries = _parse_stories_section(issue_body)
+    checklist_entries = parse.parse_stories_section(issue_body)
     if native and not checklist_entries:
         return _children("stories", native, source="sub-issues"), attention, None
     if not native and not checklist_entries:

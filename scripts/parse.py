@@ -1441,6 +1441,70 @@ def absent_polish():
 
 
 # ============================================================================================
+# `## Stories` checklist parsing (legacy epic body) — import-only, NO subcommand and NO decision code
+# ============================================================================================
+#
+# The `checklist` tier of `skills/_shared/epic-story-hierarchy.md`'s two-tier read: epics filed
+# before the native parent/sub-issue relation carry their story set only as `- [ ] #NN — <title>`
+# bullets, and with no backfill path they do so for life. Best-effort and non-raising: a line that
+# matches neither bullet shape is prose, not a story entry. One copy, shared by the planner and the
+# slicer (who read the story set) and `branching.search_parent_epic` (who reads it from the story's
+# side — membership in this checklist, never a mention anywhere else in the epic body, is the legacy
+# parent edge).
+#
+# The filed-bullet grammar matches `prep_evaluator`'s: the separator is optional (`—`, `--`, `-`) and
+# the title may be empty, because the checklist is hand-maintained and a ticked `- [x] #151` is still
+# story #151. `#151abc` is not a number (`\b`), so it falls through to a placeholder.
+_STORY_FILED_RE = re.compile(r"^-\s*\[( |x|X)\]\s*#(\d+)\b\s*(?:(?:—|--|-)\s*)?(.*)$")
+_STORY_PLAIN_RE = re.compile(r"^-\s*\[( |x|X)\]\s*(.+)$")
+_STORIES_HEADING_RE = re.compile(r"^##\s+Stories\s*$", re.IGNORECASE)
+_LEVEL2_HEADING_RE = re.compile(r"^##(?!#)")
+
+
+def parse_stories_section(issue_body):
+    """An epic body's `## Stories` checklist as `[{"number", "title", "checked"}]`, in source order.
+    `number` is `None` for a placeholder bullet (a story not yet filed). No section returns `[]` —
+    a fresh epic (native children only) or a non-epic body both legitimately lack one."""
+    lines = (issue_body or "").splitlines()
+    start = next((i + 1 for i, line in enumerate(lines) if _STORIES_HEADING_RE.match(line)), None)
+    if start is None:
+        return []
+    end = next((j for j in range(start, len(lines)) if _LEVEL2_HEADING_RE.match(lines[j])), len(lines))
+
+    entries = []
+    for raw_line in lines[start:end]:
+        stripped = raw_line.strip()
+        filed_match = _STORY_FILED_RE.match(stripped)
+        if filed_match:
+            entries.append(
+                {
+                    "number": int(filed_match.group(2)),
+                    "title": filed_match.group(3).strip(),
+                    "checked": filed_match.group(1) in ("x", "X"),
+                }
+            )
+            continue
+        plain_match = _STORY_PLAIN_RE.match(stripped)
+        if plain_match:
+            entries.append(
+                {
+                    "number": None,
+                    "title": plain_match.group(2).strip(),
+                    "checked": plain_match.group(1) in ("x", "X"),
+                }
+            )
+    return entries
+
+
+def stories_checklist_lists(issue_body, story_number):
+    """Whether `issue_body`'s `## Stories` checklist carries a filed bullet for `story_number` — the
+    legacy epic↔story edge. A `#<N>` anywhere else in the body (prose, another section's checklist,
+    a placeholder bullet that merely mentions it) is a reference, not membership."""
+    number = int(story_number)
+    return any(entry["number"] == number for entry in parse_stories_section(issue_body))
+
+
+# ============================================================================================
 # Dispatch
 # ============================================================================================
 
