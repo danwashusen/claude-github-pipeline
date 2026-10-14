@@ -299,17 +299,6 @@ _EPIC_TITLE_PREFIX_RE = re.compile(r"^\s*epic\s*:", re.IGNORECASE)
 # Epic branch pattern: `epic/<N>-<slug>` (docs/specs/planner.md Step 4.5's table).
 _EPIC_BRANCH_LS_REMOTE_PATTERN = "epic/%s-*"
 
-# `## Stories` bullet grammar (skills/drafter/references/issue-templates.md;
-# docs/specs/drafter.md "Artifacts written", Epic `## Stories` row): a FILED story is
-# `- [ ] #NN — <title>` / `- [x] #NN — <title>`; a PLACEHOLDER
-# (not yet filed) is a plain `- [ ] <title>` bullet with no `#NN`. No shared `parse.py` subcommand
-# covers this grammar (only `dod`/`oq-links`/`phases` are named in architecture.md §3's decision-
-# code table) — best-effort, non-raising: a line that matches neither shape is simply not a story
-# entry (a stray blank line or prose), matching every other "no dedicated decision code" block-scan
-# in this codebase (workspace.py's hook blocks, this module's own `## Phase tracker` parse below).
-_STORY_FILED_RE = re.compile(r"^-\s*\[( |x|X)\]\s*#(\d+)\s*(?:—|-)\s*(.+)$")
-_STORY_PLAIN_RE = re.compile(r"^-\s*\[( |x|X)\]\s*(.+)$")
-_SECTION_HEADING_RE = re.compile(r"^##(?!#)")
 
 
 
@@ -453,74 +442,12 @@ def _discover_epic_branch(root, epic_number):
     )
 
 
-def _search_parent_epic(repo, story_number, native_parent=None, cwd=None):
-    """Story parent-epic lookup (docs/specs/planner.md "Route by shape"). Returns
-    `(matches, decision_or_none)` where `matches` is a `gh issue list`-shaped result list (empty on
-    zero genuine matches).
-
-    Tier 1 is the native `parent` relation the caller's gather already carried — exact and
-    single-valued, so it short-circuits with no round-trip and no `AMBIGUOUS` exposure
-    (`skills/_shared/epic-story-hierarchy.md`).
-
-    Tier 2 is the legacy `gh issue list --label epic --state all --search '#<N> in:body'` search,
-    for a story filed before the relation was written. Filtered through
-    `gh_gather.references_issue` — live evidence (see `gh_gather.py`'s module
-    docstring "Open-PR search false-positive fix") showed `--search "#<N> in:body"` (the
-    hash-prefixed form this call already uses) returns the SAME false-positive set as the
-    bare-digit form on a `gh pr list` search; GitHub's server-side full-text search does not use
-    `#` as an anchor either way, so the same client-side reference filter applies here (this
-    step's live-smoke finding, recorded in docs/specs/planner.md's "Known bugs/gaps").
-    """
-    if native_parent:
-        return [
-            {
-                "number": native_parent.get("number"),
-                "title": native_parent.get("title"),
-                "state": native_parent.get("state"),
-            }
-        ], None
-
-    result = process.run(
-        [
-            "gh",
-            "issue",
-            "list",
-            "--repo",
-            repo,
-            "--label",
-            "epic",
-            "--state",
-            "all",
-            "--search",
-            "#%s in:body" % story_number,
-            "--json",
-            "number,title,state,body",
-        ],
-        cwd=cwd,
-    )
-    if result.auth_required:
-        return None, needs_decision(
-            AUTH_REQUIRED,
-            summary="gh authentication required",
-            context={"stderr": result.stderr, "returncode": result.returncode},
-            options=["run: gh auth login"],
-        )
-    if result.returncode != 0:
-        sys.stderr.write(result.stderr)
-        sys.exit(1)
-    matches = gh_gather._filter_and_strip_reference_fields(json.loads(result.stdout), story_number)
-    if len(matches) <= 1:
-        return matches, None
-    return None, needs_decision(
-        AMBIGUOUS,
-        summary="%d candidate parent epics reference story #%s — expected at most one"
-        % (len(matches), story_number),
-        context={"story_number": story_number, "candidates": matches},
-        options=[
-            "pick the canonical parent epic and re-run",
-            "correct the sibling issue bodies so only one epic references this story",
-        ],
-    )
+# The story's parent-epic lookup — ONE implementation, shared with prep_resolver (the
+# `prep_resolver.py` alias precedent) and, through `resolve_parent_epic_branch`, prep_workspace_open.
+# Native `parent` first; the legacy tier keeps only an epic whose `## Stories` checklist lists the
+# story. This module carried a byte-for-byte copy until 4.33.1, which is how the mention-is-parent
+# bug lived in two places.
+_search_parent_epic = branching.search_parent_epic
 
 
 def _fetch_story_state(repo, story_number, cwd=None):
@@ -917,47 +844,6 @@ def _slice_attention(slices_facts, target_number):
 # ---------------------------------------------------------------------------
 # `## Stories` section parsing (epic body) — no shared parse.py subcommand covers this grammar.
 # ---------------------------------------------------------------------------
-
-
-def _parse_stories_section(issue_body):
-    """Parse the epic body's `## Stories` checklist. Returns a list of `{"number", "title",
-    "checked"}` dicts, in source order — `number` is `None` for a placeholder bullet (the stories
-    aren't filed yet). No `## Stories` section: returns `[]` (not itself a malformed-input signal
-    — an epic freshly drafted without stories yet, or a non-epic body, both legitimately lack it).
-    """
-    lines = (issue_body or "").splitlines()
-    start = None
-    for i, line in enumerate(lines):
-        if re.match(r"^##\s+Stories\s*$", line, re.IGNORECASE):
-            start = i + 1
-            break
-    if start is None:
-        return []
-    end = len(lines)
-    for j in range(start, len(lines)):
-        if _SECTION_HEADING_RE.match(lines[j]):
-            end = j
-            break
-
-    entries = []
-    for raw_line in lines[start:end]:
-        stripped = raw_line.strip()
-        filed_match = _STORY_FILED_RE.match(stripped)
-        if filed_match:
-            entries.append(
-                {
-                    "number": int(filed_match.group(2)),
-                    "title": filed_match.group(3).strip(),
-                    "checked": filed_match.group(1) in ("x", "X"),
-                }
-            )
-            continue
-        plain_match = _STORY_PLAIN_RE.match(stripped)
-        if plain_match:
-            entries.append(
-                {"number": None, "title": plain_match.group(2).strip(), "checked": plain_match.group(1) in ("x", "X")}
-            )
-    return entries
 
 
 # ---------------------------------------------------------------------------
@@ -1758,7 +1644,7 @@ def build_facts(
             )
         native_numbers = {e["number"] for e in story_entries}
 
-        checklist_entries = _parse_stories_section(issue_body)
+        checklist_entries = parse.parse_stories_section(issue_body)
         for entry in checklist_entries:
             if entry["number"] is not None and entry["number"] in native_numbers:
                 # Already carried natively, with authoritative live state.
@@ -1807,9 +1693,10 @@ def build_facts(
         # prep_workspace_open's and prep_resolver's. Grounding a plan on the default branch while
         # the resolver builds it on `epic/<N>-<slug>` plans against a tree missing every predecessor
         # story's merged work. Tier rule identical to the other two preps: native `parent` first
-        # (exact, no round-trip), and the legacy `#<N> in:body` full-text search ONLY for a `story`
+        # (exact, no round-trip), and the legacy `## Stories` checklist tier ONLY for a `story`
         # filed before the relation was written (skills/_shared/epic-story-hierarchy.md) — an
-        # untyped target gets the exact native answer or no lookup at all.
+        # untyped target gets the exact native answer or no lookup at all. The legacy tier counts an
+        # epic only when its `## Stories` checklist lists this story — a mention is not membership.
         matches, decision = _search_parent_epic(
             repo, issue_number, native_parent=issue_envelope.get("parent"), cwd=cwd
         )

@@ -244,7 +244,8 @@ per [architecture.md §7](docs/architecture.md)'s mapping table).
   a confirmation card that would fire on every session entry. Don't reinstate the pin as a bug fix;
   see architecture.md §6 rule 1 and the §12 invariant.
 - `branching.py` (import-only) — branch naming (`-vN` collision suffixing), issue-type detection,
-  the 7-row prior-PR classification, epic-branch discovery, parent-epic search, GitHub linked
+  the 7-row prior-PR classification, epic-branch discovery, parent-epic search (native `parent`, else
+  the one epic whose `## Stories` checklist lists the story — a body mention is not membership), GitHub linked
   branches (`gh issue develop`, with the `ISSUE_LINK_UNSUPPORTED` degradation), and two precision
   helpers the loose `#<N> in:body` searches can't provide: `find_merged_pr_for_head` (an exact
   `gh pr list --head` merged lookup, non-fatal via `MERGED_PR_LOOKUP_UNAVAILABLE` so an offline
@@ -273,7 +274,11 @@ per [architecture.md §7](docs/architecture.md)'s mapping table).
   `facts.dod` (with the body staged at `dod.body_path`), the resolver's `facts.dod_coverage`. Never a
   decision: the heading is the contract, and a checklist under `## Acceptance criteria` is not the DoD. Plus two import-only scanners for renderings the
   pipeline rebuilds — the PR's `## Phase tracker` and `## Polish` ledger — which never raise (an
-  unparseable line is rewritten, never a stop), so they have no subcommand and no decision code.
+  unparseable line is rewritten, never a stop), so they have no subcommand and no decision code. And
+  one import-only scanner for a contract it only reads: the legacy epic `## Stories` checklist
+  (`parse_stories_section` / `stories_checklist_lists` — the planner's, slicer's and evaluator's
+  story set and branching's legacy parent edge share this one copy; each prep carried its own, with
+  diverging grammars, until 4.33.1).
 - `plan_shipped.py` — the shipped-phase records (`skills/_shared/plan-shipped-phases.md`). Import
   core `collect(thread, pr)` (a thread scan, keyed (PR, phase), duplicate → `MARKER_AMBIGUOUS`),
   `read_pointed` (every PR the plan's pointer bullets name — read leniently, so a reworded pointer

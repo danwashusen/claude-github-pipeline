@@ -915,6 +915,87 @@ class PhaseTrackerParseTests(unittest.TestCase):
         self.assertIs(prep_planner._parse_phase_tracker, parse.parse_phase_tracker)
 
 
+class StoriesSectionParseTests(unittest.TestCase):
+    """The legacy `## Stories` checklist — one copy since 4.33.1 (the planner and slicer each carried
+    one), read for the story set and, from the story's side, for the legacy parent edge."""
+
+    def test_filed_and_placeholder_entries(self):
+        body = (
+            "## Stories\n"
+            "- [x] #151 — Story A\n"
+            "- [ ] #152 — Story B\n"
+            "- [ ] Story C placeholder (not filed)\n"
+        )
+        self.assertEqual(
+            parse.parse_stories_section(body),
+            [
+                {"number": 151, "title": "Story A", "checked": True},
+                {"number": 152, "title": "Story B", "checked": False},
+                {"number": None, "title": "Story C placeholder (not filed)", "checked": False},
+            ],
+        )
+
+    def test_absent_section(self):
+        self.assertEqual(parse.parse_stories_section("## Goal\n- [ ] not stories\n"), [])
+        self.assertEqual(parse.parse_stories_section(None), [])
+
+    def test_stops_at_the_next_level_two_heading_only(self):
+        body = (
+            "## Stories\n- [ ] #151 — A\n### Wave 2\n- [ ] #152 — B\n\n"
+            "## Definition of done\n- [ ] #999 — not a story\n"
+        )
+        self.assertEqual([e["number"] for e in parse.parse_stories_section(body)], [151, 152])
+
+    def test_hand_maintained_bullet_shapes_still_read_as_filed(self):
+        # `#NN` alone, or a separator (`—`, `--`, `-`) and a title: a ticked `- [x] #151` with no
+        # title is still story #151, not a placeholder named "#151".
+        body = "## Stories\n- [x] #151\n- [ ] #152 -- B\n- [ ] #153-C\n"
+        self.assertEqual(
+            parse.parse_stories_section(body),
+            [
+                {"number": 151, "title": "", "checked": True},
+                {"number": 152, "title": "B", "checked": False},
+                {"number": 153, "title": "C", "checked": False},
+            ],
+        )
+
+    def test_hash_number_followed_by_prose_is_a_placeholder_not_a_story(self):
+        # Reading `#3 lanes` as story #3 would send the planner and slicer to fetch an issue nobody
+        # filed — a fatal `gh issue view` on a missing number.
+        body = "## Stories\n- [ ] #3 lanes of work\n- [ ] #154abc\n"
+        self.assertEqual(
+            parse.parse_stories_section(body),
+            [
+                {"number": None, "title": "#3 lanes of work", "checked": False},
+                {"number": None, "title": "#154abc", "checked": False},
+            ],
+        )
+
+    def test_annotated_stories_heading_is_the_same_section(self):
+        # The heading `dod_summary` already excepts: `## Stories` or `## Stories (…)`.
+        for heading in ("## Stories", "## stories", "## Stories (wave 1)", "##Stories"):
+            self.assertEqual(
+                [e["number"] for e in parse.parse_stories_section(heading + "\n- [ ] #7 — x\n")],
+                [7],
+                heading,
+            )
+        self.assertEqual(parse.parse_stories_section("## User stories\n- [ ] #7 — x\n"), [])
+
+    def test_stories_checklist_lists_is_membership_not_mention(self):
+        listed = "## Stories\n- [ ] #12 — the story\n"
+        self.assertTrue(parse.stories_checklist_lists(listed, 12))
+        self.assertTrue(parse.stories_checklist_lists(listed, "12"))
+        for body in (
+            "Related: #12, unlike the old plan.",                        # prose
+            "## Related\n- [ ] #12 — tracked elsewhere\n",               # another section
+            "## Stories\nSee #12 for context.\n- [ ] #13 — other\n",    # prose inside Stories
+            "## Stories\n- [ ] see #12 later\n",                        # placeholder mentioning it
+            "## Stories\n- [ ] #120 — x\n- [ ] #1 — y\n",               # neighbouring numbers
+            "",
+        ):
+            self.assertFalse(parse.stories_checklist_lists(body, 12), body)
+
+
 class PolishLedgerParseTests(unittest.TestCase):
     """`scan_polish` — the `## Polish` ledger (skills/_shared/polish-ledger.md). A rendering the
     resolver and evaluator rebuild, so it follows the phase tracker's posture: never raises, and an

@@ -24,6 +24,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 import gh_gather  # noqa: E402  (in-process composition — the reference-filter fix lives there)
+import parse  # noqa: E402  (the `## Stories` checklist scan — the legacy parent edge)
 from pipelib import process  # noqa: E402
 from pipelib.decisions import AMBIGUOUS, AUTH_REQUIRED, needs_decision  # noqa: E402
 
@@ -493,6 +494,9 @@ def count_commits_ahead(root, branch, base_ref):
         return None, COMMITS_AHEAD_UNAVAILABLE
 
 
+PARENT_EPIC_SEARCH_LIMIT = 1000
+
+
 def search_parent_epic(repo, story_number, native_parent=None, cwd=None):
     """Story parent-epic lookup. Returns `(matches, decision_or_none)` where `matches` is a
     `gh issue list`-shaped result list (empty on zero genuine matches).
@@ -503,11 +507,16 @@ def search_parent_epic(repo, story_number, native_parent=None, cwd=None):
        single-valued by construction, so it returns immediately: no round-trip, and the `AMBIGUOUS`
        decision below is unreachable (an issue has at most one parent, where a full-text search can
        match many epics).
-    2. **The legacy full-text search** — `gh issue list --label epic --state all --search
-       '#<N> in:body'`, for a story filed before the native relation was written. Filtered through
-       `gh_gather.references_issue`: GitHub's server-side search does not use `#` as an anchor, so
-       the hash-prefixed form has the same false-positive exposure as the bare-digit PR searches
-       (see `gh_gather.py`'s module docstring).
+    2. **The legacy checklist tier** — for a story filed before the native relation was written.
+       `gh issue list --label epic --state all --search '#<N> in:body'` only gathers candidates; an
+       epic is the parent when its `## Stories` checklist carries a filed bullet for `#<N>`
+       (`parse.stories_checklist_lists` — the `checklist` edge of
+       `skills/_shared/epic-story-hierarchy.md`). Until 4.33.1 any genuine `#<N>` reference passed
+       (`gh_gather.references_issue`), so an epic that only said "related: #N" or "blocked by #N"
+       became the story's parent — the wrong `epic/<N>-<slug>` base for planner, resolver and
+       workspace-open alike, or a spurious `AMBIGUOUS` beside the real parent. The membership test
+       runs on the raw items, because `_filter_and_strip_reference_fields` strips `body`; that
+       filter still runs after it for the result's shape (`closes_issue`, no `body`).
     """
     if native_parent:
         return [
@@ -533,6 +542,10 @@ def search_parent_epic(repo, story_number, native_parent=None, cwd=None):
             "#%s in:body" % story_number,
             "--json",
             "number,title,state,body",
+            # Membership is filtered client-side, so a capped candidate set could drop the real
+            # parent behind mention-only epics; gh's default cap is 30.
+            "--limit",
+            str(PARENT_EPIC_SEARCH_LIMIT),
         ],
         cwd=cwd,
     )
@@ -546,17 +559,22 @@ def search_parent_epic(repo, story_number, native_parent=None, cwd=None):
     if result.returncode != 0:
         sys.stderr.write(result.stderr)
         sys.exit(1)
-    matches = gh_gather._filter_and_strip_reference_fields(json.loads(result.stdout), story_number)
+    members = [
+        item
+        for item in json.loads(result.stdout)
+        if parse.stories_checklist_lists(item.get("body"), story_number)
+    ]
+    matches = gh_gather._filter_and_strip_reference_fields(members, story_number)
     if len(matches) <= 1:
         return matches, None
     return None, needs_decision(
         AMBIGUOUS,
-        summary="%d candidate parent epics reference story #%s — expected at most one"
+        summary="%d epics list story #%s in their `## Stories` checklist — expected at most one"
         % (len(matches), story_number),
         context={"story_number": story_number, "candidates": matches},
         options=[
             "pick the canonical parent epic and re-run",
-            "correct the sibling issue bodies so only one epic references this story",
+            "remove the duplicate checklist bullet so only one epic lists this story",
         ],
     )
 
@@ -645,8 +663,9 @@ def resolve_parent_epic_branch(
     ``issue_type`` still selects the **tier set**, which is the one thing it legitimately answers:
 
     - `native_parent` present -> tier 1 only. Exact, single-valued, already in hand, no round-trip.
-    - absent + `issue_type == "story"` -> the legacy `#<N> in:body` full-text search, for a story
-      filed before the relation was written (`skills/_shared/epic-story-hierarchy.md`).
+    - absent + `issue_type == "story"` -> the legacy `## Stories` checklist tier (candidates from a
+      `#<N> in:body` search, kept only when the epic's checklist lists the story), for a story filed
+      before the relation was written (`skills/_shared/epic-story-hierarchy.md`).
     - absent + any other type -> **no lookup**. The legacy tier costs a `gh` round-trip on every
       standard issue and matches loosely, so an untyped target gets the exact native answer or
       nothing — never a full-text guess at a hierarchy it probably has no place in.

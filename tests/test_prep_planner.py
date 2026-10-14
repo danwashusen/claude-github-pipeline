@@ -1512,6 +1512,19 @@ class OwnBranchDefaultRowTests(PrepPlannerSandboxTestCase):
             envelope["attention"],
         )
 
+    def test_an_epic_that_only_mentions_the_story_is_not_its_parent(self):
+        # The legacy tier's candidate search returns an OPEN epic whose body says "Unlike #204" and
+        # whose `## Stories` lists #205 only. Before 4.33.1 that made it #204's parent — grounding on
+        # its branch and routing to story-jit.md. The fixture deliberately answers none of a parent
+        # epic's follow-up calls, so a regression is a shim miss, not a quiet wrong row.
+        envelope = self._envelope(issue="204", fixture_case="prep_planner_story_epic_mention_only")
+        self.assertEqual(envelope["status"], "ok")
+        self.assertIsNone(envelope["story"]["parent_epic"])
+        self.assertEqual(
+            envelope["vector"]["plan_ref_row"], prep_planner.PLAN_REF_ROW_STORY_NO_PARENT
+        )
+        self.assertEqual(envelope["suggested_playbook"], "single.md")
+
     def test_story_with_no_parent_from_main_still_says_grounding_at_main(self):
         envelope = self._envelope(issue="204", fixture_case="prep_planner_row_story_no_parent")
         self.assertEqual(
@@ -2319,29 +2332,6 @@ class PureHelperUnitTests(unittest.TestCase):
             ("99-other", prep_planner.PLAN_REF_ROW_AMBIENT_ACCEPTED),
         )
 
-    def test_parse_stories_section_filed_and_placeholder(self):
-        body = "## Stories\n- [ ] #2 — Story A\n- [x] #3 — Story B\n\n## Definition of done\n- [ ] x\n"
-        self.assertEqual(
-            prep_planner._parse_stories_section(body),
-            [
-                {"number": 2, "title": "Story A", "checked": False},
-                {"number": 3, "title": "Story B", "checked": True},
-            ],
-        )
-
-    def test_parse_stories_section_placeholder_bullets(self):
-        body = "## Stories\n- [ ] Story one\n- [ ] Story two\n"
-        self.assertEqual(
-            prep_planner._parse_stories_section(body),
-            [
-                {"number": None, "title": "Story one", "checked": False},
-                {"number": None, "title": "Story two", "checked": False},
-            ],
-        )
-
-    def test_parse_stories_section_absent(self):
-        self.assertEqual(prep_planner._parse_stories_section("no stories section here"), [])
-
     def test_parse_phase_tracker_ticked_and_unticked(self):
         body = "## Phase tracker\n- [x] Phase 1 — substrate (commit abc1234)\n- [ ] Phase 2 — harness\n"
         self.assertEqual(
@@ -2462,8 +2452,10 @@ class ParentEpicNativeShortCircuitTests(unittest.TestCase):
         self.assertEqual(matches[0]["state"], "OPEN")
         self.assertEqual(matches[0]["title"], "Epic: Public patient funnel")
 
-    def test_prep_planner_copy_short_circuits_without_a_gh_call(self):
-        self._assert_short_circuits(prep_planner)
+    def test_prep_planner_uses_the_branching_core_not_a_copy(self):
+        # The planner carried a byte-for-byte copy of this search until 4.33.1 — how the
+        # mention-is-parent bug lived in two places. One implementation now.
+        self.assertIs(prep_planner._search_parent_epic, branching.search_parent_epic)
 
     def test_branching_core_short_circuits_without_a_gh_call(self):
         self._assert_short_circuits(branching)
@@ -2483,6 +2475,11 @@ class ParentEpicNativeShortCircuitTests(unittest.TestCase):
         self.assertEqual(matches, [])
         self.assertEqual(len(calls), 1)
         self.assertIn("--search", calls[0])
+        # gh's default cap is 30; membership is filtered client-side, so the candidate set must not
+        # be truncated behind mention-only epics.
+        self.assertEqual(
+            calls[0][calls[0].index("--limit") + 1], str(branching.PARENT_EPIC_SEARCH_LIMIT)
+        )
 
 
 if __name__ == "__main__":
