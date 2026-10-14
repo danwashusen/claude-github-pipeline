@@ -356,8 +356,8 @@ ${CLAUDE_PLUGIN_ROOT}/scripts/gh_persist.py create-pr <owner/repo> "<facts.scrat
 when the loop added PR-body items (outstanding settled items, ledger entries, an `Accept current`
 override, `## Known failures`), stage the updated body and apply it with `edit-pr-body`. Either mode,
 the `## Polish` ledger ([`../../_shared/polish-ledger.md`](../../_shared/polish-ledger.md)) gains one
-entry per polish item the loop left — `open`, or finalisation's answer — and `applied (commit <sha>)` on
-each `apply` item it fixed. Then post the loop comment — every round's staged reply, in order, one
+entry per polish item the loop left — `open`, `drop` if no shown cost, or finalisation's answer — and
+`applied (commit <sha>)` on each `apply` item it fixed. Then post the loop comment — every round's staged reply, in order, one
 `comment` on the PR; a `BODY_TOO_LONG` decision splits it one comment per round. It is the GitHub-side
 record the next session's resume re-read seeds from. Delete `<facts.scratch>/loop-comment.md` once posted.
 

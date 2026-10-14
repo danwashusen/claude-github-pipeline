@@ -128,7 +128,7 @@ adjacent findings none of them fits.
       **docs lane** (Explicitly-deferred);
     - it has no shown cost — taste (two reasonable forms, and the reviewer prefers the other), a
       speculative performance or memoisation win, hardening code the plan is removing → record it for the
-      ledger with the note `no shown cost: <why>` (the **No shown cost** bucket).
+      ledger as `drop` with the note `no shown cost: <why>` (the **No shown cost** bucket).
 
     **Always fix in-loop, never ledger**, polish matching the evaluator's `apply` criteria
     ([`../../_shared/polish-ledger.md`](../../_shared/polish-ledger.md) "Apply criteria"), whatever it
@@ -154,9 +154,10 @@ adjacent findings none of them fits.
   - polish → record it for the ledger, unfixed; finalisation puts it to the operator.
 - **No shown cost** — a claim with no reachable path or demonstrated cost: a speculative performance or
   memoisation win, a bypass with no instance, hardening code the plan is removing, a dev-only tool with no
-  failure. Record it for the ledger with the note `no shown cost: <why>`, which finalisation proposes as
-  `drop`; never file it. It applies whatever the provenance — the PR's own code included, which the polish
-  rule's no-shown-cost exception routes here. It is not Refuted: Refuted needs evidence the claim is false,
+  failure. Record it for the ledger as `drop` with the note `no shown cost: <why>` — decided, so it never
+  reaches a `Polish` card (finalisation's digest lists it, and the operator can revive it); never file
+  it. It applies whatever the provenance — the PR's own code included, which the polish rule's
+  no-shown-cost exception routes here. It is not Refuted: Refuted needs evidence the claim is false,
   and this one may be true and still not worth doing. A latent risk with a named trigger (a later issue, a
   second caller, a config change) is not no shown cost: it is Explicitly-deferred, latent until that
   trigger.

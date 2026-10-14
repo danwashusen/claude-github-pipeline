@@ -19,16 +19,18 @@ evaluator's S5.5 stays the backstop for whatever is still `open` when the PR rea
   handoff.
 - **Once per pass.** When finalisation's round re-enters S5.1 (§4) and S5.1 exits again, go straight to
   the push — never a second finalisation.
-- **Nothing to triage → skip it silently**: no card, no loop-comment line.
+- **Nothing to triage → no card**, and no loop-comment line. Print only the digest's dropped list, when it
+  has entries (`polish-triage.md` §4 "When nothing is left to ask").
 
 ## 2. The entries
 
 - every `facts.polish` entry marked `open` — earlier phases' leftovers, from the PR body this pass's prep
   fetched (none in fresh mode);
-- every item this pass's fix rounds recorded for the ledger (polish not fixed, pre-existing polish,
-  no-shown-cost items with their note), held for S5.2. Mint each one's id now, per
-  `polish-ledger.md` "Format": `P<phase>.<seq>`, a revision run recording under the last
-  `kind: code-shipping` phase's number, `<seq>` continuing from the highest existing one;
+- every item this pass's fix rounds recorded for the ledger (polish not fixed, pre-existing polish),
+  held for S5.2. Mint each one's id now, per `polish-ledger.md` "Format": `P<phase>.<seq>`, a revision
+  run recording under the last `kind: code-shipping` phase's number, `<seq>` continuing from the highest
+  existing one. Mint the no-shown-cost items' ids too: they are already `drop`, so they are not triaged —
+  the digest only lists them;
 - every line in `facts.polish.unparsed` — ledger content prep could not read. Triage it as `open` unless
   its text names a decided disposition; S5.2's write rewrites it into grammar, keeping its text and its id
   (minting one when it has none), as the evaluator does — never silently dropped.
@@ -48,12 +50,13 @@ Run [`../../_shared/polish-triage.md`](../../_shared/polish-triage.md) with:
   `facts.dod`, for the scope test;
 - **the apply bar** — finalisation's (that file's "The apply bar"): in scope, true at head, clearly right
   rather than taste;
-- **"Other"** — besides a split answer, it may leave entries for the evaluator: they stay `open` with the
-  note `operator: leave for evaluator`, so no later finalisation asks again, and S5.5 asks about them.
+- **"Other"** — on either card, besides a split answer, it may leave entries for the evaluator: they
+  stay `open` with the note `operator: leave for evaluator`, so no later finalisation asks again, and S5.5
+  asks about them.
 
 The `Polish` card is a gate SKILL.md "Gates only for genuine decisions" names. When S5.1 exited on
-**Accept current**, say so in the card's question, so the operator weighs **Apply in this PR** against a
-loop that stalled.
+**Accept current**, say so in the first card's question, so the operator weighs taking the
+recommendations — or, by group, **Apply in this PR** — against a loop that stalled.
 
 An entry the re-check shows is a real **defect** is not polish: record it `drop` with the note
 `reclassified: defect — see loop comment`, and fix it in §4's round as a defect-tier item — unless S5.1
@@ -70,7 +73,8 @@ reply. Then continue at S5.1 step 3:
 
 - **Every fix was polish** → the round settles and takes step 3's one **light re-review** (`review` at
   `medium` over the round's commit). Polish it finds goes to the ledger `open`, unfixed — for the
-  evaluator, never back to this card. A defect it finds:
+  evaluator, never back to this card — except a no-shown-cost item, which goes in as `drop` like any other
+  (`review-fix-round.md` "No shown cost"). A defect it finds:
   - after a **settle** exit, re-enters the loop at step 2 under step 3's **Reset** rule (a fresh baseline);
   - after an **Accept current** exit, does **not** reopen the loop the operator closed. Revert the round's
     commit — it is local, and a revert keeps the record where a reset would erase it:
@@ -107,7 +111,7 @@ last phase gets its own finalisation.
 
 Write the answers into the ledger at S5.2 with this pass's other entries — the staged `pr.md` in fresh
 mode, the restaged body through `edit-pr-body` in continue mode: `applied (commit <sha>)`, `file` (its
-`group:` note), `drop`, `apply` (a re-plan, an entry that `waits on` one, or an Accept-current revert),
+`group:` note), `drop` (the no-shown-cost items' included, unless the operator revived one), `apply` (a re-plan, an entry that `waits on` one, or an Accept-current revert),
 and `open` for whatever is left (`operator: leave for evaluator` when the operator chose that). `file`
 entries are filed after the merge by the evaluator's residual step, never here — a PR that never merges
 files nothing.

@@ -4,7 +4,7 @@ The **polish ledger** is the `## Polish` section of a PR body: the review findin
 recorded instead of fixing — polish it left, polish in code the PR does not change, and findings with no
 shown cost — carried on the PR so the operator can decide what happens to them. This file is the single source of truth for its format and ownership; the procedure that puts entries
 to the operator is [`polish-triage.md`](polish-triage.md). Three skills cite it: `resolver` (writer of
-`open` / `applied`, and of the operator's `apply` / `file` / `drop` at its finalisation), `evaluator`
+`open` / `applied`, of `drop` on a no-shown-cost finding, and of the operator's `apply` / `file` / `drop` at its finalisation), `evaluator`
 (writer of the operator's `apply` / `file` / `drop` for whatever is still `open` when the PR reaches it),
 and `planner` (reader, on a revise either of them routed to it).
 
@@ -60,7 +60,7 @@ example's paths mix Python, Ruby and Swift on purpose — the format is stack-ne
 | `open` | resolver, at the phase's S5.2 push | recorded, undecided — left by finalisation, or recorded before the final pass |
 | `apply` | the operator's answer — resolver (finalisation) or evaluator | must be fixed in this PR before it merges (a note led by `operator: re-plan` routes it through a planner revise first) |
 | `file` | the operator's answer — resolver (finalisation) or evaluator | becomes a follow-up (grouped per `follow-up-filing.md`) after the merge |
-| `drop` | the operator's answer — resolver (finalisation) or evaluator | not worth doing, or no longer applies at head; the note says which |
+| `drop` | the operator's answer — resolver (finalisation) or evaluator; or the resolver itself, at the S5.2 push, for a no-shown-cost finding | not worth doing, or no longer applies at head; the note says which |
 | `applied (commit <sha>)` | resolver | an `apply` item fixed — at finalisation or in a revision run |
 
 ## Apply criteria
@@ -79,9 +79,9 @@ proposes `apply` against a lower bar — in scope, true at head, clearly right
 
 - **Only what the loop chose not to fix enters** (`resolver/references/review-fix-round.md`
   "Classification rubric"): polish on the PR's own code that hit one of the rubric's exceptions (a
-  guard-path refactor, a change beyond the PR's seam, taste), polish in code the PR does not change, and
-  findings with **no shown cost**, whose note leads `no shown cost: <why>` and which triage proposes as
-  `drop`. Polish the loop fixes itself is never recorded; a **defect** is never recorded here — it is
+  guard-path refactor, a change beyond the PR's seam), polish in code the PR does not change, and
+  findings with **no shown cost**, which enter already `drop`, the note leading `no shown cost: <why>`.
+  Polish the loop fixes itself is never recorded; a **defect** is never recorded here — it is
   fixed, deferred with a filed follow-up, or escalated. Polish meeting the "Apply criteria" never enters
   either: the resolver always fixes it in-loop, because parked it only buys a revision session.
 - **An `apply` item is Addressable for the resolver whatever its tier** (`review-fix-round.md`
@@ -98,11 +98,16 @@ proposes `apply` against a lower bar — in scope, true at head, clearly right
   operator can release it, and a `premise false` `drop` whose claim the evaluator finds holds at head
   (`premise disputed`) — at finalisation the proposer judging that premise wrote the code. That is what lets the evaluator treat an `apply` left unfixed as still binding,
   and it bounds the cycle: the operator's answer is the only limit on how often a PR goes back for polish.
-  It is deliberately not a counter.
+  It is deliberately not a counter. **The one exception is a no-shown-cost finding**, which the resolver
+  records `drop` without asking: it was always proposed `drop`, and asking about each one was most of the
+  card's volume. Finalisation's digest lists every such drop, and when a card follows the operator can
+  revive one by id on it ([`polish-triage.md`](polish-triage.md) §5). The evaluator does not re-check them — its own review
+  dimensions surface a cost that turns out to be real — so its re-check list is unchanged.
 - **A `file` entry files from its note too.** The residual filing briefs each `file` entry from its
   item **and** its note: a `narrowed:` note supersedes the item's claim (the triage found only that much
-  still true at head), and entries file **one issue per recorded `group:`** — the groups the operator
-  approved on the `Polish` card, never regrouped at filing. Filing runs after the merge, in the
+  still true at head), and entries file **one issue per recorded `group:`** — the filing groups the
+  operator saw in the triage digest and approved on the `Polish` card, never regrouped at filing. The
+  card's own groups are themes for deciding, not filing groups. Filing runs after the merge, in the
   evaluator's residual step, whichever skill recorded the `file`.
 - **An `apply` note's `intent:` is the operator's decision.** Recorded when the triage found two
   intents the plan leaves open; the resolver implements that intent and never picks one itself.

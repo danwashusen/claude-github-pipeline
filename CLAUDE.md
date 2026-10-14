@@ -442,7 +442,7 @@ now the same rule everything else follows rather than an exception.
   start, focused on the phase this run ships). It is never part of the `## Handoff` block.
 - `polish-ledger.md` — the `## Polish` PR-body section: the findings the resolver's review loop recorded
   instead of fixing — polish it left on the PR's own code, polish in code the PR does not change, and
-  findings with no shown cost (proposed `drop`) — per its provenance-first rubric (the loop exits on
+  findings with no shown cost (recorded `drop` without asking) — per its provenance-first rubric (the loop exits on
   **defect** progress alone, so polish never keeps it running). One line per item with a stable `P<phase>.<seq>` id and a closed disposition set
   (`open` / `applied` resolver-written; `apply` / `file` / `drop` the **operator's** answers, recorded by
   whichever skill asked). The operator decides every entry on a `Polish` card, first at the **resolver's
@@ -456,11 +456,13 @@ now the same rule everything else follows rather than an exception.
   file after the merge, whoever recorded them. `parse.py`'s `scan_polish` reads it for three preps; it
   never raises.
 - `polish-triage.md` — the one procedure both `Polish` cards run (the resolver's finalisation, the
-  evaluator's S5.5): re-check each entry's claim at head, propose a disposition, group, ask, record the
-  answers. Each caller supplies its entries, checkout, plan and write; the one proposal rule that differs
-  is the **apply bar** — finalisation proposes `apply` for anything in scope, true at head and clearly
-  right (applying costs a fix round), the evaluator only for the ledger's "Apply criteria" (applying
-  costs a session). Never restate the card's options outside it.
+  evaluator's S5.5): re-check each entry's claim at head, propose a disposition, group by **theme** (one
+  proposal per group, so one answer fits it), print a **digest** showing the code at each entry's anchor,
+  ask, record the answers. `file` entries carry a filing group computed apart from the card's themes and
+  shown in the digest. Each caller supplies its entries, checkout, plan and write; the one proposal rule that differs is the **apply bar** —
+  finalisation proposes `apply` for anything in scope, true at head and clearly right (applying costs a
+  fix round), the evaluator only for the ledger's "Apply criteria" (applying costs a session). Never
+  restate the card's options outside it.
 
 When changing behavior that touches handoffs, the plan summary, DoD annotations, the worktree block
 format, the epic delivery log, or the open-question contracts, edit the `_shared` file (the single

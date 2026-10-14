@@ -59,9 +59,10 @@ call, not the evaluator's alone — asking only about `apply` left a ledger of `
 one line of the approval question, with no way to re-plan an entry. Ask **before** the S7-gate
 `Approve PR` card and before any S7-post, so the gate and the review see the final dispositions.
 
-Group, ask and record the answers per [`../../_shared/polish-triage.md`](../../_shared/polish-triage.md)
-§3–§4. A re-proposed `apply` joins its seam's group and says it was
-`confirmed on a prior run, left unfixed`; a re-proposed drop says `premise disputed: <what holds>`.
+Group, show the digest, ask and record the answers per
+[`../../_shared/polish-triage.md`](../../_shared/polish-triage.md) §3–§6. A re-proposed `apply` joins a
+group proposed `apply` and its digest entry says it was `confirmed on a prior run, left unfixed`; in the
+digest, a re-proposed drop says `premise disputed: <what holds>`.
 
 With no **Apply in this PR** or **Re-plan** answer, the verdict stands and S7 proceeds — under `ask` to
 the `Approve PR` card, which does not carry the ledger. With one, an APPROVE becomes COMMENT (§4). On a
@@ -73,8 +74,8 @@ how often a PR goes back for polish — deliberately an operator decision, not a
 
 ## 3. Write the dispositions once
 
-After the last `Polish` card is answered, and before the review posts, rewrite the `## Polish` section
-with the final dispositions — the ledger never records a decision the operator overrode. Stage the whole
+After the last `Polish` card is answered — or, when §1 left nothing to ask, after §1 — and before the
+review posts, rewrite the `## Polish` section with the final dispositions — the ledger never records a decision the operator overrode. Stage the whole
 PR body with the rewritten section to `<facts.scratch>/pr-body-polish.md` and apply it through the single
 write path (`edit-pr-body` — the issue-body op `edit-body` rejects a PR number):
 

@@ -1,8 +1,8 @@
 # Polish triage — shared procedure
 
 The polish ledger's undecided entries ([`polish-ledger.md`](polish-ledger.md)) are decided by the
-operator, entry by entry, on one `Polish` card. Two skills run this procedure, in this order on a PR's way
-to merge:
+operator on a `Polish` card, after a digest that shows the code behind each one. Two skills run this
+procedure, in this order on a PR's way to merge:
 
 - the **resolver's finalisation** (`resolver/references/finalisation.md`) — on the final pass, before the
   phase's push, so an applied entry costs one fix round in the same session;
@@ -10,7 +10,7 @@ to merge:
   still undecided when the PR reaches it, before the review posts.
 
 This file is the single source of truth for the steps both share: re-check each entry at head, propose a
-disposition, group, ask, and record the answers. Each caller supplies **the entries** it triages, **the
+disposition, group by theme, show the digest, ask, and record the answers. Each caller supplies **the entries** it triages, **the
 checkout** it reads them in, **the plan** its scope test reads, **its apply bar**, and **what follows the
 answers** (its write, its route); everything else stays in its own reference.
 
@@ -42,8 +42,12 @@ Propose one of the following, with a one-line reason as the entry's note:
   an intent decided files too — the note states the open question, so the follow-up's planner answers it
   rather than inheriting a guess.
 - **`drop`** — taste rather than improvement, a premise false at head, or **no longer applies at head**
-  (a later phase removed or rewrote the site). The note says which. An entry the loop recorded with a
-  `no shown cost:` note is proposed `drop` unless the re-check finds the cost it lacked.
+  (a later phase removed or rewrote the site). The note says which.
+
+The loop records a **no-shown-cost** finding as `drop` itself (`polish-ledger.md` "Rules"), so it never
+reaches this step. An `open` entry whose note leads `no shown cost:` (one written before that rule) is
+recorded `drop` the same way, without asking — it joins the dropped list (§4) — unless the re-check finds
+the cost it lacked, which makes it an ordinary entry to propose.
 
 An entry that turns out to be a real defect is not polish; each caller's reference says what happens to
 it, and the card never asks about it.
@@ -63,35 +67,94 @@ The one proposal rule that differs by caller, because applying costs each a diff
   **actively bad to merge**. Applying there costs a soft-reject, a whole resolver session and a second
   evaluation, and the operator has usually answered finalisation's card already.
 
-## 3. Group and ask
+## 3. Group by theme
 
-Group the entries: one group per proposed follow-up (the `file` grouping of
-[`follow-up-filing.md`](follow-up-filing.md) — same type, same seam), one group for each `apply` or
-re-plan seam, and one group for all the `drop` proposals. Ask one `Polish` card (`header: "Polish"`) with
-one question per group — at most 4 questions per card; more groups ask a second card after the first is
-answered. Each question lists the group's entries (id, item, the proposer's reason, and any
-`premise false` / `narrowed` correction) and offers four options, the proposal first and marked
+Group the entries the way the operator decides them, not the way they would be filed: one group per
+**theme** — what the entries have in common, in the operator's terms ("Stale comments and docs",
+"Naming", "Duplicated helpers", "Error messages") — with a one-line reason they belong together.
+**Every entry in a group shares one proposal**, so one answer fits the whole group: a theme whose entries
+were proposed differently splits by proposal ("Naming — apply", "Naming — drop"). The seam-and-type
+grouping that once shaped the card read as random and left the operator splitting answers by id.
+
+Keep it to **at most 4 groups**, so they fit on one card: past 4, merge the smallest groups that share a
+proposal into one labelled `Minor — <proposal>`. **Never merge re-plan groups**: each re-plan entry names a
+different plan decision, so one answer must not cover two of them. Merging `apply` / `file` / `drop`
+always reaches one group each, so only re-plan groups can still exceed the cap; those spill to further
+cards (§5). A group of one is fine.
+
+Separately, give every entry proposed `file` its **filing group** — the follow-up issue it would file
+under, per [`follow-up-filing.md`](follow-up-filing.md) "Grouping" (same type, same seam, at most ~5
+items). A theme can span seams and would file as one unfocused issue, so the card's groups never decide
+the filing; the digest shows the filing groups so the operator approves those too.
+
+## 4. Show the digest
+
+Before any card, print the digest as plain text — it is the context the card's question has no room for,
+so the operator can judge an entry without opening the code. One block per group: its label, its
+proposal, and per entry:
+
+- **the id** and **what is wrong**, in plain words rather than the reviewer's;
+- **the code at the anchor** — a short excerpt (at most ~10 lines) read from the caller's checkout, or a
+  before → after sketch of the change the entry asks for. A group proposed `drop` gets the other lines
+  only: an excerpt there is mostly skimmed, and the operator who doubts a drop can ask for the code;
+- **the reason** for the proposal, and **what applying it costs** (the sites and files it touches);
+- any `premise false` / `narrowed` correction (§1), and any marker the caller adds to a re-proposed entry.
+
+A group proposed `file` ends with the follow-up issues it would file as — each filing group's title and
+its ids. The digest closes with **Dropped, no shown cost** — one line per entry (its id, item and why),
+so the operator can revive one (§5): finalisation lists every `drop` whose note leads `no shown cost:`,
+in the ledger or held for this pass's S5.2 write; the evaluator lists the `open` ones §2 dropped this run.
+
+**When nothing is left to ask**, print the dropped list alone whenever it has entries — the operator
+still sees what was dropped; no card follows, and the drops stand.
+
+The digest is not a gate: the card that follows is the one place the operator answers.
+
+## 5. Ask
+
+Ask a `Polish` card (`header: "Polish"`) whose single question offers:
+
+- **Take all recommendations** — first, marked recommended; every entry takes its proposal;
+- **Review by group** — a second card asks group by group.
+
+The question sums up the proposals ("apply 4; file 3 as 2 issues; drop 5"). **A re-plan proposal is
+always named with its route** ("re-plan 1 — P2.3 goes to the planner before the resolver continues"):
+taking it re-routes the session, so the take-all answer must not hide it. Its "Other" takes overrides by
+id ("all, but apply P1.3"), including reviving a no-shown-cost drop from the digest's dropped list — the
+revived entry takes the answer given. With only one group, skip this question and ask that group's
+question directly; that question's "Other" then takes the revivals too.
+
+On **Review by group**, ask a second `Polish` card with one question per group — at most 4; re-plan
+groups past the cap (§3) follow on further cards, 4 questions each. Each question names the group's theme
+and ids (the digest carries the detail) and offers the options below, the proposal first and marked
 recommended:
 
-- **File as follow-up** — filed after the merge.
 - **Apply in this PR** — the resolver fixes it before the merge.
-- **Re-plan** — the planner revises the plan for it before the resolver continues.
+- **File as follow-up** — filed after the merge, as the digest's filing groups.
+- **Re-plan** — the planner revises the plan for it before the resolver continues. Offered only on a
+  group proposed `apply` or re-plan: re-plan is an in-scope answer, and a group proposed `file` or `drop`
+  takes the other three.
 - **Drop**
 
-The tool's "Other" takes a split answer by id ("file all but P1.3; re-plan P1.3"); apply it entry by
-entry. A caller may give "Other" one reading of its own, named in its reference.
+Each option's description says what the choice does **for this group** ("fixes the 3 stale comments in
+one fix round"), not the generic effect. The tool's "Other" takes a split answer by id ("file all but
+P1.3; re-plan P1.3"); apply it entry by entry. A caller may give "Other" one reading of its own, named in
+its reference.
 
-## 4. Record the answers
+## 6. Record the answers
 
-- **File as follow-up** → `file`, the note carrying `group: <the question's group label>` — the residual
-  step files one issue per recorded group, as the operator approved it
-  ([`polish-ledger.md`](polish-ledger.md) "Rules").
+- **File as follow-up** → `file`, the note carrying `group: <its filing group from the digest>` — the
+  residual step files one issue per recorded group, as the operator saw it
+  ([`polish-ledger.md`](polish-ledger.md) "Rules"). An entry answered File that the digest gave no filing
+  group joins the digest's filing group on the same seam when one exists, else forms a group of its own.
 - **Drop** → `drop`.
 - **Apply in this PR** → `apply`. On an entry proposed as re-plan because two intents fit, ask one
   follow-up question first — one option per intent the note names — and record the answer as
   `intent: <chosen>` in the note: the resolver implements that intent and never picks one itself.
 - **Re-plan** → `apply`, the note prefixed `operator: re-plan —`, which forces the caller's planner route
   whatever its own plan-change test says.
+- **Take all recommendations** → each entry's proposal, recorded as if answered entry by entry (a
+  re-plan proposal as **Re-plan**, whose planner revise settles any open intent).
 
 When an answer differs from the proposal, the note leads with `operator: <answer>` and keeps the
 proposer's reason after it. Every answer is the operator's decision, so a later triage never asks about a
