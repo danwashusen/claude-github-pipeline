@@ -425,12 +425,52 @@ class PolishAdjudicationTests(unittest.TestCase):
         claude_md = (REPO_ROOT / "CLAUDE.md").read_text(encoding="utf-8")
         self.assertNotIn("File / Apply in this PR / Re-plan / Drop", claude_md)
         self.assertIn("the proposal first and marked recommended", self.triage)
-        self.assertIn("one question per group — at most 4 questions per card", self.triage)
+        self.assertIn("a second `Polish` card with one question per group — at most 4, which §3's cap "
+                      "guarantees", self.triage)
+        self.assertNotIn("more groups ask a second card after the first is answered", self.triage)
         self.assertNotIn("ride along", self.reference)
         self.assertNotIn("ride along", self.triage)
         self.assertNotIn("ride along", self.spine)
         # The operator's card is the only bound on polish round-trips — never a counter.
         self.assertIn("deliberately an operator decision, not a counter", self.reference)
+
+    def test_groups_are_themes_with_one_proposal_each(self):
+        # Operator feedback (4.34.0): seam-and-type groups read as random, and a group mixing proposals
+        # forced a split answer by id. Card groups are themes; filing groups are computed apart.
+        self.assertIn("## 3. Group by theme", self.triage)
+        self.assertIn("**Every entry in a group shares one proposal**", self.triage)
+        self.assertIn("a theme whose entries were proposed differently splits by proposal", self.triage)
+        self.assertIn("Keep it to **at most 4 groups**", self.triage)
+        self.assertIn("merge the smallest groups that share a proposal into one labelled `Minor — <proposal>`",
+                      self.triage)
+        self.assertIn("give every entry proposed `file` its **filing group**", self.triage)
+        self.assertIn("the card's groups never decide the filing", self.triage)
+        self.assertNotIn("one group for all the `drop` proposals", self.triage)
+
+    def test_a_digest_shows_the_code_before_any_card(self):
+        # Operator feedback (4.34.0): with no code shown, the operator applied entries out of caution.
+        self.assertIn("## 4. Show the digest", self.triage)
+        self.assertIn("Before any card, print the digest as plain text", self.triage)
+        self.assertIn("**the code at the anchor** — a short excerpt (at most ~10 lines) read from the caller's "
+                      "checkout, or a before → after sketch", self.triage)
+        self.assertIn("**what applying it costs**", self.triage)
+        self.assertIn("A group proposed `file` ends with the follow-up issues it would file as", self.triage)
+        self.assertIn("The digest is not a gate", self.triage)
+        self.assertLess(self.triage.index("## 4. Show the digest"), self.triage.index("## 5. Ask"))
+
+    def test_the_first_question_takes_all_recommendations(self):
+        self.assertIn("**Take all recommendations** — first, marked recommended", self.triage)
+        self.assertIn("**Review by group** — a second card asks group by group", self.triage)
+        self.assertIn("With only one group, skip this question", self.triage)
+        self.assertIn("including reviving a no-shown-cost drop", self.triage)
+        self.assertIn("**Take all recommendations** → each entry's proposal, recorded as if answered entry by "
+                      "entry", self.triage)
+        self.assertNotIn("**Take all recommendations**", self.spine)
+        self.assertNotIn("**Take all recommendations**", self.reference)
+
+    def test_re_plan_is_offered_only_on_in_scope_groups(self):
+        self.assertIn("Offered only on a group proposed `apply` or re-plan", self.triage)
+        self.assertIn("says what the choice does **for this group**", self.triage)
 
     def test_the_polish_card_precedes_the_approve_card_which_never_carries_the_ledger(self):
         self.assertIn("Ask **before** the S7-gate `Approve PR` card and before any S7-post", self.reference)
@@ -468,7 +508,8 @@ class PolishAdjudicationTests(unittest.TestCase):
 
     def test_file_entries_carry_their_group_and_narrowed_claim_to_filing(self):
         # PR #65 review: the card's groups and a `narrowed:` claim must survive to the residual filing.
-        self.assertIn("the note carrying `group: <the question's group label>`", self.triage)
+        self.assertIn("the note carrying `group: <its filing group from the digest>`", self.triage)
+        self.assertNotIn("`group: <the question's group label>`", self.triage)
         ledger = re.sub(r"\s+", " ", (REPO_ROOT / "skills" / "_shared" / "polish-ledger.md").read_text(encoding="utf-8"))
         self.assertIn("a `narrowed:` note supersedes the item's claim", ledger)
         self.assertIn("one issue per recorded `group:`", ledger)

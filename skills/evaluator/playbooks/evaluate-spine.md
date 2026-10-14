@@ -233,9 +233,9 @@ re-asked unless it is an unfixed `apply` or a `premise false` drop whose claim h
 entry's claim at head and propose `apply` / re-plan / `file` / `drop` with a reason (an unfixed `apply`
 from an earlier run is re-proposed, so the operator can release it). The operator decides **every**
 entry, on any verdict and
-under either policy — the reference's `Polish` card, one question per group, asked before the S7-gate
-card, which never carries the ledger. An answer that applies an entry makes the verdict COMMENT, routed
-to the resolver (`#<issue>`) or — on a re-plan, or when applying it changes the plan — `planner revise`.
+under either policy — the reference's digest and `Polish` card (take-all, then by group), asked before
+the S7-gate card, which never carries the ledger. An answer that applies an entry makes the verdict
+COMMENT, routed to the resolver (`#<issue>`) or — on a re-plan, or when applying it changes the plan — `planner revise`.
 Write the final dispositions once — after any answer, before the review posts — with
 `gh_persist.py edit-pr-body`; `file` entries are filed after the merge by the playbook's residual step.
 

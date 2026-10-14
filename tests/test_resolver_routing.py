@@ -1299,7 +1299,7 @@ class MainLoopReviewFixRoundTests(unittest.TestCase):
 
     def test_the_ledger_is_written_at_the_phase_push(self):
         self.assertIn("the `## Polish` ledger", self.flat)
-        self.assertIn("gains one entry per polish item the loop left — `open`, or finalisation's answer", self.flat)
+        self.assertIn("gains one entry per polish item the loop left — `open`, `drop` if no shown cost, or finalisation's answer", self.flat)
         self.assertIn("`applied (commit <sha>)` on each `apply` item it fixed", self.flat)
 
     def test_settle_covers_a_verdict_that_never_approves(self):
@@ -2083,7 +2083,7 @@ class FinalisationTests(unittest.TestCase):
         self.assertLess(push.index("finalisation.md"), push.index("git -C"))
         self.assertIn("this is the phase's **only** push", push)
         # PR #71 review: "an `open` entry per item … and finalisation's answers" read as two lines per item.
-        self.assertIn("gains one entry per polish item the loop left — `open`, or finalisation's answer — and "
+        self.assertIn("gains one entry per polish item the loop left — `open`, `drop` if no shown cost, or finalisation's answer — and "
                       "`applied (commit <sha>)`", push)
         self.assertNotIn("gains an `open` entry per polish item the loop left", push)
         ret = self.spine.split("## Return to the routed playbook", 1)[1]
@@ -2241,12 +2241,20 @@ class RubricProvenanceTests(unittest.TestCase):
         self.assertIn("is its own follow-up group, never grouped with lower-severity items", r)
         self.assertIn("When its fix is one site in a file this PR edits, fix it here, classified adjacent.", r)
         self.assertIn("- **No shown cost** —", r)
-        self.assertIn("the note `no shown cost: <why>`, which finalisation proposes as `drop`; never file it", r)
+        self.assertIn("Record it for the ledger as `drop` with the note `no shown cost: <why>` — decided, so it "
+                      "never reaches a `Polish` card", r)
+        self.assertNotIn("which finalisation proposes as `drop`", r)
         ledger = " ".join((REPO_ROOT / "skills" / "_shared" / "polish-ledger.md").read_text(encoding="utf-8").split())
         self.assertIn("**Only what the loop chose not to fix enters**", ledger)
         self.assertNotIn("**Only unfixed polish enters.**", ledger)
         triage = " ".join((REPO_ROOT / "skills" / "_shared" / "polish-triage.md").read_text(encoding="utf-8").split())
-        self.assertIn("An entry the loop recorded with a `no shown cost:` note is proposed `drop`", triage)
+        self.assertIn("The loop records a **no-shown-cost** finding as `drop` itself", triage)
+        self.assertIn("An `open` entry whose note leads `no shown cost:` predates that rule: record it `drop` "
+                      "without asking", triage)
+        # The one exception to the operator deciding every disposition, and who writes it.
+        self.assertIn("**The one exception is a no-shown-cost finding**", ledger)
+        self.assertIn("or the resolver itself, at the S5.2 push, for a no-shown-cost finding", ledger)
+        self.assertIn("The evaluator does not re-check them", ledger)
         self.assertNotIn('"not cheap"', triage)
 
     def test_a_plan_defect_is_not_settled(self):
@@ -2329,7 +2337,9 @@ class RubricProvenanceTests(unittest.TestCase):
     def test_finalisation_triages_every_item_the_rounds_recorded(self):
         finalisation = " ".join((REFERENCES_DIR / "finalisation.md").read_text(encoding="utf-8").split())
         self.assertIn("every item this pass's fix rounds recorded for the ledger (polish not fixed, "
-                      "pre-existing polish, no-shown-cost items with their note)", finalisation)
+                      "pre-existing polish)", finalisation)
+        self.assertIn("Mint the no-shown-cost items' ids too: they are already `drop`, so they are not "
+                      "triaged", finalisation)
         self.assertNotIn("this pass's unfixed polish", finalisation)
 
     def test_the_file_keeps_nine_steps_and_no_positional_references(self):
