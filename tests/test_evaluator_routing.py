@@ -425,8 +425,8 @@ class PolishAdjudicationTests(unittest.TestCase):
         claude_md = (REPO_ROOT / "CLAUDE.md").read_text(encoding="utf-8")
         self.assertNotIn("File / Apply in this PR / Re-plan / Drop", claude_md)
         self.assertIn("the proposal first and marked recommended", self.triage)
-        self.assertIn("a second `Polish` card with one question per group — at most 4, which §3's cap "
-                      "guarantees", self.triage)
+        self.assertIn("a second `Polish` card with one question per group — at most 4; re-plan groups past "
+                      "the cap (§3) follow on further cards", self.triage)
         self.assertNotIn("more groups ask a second card after the first is answered", self.triage)
         self.assertNotIn("ride along", self.reference)
         self.assertNotIn("ride along", self.triage)
@@ -471,6 +471,33 @@ class PolishAdjudicationTests(unittest.TestCase):
     def test_re_plan_is_offered_only_on_in_scope_groups(self):
         self.assertIn("Offered only on a group proposed `apply` or re-plan", self.triage)
         self.assertIn("says what the choice does **for this group**", self.triage)
+
+    def test_take_all_never_hides_a_re_plan(self):
+        # PR #76 review: take-all records a re-plan proposal as Re-plan, which re-routes the session.
+        self.assertIn("**A re-plan proposal is always named with its route**", self.triage)
+        self.assertIn("the take-all answer must not hide it", self.triage)
+        # Each re-plan names a different plan decision, so the Minor merge never folds two together.
+        self.assertIn("**Never merge re-plan groups**", self.triage)
+
+    def test_the_dropped_list_shows_without_a_card_and_revives_with_one_group(self):
+        self.assertIn("**When nothing is left to ask**, print the dropped list alone whenever it has entries",
+                      self.triage)
+        self.assertIn("in the ledger or held for this pass's S5.2 write", self.triage)
+        self.assertIn("that question's \"Other\" then takes the revivals too", self.triage)
+        self.assertIn("recorded `drop` the same way, without asking", self.triage)
+        # The evaluator still writes the ledger when §1 left nothing to ask.
+        self.assertIn("or, when §1 left nothing to ask, after §1", self.reference)
+
+    def test_drop_groups_get_no_code_excerpt(self):
+        self.assertIn("A group proposed `drop` gets the other lines only", self.triage)
+
+    def test_the_take_all_question_is_not_restated_outside_the_triage(self):
+        # CLAUDE.md: "Never restate the card's options outside it."
+        for path in (PLAYBOOKS_DIR / "evaluate-spine.md", SKILL_DIR / "references" / "polish-adjudication.md",
+                     REPO_ROOT / "CLAUDE.md", REPO_ROOT / "docs" / "architecture.md"):
+            text = path.read_text(encoding="utf-8").lower()
+            self.assertNotIn("take-all", text, path.name)
+            self.assertNotIn("take all recommendations", text, path.name)
 
     def test_the_polish_card_precedes_the_approve_card_which_never_carries_the_ledger(self):
         self.assertIn("Ask **before** the S7-gate `Approve PR` card and before any S7-post", self.reference)

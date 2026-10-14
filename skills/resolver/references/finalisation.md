@@ -19,9 +19,8 @@ evaluator's S5.5 stays the backstop for whatever is still `open` when the PR rea
   handoff.
 - **Once per pass.** When finalisation's round re-enters S5.1 (§4) and S5.1 exits again, go straight to
   the push — never a second finalisation.
-- **Nothing to triage → skip it silently**: no card, no loop-comment line. When the ledger still
-  carries `no shown cost:` drops, print the digest's dropped list alone (`polish-triage.md` §4), so the
-  operator still sees them; no card follows, and the drops stand.
+- **Nothing to triage → no card**, and no loop-comment line. Print only the digest's dropped list, when it
+  has entries (`polish-triage.md` §4 "When nothing is left to ask").
 
 ## 2. The entries
 
@@ -74,7 +73,8 @@ reply. Then continue at S5.1 step 3:
 
 - **Every fix was polish** → the round settles and takes step 3's one **light re-review** (`review` at
   `medium` over the round's commit). Polish it finds goes to the ledger `open`, unfixed — for the
-  evaluator, never back to this card. A defect it finds:
+  evaluator, never back to this card — except a no-shown-cost item, which goes in as `drop` like any other
+  (`review-fix-round.md` "No shown cost"). A defect it finds:
   - after a **settle** exit, re-enters the loop at step 2 under step 3's **Reset** rule (a fresh baseline);
   - after an **Accept current** exit, does **not** reopen the loop the operator closed. Revert the round's
     commit — it is local, and a revert keeps the record where a reset would erase it:

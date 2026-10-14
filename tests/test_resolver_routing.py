@@ -2104,7 +2104,11 @@ class FinalisationTests(unittest.TestCase):
     def test_when_it_runs_and_when_it_skips(self):
         self.assertIn("A terminating guard-rail answer (**Re-plan**, **Restructure**, **Abort**, **Abort loop**) "
                       "skips it", self.flat)
-        self.assertIn("**Nothing to triage → skip it silently**", self.flat)
+        self.assertIn("**Nothing to triage → no card**, and no loop-comment line", self.flat)
+        self.assertIn("Print only the digest's dropped list, when it has entries", self.flat)
+        self.assertNotIn("skip it silently", self.flat)
+        # PR #76 review: a no-shown-cost item the light re-review finds is `drop`, not `open`.
+        self.assertIn("except a no-shown-cost item, which goes in as `drop` like any other", self.flat)
         self.assertIn("go straight to the push — never a second finalisation", self.flat)
         self.assertIn("A non-final phase's leftovers wait", self.flat)
 
@@ -2249,8 +2253,8 @@ class RubricProvenanceTests(unittest.TestCase):
         self.assertNotIn("**Only unfixed polish enters.**", ledger)
         triage = " ".join((REPO_ROOT / "skills" / "_shared" / "polish-triage.md").read_text(encoding="utf-8").split())
         self.assertIn("The loop records a **no-shown-cost** finding as `drop` itself", triage)
-        self.assertIn("An `open` entry whose note leads `no shown cost:` predates that rule: record it `drop` "
-                      "without asking", triage)
+        self.assertIn("An `open` entry whose note leads `no shown cost:` (one written before that rule) is "
+                      "recorded `drop` the same way, without asking", triage)
         # The one exception to the operator deciding every disposition, and who writes it.
         self.assertIn("**The one exception is a no-shown-cost finding**", ledger)
         self.assertIn("or the resolver itself, at the S5.2 push, for a no-shown-cost finding", ledger)

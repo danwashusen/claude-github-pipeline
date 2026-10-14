@@ -492,8 +492,8 @@ soft-reject, a revision session and a second evaluation. The **evaluator** stays
 re-checks at head every unfixed `apply`, every `file` and every `premise false` `drop` (a premise the
 code's author judged at finalisation), and asks about any entry still `open` — and its disposition rewrite
 stays its one PR-body write, through `gh_persist.py edit-pr-body`. Since 4.34.0 the card groups entries by theme
-with one proposal per group, follows a digest that shows the code behind each entry, and opens with a
-take-all question; no-shown-cost findings are recorded `drop` by the loop and never reach it.
+with one proposal per group and follows a digest that shows the code behind each entry; no-shown-cost
+findings are recorded `drop` by the loop and never reach it.
 
 ## §9 Skill anatomy
 

@@ -458,9 +458,8 @@ now the same rule everything else follows rather than an exception.
 - `polish-triage.md` — the one procedure both `Polish` cards run (the resolver's finalisation, the
   evaluator's S5.5): re-check each entry's claim at head, propose a disposition, group by **theme** (one
   proposal per group, so one answer fits it), print a **digest** showing the code at each entry's anchor,
-  ask (a take-all question first, then group by group), record the answers. `file` entries carry a
-  filing group computed apart from the card's themes and shown in the digest. Each caller supplies its
-  entries, checkout, plan and write; the one proposal rule that differs is the **apply bar** —
+  ask, record the answers. `file` entries carry a filing group computed apart from the card's themes and
+  shown in the digest. Each caller supplies its entries, checkout, plan and write; the one proposal rule that differs is the **apply bar** —
   finalisation proposes `apply` for anything in scope, true at head and clearly right (applying costs a
   fix round), the evaluator only for the ledger's "Apply criteria" (applying costs a session). Never
   restate the card's options outside it.
