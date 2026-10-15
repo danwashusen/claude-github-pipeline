@@ -137,7 +137,9 @@ Once a group is filed, the resolver does three things with its URL — every ite
    without real numbers age into noise.
 2. **Update the PR body's `## Follow-ups` section** with a list item per filed issue — one per group, not
    per item (stage the updated body and `edit-pr-body` the PR). Add the section if it doesn't exist. Putting follow-up links in the body
-   (not a comment) makes them durable: comments scroll, the body persists.
+   (not a comment) makes them durable: comments scroll, the body persists. Name each issue as `#NNN` or
+   its full URL: an epic-integration evaluation reads a merged story PR's deferrals from this section
+   (`parse.py` `scan_follow_ups`), and a reference in any other form is invisible to it.
 3. **Thread the URLs into the handoff** under a "Follow-ups filed" bullet, separate from the "Procedural
    notes" bullet that holds the capture-in-PR-body items. A pre-existing security or privacy follow-up
    leads it.

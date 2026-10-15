@@ -1,0 +1,33 @@
+[
+  {
+    "number": 96,
+    "title": "Story B",
+    "url": "https://github.com/octo/widgets/pull/96",
+    "headRefName": "91-story-b",
+    "closingIssuesReferences": [],
+    "mergedAt": "2026-02-02T00:00:00Z",
+    "body": "Fixes #91\n\n## Follow-ups\n- https://github.com/octo/widgets/issues/302 \u2014 retry budget\n- #301\n\n## Polish\n- P1.1 \u00b7 open \u2014 rename the scanner \u2014 b.py / scan\n"
+  },
+  {
+    "number": 95,
+    "title": "Story A",
+    "url": "https://github.com/octo/widgets/pull/95",
+    "headRefName": "90-story-a",
+    "closingIssuesReferences": [
+      {
+        "number": 90
+      }
+    ],
+    "mergedAt": "2026-02-01T00:00:00Z",
+    "body": "Fixes #90\n\n## Follow-ups\n- Filed #301 \u2014 cache invalidation (P1.2); part of epic #42, after #96\n\n## Polish\n- P1.1 \u00b7 applied (commit abc1234) \u2014 stale comment \u2014 a.py / f\n- P1.2 \u00b7 file \u2014 dedupe the date helpers \u2014 a.py / g \u2014 follow-up: same seam\n- P1.3 \u00b7 drop \u2014 prefer early return \u2014 a.py / h \u2014 no longer applies at head\n"
+  },
+  {
+    "number": 97,
+    "title": "Fix a typo",
+    "url": "https://github.com/octo/widgets/pull/97",
+    "headRefName": "fix-typo",
+    "closingIssuesReferences": [],
+    "mergedAt": "2026-02-03T00:00:00Z",
+    "body": "## Follow-ups\n- #303\n"
+  }
+]

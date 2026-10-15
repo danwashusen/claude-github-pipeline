@@ -38,10 +38,14 @@ Group related items and file each group via the shared protocol in
 [`../../_shared/follow-up-filing.md`](../../_shared/follow-up-filing.md) ("Grouping") — one
 `general-purpose` sub-agent per group, spawned together in one message, type from
 `bug | incomplete-feature | deferred-test |
-revise-existing`, parent reference = this PR + the issue. After filing, post the URLs as a brief PR
-comment so they're durable (stage the list to `<facts.scratch>/followups.md`):
+revise-existing`, parent reference = this PR + the issue. After filing, weave each URL into the PR
+body's `## Follow-ups` section — one list item per filed issue, the section added if absent — where the
+resolver's own weave puts its follow-ups, so every filed deferral is in one place a later reader scans
+(an epic-integration evaluation reads its story PRs' sections, never their comments). Restage from the
+body as this run last wrote it (S5.5's write, else the `facts.sections` body) to
+`<facts.scratch>/pr-body-followups.md`:
 ```bash
-${CLAUDE_PLUGIN_ROOT}/scripts/gh_persist.py comment <owner/repo> pr <PR> "<facts.scratch>/followups.md"
+${CLAUDE_PLUGIN_ROOT}/scripts/gh_persist.py edit-pr-body <owner/repo> <PR> "<facts.scratch>/pr-body-followups.md"
 ```
 If nothing is residual, say nothing.
 

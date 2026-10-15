@@ -166,7 +166,7 @@ class PrepEvaluatorSandboxTestCase(unittest.TestCase):
         )
 
     def _envelope(self, pr="88", repo="octo/widgets", fixture_case="prep_evaluator_happy_standard",
-                  extra_args=None, ambient=True, ambient_branch=None, stamp=True):
+                  extra_args=None, ambient=True, ambient_branch=None, stamp=True, extra_env=None):
         """Run the prep and return its envelope. With `ambient` (the default), the subprocess runs
         with its cwd INSIDE a worktree on the fixture PR's head branch (v3's operator posture) and
         the fixture is stamped so pr.headRefOid == that worktree's HEAD. `ambient_branch`
@@ -188,10 +188,10 @@ class PrepEvaluatorSandboxTestCase(unittest.TestCase):
         if fixtures_dir is not None:
             result = self._run(
                 args, fixture_case=None,
-                extra_env={"GH_SHIM_FIXTURES": str(fixtures_dir)}, cwd=run_cwd,
+                extra_env=dict(extra_env or {}, GH_SHIM_FIXTURES=str(fixtures_dir)), cwd=run_cwd,
             )
         else:
-            result = self._run(args, fixture_case=fixture_case, cwd=run_cwd)
+            result = self._run(args, fixture_case=fixture_case, extra_env=extra_env, cwd=run_cwd)
         self.assertEqual(result.returncode, 0, msg="stderr: %s" % result.stderr)
         envelope = _parse_one_envelope(result.stdout)
         envelope_asserts.assert_full_envelope_conformance(envelope)
@@ -592,6 +592,77 @@ class PrTypeDetectionTests(PrepEvaluatorSandboxTestCase):
         # the WORKSPACE ensured is still on the PR's own head branch (epic/42-journal), never on
         # main — an epic-integration PR's diff is reviewed on its own branch like any other.
         self.assertEqual(envelope["workspace"]["branch"], "epic/42-journal")
+
+
+class EpicIntegrationResidueTests(PrepEvaluatorSandboxTestCase):
+    """`facts.epic` for an epic-integration PR: the story set (read from the PR's HEAD ref) plus
+    `residue` — what the epic's merged story PRs deferred, read from their own bodies. Facts only:
+    the mapping to the epic's DoD is the playbook's judgment, and nothing here is ever a decision."""
+
+    def test_story_set_and_residue_from_the_merged_story_prs(self):
+        envelope = self._envelope(fixture_case="prep_evaluator_epic_integration_residue")
+        epic = envelope["epic"]
+        self.assertEqual(epic["number"], 42)
+        self.assertEqual(epic["branch"], "epic/42-journal")
+        self.assertEqual([s["number"] for s in epic["stories"]], [89, 90, 91])
+        # The delivery log is the story route's write — never built here.
+        self.assertNotIn("delivery_log", epic)
+        residue = epic["residue"]
+        self.assertEqual(residue["story_pr_count"], 3)
+        self.assertEqual(residue["story_prs_mode"], "inline")
+        prs = {p["number"]: p for p in residue["story_prs"]}
+        self.assertEqual(sorted(prs), [95, 96, 97])
+        # Closing reference first, the `<N>-<slug>` branch grammar second, unmapped otherwise.
+        self.assertEqual((prs[95]["story"], prs[96]["story"], prs[97]["story"]), (90, 91, None))
+        self.assertEqual(residue["unmapped_prs"], [97])
+        self.assertEqual(residue["closed_stories_without_pr"], [89])
+        # `applied` is resolved residue — dropped; `file` / `drop` / `open` stay.
+        self.assertEqual(
+            [(e["id"], e["disposition"]) for e in prs[95]["polish"]],
+            [("P1.2", "file"), ("P1.3", "drop")],
+        )
+        # The epic (#42) and a sibling PR (#96) named in a Follow-ups line are not deferrals.
+        self.assertEqual(prs[95]["follow_ups"], [301])
+        self.assertEqual(prs[96]["follow_ups"], [302, 301])
+        follow_ups = {f["number"]: f for f in residue["follow_ups"]}
+        self.assertEqual(follow_ups[301]["state"], "OPEN")
+        self.assertEqual(follow_ups[301]["from_prs"], [95, 96])
+        self.assertEqual(follow_ups[302]["state"], "CLOSED")
+        # Unreadable is unknown, never closed — so it stays among the open ones.
+        self.assertIsNone(follow_ups[303]["state"])
+        self.assertEqual(residue["open_follow_ups"], [301, 303])
+        self.assertEqual(residue["file_polish"], [{"pr": 95, "id": "P1.2"}])
+        self.assertEqual(
+            residue["undecided_polish"], [{"pr": 96, "id": "P1.1", "disposition": "open"}]
+        )
+        self.assertTrue(any("#303" in n for n in envelope["notices"]))
+        self.assertTrue(any("undecided polish" in a for a in envelope["attention"]))
+
+    def test_large_residue_spills_the_per_pr_detail_to_a_file(self):
+        envelope = self._envelope(
+            fixture_case="prep_evaluator_epic_integration_residue",
+            extra_env={"GH_PIPELINE_INLINE_THRESHOLD_BYTES": "64"},
+        )
+        residue = envelope["epic"]["residue"]
+        self.assertEqual(residue["story_prs_mode"], "path")
+        self.assertNotIn("story_prs", residue)
+        staged = json.loads(Path(residue["story_prs_path"]).read_text(encoding="utf-8"))
+        self.assertEqual([p["number"] for p in staged], [95, 96, 97])
+        # The summary keys stay inline either way.
+        self.assertEqual(residue["open_follow_ups"], [301, 303])
+
+    def test_an_unlistable_residue_degrades_to_a_notice_and_attention(self):
+        envelope = self._envelope(fixture_case="prep_evaluator_epic_integration_residue_unavailable")
+        self.assertIsNone(envelope["epic"]["residue"])
+        self.assertIn("EPIC_RESIDUE_UNAVAILABLE", envelope["notices"])
+        self.assertTrue(any("story residue" in a for a in envelope["attention"]))
+
+    def test_an_epic_with_no_merged_story_prs_has_an_empty_residue(self):
+        envelope = self._envelope(fixture_case="prep_evaluator_epic_integration_type")
+        residue = envelope["epic"]["residue"]
+        self.assertEqual(residue["story_pr_count"], 0)
+        self.assertEqual(residue["open_follow_ups"], [])
+        self.assertEqual(residue["story_prs"], [])
 
 
 class ParentEpicStorySetTests(PrepEvaluatorSandboxTestCase):

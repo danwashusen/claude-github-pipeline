@@ -1441,6 +1441,52 @@ def absent_polish():
 
 
 # ============================================================================================
+# `## Follow-ups` issue references (a PR body) — import-only, NO subcommand and NO decision code
+# ============================================================================================
+#
+# The section the resolver's URL weave and the evaluator's residual filing write one list item per
+# filed issue into (resolver/references/follow-up-tracking.md "URL weaving"). It has no pinned line
+# grammar — the weave writes prose around each link — so this reads it leniently: every same-repo
+# issue reference under the heading, in source order, de-duplicated. Read by `prep_evaluator`'s epic
+# residue (the follow-ups an epic's merged story PRs deferred). Never raises.
+#
+# `#N` counts only when not preceded by a word character or `/`, so `owner/repo#5` (another repo) and
+# `abc#5` are not this repo's #5. A full URL counts only when it names `repo`; with `repo` None, bare
+# `#N` references alone are read.
+_FOLLOW_UP_HASH_RE = re.compile(r"(?<![\w/])#(\d+)\b")
+_FOLLOW_UPS_HEADING = r"Follow-?ups?(?:\s+filed)?"
+
+
+def scan_follow_ups(pr_body_text, repo=None):
+    """Issue numbers referenced under a PR body's `## Follow-ups` section. Returns
+    `{"present", "issues"}` — `present` the section exists, `issues` the referenced numbers in source
+    order, de-duplicated. Never raises."""
+    lines = (pr_body_text or "").splitlines()
+    found = _find_section(lines, _FOLLOW_UPS_HEADING)
+    if found is None:
+        return {"present": False, "issues": []}
+    start, end = found
+    url_re = None
+    if repo:
+        url_re = re.compile(
+            r"https?://github\.com/" + re.escape(repo) + r"/issues/(\d+)\b", re.IGNORECASE
+        )
+    issues = []
+    for line in lines[start:end]:
+        hits = []
+        if url_re is not None:
+            hits += [(m.start(), int(m.group(1))) for m in url_re.finditer(line)]
+            line_wo_urls = url_re.sub(lambda m: " " * len(m.group(0)), line)
+        else:
+            line_wo_urls = line
+        hits += [(m.start(), int(m.group(1))) for m in _FOLLOW_UP_HASH_RE.finditer(line_wo_urls)]
+        for _pos, number in sorted(hits):
+            if number not in issues:
+                issues.append(number)
+    return {"present": True, "issues": issues}
+
+
+# ============================================================================================
 # `## Stories` checklist parsing (legacy epic body) — import-only, NO subcommand and NO decision code
 # ============================================================================================
 #

@@ -66,5 +66,18 @@
             "number,title,author,isDraft,headRefName,baseRefName,url,updatedAt"
         ],
         "stdout_file": "open_head_prs.json"
+    },
+    {
+        "argv": [
+            "pr",
+            "view",
+            "300",
+            "--repo",
+            "octo/widgets",
+            "--json",
+            "body"
+        ],
+        "stdout_file": "pr_300_body.json",
+        "exit_code": 0
     }
 ]

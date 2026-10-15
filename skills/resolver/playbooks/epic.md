@@ -122,9 +122,14 @@ the evaluator's reach (the evaluator refuses a DRAFT PR) until S4.4 says the epi
 ### S4.2 — Refresh the PR body
 
 Runs whenever the integration PR exists — S4.1 just opened it, or `facts.epic.integration_pr` was
-already non-null. Re-render the same body against current state: story-set progress from
-`facts.target.sub_issues_summary`, the DoD checklist's current ticks, and the SHA pair from the latest
-`Baseline established` comment. Stage to `<facts.scratch>/epic-integration-pr.md` and apply:
+already non-null. Re-render **only the sections this route owns** against current state — the `## Goal`,
+the DoD checklist's current ticks, story-set progress from `facts.target.sub_issues_summary`, the SHA
+pair from the latest `Baseline established` comment — and keep every other section of the current body
+verbatim: `facts.epic.integration_pr.body_path` (S4.1's staged body when it just opened the PR). The
+`## Polish` ledger and `## Follow-ups` that S4.3 and the evaluator write live nowhere else, and a
+whole-body re-render wiped them on every re-route back here. When `body_path` is null
+(`INTEGRATION_PR_BODY_UNAVAILABLE`), skip the write and say so in the handoff — refreshing without the
+current body is that wipe. Stage to `<facts.scratch>/epic-integration-pr.md` and apply:
 
 ```bash
 ${CLAUDE_PLUGIN_ROOT}/scripts/gh_persist.py edit-pr-body <owner/repo> <PR> \
@@ -146,7 +151,11 @@ The integration PR lands the whole epic on `main` at once — higher risk, so ap
 discipline as any story PR, per [`resolve-spine.md`](resolve-spine.md) §S5.1 and
 [`../references/review-fix-round.md`](../references/review-fix-round.md). It runs **here, at
 the ready flip — never on a draft refresh**: a review per landed story would re-review the same
-accumulated diff on every epic run, and the stories already carried their own.
+accumulated diff on every epic run, and the stories already carried their own. The loop exits through
+spine S5.2 as on any PR — finalisation (this is the final pass), the one push, and the `## Polish` ledger
+written to **this PR's body** with `edit-pr-body` (ids under phase `1`, `polish-ledger.md` "Format") —
+and its follow-ups file per spine S7, woven into this PR's `## Follow-ups`. Each write restages from the
+body this run last wrote, never prep's copy.
 
 ### S4.4 — Draft → ready flip
 

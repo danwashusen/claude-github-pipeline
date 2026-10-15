@@ -1050,6 +1050,36 @@ class PolishLedgerParseTests(unittest.TestCase):
         self.assertEqual([e["id"] for e in scan["entries"]], ["P1.1"])
 
 
+class FollowUpsScanTests(unittest.TestCase):
+    """`scan_follow_ups` — the issue references under a PR body's `## Follow-ups` section, the
+    epic residue's source for what each merged story PR deferred. No pinned line grammar, so it is
+    lenient and never raises."""
+
+    def test_hash_and_same_repo_urls_in_source_order_deduplicated(self):
+        body = (
+            "Fixes #12\n\n"
+            "## Follow-ups\n"
+            "- Filed: https://github.com/octo/widgets/issues/301 — cache invalidation (P1.2)\n"
+            "- #302 — retry budget; see also #301\n"
+            "- other repo: octo/gadgets#7 and https://github.com/octo/gadgets/issues/8\n"
+            "## Polish\n"
+            "- P1.1 · open — a — b.py / c — see #999\n"
+        )
+        scan = parse.scan_follow_ups(body, "octo/widgets")
+        self.assertEqual(scan, {"present": True, "issues": [301, 302]})
+
+    def test_without_a_repo_only_bare_references_count(self):
+        body = "## Follow-ups\n- https://github.com/octo/widgets/issues/301\n- #302\n"
+        self.assertEqual(parse.scan_follow_ups(body)["issues"], [302])
+
+    def test_heading_variants_and_absence(self):
+        self.assertEqual(parse.scan_follow_ups("## Follow-ups filed\n- #5\n")["issues"], [5])
+        self.assertEqual(parse.scan_follow_ups("## Followups (2)\n- #5\n- #6\n")["issues"], [5, 6])
+        self.assertEqual(parse.scan_follow_ups("no section #5"), {"present": False, "issues": []})
+        self.assertEqual(parse.scan_follow_ups(None), {"present": False, "issues": []})
+        self.assertEqual(parse.scan_follow_ups("## Follow-ups\nnone\n"), {"present": True, "issues": []})
+
+
 class ParsePhasesCliTests(unittest.TestCase):
     def test_phases_happy_path_envelope_conformance(self):
         rc, out, err = _run_cli(

@@ -278,7 +278,13 @@ per [architecture.md §7](docs/architecture.md)'s mapping table).
   one import-only scanner for a contract it only reads: the legacy epic `## Stories` checklist
   (`parse_stories_section` / `stories_checklist_lists` — the planner's, slicer's and evaluator's
   story set and branching's legacy parent edge share this one copy; each prep carried its own, with
-  diverging grammars, until 4.33.1).
+  diverging grammars, until 4.33.1). And `scan_follow_ups` — the same-repo issue references under a PR
+  body's `## Follow-ups` section (no pinned line grammar, so lenient, never raising) — which
+  `prep_evaluator` composes, with `scan_polish`, into an epic-integration PR's `facts.epic.residue`:
+  every PR merged into the epic branch, its story, its ledger entries but `applied`, the follow-ups it
+  linked and their live state (4.37.0). The stories' deferrals stay on their own PRs; the residue reads
+  them there rather than copying them into the integration PR, which is why the evaluator's residual
+  filing weaves filed URLs into the body's `## Follow-ups` instead of a comment.
 - `plan_parts.py` — one implementation plan, three comments (`skills/_shared/plan-parts.md`): the
   main `<!-- implementation-plan:v1 -->` comment plus a `build` part (`## Changes` / `## Data model` /
   `## Test plan` / `## Coverage gap`) and a `references` part (`## Doc grounding` / `## External
@@ -464,7 +470,12 @@ now the same rule everything else follows rather than an exception.
   decision; a finalisation Re-plan re-routes the resolver's own handoff to the planner. An `apply` item is
   Addressable for the resolver whatever its tier, which is what stops a polish ping-pong. `file` entries
   file after the merge, whoever recorded them. `parse.py`'s `scan_polish` reads it for three preps; it
-  never raises.
+  never raises. A merged story PR's ledger is read once more by its epic's integration evaluation
+  (`facts.epic.residue`) and judged as deferrals against the epic's DoD — never put back on a `Polish`
+  card; a deferral that maps to it re-routes to the **slicer**, which adopts the deferred-to issue as a
+  story (the only way work reaches the epic branch, and the only writer of that edge). The resolver's
+  epic route keeps the integration PR's own ledger and `## Follow-ups` across its body refresh (S4.2
+  re-renders only the sections it owns, from `integration_pr.body_path`).
 - `polish-triage.md` — the one procedure both `Polish` cards run (the resolver's finalisation, the
   evaluator's S5.5): re-check each entry's claim at head, propose a disposition, group by **theme** (one
   proposal per group, so one answer fits it), print a **digest** showing the code at each entry's anchor,
