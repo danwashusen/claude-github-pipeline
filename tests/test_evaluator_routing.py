@@ -703,9 +703,31 @@ class EpicResidueTests(unittest.TestCase):
             self.assertIn("`%s`" % key, self.epic, key)
         self.assertIn("`EPIC_RESIDUE_UNAVAILABLE`", self.epic)
 
+    def test_unlinked_entries_are_re_checked_at_head_so_a_shipped_fix_never_re_blocks(self):
+        # Review of #79: a `file` entry adopted as a story and shipped kept mapping to the DoD and
+        # soft-rejected every integration run. Linked entries resolve through their issue; unlinked
+        # ones are re-checked at head.
+        self.assertIn("one whose claim no longer holds at head is resolved", self.epic)
+        self.assertIn("A ledger entry the issue `covers` is judged through it, once", self.epic)
+        self.assertIn("follow-ups-section.md", self.epic)
+        self.assertNotIn("handoff below", self.epic)
+
+    def test_the_writers_render_the_shared_follow_ups_contract(self):
+        shared = REPO_ROOT / "skills" / "_shared" / "follow-ups-section.md"
+        self.assertTrue(shared.is_file())
+        for path in (
+            PLAYBOOKS_DIR / "standard.md",
+            REPO_ROOT / "skills" / "resolver" / "references" / "follow-up-tracking.md",
+        ):
+            self.assertIn("follow-ups-section.md", path.read_text(encoding="utf-8"), path.name)
+        for name in ("standard.md", "story.md", "epic-integration.md"):
+            text = (PLAYBOOKS_DIR / name).read_text(encoding="utf-8")
+            self.assertIn("`Filed:`", text, name)
+            self.assertNotIn("*Filed* entries", text, name)
+
     def test_story_ledgers_are_judged_not_re_asked(self):
         self.assertIn("S5.5 adjudicates this PR's own ledger only", self.epic)
-        self.assertIn("Closed follow-ups and `drop` entries were decided at their story's merge", self.epic)
+        self.assertIn("and `drop` entries were decided at their story's merge: context, never a block", self.epic)
 
     def test_a_mapped_deferral_re_routes_to_the_slicer(self):
         self.assertIn("`/github-pipeline:slicer #<epic>`", self.epic)

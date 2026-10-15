@@ -32,22 +32,26 @@ no branch in any body:
 point, and what the stories deferred never reaches this PR's body: each story's `## Polish` ledger and
 `## Follow-ups` stayed on its own PR. Prep reads them into `facts.epic.residue` — the PRs merged into
 the epic branch, each with its `story`, `polish` (every entry but `applied`) and `follow_ups`, under
-`story_prs` (or the JSON at `story_prs_path` when spilled) — so never fetch a story PR to find them.
-The spine's dimension-4 re-adjudication covers, against the epic's `## Definition of done` and the
-in-scope `binding` grounding docs:
+`story_prs` (or the JSON at `story_prs_path` when spilled), and each follow-up's `kind`, `state` and the
+ledger entries it `covers` ([`../../_shared/follow-ups-section.md`](../../_shared/follow-ups-section.md))
+— so never fetch a story PR to find them. The spine's dimension-4 re-adjudication covers, against the
+epic's `## Definition of done` and the in-scope `binding` grounding docs:
 
 - every `open_follow_ups` issue (a `null` state is unreadable — judge it as open), plus this PR's own
-  `## Follow-ups` deferrals;
-- every `file_polish` entry, judged on its item and anchor (a story PR merged before 4.37.0 may not link
-  the issue it was filed as);
+  `## Follow-ups` deferrals. A ledger entry the issue `covers` is judged through it, once;
+- every `file_polish` entry — a `file` entry no `Filed:` line ties to an issue (a story PR merged before
+  4.37.0), judged on its item and anchor;
 - every `undecided_polish` entry (`attention` names them): a merged story PR should carry none, so each
   merged around its story's evaluation — judge it as a deferral.
 
-A deferral that maps to an epic DoD bullet or an in-scope binding-doc section blocks the integration →
-soft-reject, naming the bullet or doc section, the deferred-to issue (or story PR + ledger id) and the
-story it came from. The work lands on the epic branch only through a story, so this soft-reject routes
-to the **slicer** to adopt the issue as one (handoff below). Closed follow-ups and `drop` entries were
-decided at their story's merge: context, never a block. The story ledgers are **not** put back on a
+Re-check a `file_polish` or `undecided_polish` entry's claim at this PR's head first: nothing ties it
+to an issue whose state would say it shipped, so one whose claim no longer holds at head is resolved —
+note it, never block (a story adopted for it has landed on the epic branch). A deferral that maps to
+an epic DoD bullet or an in-scope binding-doc section blocks the integration → soft-reject, naming the
+bullet or doc section, the deferred-to issue (or story PR + ledger id) and the story it came from. The
+work lands on the epic branch only through a story, so this soft-reject routes to the **slicer** to
+adopt the issue as one (`## Handoff`). Closed follow-ups, a `kind: pull_request` reference and `drop`
+entries were decided at their story's merge: context, never a block. The story ledgers are **not** put back on a
 `Polish` card — S5.5 adjudicates this PR's own ledger only. Genuinely out-of-scope or future work →
 note, don't block. When `residue` is null (`EPIC_RESIDUE_UNAVAILABLE`), say in the review that the
 stories' deferrals were not evaluated.
@@ -60,11 +64,11 @@ on the merge into `main`.
 ## After the merge — residual follow-ups + cleanup
 
 File residual non-blocking follow-ups (shared with the other routes): de-dup against the PR body's
-`## Follow-ups` *Filed* entries, fold in the `## Polish` ledger's `file` entries (one issue per
+`## Follow-ups` `Filed:` lines, fold in the `## Polish` ledger's `file` entries (one issue per
 recorded `group:`, each briefed from its item and note — `polish-ledger.md` "Rules"), and file each
 related group via [`../../_shared/follow-up-filing.md`](../../_shared/follow-up-filing.md) (parent
-reference = this PR + the epic issue), and weave the URLs into the PR body's `## Follow-ups` section
-with `edit-pr-body`, as `standard.md` "After the merge" does. Then purge the scratch dir only
+reference = this PR + the epic issue), and weave each into the PR body's `## Follow-ups` as a
+`Filed:` line with `edit-pr-body`, as `standard.md` "After the merge" does. Then purge the scratch dir only
 (`rm -rf "<facts.scratch>"`) — the worktree is **deliberately retained** (this session runs inside
 it); the terminal handoff's fence hands the operator
 `/github-pipeline:workspace-close <facts.workspace.branch>` for the teardown + gated removal.

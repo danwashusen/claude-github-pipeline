@@ -109,10 +109,13 @@ proposes `apply` against a lower bar — in scope, true at head, clearly right
   operator saw in the triage digest and approved on the `Polish` card, never regrouped at filing. The
   card's own groups are themes for deciding, not filing groups. Filing runs after the merge, in the
   evaluator's residual step, whichever skill recorded the `file`, which weaves each filed issue into the
-  PR body's `## Follow-ups`.
+  PR body's `## Follow-ups` as a `Filed:` line that ` · covers` the entries' ids
+  ([`follow-ups-section.md`](follow-ups-section.md)) — the tie that lets a later reader see the entry
+  resolved when its issue closes.
 - **A merged story PR's ledger is read again once, never re-asked.** The epic-integration evaluation
   reads every merged story PR's entries but `applied` (`facts.epic.residue`) and judges its `file` and
-  undecided entries as deferrals against the epic's Definition of done
+  undecided entries — a covered `file` entry through its issue — as deferrals against the epic's
+  Definition of done
   (`evaluator/playbooks/epic-integration.md`); its own `Polish` card carries the integration PR's ledger
   only.
 - **An `apply` note's `intent:` is the operator's decision.** Recorded when the triage found two

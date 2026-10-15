@@ -6,7 +6,7 @@
     "headRefName": "91-story-b",
     "closingIssuesReferences": [],
     "mergedAt": "2026-02-02T00:00:00Z",
-    "body": "Fixes #91\n\n## Follow-ups\n- https://github.com/octo/widgets/issues/302 \u2014 retry budget\n- #301\n\n## Polish\n- P1.1 \u00b7 open \u2014 rename the scanner \u2014 b.py / scan\n"
+    "body": "Fixes #91\n\n## Follow-ups\n- https://github.com/octo/widgets/issues/302 \u2014 retry budget\n- #301\n- #130 \u2014 the follow-up PR\n\n## Polish\n- P1.1 \u00b7 open \u2014 rename the scanner \u2014 b.py / scan\n"
   },
   {
     "number": 95,
@@ -19,7 +19,7 @@
       }
     ],
     "mergedAt": "2026-02-01T00:00:00Z",
-    "body": "Fixes #90\n\n## Follow-ups\n- Filed #301 \u2014 cache invalidation (P1.2); part of epic #42, after #96\n\n## Polish\n- P1.1 \u00b7 applied (commit abc1234) \u2014 stale comment \u2014 a.py / f\n- P1.2 \u00b7 file \u2014 dedupe the date helpers \u2014 a.py / g \u2014 follow-up: same seam\n- P1.3 \u00b7 drop \u2014 prefer early return \u2014 a.py / h \u2014 no longer applies at head\n"
+    "body": "Fixes #90\n\n## Follow-ups\n- Filed: #301 \u2014 cache invalidation \u00b7 covers P1.2\n- Note: part of epic #42, after #96; waits on question #61\n\n## Polish\n- P1.1 \u00b7 applied (commit abc1234) \u2014 stale comment \u2014 a.py / f\n- P1.2 \u00b7 file \u2014 dedupe the date helpers \u2014 a.py / g \u2014 follow-up: same seam\n- P1.3 \u00b7 drop \u2014 prefer early return \u2014 a.py / h \u2014 no longer applies at head\n- P1.4 \u00b7 file \u2014 a filed entry no line covers \u2014 a.py / k \u2014 follow-up\n"
   },
   {
     "number": 97,
@@ -28,6 +28,6 @@
     "headRefName": "fix-typo",
     "closingIssuesReferences": [],
     "mergedAt": "2026-02-03T00:00:00Z",
-    "body": "## Follow-ups\n- #303\n"
+    "body": "## Follow-ups\n- Filed: #303 \u2014 unreadable\n- Filed: #89 \u2014 since adopted as a story \u00b7 covers P1.1\n\n## Polish\n- P1.1 \u00b7 file \u2014 covered by the adopted story \u2014 c.py / m \u2014 follow-up\n"
   }
 ]

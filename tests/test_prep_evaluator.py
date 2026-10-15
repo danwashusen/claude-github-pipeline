@@ -612,29 +612,36 @@ class EpicIntegrationResidueTests(PrepEvaluatorSandboxTestCase):
         self.assertEqual(residue["story_prs_mode"], "inline")
         prs = {p["number"]: p for p in residue["story_prs"]}
         self.assertEqual(sorted(prs), [95, 96, 97])
-        # Closing reference first, the `<N>-<slug>` branch grammar second, unmapped otherwise.
+        # Closing reference first, the `<N>-<slug>` branch grammar second, `None` otherwise.
         self.assertEqual((prs[95]["story"], prs[96]["story"], prs[97]["story"]), (90, 91, None))
-        self.assertEqual(residue["unmapped_prs"], [97])
-        self.assertEqual(residue["closed_stories_without_pr"], [89])
-        # `applied` is resolved residue — dropped; `file` / `drop` / `open` stay.
+        # `applied` is resolved residue — dropped; `file` / `drop` / `open` stay, a covered `file`
+        # entry carrying its issue.
         self.assertEqual(
-            [(e["id"], e["disposition"]) for e in prs[95]["polish"]],
-            [("P1.2", "file"), ("P1.3", "drop")],
+            [(e["id"], e["disposition"], e.get("issue")) for e in prs[95]["polish"]],
+            [("P1.2", "file", 301), ("P1.3", "drop", None), ("P1.4", "file", None)],
         )
-        # The epic (#42) and a sibling PR (#96) named in a Follow-ups line are not deferrals.
+        # The Note line's epic (#42), sibling PR (#96) and question (#61) are not deferrals.
         self.assertEqual(prs[95]["follow_ups"], [301])
-        self.assertEqual(prs[96]["follow_ups"], [302, 301])
+        self.assertEqual(prs[96]["follow_ups"], [302, 301, 130])
+        # #89 was adopted as a story, so it left the follow-ups.
+        self.assertEqual(prs[97]["follow_ups"], [303])
         follow_ups = {f["number"]: f for f in residue["follow_ups"]}
-        self.assertEqual(follow_ups[301]["state"], "OPEN")
+        self.assertEqual(sorted(follow_ups), [130, 301, 302, 303])
+        self.assertEqual((follow_ups[301]["kind"], follow_ups[301]["state"]), ("issue", "OPEN"))
         self.assertEqual(follow_ups[301]["from_prs"], [95, 96])
+        self.assertEqual(follow_ups[301]["covers"], [{"pr": 95, "id": "P1.2"}])
         self.assertEqual(follow_ups[302]["state"], "CLOSED")
-        # Unreadable is unknown, never closed — so it stays among the open ones.
+        self.assertEqual(follow_ups[130]["kind"], "pull_request")
+        # Unreadable is unknown, never closed — so it stays among the open ones; a PR never does.
         self.assertIsNone(follow_ups[303]["state"])
         self.assertEqual(residue["open_follow_ups"], [301, 303])
-        self.assertEqual(residue["file_polish"], [{"pr": 95, "id": "P1.2"}])
+        # A covered entry is its issue's deferral (read once); one covered by an adopted story is
+        # resolved. Only the unlinked entry is listed on its own.
+        self.assertEqual(residue["file_polish"], [{"pr": 95, "id": "P1.4"}])
         self.assertEqual(
             residue["undecided_polish"], [{"pr": 96, "id": "P1.1", "disposition": "open"}]
         )
+        self.assertNotIn("unmapped_prs", residue)
         self.assertTrue(any("#303" in n for n in envelope["notices"]))
         self.assertTrue(any("undecided polish" in a for a in envelope["attention"]))
 

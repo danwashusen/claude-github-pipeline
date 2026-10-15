@@ -28,20 +28,22 @@ it at merge time would create a second writer for one fact.
 ## After the merge — residual follow-ups
 
 File the **residual non-blocking** work this run surfaced but hasn't filed: a finding from your own
-review, a `## Follow-ups` *Procedural notes* item that warrants an issue, or a `## Polish` ledger entry
+review, a `## Follow-ups` `Note:` line that warrants an issue, or a `## Polish` ledger entry
 S5.5 left as `file` (polish groups file as `incomplete-feature`, one issue per recorded `group:`, each
 briefed from its item and note — `polish-ledger.md` "Rules"). **De-duplicate** against
-issues already linked in the PR body's `## Follow-ups` *Filed* entries — never re-file those. (In-scope
+issues already linked in the PR body's `## Follow-ups` `Filed:` lines — never re-file those. (In-scope
 grounding violations never reach here — they soft-reject pre-merge and take the no-merge exit.)
 
 Group related items and file each group via the shared protocol in
 [`../../_shared/follow-up-filing.md`](../../_shared/follow-up-filing.md) ("Grouping") — one
 `general-purpose` sub-agent per group, spawned together in one message, type from
 `bug | incomplete-feature | deferred-test |
-revise-existing`, parent reference = this PR + the issue. After filing, weave each URL into the PR
-body's `## Follow-ups` section — one list item per filed issue, the section added if absent — where the
-resolver's own weave puts its follow-ups, so every filed deferral is in one place a later reader scans
-(an epic-integration evaluation reads its story PRs' sections, never their comments). Restage from the
+revise-existing`, parent reference = this PR + the issue. After filing, weave each issue into the PR
+body's `## Follow-ups` section as one `Filed:` line, the section added if absent, per
+[`../../_shared/follow-ups-section.md`](../../_shared/follow-ups-section.md) — a polish group's line
+` · covers` every ledger id it files. That is where the resolver's weave puts its follow-ups, so every
+filed deferral is in one place a later reader scans (an epic-integration evaluation reads its story
+PRs' sections, never their comments). Restage from the
 body as this run last wrote it (S5.5's write, else the `facts.sections` body) to
 `<facts.scratch>/pr-body-followups.md`:
 ```bash

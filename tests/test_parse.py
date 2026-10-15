@@ -1051,22 +1051,52 @@ class PolishLedgerParseTests(unittest.TestCase):
 
 
 class FollowUpsScanTests(unittest.TestCase):
-    """`scan_follow_ups` — the issue references under a PR body's `## Follow-ups` section, the
-    epic residue's source for what each merged story PR deferred. No pinned line grammar, so it is
-    lenient and never raises."""
+    """`scan_follow_ups` — a PR body's `## Follow-ups` section (skills/_shared/follow-ups-section.md),
+    the epic residue's source for what each merged story PR deferred. Lenient for pre-contract bodies,
+    never raises."""
 
-    def test_hash_and_same_repo_urls_in_source_order_deduplicated(self):
+    CONTRACT = REPO_ROOT / "skills" / "_shared" / "follow-ups-section.md"
+
+    def _contract_example(self):
+        text = self.CONTRACT.read_text(encoding="utf-8")
+        start = text.index("```\n## Follow-ups\n") + len("```\n")
+        return text[start:text.index("```", start)]
+
+    def test_the_contract_worked_example(self):
+        scan = parse.scan_follow_ups(self._contract_example(), "octo/widgets")
+        # The Note line's #61 is context, never a deferral.
+        self.assertEqual(scan["issues"], [301, 302])
+        self.assertEqual(scan["covers"], {301: ["P1.2", "P2.1"]})
+
+    def test_a_filed_line_reads_only_its_own_reference(self):
+        body = "## Follow-ups\n- Filed: #301 — supersedes the approach in #45 · covers P1.1\n"
+        self.assertEqual(parse.scan_follow_ups(body)["issues"], [301])
+
+    def test_legacy_bullets_are_read_leniently_in_source_order(self):
         body = (
             "Fixes #12\n\n"
             "## Follow-ups\n"
-            "- Filed: https://github.com/octo/widgets/issues/301 — cache invalidation (P1.2)\n"
+            "- https://github.com/octo/widgets/issues/301 — cache invalidation (P1.2)\n"
             "- #302 — retry budget; see also #301\n"
             "- other repo: octo/gadgets#7 and https://github.com/octo/gadgets/issues/8\n"
             "## Polish\n"
             "- P1.1 · open — a — b.py / c — see #999\n"
         )
         scan = parse.scan_follow_ups(body, "octo/widgets")
-        self.assertEqual(scan, {"present": True, "issues": [301, 302]})
+        self.assertEqual(scan, {"present": True, "issues": [301, 302], "covers": {}})
+
+    def test_notes_and_legacy_procedural_notes_are_skipped(self):
+        body = (
+            "## Follow-ups\n"
+            "*Filed*\n"
+            "- #301 — cache\n"
+            "- Note: waits on question #61\n"
+            "  continued: and #62\n"
+            "- #303 — after a note\n"
+            "**Procedural notes:**\n"
+            "- the batch size waits on #64\n"
+        )
+        self.assertEqual(parse.scan_follow_ups(body)["issues"], [301, 303])
 
     def test_without_a_repo_only_bare_references_count(self):
         body = "## Follow-ups\n- https://github.com/octo/widgets/issues/301\n- #302\n"
@@ -1075,9 +1105,10 @@ class FollowUpsScanTests(unittest.TestCase):
     def test_heading_variants_and_absence(self):
         self.assertEqual(parse.scan_follow_ups("## Follow-ups filed\n- #5\n")["issues"], [5])
         self.assertEqual(parse.scan_follow_ups("## Followups (2)\n- #5\n- #6\n")["issues"], [5, 6])
-        self.assertEqual(parse.scan_follow_ups("no section #5"), {"present": False, "issues": []})
-        self.assertEqual(parse.scan_follow_ups(None), {"present": False, "issues": []})
-        self.assertEqual(parse.scan_follow_ups("## Follow-ups\nnone\n"), {"present": True, "issues": []})
+        absent = {"present": False, "issues": [], "covers": {}}
+        self.assertEqual(parse.scan_follow_ups("no section #5"), absent)
+        self.assertEqual(parse.scan_follow_ups(None), absent)
+        self.assertEqual(parse.scan_follow_ups("## Follow-ups\nnone\n")["issues"], [])
 
 
 class ParsePhasesCliTests(unittest.TestCase):

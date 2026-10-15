@@ -686,7 +686,15 @@ EPIC_RESIDUE_UNAVAILABLE = "EPIC_RESIDUE_UNAVAILABLE"
 # `gh pr list` defaults to 30 — an epic with more merged story PRs would silently lose the rest.
 _STORY_PR_LIST_LIMIT = 500
 _STORY_PR_FIELDS = "number,title,url,headRefName,body,closingIssuesReferences,mergedAt"
-_FOLLOW_UP_ISSUE_FIELDS = "number,title,state,url"
+# Follow-up states are read in one GraphQL query per chunk of this many references, never one
+# `gh issue view` each (an epic's follow-ups run to dozens). `issueOrPullRequest`, because a PR linked
+# under `## Follow-ups` is not an issue: `gh issue view` fails on it, and an unreadable reference is
+# judged open — a PR must read as a PR, never as an open deferral.
+_FOLLOW_UP_QUERY_CHUNK = 50
+_FOLLOW_UP_NODE = (
+    "i%d: issueOrPullRequest(number: %d) { __typename "
+    "... on Issue { number title state url } ... on PullRequest { number title state url } }"
+)
 # Ledger dispositions a merged story PR should not still carry: the story's own evaluation puts
 # every `open` entry to the operator and soft-rejects on an unfixed `apply`, so either one on a
 # MERGED story PR means it merged around that backstop.
@@ -706,11 +714,48 @@ def _story_for_pr(pr, story_numbers):
     return None
 
 
+def _follow_up_query(repo, numbers):
+    owner, _, name = repo.partition("/")
+    return "query { repository(owner: %s, name: %s) { %s } }" % (
+        json.dumps(owner), json.dumps(name), " ".join(_FOLLOW_UP_NODE % (n, n) for n in numbers)
+    )
+
+
+def _read_follow_up_states(repo, numbers, cwd=None):
+    """``{number: node_or_None}`` for every referenced follow-up — ``None`` when unreadable (no such
+    number, or the query failed). One ``gh api graphql`` call per chunk. GraphQL reports a missing
+    number as an error beside the data that did resolve, and ``gh`` then exits non-zero, so a
+    non-zero exit still reads whatever data the response carries."""
+    nodes = {}
+    for i in range(0, len(numbers), _FOLLOW_UP_QUERY_CHUNK):
+        chunk = numbers[i:i + _FOLLOW_UP_QUERY_CHUNK]
+        result = process.run(
+            ["gh", "api", "graphql", "-f", "query=" + _follow_up_query(repo, chunk)], cwd=cwd
+        )
+        try:
+            repository = ((json.loads(result.stdout or "null") or {}).get("data") or {}).get(
+                "repository"
+            ) or {}
+        except (ValueError, AttributeError):
+            repository = {}
+        for number in chunk:
+            node = repository.get("i%d" % number)
+            nodes[number] = node if isinstance(node, dict) else None
+    return nodes
+
+
 def _build_epic_residue(epic_branch, epic_number, stories, repo, scratch_dir, cwd=None):
     """``facts.epic.residue`` — what the epic's merged story PRs left behind: each one's `## Polish`
-    entries (everything but `applied`) and the issues its `## Follow-ups` section links, plus the
-    live state of every such follow-up. Read from the story PR bodies themselves (the ledgers' and
-    weaves' single home), so it covers every epic retroactively and copies nothing.
+    entries (everything but `applied`) and the issues its `## Follow-ups` section filed
+    (skills/_shared/follow-ups-section.md), plus the live state of every such follow-up. Read from
+    the story PR bodies themselves (the ledgers' and weaves' single home), so it covers every epic
+    retroactively and copies nothing.
+
+    A `file` ledger entry a `Filed: … · covers <id>` line ties to its issue is read through that
+    issue, once: listed under the follow-up's `covers`, never again in `file_polish`, and resolved
+    when the issue closes or the slicer adopts it as a story (it then leaves the follow-ups, being in
+    the story set). Only an unlinked `file` entry — a story PR merged before the contract — is listed
+    on its own, for the evaluator to re-check at head.
 
     Returns ``(residue_or_None, notices, attention)``. Facts only: whether a deferral maps to an
     epic `## Definition of done` bullet is the evaluator's judgment (epic-integration.md).
@@ -747,16 +792,28 @@ def _build_epic_residue(epic_branch, epic_number, stories, repo, scratch_dir, cw
     story_numbers = {s["number"] for s in stories if s.get("number") is not None}
     pr_numbers = {pr.get("number") for pr in prs}
     # A story PR's `## Follow-ups` may name the epic, a sibling story or a sibling PR in passing —
-    # none of those is a deferral.
+    # none of those is a deferral. An adopted follow-up IS a story now, so it leaves here too.
     not_follow_ups = story_numbers | pr_numbers | {epic_number}
 
-    story_prs, referenced = [], []
+    story_prs, referenced, covers_by_issue = [], [], {}
     for pr in sorted(prs, key=lambda p: p.get("number") or 0):
         body = pr.get("body") or ""
-        polish = [e for e in parse.scan_polish(body)["entries"] if e["disposition"] != "applied"]
-        follow_ups = [
-            n for n in parse.scan_follow_ups(body, repo)["issues"] if n not in not_follow_ups
-        ]
+        scan = parse.scan_follow_ups(body, repo)
+        linked = {
+            ledger_id: issue for issue, ids in scan["covers"].items() for ledger_id in ids
+        }
+        polish = []
+        for entry in parse.scan_polish(body)["entries"]:
+            if entry["disposition"] == "applied":
+                continue
+            entry = dict(entry)
+            if entry["id"] in linked:
+                entry["issue"] = linked[entry["id"]]
+                covers_by_issue.setdefault(linked[entry["id"]], []).append(
+                    {"pr": pr.get("number"), "id": entry["id"]}
+                )
+            polish.append(entry)
+        follow_ups = [n for n in scan["issues"] if n not in not_follow_ups]
         for number in follow_ups:
             if number not in referenced:
                 referenced.append(number)
@@ -773,38 +830,30 @@ def _build_epic_residue(epic_branch, epic_number, stories, repo, scratch_dir, cw
             }
         )
 
+    nodes = _read_follow_up_states(repo, referenced, cwd=cwd)
     follow_up_facts, unreadable = [], []
     for number in referenced:
-        view = process.run(
-            [
-                "gh", "issue", "view", str(number),
-                "--repo", repo,
-                "--json", _FOLLOW_UP_ISSUE_FIELDS,
-            ],
-            cwd=cwd,
-        )
-        issue = None
-        if view.returncode == 0:
-            try:
-                issue = json.loads(view.stdout)
-            except ValueError:
-                issue = None
-        if not isinstance(issue, dict):
+        node = nodes.get(number)
+        if node is None:
             unreadable.append(number)
-            issue = {}
+            node = {}
+        typename = node.get("__typename")
         follow_up_facts.append(
             {
                 "number": number,
-                "title": issue.get("title"),
+                # `pull_request`: a PR linked under `## Follow-ups` — context, never a deferral.
+                "kind": {"Issue": "issue", "PullRequest": "pull_request"}.get(typename),
+                "title": node.get("title"),
                 # `null` = unreadable: unknown, never "closed" — judge it as possibly open.
-                "state": issue.get("state"),
-                "url": issue.get("url"),
+                "state": node.get("state"),
+                "url": node.get("url"),
                 "from_prs": [p["number"] for p in story_prs if number in p["follow_ups"]],
+                "covers": covers_by_issue.get(number, []),
             }
         )
     if unreadable:
         notices.append(
-            "follow-up issue(s) %s could not be read — their state is null (unknown, not closed)"
+            "follow-up reference(s) %s could not be read — their state is null (unknown, not closed)"
             % ", ".join("#%s" % n for n in unreadable)
         )
 
@@ -824,24 +873,21 @@ def _build_epic_residue(epic_branch, epic_number, stories, repo, scratch_dir, cw
                 ", ".join("#%s %s" % (u["pr"], u["id"]) for u in undecided),
             )
         )
-    mapped = {p["story"] for p in story_prs if p["story"] is not None}
 
     residue = {
         "story_pr_count": len(story_prs),
-        "unmapped_prs": [p["number"] for p in story_prs if p["story"] is None],
-        "closed_stories_without_pr": sorted(
-            s["number"] for s in stories
-            if s.get("closed") and s.get("number") is not None and s["number"] not in mapped
-        ),
         "follow_ups": follow_up_facts,
         "open_follow_ups": [
-            f["number"] for f in follow_up_facts if (f["state"] or "OPEN").upper() == "OPEN"
+            f["number"]
+            for f in follow_up_facts
+            if f["kind"] != "pull_request" and (f["state"] or "OPEN").upper() == "OPEN"
         ],
+        # Only `file` entries no `Filed:` line covers: a covered one is its issue's deferral.
         "file_polish": [
             {"pr": p["number"], "id": e["id"]}
             for p in story_prs
             for e in p["polish"]
-            if e["disposition"] == "file"
+            if e["disposition"] == "file" and "issue" not in e
         ],
         "undecided_polish": undecided,
     }

@@ -960,7 +960,12 @@ def _stage_integration_pr_body(integration_pr, repo, scratch_dir, cwd=None):
     for the epic route's S4.2: the refresh re-renders only the sections it owns and keeps the rest —
     the PR's own review loop writes `## Polish` / `## Follow-ups` there, and the evaluator writes the
     ledger's dispositions. The head-scoped lookup carries no body, hence this one extra read.
-    Returns a notice or ``None``; never a decision."""
+    Returns a notice or ``None``; never a decision.
+
+    Deliberately not `gh_pr_gather.build_pr_facts` (which `_build_tracker` uses for the prior PR's
+    body): that core ``sys.exit(1)``s on a failed view and also fetches the comment thread. Here a
+    failed read must degrade to the notice, because the refresh it feeds is skippable and the prep
+    must not die over it — and only the body is needed."""
     result = process.run(
         ["gh", "pr", "view", str(integration_pr["number"]), "--repo", repo, "--json", "body"],
         cwd=cwd,
