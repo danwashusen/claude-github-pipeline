@@ -185,6 +185,59 @@ class MarkerAmbiguousTests(unittest.TestCase):
             self.assertTrue(option)
 
 
+class PlanPartsAssemblyTests(unittest.TestCase):
+    """The plan-marker lookup hands every caller the WHOLE plan — the main comment with its part
+    comments put back (skills/_shared/plan-parts.md) — so no prep or prompt ever sees the split."""
+
+    PLAN = "<!-- implementation-plan:v1 -->"
+
+    def run_case(self, case, *extra):
+        env = shimenv.intercepted_env(base_env=os.environ, fixture_case=case)
+        result = _run_script(["88", "o/r", self.PLAN] + list(extra), env=env)
+        self.assertEqual(result.returncode, 0, msg=result.stderr)
+        return _parse_envelope(result)
+
+    def test_the_marker_body_is_the_whole_plan(self):
+        envelope = self.run_case("gh_gather_plan_parts")
+        self.assertEqual(envelope["status"], "ok")
+        self.assertEqual(envelope["marker_comment_count"], 1)
+        body = envelope["marker_comment"]["body"]
+        self.assertIn("- `a.rb` — adds A", body)
+        self.assertIn("- architecture.md §3", body)
+        self.assertNotIn("build part](", body)
+        self.assertLess(body.index("## Doc grounding"), body.index("## Changes (file-level)"))
+
+    def test_the_main_comment_keeps_its_own_id(self):
+        envelope = self.run_case("gh_gather_plan_parts")
+        self.assertEqual(envelope["marker_comment"]["id"], 200)
+
+    def test_marker_parts_name_each_part_for_the_writer(self):
+        envelope = self.run_case("gh_gather_plan_parts")
+        self.assertEqual(
+            [(p["slug"], p["id"]) for p in envelope["marker_parts"]], [("build", 201), ("references", 202)]
+        )
+
+    def test_the_spilled_body_is_the_whole_plan_too(self):
+        with tempfile.TemporaryDirectory() as scratch:
+            envelope = self.run_case("gh_gather_plan_parts", scratch)
+            body = envelope.get("marker_comment_body")
+            if body is None:
+                body = Path(envelope["marker_comment_path"]).read_text(encoding="utf-8")
+        self.assertIn("- `a.rb` — adds A", body)
+
+    def test_another_marker_prefix_is_untouched(self):
+        env = shimenv.intercepted_env(base_env=os.environ, fixture_case="gh_gather_plan_parts")
+        envelope = _parse_envelope(_run_script(["88", "o/r", "<!-- implementation-plan-part:v1:build -->"], env=env))
+        self.assertNotIn("marker_parts", envelope)
+
+    def test_a_duplicated_part_is_marker_ambiguous(self):
+        envelope = self.run_case("gh_gather_plan_parts_duplicate")
+        envelope_asserts.assert_full_envelope_conformance(envelope)
+        self.assertEqual(envelope["status"], "needs_decision")
+        self.assertEqual(envelope["decision"]["code"], "MARKER_AMBIGUOUS")
+        self.assertEqual(sorted(envelope["decision"]["context"]["comment_ids"]), [201, 204])
+
+
 class TargetIsPrTests(unittest.TestCase):
     """PR-number guard: `gh issue view <N>` silently returns the PR when `<N>` is a PR number
     (issues and PRs share one number space) — the live-incident failure mode where prep reported

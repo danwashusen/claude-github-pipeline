@@ -96,14 +96,14 @@ its `## Risks & watchpoints` entry.
 
 Stage the plan body to `<facts.scratch>/plan.md`, then **prove `## Phases` parses** —
 `${CLAUDE_PLUGIN_ROOT}/scripts/parse.py phases "<facts.scratch>/plan.md" --issue-body "<facts.dod.body_path>"` —
-after **every** staging (this one, each review-pass restage, S8's before the post). Both exit 0: read `status`,
+after **every** staging (this one, each review-pass restage, S8's before the post), with `plan_parts.py split` beside it (S8). Both exit 0: read `status`,
 proceed only on `ok`. `PHASES_MALFORMED` is yours to fix, never a gate — repair at `context.line_number`
 (`raw_line` quotes it), restage, re-validate; so are `dod_coverage` findings (plan-schema.md, "The `closes-dod` target"). An absent section is `ok` with `phases: []`, so this is unconditional. Reviewer
 dimensions are semantic and structurally cannot catch a grammar break; the resolver's prep runs this same
 parser two stages later, on a comment nobody may hand-edit. Then dispatch the isolated, context-blind
 plan-reviewer `Explore` sub-agent per [`../references/plan-reviewer-prompt.md`](../references/plan-reviewer-prompt.md)
 with that path, `mode`, `facts.target`, `facts.grounding.path` (sole code/doc source — never a ref),
-`facts.grounding_docs`, `external_sources`, `shipped_paths` (empty unless a revise staged records), the routed playbook's `dimensions` **plus Dimension 10 whenever
+`facts.grounding_docs`, `external_sources`, `shipped_phases` (the phase numbers `facts.revise.phase_tracker` ticks; empty otherwise), the routed playbook's `dimensions` **plus Dimension 10 whenever
 the plan has an `## Open questions` section**, and (story-under-epic only) the epic plan + delivery-log staged paths; it
 returns findings by dimension. Loop up to 3 passes, **restaging `plan.md` before each** (findings are
 applied to the plan directly — its own artifact to fix — so a pass re-reading the prior file re-reports
@@ -115,11 +115,11 @@ or the cap, show the plan + a "Review notes" block and gate (`header: "Review no
 
 On a **clean verify exit**, auto-post — no confirmation gate and no full-body dump on the common path; the operator reads the `## Plan summary` the handoff step renders.
 Show the **full body** only when the user said "don't post yet" — nothing is posted, so they need the exact text to approve (`revise.md` adds its diff-show + reconciliation confirm first).
-Restage the approved body (marker line first) to `<facts.scratch>/plan.md`, re-validate it per S7 — the gate's "Fix manually" can reintroduce a break — and post:
+Restage the approved body (marker line first) to `<facts.scratch>/plan.md`, re-validate it per S7 — the gate's "Fix manually" can reintroduce a break — and post it as three comments, **parts first, main last**, per [`../../_shared/plan-parts.md`](../../_shared/plan-parts.md) "Writing" (`split`'s `comments[].size` is the size fact — plan-schema.md, "Size"):
 
 ```bash
 ${CLAUDE_PLUGIN_ROOT}/scripts/gh_persist.py comment <owner/repo> issue <issue> \
-  "<facts.scratch>/plan.md"   # fresh only — revise.md / story-jit.md name the in-place update op
+  "<facts.scratch>/plan-main.md"   # fresh only — revise.md / story-jit.md name the in-place update op
 ```
 
 Capture the returned comment URL, then ensure the issue-body plan pointer: stage the body this session last

@@ -1,29 +1,28 @@
 #!/usr/bin/env python3
-"""plan_shipped.py — the shipped-phase records' read model and staging check
+"""plan_shipped.py — the legacy shipped-phase records' read model and fold-back check
 (``skills/_shared/plan-shipped-phases.md``).
 
-A story or single-issue plan grows on every revise and can never shrink by retirement the way an
-epic plan does: a shipped phase is pushed but not yet evaluated, and the evaluator judges the WHOLE
-PR diff against the plan's ``## Changes`` / ``## Data model / schema impact`` / ``## Test plan``.
-So on every revise those sections' entries for each shipped phase MOVE — verbatim, never
-re-authored — into one comment per phase, keyed ``(PR, phase)``. The main plan comment keeps
-everything else, including every ``## Phases`` entry. This is the #41 delivery-log split applied to
-the plan: an artifact that grows by construction becomes one bounded comment per unit.
+Until 4.35.0 a revise MOVED each shipped phase's ``## Changes`` / ``## Data model / schema impact`` /
+``## Test plan`` entries out of the plan comment into one record comment per phase, keyed
+``(PR, phase)``, leaving a pointer bullet behind — the only way a growing plan stayed under the
+per-comment cap. Those sections now live in the plan's own build part (``plan_parts.py``), so
+nothing writes a record any more. Existing ones are still the only copy of their entries, so they
+are read until a revise folds them back.
 
 Two surfaces:
 
 - **The read model** (import-only, pure — never prints, exits or raises): :func:`collect` resolves
-  the records for one PR out of an already-fetched thread (a thread scan, zero extra ``gh`` calls,
-  for the same reason ``delivery_log.py`` scans: ``gh_gather``'s ``marker_prefix`` is a single-match
-  lookup), and :func:`to_relocate` names the ticked code-shipping phases that have no record yet —
-  exactly what a revise must move, so the planner never derives it.
-- **``check``** (CLI): run by the planner after staging a revise. Reports the staged main body's
-  size against the platform cap, and whether every relocated entry is a verbatim move of the prior
-  plan's text, removed from main, and replaced there by a pointer bullet. Findings are the planner's
-  to fix before persisting (the ``PHASES_MALFORMED`` posture) — ``ok`` always, no decision code.
+  the records for one PR out of an already-fetched thread (a thread scan, zero extra ``gh`` calls)
+  and :func:`read_pointed` follows the plan's pointer bullets to every PR they name. The resolver
+  and evaluator preps read records this way until the plan is revised; the planner's prep reads
+  them as the fold-back source.
+- **``check``** (CLI): run by the planner after folding records back. Reports any pointer bullet
+  still in the plan and any record entry that did not land in it, verbatim. Findings are the
+  planner's to fix before persisting (the ``PHASES_MALFORMED`` posture) — ``ok`` always, no
+  decision code.
 
 Usage:
-    plan_shipped.py check <prior-plan> <new-main> [<record> ...] [--pr <open-PR>] [--restored <record> ...]
+    plan_shipped.py check <plan> --restored <record> [--restored <record> ...]
 """
 
 import argparse
@@ -35,7 +34,6 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 from pipelib.decisions import MARKER_AMBIGUOUS, needs_decision  # noqa: E402
 from pipelib.envelope import EXIT_OK, EXIT_USAGE_ERROR, emit_ok  # noqa: E402
-from pipelib.limits import body_size  # noqa: E402
 from pipelib.spill import spill_bytes  # noqa: E402
 
 # A distinct marker FAMILY, deliberately: `<!-- implementation-plan-shipped:` never starts with
@@ -56,20 +54,12 @@ _SHIPPED_ON_RE = re.compile(
     r"^\*\*Shipped on:\*\*\s+#(\d+)\s+[·|\-–—]\s+Phase\s+(\d+)\s+[—–\-:]\s+(\S.*?)\s*$"
 )
 
-# The main plan's pointer bullet — it stands in for the moved entries and keeps an emptied heading
-# parseable. No `@<sha>` in it: `_extract_plan_sha` is an unanchored first-match search.
-#
-# Two grammars, deliberately. The pointer is how every reader finds a CLOSED PR's records, so READING
-# is lenient: any bullet saying "shipped on #<N>" and naming shipped-phase records counts, and a
-# pointer reworded on some later revise still resolves. WRITING is strict: `check` reports a pointer
-# that matches the lenient form but not the template as `malformed_pointer`, so drift is caught at the
-# staging gate instead of silently hiding records later.
-_POINTER_RE = re.compile(
-    r"^- Phases? [0-9][0-9, –-]*(?: and [0-9]+)? shipped on #(\d+): entries in the shipped-phase records\.$"
-)
+# The pointer bullet a pre-4.35.0 revise left in place of moved entries. Read leniently — any
+# bullet saying "shipped on #<N>" and naming shipped-phase records — so a pointer reworded on some
+# later revise still leads to its records.
 _POINTER_LOOSE_RE = re.compile(r"^\s*[-*]\s.*\bshipped on #(\d+)\b.*shipped-phase record", re.IGNORECASE)
 
-# The three sections whose entries move. Everything else stays in the main plan.
+# The three sections a record could carry entries for.
 SECTIONS = (
     ("changes", r"Changes \(file-level\)"),
     ("data_model", r"Data model / schema impact"),
@@ -284,25 +274,8 @@ def collect(thread_list, pr_number):
     return records, decision
 
 
-def to_relocate(phases, tracker_rows, recorded_phases):
-    """The ticked, code-shipping phases with no record yet — what this revise must move.
-
-    ``phases`` is ``parse.parse_phases`` output (``None`` when the prior plan did not parse: nothing
-    can be attributed, so nothing is proposed). ``tracker_rows`` is the PR's parsed ``## Phase
-    tracker``; only main rows count (a ``Phase <N>-<label>`` sub-row is bound to its phase, not a
-    tick of it). An ``operator`` / ``decision-only`` phase has no entries to move, so it is never
-    proposed — otherwise it would reappear on every revise.
-    """
-    if not phases:
-        return []
-    ticked = {row["phase"] for row in tracker_rows or [] if row.get("checked") and row.get("sub_label") is None}
-    code_shipping = {phase["number"] for phase in phases if phase.get("kind") == "code-shipping"}
-    recorded = set(recorded_phases or [])
-    return sorted((ticked & code_shipping) - recorded)
-
-
 # ---------------------------------------------------------------------------------------------
-# `check` — the staging gate's facts
+# `check` — the fold-back gate
 # ---------------------------------------------------------------------------------------------
 
 
@@ -354,121 +327,34 @@ def _is_parent(blocks, index):
     return index + 1 < len(blocks) and blocks[index + 1][0] > blocks[index][0]
 
 
-def check(prior_text, main_text, records, pr=None, restored=()):
-    """The staging facts for one revise. ``records`` is ``[(path, text)]``; ``pr`` is the open PR the
-    records belong to (``None`` when there is none — then every pointer in main is foreign, because
-    a plan with no open PR has nothing shipped to point at). ``restored`` is ``[(path, text)]`` — the
-    closed-PR records this revise put back into the plan: they are a verbatim source like the prior
-    plan (an entry restored and then relocated again in the same revise is still a move), and every
-    one of their entries must land somewhere (``not_restored``).
+def check(plan_text, restored):
+    """The fold-back facts for one revise. ``restored`` is ``[(path, text)]`` — the records this
+    revise put back into the plan. Every entry they carry must be in the plan verbatim
+    (``not_restored``: dropping or rewording one loses the only copy of it), and no pointer bullet
+    may remain (``pointer_left``: nothing will ever write the record it would point at).
 
-    Returns the payload dict. ``clean`` is true only when every finding list is empty and every body
-    fits the cap.
+    Returns the payload dict; ``clean`` is true only when both lists are empty.
     """
-    # Sizes are measured on the texts as read — untranslated, so a `\r\n` counts as the two characters
-    # `gh_persist`'s gate counts (`_read_or_die`). Everything structural below runs on
-    # newline-normalized copies, so a CRLF prior (a body fetched from GitHub) and an LF staged main
-    # still compare as the same verbatim entries.
-    main_size = body_size(main_text)
-    record_sizes = [body_size(text) for _, text in records]
-    prior_text, main_text = _lf(prior_text), _lf(main_text)
-    records = [(path, _lf(text)) for path, text in records]
-    restored = [(path, _lf(text)) for path, text in restored]
-    prior_lines = prior_text.split("\n")
-    main_lines = main_text.split("\n")
-
-    findings = {
-        "malformed_head": [],
-        "unexpected_sections": [],
-        "not_verbatim": [],
-        "still_in_main": [],
-        "missing_pointer": [],
-        "foreign_pointer": [],
-        "malformed_pointer": [],
-        "not_restored": [],
-        "record_over_limit": [],
-    }
-    restored_lines = [(path, text.split("\n")) for path, text in restored]
-    record_facts = []
-    moved_sections = set()
-    record_prs = set()
-
-    for (path, text), size in zip(records, record_sizes):
-        head = parse_head(text)
-        phase, record_pr = (head[0], head[1]) if head else (None, None)
-        if head is None or record_pr is None:
-            findings["malformed_head"].append(path)
-        else:
-            record_prs.add(record_pr)
-        chars = size["chars"]
-        if size["over_limit"]:
-            findings["record_over_limit"].append(path)
-        lines = text.split("\n")
-        known = [re.compile(r"^##\s+" + pattern + r"\s*(?:\(.*\))?\s*$", re.IGNORECASE) for _, pattern in SECTIONS]
-        for line in lines:
-            if _HEADING_RE.match(line) and not any(k.match(line) for k in known):
-                findings["unexpected_sections"].append({"path": path, "heading": line.strip()})
-
-        units = 0
-        for key, pattern in SECTIONS:
-            record_section = _section_lines(lines, pattern)
-            if not record_section:
-                continue
-            record_blocks = _blocks(record_section)
-            if not record_blocks:
-                continue
-            moved_sections.add(key)
-            prior_blocks = {body for _, body, _ in _blocks(_section_lines(prior_lines, pattern))}
-            for _, lines_r in restored_lines:
-                prior_blocks |= {body for _, body, _ in _blocks(_section_lines(lines_r, pattern))}
-            main_blocks = {body for _, body, _ in _blocks(_section_lines(main_lines, pattern))}
-            for index, (_, body, number) in enumerate(record_blocks):
-                units += 1
-                if body not in prior_blocks:
-                    findings["not_verbatim"].append({"path": path, "section": key, "line": body[0]})
-                elif body in main_blocks and not (key == "test_plan" and _is_parent(record_blocks, index)):
-                    findings["still_in_main"].append({"path": path, "section": key, "line": body[0]})
-        record_facts.append({"path": path, "phase": phase, "pr": record_pr, "chars": chars, "units": units})
-
-    for key, pattern in SECTIONS:
-        if key not in moved_sections:
-            continue
-        section = _section_lines(main_lines, pattern) or []
-        section_prs = {int(m.group(1)) for m in (_POINTER_RE.match(l.rstrip()) for l in section) if m}
-        if not section_prs or (record_prs and not record_prs <= section_prs):
-            findings["missing_pointer"].append(key)
-
-    for named in pointer_prs(main_text):
-        if pr is None or named != int(pr):
-            findings["foreign_pointer"].append(named)
-    for line in main_lines:
-        if _POINTER_LOOSE_RE.match(line.rstrip()) and not _POINTER_RE.match(line.rstrip()):
-            findings["malformed_pointer"].append(line.strip())
-
-    # Every restored entry must be back in the plan or moved on into a new record — a restore that
-    # drops or rewords one loses the only copy of it.
-    record_lines = [text.split("\n") for _, text in records]
-    for path, lines_r in restored_lines:
+    plan_lines = _lf(plan_text).split("\n")
+    findings = {"pointer_left": [], "not_restored": []}
+    for line in plan_lines:
+        if _POINTER_LOOSE_RE.match(line.rstrip()):
+            findings["pointer_left"].append(line.strip())
+    for path, text in restored:
+        lines_r = _lf(text).split("\n")
         for key, pattern in SECTIONS:
             restored_blocks = _blocks(_section_lines(lines_r, pattern))
             if not restored_blocks:
                 continue
-            landed = {body for _, body, _ in _blocks(_section_lines(main_lines, pattern))}
-            for lines_n in record_lines:
-                landed |= {body for _, body, _ in _blocks(_section_lines(lines_n, pattern))}
+            landed = {body for _, body, _ in _blocks(_section_lines(plan_lines, pattern))}
             for index, (_, body, _) in enumerate(restored_blocks):
+                # A `## Test plan` kind line (`- Unit:`) is repeated in each record; the plan carries
+                # it once, so only its children are checked.
                 if key == "test_plan" and _is_parent(restored_blocks, index):
                     continue
                 if body not in landed:
                     findings["not_restored"].append({"path": path, "section": key, "line": body[0]})
-
-    over_limit = main_size["over_limit"]
-    return {
-        "main": main_size,
-        "records": record_facts,
-        "findings": findings,
-        "clean": not over_limit and not any(findings.values()),
-    }
+    return {"findings": findings, "clean": not any(findings.values())}
 
 
 def _lf(text):
@@ -477,9 +363,7 @@ def _lf(text):
 
 
 def _read_or_die(path_str):
-    # `newline=""`, not `read_text()`: universal newlines would count a `\r\n` as one character, so
-    # `main.chars` would undercount a CRLF body against `gh_persist`'s gate and disagree with
-    # `parse.py phases`' `size` for the same file. The prior plan arrives from GitHub, so CRLF is real.
+    # `newline=""`: a record arrives from GitHub, so CRLF is real; `check` normalizes it itself.
     try:
         with open(path_str, "r", encoding="utf-8", newline="") as fh:
             return fh.read()
@@ -492,12 +376,9 @@ def main(argv):
     parser = argparse.ArgumentParser(prog="plan_shipped.py", description=__doc__.split("\n\n")[0])
     sub = parser.add_subparsers(dest="subcommand")
     p_check = sub.add_parser("check")
-    p_check.add_argument("prior_plan")
-    p_check.add_argument("new_main")
-    p_check.add_argument("records", nargs="*")
-    p_check.add_argument("--pr", type=int, default=None, help="the open PR the records belong to")
+    p_check.add_argument("plan")
     p_check.add_argument(
-        "--restored", action="append", default=[], help="a closed-PR record this revise restored"
+        "--restored", action="append", default=[], help="a shipped-phase record this revise folded back"
     )
     if not argv:
         parser.print_usage(sys.stderr)
@@ -507,11 +388,8 @@ def main(argv):
         parser.print_usage(sys.stderr)
         sys.exit(EXIT_USAGE_ERROR)
     payload = check(
-        _read_or_die(args.prior_plan),
-        _read_or_die(args.new_main),
-        [(path, _read_or_die(path)) for path in args.records],
-        pr=args.pr,
-        restored=[(path, _read_or_die(path)) for path in args.restored],
+        _read_or_die(args.plan),
+        [(path, _read_or_die(path)) for path in args.restored],
     )
     emit_ok(payload=payload)
     sys.exit(EXIT_OK)

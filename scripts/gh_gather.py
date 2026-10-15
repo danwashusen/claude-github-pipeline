@@ -23,6 +23,10 @@ Behavior preserved from v1 (see module-level comments at each step below for the
   decision** (v1 only reported the count and left the ambiguity call to its caller; the port makes
   it a first-class §3 decision per this step's DoD and architecture.md §3's decision-code table
   naming "the gathers" as a ``MARKER_AMBIGUOUS`` emitter).
+- **Whole-plan assembly** — when ``marker_prefix`` is the implementation-plan marker, the marker
+  body is the plan with its part comments put back (``plan_parts.py``,
+  ``skills/_shared/plan-parts.md``), and ``marker_parts`` lists those parts' ids and URLs. A
+  duplicated part is ``MARKER_AMBIGUOUS``, like a duplicated plan.
 - **PR-number guard (v2-native)** — issues and PRs share one number space and ``gh issue view``
   silently returns the PR when given a PR number; the fetched ``url`` (``/pull/<N>`` vs
   ``/issues/<N>``) is the discriminator, and a PR target is a ``TARGET_IS_PR`` decision emitted
@@ -83,6 +87,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 from pipelib import process  # noqa: E402  (import after sys.path setup, by necessity)
+import plan_parts  # noqa: E402  (the plan's part comments — skills/_shared/plan-parts.md)
 from pipelib.decisions import AUTH_REQUIRED, MARKER_AMBIGUOUS, TARGET_IS_PR, needs_decision  # noqa: E402
 from pipelib.envelope import EXIT_OK, emit_needs_decision, emit_ok  # noqa: E402
 from pipelib.spill import resolve_threshold, spill_bytes  # noqa: E402
@@ -480,6 +485,21 @@ def run(issue, repo, marker_prefix=None, scratch_dir=None, extra_json=None, env=
         markers = []
     marker_count = len(markers)
 
+    # The implementation plan spans a main comment and its part comments
+    # (skills/_shared/plan-parts.md): every caller gets the WHOLE plan as the marker body, so no
+    # reader ever needs to know the split exists. `marker_parts` is what a revise edits in place.
+    # Parts are reported even with no main comment: a fresh post that failed after its parts went up
+    # leaves them orphaned, and the next run must rewrite them in place rather than post duplicates.
+    marker_parts = None
+    parts_decision = None
+    if marker_prefix == plan_parts.MAIN_MARKER:
+        assembled, marker_parts, parts_notes, parts_decision = plan_parts.assemble_from_thread(
+            (markers[0].get("body") or "") if marker_count == 1 else "", raw_comments
+        )
+        if marker_count == 1:
+            markers[0]["body"] = assembled
+            notices.extend(parts_notes)
+
     blocked_by = (issue_obj.get("blockedBy") or {}).get("nodes") or []
     blocking = (issue_obj.get("blocking") or {}).get("nodes") or []
 
@@ -582,6 +602,9 @@ def run(issue, repo, marker_prefix=None, scratch_dir=None, extra_json=None, env=
         # nothing a v1 legacy caller would trip on (v1 legacy callers don't exist in v2 — no
         # config-driven caller switches shapes at runtime).
 
+    if marker_parts is not None:
+        payload["marker_parts"] = marker_parts
+
     if extra_json:
         extra, err = _fetch_extra_json(issue, repo, extra_json, env)
         if extra is None:
@@ -590,6 +613,10 @@ def run(issue, repo, marker_prefix=None, scratch_dir=None, extra_json=None, env=
             if key in payload:
                 continue  # never clobber a base scalar with an extra_json collision
             payload[key] = value
+
+    if parts_decision is not None:
+        envelope = emit_needs_decision(parts_decision, notices=notices, stream=stream)
+        return EXIT_OK, envelope
 
     if marker_count > 1:
         decision = needs_decision(

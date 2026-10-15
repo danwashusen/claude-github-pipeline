@@ -485,6 +485,17 @@ class PlanFactsTests(PrepEvaluatorSandboxTestCase):
         self.assertEqual(shipped["entries"][0]["comment_id"], 7002)
         self.assertIn("`gadget.rb`", Path(shipped["body_path"]).read_text(encoding="utf-8"))
 
+    def test_a_plan_in_parts_is_staged_whole(self):
+        # skills/_shared/plan-parts.md: adherence reads `## Changes`, which lives in the build part.
+        # The evaluator scans the thread itself, so it must put the parts back itself too.
+        plan = self._envelope(fixture_case="prep_evaluator_plan_parts")["plans"]["42"]
+        body = Path(plan["body_path"]).read_text(encoding="utf-8")
+        self.assertIn("- `widget.rb` — fixes the widget", body)
+        self.assertNotIn("build part](", body)
+        self.assertEqual(plan["comment_id"], 7010)
+        self.assertEqual([(p["slug"], p["id"]) for p in plan["parts"]], [("build", 7011)])
+        self.assertFalse(plan["shipped"]["present"])
+
     def test_a_duplicated_plan_degrades_to_a_notice_never_a_stop(self):
         # Adherence is one judgment among the merge gates: two plan comments (the #34 class) must not
         # stop an evaluation that ignored the plan entirely before `facts.plans` existed.

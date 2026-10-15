@@ -30,14 +30,13 @@ names that may have drifted, re-check open questions) — don't re-derive untouc
   decision-shaped lines (a choice made, a constraint accepted, an alternative rejected); confirm each has
   a home in `## Architecture decisions`, `## Changes` or `## Risks & watchpoints`; promote the ones that
   don't, **then** drop. Skip it and dropping is a judgment call whose safe answer is to keep everything.
-- **Relocate shipped phases** — mechanical, after the promotion check, whenever `facts.plan.shipped.to_relocate`
-  is non-empty or `.restore` is present: run [`../references/shipped-phase-relocation.md`](../references/shipped-phase-relocation.md)
-  (it owns the record-first persist order). A shipped-phase record is live plan content, not a history layer.
+- **Fold back shipped-phase records** — mechanical, after the promotion check, whenever `facts.plan.shipped.present`:
+  run [`../references/shipped-phase-foldback.md`](../references/shipped-phase-foldback.md). Nothing writes a record any more.
 - **Epic revise: compress merged stories' contracts** — and everything else a story leaves behind when it
   merges. `plan-schema.md`'s "Retirement" rule owns what compacts and to what; run it per merged story,
   mechanically, after the promotion check. A plan is immutable, so this is the only site it can run at.
 - **Persist in place (spine S8).** `gh_persist.py edit-comment <owner/repo> <facts.plan.comment_id>
-  "<facts.scratch>/plan.md"` — a full replacement authored against the schema, never a delta appended to
+  "<facts.scratch>/plan-main.md"`, its parts first per the spine — a full replacement authored against the schema, never a delta appended to
   what is there. Ambiguous marker → `comment --delete-marker-id`, the only op that collapses a duplicate.
 - **Compute reconciliation** ([`../references/revise-reconciliation.md`](../references/revise-reconciliation.md)).
   Diff old plan vs new plan, classify **SOFT** vs **HARD**, and compute the body-edit diff against `facts.revise.phase_tracker`

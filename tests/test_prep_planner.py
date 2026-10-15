@@ -877,11 +877,11 @@ class ReviseFactsTests(PrepPlannerSandboxTestCase):
 
 
 class ShippedRecordFactsTests(PrepPlannerSandboxTestCase):
-    """`facts.plan.shipped` (skills/_shared/plan-shipped-phases.md): the open PR's shipped-phase
-    records, and `to_relocate` — the ticked code-shipping phases with no record yet, which is exactly
-    what the revise moves. The fixture's tracker ticks phases 1 (code, recorded on this PR),
-    2 (operator — never relocated) and 3 (code, unrecorded); a second phase-1 record names another
-    PR, the shape a Start-fresh leaves behind.
+    """`facts.plan.shipped` (skills/_shared/plan-shipped-phases.md): the legacy shipped-phase records
+    the plan still points at — the source the revise folds back. Nothing writes a record any more,
+    so there is no move list. The `shipped_records` fixture's plan carries no pointer, so the open
+    PR's (#55) records are read; a second phase-1 record names another PR and is not. The `restore`
+    fixture's pointer names #40, a PR that is not the open one.
     """
 
     def _shipped_envelope(self, fixture_case="prep_planner_shipped_records"):
@@ -896,37 +896,32 @@ class ShippedRecordFactsTests(PrepPlannerSandboxTestCase):
             issue="201", fixture_case=fixture_case, ambient="201-fix-gadget"
         )
 
-    def test_records_are_read_for_the_open_pr_only(self):
+    def test_with_no_pointer_the_open_prs_records_are_read(self):
         shipped = self._shipped_envelope()["plan"]["shipped"]
         self.assertTrue(shipped["present"])
         self.assertEqual(shipped["pr"], 55)
         self.assertEqual([e["phase"] for e in shipped["entries"]], [1])
         self.assertEqual(shipped["entries"][0]["comment_id"], 9003)
-        self.assertEqual(shipped["other_pr_entries"], 1)
         self.assertTrue(Path(shipped["body_path"]).is_file())
 
-    def test_to_relocate_is_ticked_code_shipping_without_a_record(self):
-        self.assertEqual(self._shipped_envelope()["plan"]["shipped"]["to_relocate"], [3])
-
-    def test_a_closed_prs_records_are_offered_for_restore(self):
-        # The plan's pointer names #40 — a PR that is not the open one (#55): a Start-fresh or a
-        # hand-closed PR. #40's records are the only copy of their entries, so prep stages them.
+    def test_a_closed_prs_records_are_the_fold_back_source(self):
+        # The plan's pointer names #40 — a Start-fresh or a hand-closed PR. #40's records are the
+        # only copy of their entries, so prep stages them as the one fold-back source.
         envelope = self._shipped_envelope(fixture_case="prep_planner_shipped_restore")
-        restore = envelope["plan"]["shipped"]["restore"]
-        self.assertEqual(restore["pr"], 40)
-        self.assertEqual([e["phase"] for e in restore["entries"]], [1])
-        body = Path(restore["body_path"]).read_text(encoding="utf-8")
+        shipped = envelope["plan"]["shipped"]
+        self.assertEqual(shipped["prs"], [40])
+        self.assertEqual([e["phase"] for e in shipped["entries"]], [1])
+        body = Path(shipped["body_path"]).read_text(encoding="utf-8")
         self.assertIn("**Shipped on:** #40", body)
         self.assertIn("`gadget.rb` — fixes the gadget", body)
         self.assertTrue(any("only copy" in line for line in envelope["attention"]))
 
-    def test_no_restore_when_the_pointer_names_the_open_pr_or_nothing(self):
-        self.assertNotIn("restore", self._shipped_envelope()["plan"]["shipped"])
-
-    def test_one_fact_shape_with_or_without_an_open_pr(self):
+    def test_one_fact_shape_and_no_move_list(self):
         shipped = self._shipped_envelope()["plan"]["shipped"]
-        for key in ("present", "pr", "prs", "entries", "unkeyed", "other_pr_entries", "to_relocate"):
+        for key in ("present", "pr", "prs", "entries", "unkeyed"):
             self.assertIn(key, shipped)
+        for retired in ("to_relocate", "restore", "other_pr_entries"):
+            self.assertNotIn(retired, shipped)
 
     def test_an_inline_prior_plan_is_still_staged_to_a_path(self):
         plan = self._shipped_envelope()["plan"]
@@ -1747,91 +1742,23 @@ class DeliverableSubIssueFactsTests(PrepPlannerSandboxTestCase):
         envelope = self._envelope(issue="250", fixture_case="prep_planner_slices_rescoped")
         self.assertEqual(envelope["plan"]["updated_at"], "2026-03-01T00:00:00Z")
 
-    def test_live_plan_size_rides_in_the_plan_facts_in_both_units(self):
-        # #38: how close the live plan already is to the cap, knowable before the session invests in
-        # grounding and drafting. Both units because the cap is CHARACTERS while the write receipts
-        # report bytes — forwarding gh_gather's `marker_comment_bytes` as "the size" would understate
-        # a multibyte body's headroom against a character limit.
+    def test_a_plan_posted_before_parts_reports_none(self):
+        # skills/_shared/plan-parts.md: a legacy single-comment plan has no parts, so its revise posts
+        # them fresh rather than editing ids that do not exist.
         envelope = self._envelope(issue="250", fixture_case="prep_planner_slices_rescoped")
-        plan = envelope["plan"]
-        self.assertIn("body_chars", plan)
-        self.assertIn("body_bytes", plan)
-        self.assertEqual(plan["body_limit_chars"], 65536)
-        self.assertGreater(plan["body_chars"], 0)
-        self.assertGreaterEqual(plan["body_bytes"], plan["body_chars"])
+        self.assertEqual(envelope["plan"]["parts"], [])
 
-    def test_a_plan_under_the_cap_raises_no_attention_line(self):
-        # Strictly conditional: an ordinary plan is not worth a line, and a canonical run's
-        # `attention` is asserted empty elsewhere.
-        envelope = self._envelope(issue="250", fixture_case="prep_planner_slices_rescoped")
-        self.assertFalse(
-            [line for line in envelope["attention"] if "characters against" in line],
-            envelope["attention"],
-        )
+    def test_the_live_plan_size_is_no_longer_a_prep_fact(self):
+        # The cap is per comment since 4.35.0 and a revise re-cuts the plan, so the whole live plan's
+        # size predicts nothing; the size fact is `plan_parts.py split`'s, at staging.
+        plan = self._envelope(issue="250", fixture_case="prep_planner_slices_rescoped")["plan"]
+        for key in ("body_chars", "body_bytes", "body_limit_chars"):
+            self.assertNotIn(key, plan)
 
-    def test_an_over_cap_live_plan_raises_exactly_one_attention_line(self):
-        # The failure #38 reported: the revise was refused at the persist step, after grounding, the
-        # gates, drafting and the whole reviewer loop had been spent. An already-unwritable plan is
-        # knowable from the facts block before any of that. The fixture is derived rather than
-        # committed — a 65 KB marker body in the repo would be dead weight.
-        src = shimenv.fixture_case_dir("prep_planner_slices_rescoped")
-        with tempfile.TemporaryDirectory() as tmp:
-            case = Path(tmp) / "over_cap"
-            shutil.copytree(src, case)
-            comments_path = case / "comments.json"
-            comments = json.loads(comments_path.read_text(encoding="utf-8"))
-            for comment in comments:
-                if "<!-- implementation-plan:v1 -->" in (comment.get("body") or ""):
-                    comment["body"] = comment["body"] + ("\npadding" * 9000)
-                    break
-            else:
-                self.fail("fixture no longer carries an implementation-plan marker comment")
-            comments_path.write_text(json.dumps(comments), encoding="utf-8")
-
-            args = ["250", "octo/widgets", "--root", str(self.root), "--scratch-dir", self.scratch]
-            result = self._run(args, fixture_case="prep_planner_slices_rescoped",
-                               extra_env={"GH_SHIM_FIXTURES": str(case)}, cwd=str(self.root))
-            self.assertEqual(result.returncode, 0, msg="stderr: %s" % result.stderr)
-            envelope = _parse_one_envelope(result.stdout)
-            self.assertEqual(envelope["status"], "ok", "an over-cap plan is a warning, not a refusal")
-            self.assertGreater(envelope["plan"]["body_chars"], 65536)
-            flagged = [line for line in envelope["attention"] if "characters against" in line]
-            self.assertEqual(len(flagged), 1, envelope["attention"])
-            self.assertIn("cannot be edited or reposted as-is", flagged[0])
-
-    def test_a_plan_exactly_at_the_limit_raises_no_attention_line(self):
-        # PR #39 review finding 2. gh_persist's gate is `> limit`, so a body AT the limit writes
-        # fine. Warning "it cannot be edited or reposted as-is" there would be false, and would send
-        # the operator into a re-author they do not need. The two comparisons must agree.
-        src = shimenv.fixture_case_dir("prep_planner_slices_rescoped")
-        with tempfile.TemporaryDirectory() as tmp:
-            case = Path(tmp) / "at_cap"
-            shutil.copytree(src, case)
-            comments_path = case / "comments.json"
-            comments = json.loads(comments_path.read_text(encoding="utf-8"))
-            for comment in comments:
-                if "<!-- implementation-plan:v1 -->" in (comment.get("body") or ""):
-                    body = comment["body"]
-                    comment["body"] = body + "x" * (65536 - len(body))
-                    break
-            else:
-                self.fail("fixture no longer carries an implementation-plan marker comment")
-            comments_path.write_text(json.dumps(comments), encoding="utf-8")
-
-            args = ["250", "octo/widgets", "--root", str(self.root), "--scratch-dir", self.scratch]
-            result = self._run(args, fixture_case="prep_planner_slices_rescoped",
-                               extra_env={"GH_SHIM_FIXTURES": str(case)}, cwd=str(self.root))
-            envelope = _parse_one_envelope(result.stdout)
-            self.assertEqual(envelope["plan"]["body_chars"], 65536)
-            self.assertFalse(
-                [line for line in envelope["attention"] if "characters against" in line],
-                envelope["attention"],
-            )
-
-    def test_no_size_keys_when_no_plan_exists(self):
+    def test_parts_are_reported_even_with_no_plan(self):
         envelope = self._envelope(issue="200", fixture_case="prep_planner_row_default")
         self.assertFalse(envelope["plan"]["present"])
-        self.assertNotIn("body_chars", envelope["plan"])
+        self.assertEqual(envelope["plan"]["parts"], [])
 
     def test_childless_target_has_no_slices_key_and_no_extra_gh_call(self):
         envelope = self._envelope(issue="200", fixture_case="prep_planner_row_default")
