@@ -18,12 +18,13 @@ this route supplies:
   checked against), `## Integration strategy` (how the stories converge on `epic/<N>-<slug>` and reach
   `main`), and the epic `## Definition of done` grounding. The epic delivery log is
   **not** created here — the evaluator records each story's entry as that story merges.
-- **Lock ownership, not shapes (spine S5).** S5's "pin every new symbol's signature, every field's shape
-  … name the rejected one" is the **story** plan's bar — the epic reviewer runs no Dimension 4, which is
-  what that detail serves. Here pin the cross-story principles, which story lands what, and in
-  `## Story contracts` only the shape a consuming story relies on; leave each story's signatures, field
-  shapes, orderings and rejected alternatives to its just-in-time plan. A revise follows the same bar:
-  it never adds one story's mechanism to the epic plan.
+- **Lock ownership, not shapes (spine S5).** S5 states this bar for every route that drafts or revises
+  an epic plan (`revise.md` and `story-jit.md`'s bootstrap included); the reason is here. S5's "pin every
+  new symbol's signature, every field's shape … name the rejected one" is the **story** plan's bar — the
+  epic reviewer runs no Dimension 4, which is what that detail serves. So pin the cross-story principles,
+  which story lands what, and in `## Story contracts` only the shape a consuming story relies on; each
+  story's signatures, field shapes, orderings and rejected alternatives wait for its just-in-time plan,
+  and a revise never adds one story's mechanism to the epic plan.
 - **Altitude.** Every section carries only what no single story owns (`plan-schema.md`, "Altitude", which
   lists what survives per section). Everything file-, control-, suite- or mechanism-specific is the
   just-in-time story plan's, for the same reason this route doesn't fan out story plans at all: it would

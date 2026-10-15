@@ -163,7 +163,11 @@ Run only the dimensions named in the inputs.
    signature, field shape, ordering, rejected alternative, file, control, suite or watchpoint only that
    story's build involves — is that story's just-in-time plan's, and is a SUGGESTION here (name the
    story). So is a `## Story contracts` `delivers` item no `consumes` clause names, and a `delivers`
-   shape beyond what its consumer relies on. Do not flag an entry you cannot attribute to a single
+   shape beyond what its consumer relies on — but **never on a merged story's entry** (one carrying
+   `shipped:`): its `delivers` stays verbatim as originally pinned, because trimming it would re-pin the
+   contract the staleness check compares against the delivery log. Nor flag a `[user decision <date>]`
+   entry labelled with the story it binds: an operator's answer stays at the epic grain until that
+   story's plan carries it. Do not flag an entry you cannot attribute to a single
    story — the shared ones are the section's whole purpose — and do not flag a section rendered
    `- (none — story-owned)`, which is the correct empty form, not a gap. Report the total count, as for
    Delivery status: story-owned detail is always true, so only the aggregate shows the plan has become
@@ -214,7 +218,8 @@ Run only the dimensions named in the inputs.
    marker. Flag a decision with no citation (under-grounded — SUGGESTION unless load-bearing, then
    BLOCKER) or a citation that fails dimension-2 verification (fabricated — BLOCKER). On an epic plan, an
    ownership assignment ("#N lands X") is grounded by its `## Story contracts` entry and needs no
-   precedent of its own.
+   precedent of its own, and a section rendered `- (none — story-owned)` is the Altitude empty form, not
+   a decision missing its citation.
 
 7. **Phase coherence** *(multi-phase only; fires on a `## Phases` section — an epic uses `## Story
    contracts` with Dimensions 5/8)*. Read each phase's bullets and check: **all required keys present**

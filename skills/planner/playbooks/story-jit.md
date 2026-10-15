@@ -28,6 +28,9 @@ this route supplies:
   first (the `epic.md` mechanics, run inline against `facts.story` — grounding stays at `main`, the
   bootstrap ref, since no epic branch exists yet), then continue in this same session to the story plan
   against it. This is a **composite epic+story session**; the emitted handoff is the story's (see below).
+- **Carry the operator's answers down.** Every `[user decision <date>]` the epic plan's
+  `## Architecture decisions` labels `(#<this story>)` goes into this plan's `## Architecture decisions`
+  verbatim, with its date — the operator already answered it (`plan-schema.md`, "Altitude").
 - **Reconcile contracts against what shipped (feedback edge).** Compare `facts.story.epic_delivery_log`
   (what predecessors *actually* delivered — the evaluator's record, read-only; one entry per shipped
   story, already resolved across both tiers and staged as one document) against the epic plan's

@@ -1778,6 +1778,50 @@ class EpicPlanGrowthBoundTests(unittest.TestCase):
         self.assertIn("the epic reviewer runs no Dimension 4", flat)
         self.assertIn("never adds one story's mechanism to the epic plan", flat)
 
+    def test_every_epic_drafting_route_reaches_the_detail_bar(self):
+        # An epic revise routes to revise.md, never epic.md, and story-jit bootstraps an epic plan
+        # inline — so the bar lives in the spine, which every route runs (#78 review).
+        spine = " ".join((PLAYBOOKS_DIR / "plan-spine.md").read_text(encoding="utf-8").split())
+        s5 = spine.split("## S5")[1].split("## S6")[0]
+        self.assertIn("An **epic** plan locks ownership, not shapes, on every route that drafts or revises one", s5)
+        for playbook in ("revise.md", "story-jit.md", "epic.md"):
+            text = (PLAYBOOKS_DIR / playbook).read_text(encoding="utf-8")
+            self.assertIn("plan-spine.md", text, playbook)
+
+    def test_epic_decision_gate_defers_single_story_choices(self):
+        spine = " ".join((PLAYBOOKS_DIR / "plan-spine.md").read_text(encoding="utf-8").split())
+        self.assertIn("On an epic plan only a choice binding two or more stories gates here", spine)
+
+    def test_operator_answers_are_never_dropped_by_altitude(self):
+        flat = " ".join(self.schema.split())
+        self.assertIn("the operator is never asked the same question twice", flat)
+        reviewer = " ".join(self.reviewer.split())
+        self.assertIn("Nor flag a `[user decision <date>]` entry labelled with the story it binds", reviewer)
+        story_jit = " ".join((PLAYBOOKS_DIR / "story-jit.md").read_text(encoding="utf-8").split())
+        self.assertIn("**Carry the operator's answers down.**", story_jit)
+
+    def test_altitude_audit_never_trims_a_merged_contract(self):
+        # Trimming a merged story's `delivers` re-pins the contract the staleness check compares with.
+        reviewer = " ".join(self.reviewer.split())
+        self.assertIn("**never on a merged story's entry** (one carrying `shipped:`)", reviewer)
+
+    def test_empty_form_is_not_an_uncited_decision(self):
+        reviewer = " ".join(self.reviewer.split())
+        dim6 = reviewer.split("6. **Precedent grounding.**")[1].split("7. **Phase coherence**")[0]
+        self.assertIn("`- (none — story-owned)` is the Altitude empty form", dim6)
+
+    def test_epic_contract_delivers_handles_none_consumed(self):
+        flat = " ".join(self.schema.split())
+        self.assertIn("or (none consumed) when it assigns none", flat)
+        self.assertIn("Its plan's `## Epic contract` says `Delivers: (none consumed)` too", flat)
+        evaluator = " ".join((REPO_ROOT / "skills" / "evaluator" / "playbooks" / "story.md").read_text(encoding="utf-8").split())
+        self.assertIn("`Delivers: (none consumed)` means no later story relies on it", evaluator)
+
+    def test_compaction_rationale_matches_retirement(self):
+        flat = " ".join(self.schema.split())
+        self.assertNotIn("a merged story's decision survives in `## Architecture decisions`", flat)
+        self.assertIn("a decision an unmerged story still builds against survives", flat)
+
     def test_reviewer_altitude_reads_every_section_and_counts(self):
         flat = " ".join(self.reviewer.split())
         self.assertIn("reads every section against the plan's own `## Story breakdown`", flat)
