@@ -17,8 +17,9 @@ artifact and no package manager. The "source" is:
   open-question-links / phases), the twelve `prep_*.py`
   state-assembly scripts (including `prep_workspace_open.py` / `prep_workspace_close.py`, whose
   prep IS the tool's action), the `oq_tracker.py` and `doc_catalogue.py` helpers the preps compose
-  (the open-question tracker search; the consuming repo's declared grounding docs), `plan_shipped.py`
-  (the shipped-phase records' read model + the planner's `check` staging gate), and
+  (the open-question tracker search; the consuming repo's declared grounding docs), `plan_parts.py`
+  (one plan, three comments: the planner's `split`, every reader's assembly), `plan_shipped.py`
+  (the legacy shipped-phase records' read model + the planner's fold-back `check`), and
   `scripts/pipelib/` (envelope, spill, decision codes, platform limits, hashing, the locked-down subprocess
   runner, the hook runner, the thread read-back).
 - **An offline test harness** — `tests/` (stdlib `unittest`, a fixture-replaying `gh` shim, a git
@@ -264,9 +265,8 @@ per [architecture.md §7](docs/architecture.md)'s mapping table).
   "child of #N" answer routes the handoff to a slicer adoption run.
 - `parse.py` — `dod` / `oq-links` / `phases`: the three contract parsers, each with a malformed
   decision code (`DOD_MALFORMED`, `PHASES_MALFORMED`). `phases` also reports the staged body's `size`
-  against `BODY_CHAR_LIMIT` (`pipelib.limits.body_size`, the shape `plan_shipped.py check`'s `main`
-  shares) — the planner's size read on every staging, including a fresh draft with no prior plan to
-  hand `check`; never a decision. The DoD's **shape** is a fact too (4.32.0): `dod` also reports
+  against `BODY_CHAR_LIMIT` (`pipelib.limits.body_size`) — the whole plan's, informational since 4.35.0:
+  the cap is per comment, so the planner's size read is `plan_parts.py split`'s; never a decision. The DoD's **shape** is a fact too (4.32.0): `dod` also reports
   `present` and `other_checklists` (`dod_summary` — checkbox lists under any other `##` heading, the
   legacy epic `## Stories` excepted; the drafter's post-staging check), and `phases --issue-body <path>`
   adds `dod_coverage` (`dod_coverage` — out-of-range / unclaimed / doubly-claimed `closes-dod` indexes
@@ -279,17 +279,29 @@ per [architecture.md §7](docs/architecture.md)'s mapping table).
   (`parse_stories_section` / `stories_checklist_lists` — the planner's, slicer's and evaluator's
   story set and branching's legacy parent edge share this one copy; each prep carried its own, with
   diverging grammars, until 4.33.1).
-- `plan_shipped.py` — the shipped-phase records (`skills/_shared/plan-shipped-phases.md`). Import
-  core `collect(thread, pr)` (a thread scan, keyed (PR, phase), duplicate → `MARKER_AMBIGUOUS`),
-  `read_pointed` (every PR the plan's pointer bullets name — read leniently, so a reworded pointer
-  still finds a closed PR's records) + `to_relocate` (ticked code-shipping phases with no record — the
-  revise's move list, a prep fact),
-  composed by prep_planner / prep_resolver / prep_evaluator; CLI `check <prior> <main> [<record>…]`,
-  which reports `main.headroom_chars`, whether every relocated entry is a verbatim, pointer-replaced
-  move, and (`--restored`) whether every restored entry landed. Always `ok` — findings are the planner's to fix, no decision code. `prep_evaluator` also
-  thread-scans the closing issue's plan itself (`facts.plans`) — before this, nothing gave the evaluator
-  the plan its "Plan adherence" step checks — and degrades a duplicated plan or record to a notice,
-  never a stop, as it does for the delivery log.
+- `plan_parts.py` — one implementation plan, three comments (`skills/_shared/plan-parts.md`): the
+  main `<!-- implementation-plan:v1 -->` comment plus a `build` part (`## Changes` / `## Data model` /
+  `## Test plan` / `## Coverage gap`) and a `references` part (`## Doc grounding` / `## External
+  sources consulted`), each `<!-- implementation-plan-part:v1:<slug> -->`. The main comment keeps every
+  heading, a moved section's body reduced to a stub link, so the cut is mechanical both ways. CLI
+  `split <plan> --out-dir <dir> [--url <slug>=<url>]` writes the three bodies and reports each one's
+  size — the planner's size fact, because the cap is per comment. Import cores `find_parts` (duplicate →
+  `MARKER_AMBIGUOUS`) + `assemble` / `assemble_from_thread`, composed by **`gh_gather.py`'s plan-marker
+  lookup** (so the planner, resolver and drafter preps all stage the whole plan, and `marker_parts`
+  carries the part ids a revise edits) and by `prep_evaluator`'s own thread scan. No prompt sees the
+  split; a sub-agent that needs the plan gets the staged path, never a self-fetch of the main comment.
+  Parts are reported even with no main comment, so a fresh post that failed half-way is retried in
+  place rather than duplicated.
+- `plan_shipped.py` — the **legacy** shipped-phase records (`skills/_shared/plan-shipped-phases.md`).
+  Nothing writes one since 4.35.0 (the build part has its own cap); existing ones are read until a
+  revise folds them back. Import core `collect(thread, pr)` (a thread scan, keyed (PR, phase), duplicate
+  → `MARKER_AMBIGUOUS`) + `read_pointed` (every PR the plan's pointer bullets name — read leniently),
+  composed by prep_planner (the fold-back source, `facts.plan.shipped`) / prep_resolver / prep_evaluator;
+  CLI `check <plan> --restored <record>…`, which reports any pointer bullet left (`pointer_left`) and
+  any record entry that did not land verbatim (`not_restored`). Always `ok` — findings are the
+  planner's to fix, no decision code. `prep_evaluator` also thread-scans the closing issue's plan
+  itself (`facts.plans`) and degrades a duplicated plan, part or record to a notice, never a stop, as it
+  does for the delivery log.
 
 Every executor exposes a **pure, non-emitting core** — `build_*(...) -> (payload, notices,
 decision | None)` — with `main()` as a thin emit wrapper. A prep calls those cores directly and
@@ -387,21 +399,19 @@ now the same rule everything else follows rather than an exception.
   shared read model is `scripts/delivery_log.py`, composed by both preps so the writer's view and
   the reader's cannot drift. It is *separate* from the verified `<!-- implementation-plan:v1 -->`
   epic plan precisely because it changes on every merge while the plan stays immutable.
-- `plan-shipped-phases.md` — the shipped-phase record contract, the #41 split applied to a story or
-  single-issue plan. Such a plan only grows (each revise adds a phase) and cannot retire a shipped
-  phase the way an epic retires a merged story, because a shipped phase is pushed but not yet
-  evaluated and the evaluator judges the **whole** PR against `## Changes` / `## Data model / schema
-  impact` / `## Test plan`. So on every revise each ticked code-shipping phase's entries in those three
-  sections move **verbatim** into its own `<!-- implementation-plan-shipped:v1:phase:<N> -->` comment,
-  keyed (PR, phase), with a pointer bullet left in each section. `## Phases` and every decision section
-  never move (the tracker join and the resolver's verbatim Plan-settled citations need them), nor does
-  an entry an unshipped phase still builds on. Records are immutable (editing one is HARD) and posted
-  **before** the main plan's `edit-comment`. Readers follow every PR the plan's pointer bullets name,
-  not only the open one: after a Start-fresh closes that PR its records are the only copy of their
-  entries, so prep offers them as `facts.plan.shipped.restore` and the next revise puts them back —
-  only then do they go inert (never deleted). The **planner** writes them (`skills/planner/references/shipped-phase-relocation.md`); the
-  **resolver** (distiller bundle) and **evaluator** (`facts.plans`) read them. A separate marker
-  family, so no plan `startswith` lookup matches one.
+- `plan-parts.md` — one plan posted as three comments: which section lives in the main comment, the
+  `build` part and the `references` part (decisions, phases and risks stay in main; the work list and
+  the citations move), the stub-link format, the parts-first-main-last persist order, and the rule that
+  every reader gets the whole plan from its prep. Every plan is split this way, not only epics — it
+  replaced the shipped-phase relocation as the answer to the per-comment cap.
+- `plan-shipped-phases.md` — the **legacy** shipped-phase record contract. Between 4.20.0 and 4.35.0 a
+  revise moved each shipped phase's `## Changes` / `## Data model / schema impact` / `## Test plan`
+  entries verbatim into its own `<!-- implementation-plan-shipped:v1:phase:<N> -->` comment, keyed
+  (PR, phase), leaving a pointer bullet. Nothing writes one now. Readers (the **resolver**'s distiller
+  bundle, the **evaluator**'s `facts.plans`) still follow every PR the pointers name until the plan's
+  next revise, where the **planner** folds every record back verbatim and drops the pointers
+  (`skills/planner/references/shipped-phase-foldback.md`); the records then go inert, never deleted. A
+  separate marker family, so no plan `startswith` lookup matches one.
 - `open-question-detection.md` — how to **find** an open question in any project doc (the
   `<!-- drafter-open-question-markers -->` config-block hint + heuristic cues; OQs aren't
   centralized) and **match** it to a tracker issue (search before filing, `Read` to confirm).
@@ -464,7 +474,7 @@ now the same rule everything else follows rather than an exception.
   fix round), the evaluator only for the ledger's "Apply criteria" (applying costs a session). Never
   restate the card's options outside it.
 
-When changing behavior that touches handoffs, the plan summary, DoD annotations, the worktree block
+When changing behavior that touches handoffs, the plan summary, the plan's parts, DoD annotations, the worktree block
 format, the epic delivery log, or the open-question contracts, edit the `_shared` file (the single
 source of truth)
 and keep the per-skill renderings consistent with it — **render, don't restate**.
@@ -492,8 +502,9 @@ the *consuming* repo provides — not by plugin config:
   recomputing the slug, per the #102 orphaned-commits incident); the resolver/evaluator classify
   Epic vs story PRs by this pattern.
 - **Durable marker comments** the skills post and read: `<!-- implementation-plan:v1 -->`
-  (planner), `<!-- implementation-plan-shipped:v1:phase:<N> -->` (planner-written on revise,
-  resolver/evaluator-read), `<!-- issue-research:v1 -->` (researcher), `<!-- epic-delivery-log:v2:story:<N> -->`
+  (planner) with its `<!-- implementation-plan-part:v1:build -->` / `:references -->` part comments
+  (planner-written, assembled for every reader), `<!-- implementation-plan-shipped:v1:phase:<N> -->`
+  (legacy: no longer written; resolver/evaluator-read until a revise folds it back), `<!-- issue-research:v1 -->` (researcher), `<!-- epic-delivery-log:v2:story:<N> -->`
   (evaluator-written, planner-read; `:v1` is its read-forever legacy tier), `<!-- pr-evaluator-health-cache:v1 -->` (evaluator, keyed on
   head SHA), `<!-- question-decision:v1 -->` (question-resolver-written; the tiered status read's
   Tier 1, so a marked question reads as resolved deterministically), and the

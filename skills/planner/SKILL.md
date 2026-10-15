@@ -76,11 +76,11 @@ Universal across every route:
   code (`architecture.md §6`). Every doc/precedent Read/Grep/Explore targets
   `facts.grounding.path` (the asserted ambient checkout, already at `plan_ref`) by absolute path.
   No `git show <ref>:path`, no `git grep <ref>` — its `sha` is the footer's `@<short-sha>`. Never
-  branch, commit, or stash there; the planner's only write surface is the plan comment (and its shipped-phase records).
+  branch, commit, or stash there; the planner's only write surface is the plan's three comments.
 - **Marker is always the comment's first line.** Every consumer (resolver, evaluator, drafter, this skill's own revise
   lookup) matches `<!-- implementation-plan:v1 -->` with `startswith` — any character before it hides the plan; a story's
-  `**Epic:**` backlink goes on the line *immediately after* it. A shipped-phase record's `<!-- implementation-plan-shipped:v1:phase:<N> -->`
-  is a separate family that never matches it ([`../_shared/plan-shipped-phases.md`](../_shared/plan-shipped-phases.md)).
+  `**Epic:**` backlink goes on the line *immediately after* it. A part's `<!-- implementation-plan-part:v1:<slug> -->`
+  is a separate family that never matches it ([`../_shared/plan-parts.md`](../_shared/plan-parts.md)).
 - **Footer/handoff record the branch, never elide it.** `<plan-ref>` is the ref the plan was GROUNDED on — not
   always the resolver's PR base; render per `plan-spine.md` S5 + [`references/handoff-renderings.md`](references/handoff-renderings.md).
 - **Staged-body writes.** Every GitHub write goes through

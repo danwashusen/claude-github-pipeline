@@ -127,7 +127,8 @@ when a convention is absent, but work best when the repo provides:
   from your `docs/README.md` and re-ingests your edits on re-run. Without it, those skills ground on
   no documents and say so — nothing is guessed.
 
-The skills post and read durable marker comments: `<!-- implementation-plan:v1 -->` (planner),
+The skills post and read durable marker comments: `<!-- implementation-plan:v1 -->` (planner — the main
+comment of three; the build and citation sections post as `<!-- implementation-plan-part:v1:<slug> -->` parts beside it),
 `<!-- issue-research:v1 -->` (researcher), `<!-- epic-delivery-log:v2:story:<N> -->` (evaluator-written,
 planner-read, one comment per shipped story; `:v1` is its read-forever legacy tier), `<!-- pr-evaluator-health-cache:v1 -->` (evaluator), `<!-- question-decision:v1 -->`
 (question-resolver), and the `<!-- open-question-links:v1 -->` build-issue body section (drafter).

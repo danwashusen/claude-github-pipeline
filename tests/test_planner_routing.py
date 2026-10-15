@@ -706,12 +706,11 @@ class PlanSchemaByteCompatTests(unittest.TestCase):
 
 
 class ShippedPhaseRecordTests(unittest.TestCase):
-    """Shipped-phase records (skills/_shared/plan-shipped-phases.md). A story or single-issue plan only
-    grows on revise and cannot retire a shipped phase (the evaluator judges the whole PR against its
-    `## Changes` / `## Test plan`), so each revise moves shipped entries verbatim into per-phase
-    records. These pin the template to its example capture, and the rules that are prose-only: every
-    revise route reaches the procedure, records post before the main edit, and a relocation is never
-    read as a HARD `## Changes` edit.
+    """Legacy shipped-phase records (skills/_shared/plan-shipped-phases.md). Since 4.35.0 nothing
+    writes one — the build sections have their own part comment — but a plan revised before then
+    still points at them, and they are the only copy of their entries. These pin the template to its
+    example capture (readers still parse it), and the fold-back: every revise route reaches it, it
+    runs through the script, and it is never read as a HARD `## Changes` edit.
     """
 
     MARKER_PREFIX = "<!-- implementation-plan-shipped:v1:phase:"
@@ -731,43 +730,76 @@ class ShippedPhaseRecordTests(unittest.TestCase):
     def test_record_marker_is_a_separate_family(self):
         self.assertFalse(self.MARKER_PREFIX.startswith("<!-- implementation-plan:v1 -->"))
 
-    def test_both_revise_routes_reach_the_procedure(self):
+    def test_both_revise_routes_reach_the_fold_back(self):
         for playbook in ("revise.md", "story-jit.md"):
             text = (PLAYBOOKS_DIR / playbook).read_text(encoding="utf-8")
-            self.assertIn("references/shipped-phase-relocation.md", text, playbook)
-            self.assertIn("facts.plan.shipped.to_relocate", text, playbook)
+            self.assertIn("references/shipped-phase-foldback.md", text, playbook)
+            self.assertIn("facts.plan.shipped.present", text, playbook)
 
-    def test_records_post_before_the_main_edit(self):
-        flat = " ".join((REFERENCES_DIR / "shipped-phase-relocation.md").read_text(encoding="utf-8").split())
-        self.assertIn("post each new record **before** the main plan's `edit-comment`", flat)
-        self.assertIn("On **HARD Start-fresh**, post nothing here", flat)
+    def test_nothing_writes_a_record_any_more(self):
+        # The relocation procedure is retired: no planner prompt may post a record or name its fact.
+        self.assertFalse((REFERENCES_DIR / "shipped-phase-relocation.md").exists())
+        for path in list(PLAYBOOKS_DIR.glob("*.md")) + list(REFERENCES_DIR.glob("*.md")) + [ROUTER]:
+            text = path.read_text(encoding="utf-8")
+            self.assertNotIn("to_relocate", text, path.name)
+            self.assertNotIn("shipped-phase-<N>.md", text, path.name)
 
     def test_check_runs_through_the_script(self):
-        text = (REFERENCES_DIR / "shipped-phase-relocation.md").read_text(encoding="utf-8")
+        text = (REFERENCES_DIR / "shipped-phase-foldback.md").read_text(encoding="utf-8")
         self.assertIn("${CLAUDE_PLUGIN_ROOT}/scripts/plan_shipped.py check", text)
-        self.assertIn("--pr <facts.plan.shipped.pr>", text)
-        self.assertIn('--restored "<facts.plan.shipped.restore.body_path>"', text)
+        self.assertIn('--restored "<facts.plan.shipped.body_path>"', text)
+        self.assertIn("`pointer_left`", text)
+        self.assertIn("`not_restored`", text)
 
-    def test_a_closed_prs_records_are_restored(self):
-        # After a Start-fresh the closed PR's records are the only copy of their entries; both revise
-        # routes must reach the restore step, not only the relocation.
-        text = (REFERENCES_DIR / "shipped-phase-relocation.md").read_text(encoding="utf-8")
-        self.assertIn("## Restoring a closed PR's records", text)
-        for playbook in ("revise.md", "story-jit.md"):
-            self.assertIn(".restore", (PLAYBOOKS_DIR / playbook).read_text(encoding="utf-8"), playbook)
-
-    def test_reviewer_placeholder_is_passed_by_the_spine(self):
-        self.assertIn("`shipped_paths`", (PLAYBOOKS_DIR / "plan-spine.md").read_text(encoding="utf-8"))
-
-    def test_relocation_is_not_a_hard_edit_but_editing_a_record_is(self):
-        flat = " ".join((REFERENCES_DIR / "revise-reconciliation.md").read_text(encoding="utf-8").split())
-        self.assertIn("**Relocation and restoration are not edits.**", flat)
-        self.assertIn("A posted shipped-phase record", flat)
-
-    def test_reviewer_treats_records_as_read_only(self):
+    def test_reviewer_is_told_which_phases_shipped(self):
+        self.assertIn("`shipped_phases`", (PLAYBOOKS_DIR / "plan-spine.md").read_text(encoding="utf-8"))
         flat = " ".join((REFERENCES_DIR / "plan-reviewer-prompt.md").read_text(encoding="utf-8").split())
-        self.assertIn("`<<shipped_paths>>`", flat)
-        self.assertIn("They are **read-only**", flat)
+        self.assertIn("`<<shipped_phases>>`", flat)
+        self.assertNotIn("<<shipped_paths>>", flat)
+
+    def test_fold_back_is_not_a_hard_edit(self):
+        flat = " ".join((REFERENCES_DIR / "revise-reconciliation.md").read_text(encoding="utf-8").split())
+        self.assertIn("**Fold-back is not an edit.**", flat)
+        self.assertNotIn("A posted shipped-phase record", flat)
+
+
+class PlanPartsTests(unittest.TestCase):
+    """One plan, three comments (skills/_shared/plan-parts.md). The planner authors one body and a
+    script cuts it, so the prompt-side rules are only where the cut runs and the persist order."""
+
+    def test_spine_cuts_on_every_staging_and_posts_the_main_cut(self):
+        spine = (PLAYBOOKS_DIR / "plan-spine.md").read_text(encoding="utf-8")
+        self.assertIn("plan_parts.py split", spine)
+        self.assertIn("**parts first, main last**", spine)
+        self.assertIn('"<facts.scratch>/plan-main.md"', spine)
+        self.assertIn("../../_shared/plan-parts.md", spine)
+
+    def test_in_place_updates_write_the_main_cut(self):
+        for playbook in ("revise.md", "story-jit.md"):
+            text = (PLAYBOOKS_DIR / playbook).read_text(encoding="utf-8")
+            self.assertIn('"<facts.scratch>/plan-main.md"', text, playbook)
+            self.assertNotIn('<facts.plan.comment_id>\n  "<facts.scratch>/plan.md"', text, playbook)
+
+    def test_shared_contract_names_the_split_and_the_in_place_part_edit(self):
+        flat = " ".join((SHARED_DIR / "plan-parts.md").read_text(encoding="utf-8").split())
+        self.assertIn("${CLAUDE_PLUGIN_ROOT}/scripts/plan_parts.py split", flat)
+        self.assertIn("`facts.plan.parts`", flat)
+        self.assertIn("`unlinked` must come back empty", flat)
+        self.assertIn("**parts first, main last**", flat)
+
+    def test_shared_contract_table_matches_the_script(self):
+        sys.path.insert(0, str(REPO_ROOT / "scripts"))
+        import plan_parts
+
+        text = (SHARED_DIR / "plan-parts.md").read_text(encoding="utf-8")
+        for slug, sections in plan_parts.PARTS:
+            row = next(line for line in text.splitlines() if line.startswith("| **%s**" % slug))
+            for section in sections:
+                self.assertIn("`## %s`" % section, row, slug)
+            self.assertIn(plan_parts.part_marker(slug), row)
+
+    def test_router_names_the_part_marker_family(self):
+        self.assertIn("<!-- implementation-plan-part:v1:<slug> -->", ROUTER.read_text(encoding="utf-8"))
 
 
 class SectionOwnershipAndSizeTests(unittest.TestCase):
@@ -822,13 +854,14 @@ class SectionOwnershipAndSizeTests(unittest.TestCase):
         self.assertIn("**The cap is the only size line**", flat)
         self.assertIn("you do not cut for size", flat)
         self.assertIn("never offset a reviewer-requested addition by cutting elsewhere", flat)
-        self.assertIn("Only when `over_limit` is true, compact", flat)
+        self.assertIn("Only when `over_limit` names a comment, compact", flat)
 
     def test_the_size_read_works_on_a_fresh_draft(self):
-        # `plan_shipped.py check` needs a prior plan, so naming it alone left a fresh draft with no
-        # clean call — and a hand count. `parse.py phases` runs after every staging on every route.
+        # The cap is per comment since 4.35.0, so the size fact is the split's, run on every staging
+        # on every route — a fresh draft included, never a hand count.
         flat = " ".join(self.schema.split())
-        self.assertIn("the `size` block `parse.py phases` returns on every staging", flat)
+        self.assertIn("Read the size from `plan_parts.py split`'s `comments[].size` on every staging (S7)", flat)
+        self.assertIn("The cap applies to **each of the three comments**", flat)
         self.assertIn("never a hand count", flat)
 
     def test_no_planner_prompt_names_a_sub_cap_size_budget(self):

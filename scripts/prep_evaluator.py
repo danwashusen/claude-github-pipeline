@@ -73,6 +73,7 @@ import doc_catalogue  # noqa: E402  (the consuming repo's declared grounding doc
 import gh_gather  # noqa: E402
 import gh_pr_gather  # noqa: E402
 import parse  # noqa: E402
+import plan_parts  # noqa: E402  (the plan's part comments — skills/_shared/plan-parts.md)
 import plan_shipped  # noqa: E402  (the shipped-phase records a relocated plan's detail lives in)
 import workspace  # noqa: E402
 from pipelib import process  # noqa: E402
@@ -365,11 +366,12 @@ _load_thread = load_thread
 
 
 def _build_plan_facts(issue_envelope, scratch_dir, issue_number, pr_number):
-    """``facts.plans[<issue>]`` — the closing issue's plan comment plus its shipped-phase records
+    """``facts.plans[<issue>]`` — the closing issue's whole plan (the main comment with its part
+    comments put back, skills/_shared/plan-parts.md) plus any legacy shipped-phase records
     (skills/_shared/plan-shipped-phases.md). Plan adherence (evaluate-spine.md S3 step 5) judges the
-    whole PR diff, and a shipped phase's `## Changes` / `## Data model / schema impact` /
-    `## Test plan` entries live in its record once a revise has relocated them — so the evaluator
-    needs both, as paths, always.
+    whole PR diff, and a plan revised before 4.35.0 may still hold a shipped phase's `## Changes` /
+    `## Data model / schema impact` / `## Test plan` entries in its record — so the evaluator needs
+    both, as paths, always.
 
     Both are located by scanning the thread the gather already returned — never a ``marker_prefix``
     gather, whose second match is a hard ``MARKER_AMBIGUOUS``. Adherence is one judgment among the
@@ -395,8 +397,19 @@ def _build_plan_facts(issue_envelope, scratch_dir, issue_number, pr_number):
             "closing issue #%s carries %d plan comments — plan adherence cannot pick one; judge "
             "without it and say so in the review" % (issue_number, len(plans))
         ]
-    plan_body = plans[0].get("body") or ""
     notices = []
+    # The whole plan: the main comment with its part comments put back (skills/_shared/plan-parts.md).
+    # A duplicated part degrades to a notice, as a duplicated plan does — adherence is one judgment
+    # among the merge gates, never a stop.
+    plan_body, parts, part_notes, part_decision = plan_parts.assemble_from_thread(
+        plans[0].get("body") or "", thread
+    )
+    notices += ["closing issue #%s: %s" % (issue_number, note) for note in part_notes]
+    if part_decision is not None:
+        notices.append(
+            "closing issue #%s: %s — plan adherence reads the plan without that part; judge the "
+            "sections it carries without the plan and say so" % (issue_number, part_decision["summary"])
+        )
     records, notes, decision = plan_shipped.read_pointed(thread, plan_body, pr_number)
     notices += ["closing issue #%s: %s" % (issue_number, note) for note in notes]
     if decision is not None:
@@ -417,6 +430,7 @@ def _build_plan_facts(issue_envelope, scratch_dir, issue_number, pr_number):
             force_path=True,
             filename="issue-%s-marker.md" % issue_number,
         )["body_path"],
+        "parts": parts,
         "shipped": shipped,
     }, notices
 

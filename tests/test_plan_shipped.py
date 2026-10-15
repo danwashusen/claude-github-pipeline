@@ -1,5 +1,5 @@
-"""Unit tests for scripts/plan_shipped.py — the shipped-phase records' read model and the planner's
-staging check (``skills/_shared/plan-shipped-phases.md``).
+"""Unit tests for scripts/plan_shipped.py — the legacy shipped-phase records' read model and the
+planner's fold-back check (``skills/_shared/plan-shipped-phases.md``).
 
 The read model is pure (literal comment dicts in, a value out); ``check`` is driven both in-process
 and once through its CLI so the envelope shape is pinned too.
@@ -12,8 +12,9 @@ What this suite protects:
   - **The (PR, phase) key.** A record belongs to the PR its phase shipped on. A Start-fresh closes
     that PR, and its records must go inert without a delete — so a reader for the new PR must never
     see them.
-  - **Verbatim, moved, pointed-to.** ``check`` is the only thing standing between a relocation and a
-    silent re-author of already-verified text, so each of its findings gets a case.
+  - **Folded back verbatim, pointers gone.** Records are the only copy of their entries, so ``check``
+    is the only thing standing between a fold-back and a silently dropped or reworded entry; each of
+    its findings gets a case.
 """
 
 import json
@@ -29,7 +30,6 @@ SCRIPTS_DIR = REPO_ROOT / "scripts"
 sys.path.insert(0, str(SCRIPTS_DIR))
 
 import plan_shipped  # noqa: E402
-from pipelib.limits import BODY_CHAR_LIMIT, body_size  # noqa: E402
 
 PLAN_MARKER = "<!-- implementation-plan:v1 -->"
 
@@ -78,13 +78,6 @@ PRIOR = "\n".join(
         "   - kind: code-shipping",
     ]
 )
-
-
-def main_after(changes, tests, pointer="- Phase 1 shipped on #903: entries in the shipped-phase records."):
-    return "\n".join(
-        [PLAN_MARKER, "", "## Changes (file-level)", pointer] + changes
-        + ["", "## Test plan", pointer] + tests + [""]
-    )
 
 
 class MarkerTests(unittest.TestCase):
@@ -202,202 +195,81 @@ class CollectTests(unittest.TestCase):
         self.assertFalse(records["present"])
 
 
-class ToRelocateTests(unittest.TestCase):
-    PHASES = [
-        {"number": 1, "kind": "code-shipping"},
-        {"number": 2, "kind": "operator"},
-        {"number": 3, "kind": "code-shipping"},
-        {"number": 4, "kind": "code-shipping"},
-    ]
+class FoldBackCheckTests(unittest.TestCase):
+    """``check`` after a revise put every record back: nothing dropped, nothing reworded, no pointer left."""
 
-    def rows(self, *ticked):
-        return [
-            {"phase": n, "checked": n in ticked, "sub_label": None} for n in range(1, 5)
-        ] + [{"phase": 4, "checked": True, "sub_label": "fix"}]
+    REC = record(
+        1,
+        changes=("- `a.rb` — adds A", "  continuing the A entry"),
+        tests=("- Unit:", "  - `a_spec.rb` — A works"),
+    )
 
-    def test_ticked_code_shipping_without_a_record(self):
-        self.assertEqual(plan_shipped.to_relocate(self.PHASES, self.rows(1, 2, 3), [1]), [3])
+    def folded(self):
+        return PRIOR
 
-    def test_operator_phase_is_never_proposed(self):
-        self.assertNotIn(2, plan_shipped.to_relocate(self.PHASES, self.rows(1, 2), []))
-
-    def test_a_ticked_sub_row_is_not_a_tick_of_its_phase(self):
-        self.assertNotIn(4, plan_shipped.to_relocate(self.PHASES, self.rows(1), []))
-
-    def test_unparsed_prior_plan_proposes_nothing(self):
-        self.assertEqual(plan_shipped.to_relocate(None, self.rows(1, 3), []), [])
-
-
-class CheckTests(unittest.TestCase):
-    def good(self):
-        rec = record(
-            1,
-            changes=("- `a.rb` — adds A", "  continuing the A entry"),
-            tests=("- Unit:", "  - `a_spec.rb` — A works"),
-        )
-        main = main_after(
-            ["- `b.rb` — adds B", "- `c.rb` — adds C"],
-            ["- Unit:", "  - `c_spec.rb` — C works"],
-        )
-        return main, rec
-
-    def test_a_clean_relocation(self):
-        main, rec = self.good()
-        payload = plan_shipped.check(PRIOR, main, [("r1.md", rec)], pr=903)
+    def test_a_clean_fold_back(self):
+        payload = plan_shipped.check(self.folded(), [("r1.md", self.REC)])
         self.assertTrue(payload["clean"], payload["findings"])
-        self.assertEqual(payload["main"]["headroom_chars"], BODY_CHAR_LIMIT - len(main))
-        self.assertEqual(payload["records"][0]["phase"], 1)
 
-    def test_a_reworded_entry_is_not_verbatim(self):
-        main, rec = self.good()
-        rec = rec.replace("adds A", "adds the A")
-        payload = plan_shipped.check(PRIOR, main, [("r1.md", rec)])
-        self.assertEqual(payload["findings"]["not_verbatim"][0]["section"], "changes")
+    def test_a_pointer_left_behind(self):
+        plan = self.folded().replace(
+            "- `b.rb` — adds B", "- Phase 1 shipped on #903: entries in the shipped-phase records.\n- `b.rb` — adds B"
+        )
+        payload = plan_shipped.check(plan, [("r1.md", self.REC)])
+        self.assertEqual(len(payload["findings"]["pointer_left"]), 1)
         self.assertFalse(payload["clean"])
 
-    def test_a_copied_entry_still_in_main(self):
-        _, rec = self.good()
-        main = main_after(
-            ["- `a.rb` — adds A", "  continuing the A entry", "- `b.rb` — adds B"],
-            ["- Unit:", "  - `c_spec.rb` — C works"],
-        )
-        payload = plan_shipped.check(PRIOR, main, [("r1.md", rec)])
-        self.assertEqual(payload["findings"]["still_in_main"][0]["section"], "changes")
+    def test_a_reworded_pointer_is_still_left(self):
+        plan = self.folded() + "\n- Phase 2 SHIPPED ON #903 — see the shipped-phase records\n"
+        self.assertEqual(len(plan_shipped.check(plan, [])["findings"]["pointer_left"]), 1)
 
-    def test_a_test_plan_kind_line_may_stay_in_main(self):
-        main, rec = self.good()
-        payload = plan_shipped.check(PRIOR, main, [("r1.md", rec)])
-        self.assertEqual(payload["findings"]["still_in_main"], [])
+    def test_a_dropped_entry_is_not_restored(self):
+        plan = self.folded().replace("- `a.rb` — adds A\n  continuing the A entry\n", "")
+        missing = plan_shipped.check(plan, [("r1.md", self.REC)])["findings"]["not_restored"]
+        self.assertEqual([m["line"] for m in missing], ["- `a.rb` — adds A"])
 
-    def test_a_split_changes_entry_is_still_in_main(self):
-        # The parent line stayed in main while one sub-bullet moved: the shared-entry rule's
-        # forbidden split. Only a `## Test plan` kind line may stay behind its moved children.
-        prior = PRIOR.replace("- `b.rb` — adds B", "- `b.rb` — adds B\n  - B's first half\n  - B's second half")
-        rec = record(1, changes=("- `b.rb` — adds B", "  - B's first half"))
-        main = main_after(
-            ["- `b.rb` — adds B", "  - B's second half", "- `c.rb` — adds C"],
-            ["- Unit:", "  - `c_spec.rb` — C works"],
-        )
-        payload = plan_shipped.check(prior, main, [("r1.md", rec)])
-        self.assertEqual(payload["findings"]["still_in_main"][0]["line"], "- `b.rb` — adds B")
+    def test_a_reworded_entry_is_not_restored(self):
+        plan = self.folded().replace("  continuing the A entry", "  continuing A")
+        missing = plan_shipped.check(plan, [("r1.md", self.REC)])["findings"]["not_restored"]
+        self.assertEqual([m["section"] for m in missing], ["changes"])
 
-    def test_missing_pointer(self):
-        main, rec = self.good()
-        main = main.replace("- Phase 1 shipped on #903: entries in the shipped-phase records.\n", "", 1)
-        payload = plan_shipped.check(PRIOR, main, [("r1.md", rec)])
-        self.assertEqual(payload["findings"]["missing_pointer"], ["changes"])
+    def test_the_test_plan_kind_line_is_carried_once(self):
+        # Every record repeats its `- Unit:` kind line; the plan carries it once. Only the children
+        # are checked, so the shared parent never reads as missing or duplicated.
+        payload = plan_shipped.check(self.folded(), [("r1.md", self.REC), ("r2.md", record(
+            2, changes=(), tests=("- Unit:", "  - `c_spec.rb` — C works")))])
+        self.assertTrue(payload["clean"], payload["findings"])
 
-    def test_pointer_naming_another_pr_is_missing(self):
-        main, rec = self.good()
-        main = main.replace("#903", "#800")
-        payload = plan_shipped.check(PRIOR, main, [("r1.md", rec)])
-        self.assertEqual(sorted(payload["findings"]["missing_pointer"]), ["changes", "test_plan"])
+    def test_no_records_and_no_pointer_is_clean(self):
+        self.assertTrue(plan_shipped.check(self.folded(), [])["clean"])
 
-    def test_malformed_head_and_unexpected_section(self):
-        main, rec = self.good()
-        rec = rec.replace("**Shipped on:**", "Shipped:") + "\n## Architecture decisions\n- Decision one.\n"
-        payload = plan_shipped.check(PRIOR, main, [("r1.md", rec)])
-        self.assertEqual(payload["findings"]["malformed_head"], ["r1.md"])
-        self.assertEqual(payload["findings"]["unexpected_sections"][0]["heading"], "## Architecture decisions")
-
-    def test_over_cap_main_is_not_clean(self):
-        main, rec = self.good()
-        main += "x" * BODY_CHAR_LIMIT
-        payload = plan_shipped.check(PRIOR, main, [("r1.md", rec)])
-        self.assertTrue(payload["main"]["over_limit"])
-        self.assertFalse(payload["clean"])
-
-    def test_a_pointer_to_a_pr_that_is_not_open_is_foreign(self):
-        # After a Start-fresh there is no open PR: a surviving pointer names records nobody reads
-        # for the new PR, so the restore step must have removed it.
-        main, rec = self.good()
-        self.assertEqual(plan_shipped.check(PRIOR, main, [("r1.md", rec)])["findings"]["foreign_pointer"], [903])
-        self.assertEqual(
-            plan_shipped.check(PRIOR, main, [("r1.md", rec)], pr=950)["findings"]["foreign_pointer"], [903]
-        )
-
-    def test_a_drifted_pointer_is_malformed(self):
-        main, rec = self.good()
-        main = main.replace(": entries in the shipped-phase records.", "; see the shipped-phase records.", 1)
-        payload = plan_shipped.check(PRIOR, main, [("r1.md", rec)], pr=903)
-        self.assertEqual(len(payload["findings"]["malformed_pointer"]), 1)
-
-    def test_restored_entries_are_a_verbatim_source(self):
-        # Restored from a closed PR's record and relocated again in the same revise: still a move.
-        restored = record(1, pr=800, changes=("- `a.rb` — adds A", "  continuing the A entry"))
-        prior = PRIOR.replace("- `a.rb` — adds A\n  continuing the A entry\n", "")
-        main, rec = self.good()
-        payload = plan_shipped.check(prior, main, [("r1.md", rec)], pr=903, restored=[("old.md", restored)])
-        self.assertEqual(payload["findings"]["not_verbatim"], [])
-        self.assertEqual(payload["findings"]["not_restored"], [])
-
-    def test_a_dropped_restored_entry_is_not_restored(self):
-        restored = record(1, pr=800, changes=("- `z.rb` — adds Z",))
-        main, rec = self.good()
-        payload = plan_shipped.check(PRIOR, main, [("r1.md", rec)], pr=903, restored=[("old.md", restored)])
-        self.assertEqual(payload["findings"]["not_restored"][0]["line"], "- `z.rb` — adds Z")
-
-    def test_no_records_reports_size_only(self):
-        payload = plan_shipped.check(PRIOR, PRIOR, [])
-        self.assertTrue(payload["clean"])
-        self.assertEqual(payload["main"]["chars"], len(PRIOR))
+    def test_a_crlf_record_still_compares_verbatim(self):
+        payload = plan_shipped.check(self.folded(), [("r1.md", self.REC.replace("\n", "\r\n"))])
+        self.assertTrue(payload["clean"], payload["findings"])
 
     def test_cli_emits_one_ok_envelope(self):
-        main, rec = self.good()
         with tempfile.TemporaryDirectory() as tmp:
-            paths = []
-            for name, text in (("prior.md", PRIOR), ("plan.md", main), ("shipped-phase-1.md", rec)):
-                path = Path(tmp) / name
-                path.write_text(text, encoding="utf-8")
-                paths.append(str(path))
+            plan_path, rec_path = Path(tmp) / "plan.md", Path(tmp) / "shipped.md"
+            plan_path.write_text(self.folded(), encoding="utf-8")
+            rec_path.write_text(self.REC, encoding="utf-8")
             result = subprocess.run(
-                [str(SCRIPTS_DIR / "plan_shipped.py"), "check"] + paths + ["--pr", "903"],
+                [str(SCRIPTS_DIR / "plan_shipped.py"), "check", str(plan_path), "--restored", str(rec_path)],
                 capture_output=True,
                 text=True,
             )
         self.assertEqual(result.returncode, 0, result.stderr)
         envelope = json.loads(result.stdout)
         self.assertEqual(envelope["status"], "ok")
-        self.assertTrue(envelope["clean"])
-
-    def test_main_is_the_shared_size_fact(self):
-        main, rec = self.good()
-        self.assertEqual(plan_shipped.check(PRIOR, main, [("r1.md", rec)], pr=903)["main"], body_size(main))
-
-    def test_a_crlf_plan_measures_the_same_in_both_size_reads(self):
-        # Both CLIs must read untranslated, or `check` counts `\r\n` as one character and
-        # undercounts against gh_persist's gate (which decodes the raw bytes) and against
-        # `parse.py phases` for the same file. The in-process test above cannot see this: both
-        # sides get the same string there. A CRLF prior (a body from GitHub) against an LF staged
-        # main must still relocate clean — normalization is for comparison only.
-        main, rec = self.good()
-        with tempfile.TemporaryDirectory() as tmp:
-            prior_path, main_path, rec_path = (Path(tmp) / n for n in ("prior.md", "plan.md", "r1.md"))
-            prior_path.write_bytes(PRIOR.replace("\n", "\r\n").encode("utf-8"))
-            main_path.write_bytes(main.replace("\n", "\r\n").encode("utf-8"))
-            rec_path.write_bytes(rec.encode("utf-8"))
-            shipped = subprocess.run(
-                [str(SCRIPTS_DIR / "plan_shipped.py"), "check", str(prior_path), str(main_path), str(rec_path), "--pr", "903"],
-                capture_output=True,
-                text=True,
-            )
-            parsed = subprocess.run(
-                [str(SCRIPTS_DIR / "parse.py"), "phases", str(main_path)], capture_output=True, text=True
-            )
-            gate_chars = len(main_path.read_bytes().decode("utf-8"))
-        self.assertEqual(shipped.returncode, 0, shipped.stderr)
-        self.assertEqual(parsed.returncode, 0, parsed.stderr)
-        check_env, phases_env = json.loads(shipped.stdout), json.loads(parsed.stdout)
-        self.assertGreater(gate_chars, len(main))
-        self.assertEqual(check_env["main"]["chars"], gate_chars)
-        self.assertEqual(phases_env["size"]["chars"], gate_chars)
-        self.assertTrue(check_env["clean"], check_env["findings"])
+        self.assertTrue(envelope["clean"], envelope["findings"])
 
     def test_cli_usage_error_exits_2(self):
         result = subprocess.run(
             [str(SCRIPTS_DIR / "plan_shipped.py")], capture_output=True, text=True
         )
         self.assertEqual(result.returncode, 2)
+
+    def test_nothing_proposes_a_relocation_any_more(self):
+        self.assertFalse(hasattr(plan_shipped, "to_relocate"))
 
 
 if __name__ == "__main__":

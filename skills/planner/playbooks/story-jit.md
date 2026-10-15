@@ -19,7 +19,7 @@ this route supplies:
 
 - **Persist (spine S8).** No prior plan → the spine's `comment` as written. A prior plan
   (`facts.plan.present`) → `gh_persist.py edit-comment <owner/repo> <facts.plan.comment_id>
-  "<facts.scratch>/plan.md"`, the same in-place update `revise.md` uses, and under the same rule: the
+  "<facts.scratch>/plan-main.md"`, the same in-place update `revise.md` uses, and under the same rule: the
   staged body is a full replacement authored against the schema, never a delta appended to what is
   there. This route owns its own revise path, so it names the op rather than inheriting a default.
 
@@ -49,11 +49,9 @@ this route supplies:
   one (the shipped prefix keeps its numbers). Keyed on the fact — no prior plan, nothing to reconcile.
   On a polish re-route, the `apply` entries in `facts.revise.open_pr.polish` follow that
   reference's polish rule — a new phase after the shipped ones, or folded in when single-phase.
-- **Relocate shipped phases.** Whenever `facts.plan.shipped.to_relocate` is non-empty or
-  `facts.plan.shipped.restore` is present, run
-  [`../references/shipped-phase-relocation.md`](../references/shipped-phase-relocation.md) after the
-  "Reconcile against what already shipped" step — every revise, not only a large one. It owns the
-  record-first persist order, so the records post before the **Persist (spine S8)** bullet's `edit-comment`.
+- **Fold back shipped-phase records.** Whenever `facts.plan.shipped.present`, run
+  [`../references/shipped-phase-foldback.md`](../references/shipped-phase-foldback.md) after the
+  "Reconcile against what already shipped" step — every such revise, not only a large one.
 - **Schema sections.** The standard single-issue schema (a multi-phase story's `## Phases` included —
   its `checkpoint` key too) plus the `**Epic:** #<epic-#> — <epic title>`
   backlink as the **first line after** the marker (never above it) and a `## Epic contract` section —
