@@ -320,13 +320,14 @@ class PlaybookPersistDryRunTests(unittest.TestCase):
         )
         self._assert_dry_run_ok(proc, env, "comment")
 
-    def test_followups_pr_comment_dry_run(self):
-        # standard/story/epic-integration residual filing: gh_persist.py comment <repo> pr <PR> <followups.md>
+    def test_followups_body_weave_dry_run(self):
+        # standard/story/epic-integration residual filing: the URLs land in the PR body's
+        # `## Follow-ups` (gh_persist.py edit-pr-body), where the epic residue reads them.
         proc, env = _run_persist(
-            ["comment", "octo/widgets", "pr", "287", "@BODY@", "--dry-run"],
-            body_text="Filed follow-ups:\n- #310\n",
+            ["edit-pr-body", "octo/widgets", "287", "@BODY@", "--dry-run"],
+            body_text="Fixes #142\n\n## Follow-ups\n- #310 — filed after merge\n",
         )
-        self._assert_dry_run_ok(proc, env, "comment")
+        self._assert_dry_run_ok(proc, env, "edit-pr-body")
 
     def test_dry_run_makes_no_live_gh_call(self):
         # Belt-and-braces: the dry-run path must not touch gh at all. If it did, the offline shim
@@ -683,6 +684,64 @@ class PolishAdjudicationTests(unittest.TestCase):
         for name in ("standard.md", "story.md", "epic-integration.md"):
             text = re.sub(r"\s+", " ", (PLAYBOOKS_DIR / name).read_text(encoding="utf-8"))
             self.assertIn("`file`", text, "%s must file the ledger's `file` entries" % name)
+
+
+class EpicResidueTests(unittest.TestCase):
+    """4.37.0: the epic-integration verdict reads what the epic's merged story PRs deferred from
+    `facts.epic.residue` (prep reads the story PR bodies), and a deferral that maps to the epic's DoD
+    re-routes to the slicer — the only way work reaches the epic branch, and the only edge writer."""
+
+    def setUp(self):
+        self.epic = re.sub(
+            r"\s+", " ", (PLAYBOOKS_DIR / "epic-integration.md").read_text(encoding="utf-8")
+        )
+
+    def test_the_route_reads_the_residue_fact_never_the_story_prs(self):
+        self.assertIn("`facts.epic.residue`", self.epic)
+        self.assertIn("never fetch a story PR to find them", self.epic)
+        for key in ("open_follow_ups", "file_polish", "undecided_polish", "story_prs_path"):
+            self.assertIn("`%s`" % key, self.epic, key)
+        self.assertIn("`EPIC_RESIDUE_UNAVAILABLE`", self.epic)
+
+    def test_unlinked_entries_are_re_checked_at_head_so_a_shipped_fix_never_re_blocks(self):
+        # Review of #79: a `file` entry adopted as a story and shipped kept mapping to the DoD and
+        # soft-rejected every integration run. Linked entries resolve through their issue; unlinked
+        # ones are re-checked at head.
+        self.assertIn("one whose claim no longer holds at head is resolved", self.epic)
+        self.assertIn("A ledger entry the issue `covers` is judged through it, once", self.epic)
+        self.assertIn("follow-ups-section.md", self.epic)
+        self.assertNotIn("handoff below", self.epic)
+
+    def test_the_writers_render_the_shared_follow_ups_contract(self):
+        shared = REPO_ROOT / "skills" / "_shared" / "follow-ups-section.md"
+        self.assertTrue(shared.is_file())
+        for path in (
+            PLAYBOOKS_DIR / "standard.md",
+            REPO_ROOT / "skills" / "resolver" / "references" / "follow-up-tracking.md",
+        ):
+            self.assertIn("follow-ups-section.md", path.read_text(encoding="utf-8"), path.name)
+        for name in ("standard.md", "story.md", "epic-integration.md"):
+            text = (PLAYBOOKS_DIR / name).read_text(encoding="utf-8")
+            self.assertIn("`Filed:`", text, name)
+            self.assertNotIn("*Filed* entries", text, name)
+
+    def test_story_ledgers_are_judged_not_re_asked(self):
+        self.assertIn("S5.5 adjudicates this PR's own ledger only", self.epic)
+        self.assertIn("and `drop` entries were decided at their story's merge: context, never a block", self.epic)
+
+    def test_a_mapped_deferral_re_routes_to_the_slicer(self):
+        self.assertIn("`/github-pipeline:slicer #<epic>`", self.epic)
+        rubric = (SKILL_DIR / "references" / "handoff-renderings.md").read_text(encoding="utf-8")
+        self.assertIn("**Re-route → `/github-pipeline:slicer #<epic> adopt #<issue>`**", rubric)
+        shared = (REPO_ROOT / "skills" / "_shared" / "handoff-format.md").read_text(encoding="utf-8")
+        self.assertIn("- evaluator → slicer (an epic-integration soft-reject on a story's deferral", shared)
+
+    def test_residual_filing_weaves_into_the_body_on_every_route(self):
+        # A comment is invisible to the residue scan, which reads PR bodies only.
+        for name in ("standard.md", "story.md", "epic-integration.md"):
+            text = re.sub(r"\s+", " ", (PLAYBOOKS_DIR / name).read_text(encoding="utf-8"))
+            self.assertIn("`## Follow-ups`", text, name)
+            self.assertNotIn("post the URLs as a brief PR comment", text, name)
 
 
 class FollowUpBatchTests(unittest.TestCase):

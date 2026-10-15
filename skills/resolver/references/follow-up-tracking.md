@@ -135,11 +135,15 @@ Once a group is filed, the resolver does three things with its URL — every ite
    Same for skip annotations — rewrite the test framework's skip reason (`XCTSkip("Deferred to ?…")`,
    Minitest/RSpec `skip "?…"`) to reference `#NNN`. Don't commit the iteration without this rewrite; markers
    without real numbers age into noise.
-2. **Update the PR body's `## Follow-ups` section** with a list item per filed issue — one per group, not
-   per item (stage the updated body and `edit-pr-body` the PR). Add the section if it doesn't exist. Putting follow-up links in the body
-   (not a comment) makes them durable: comments scroll, the body persists.
+2. **Update the PR body's `## Follow-ups` section** with one `- Filed: #NNN — <title>` line per filed
+   issue — one per group, not per item — in the format
+   [`../../_shared/follow-ups-section.md`](../../_shared/follow-ups-section.md) owns (stage the updated
+   body and `edit-pr-body` the PR). Add the section if it doesn't exist. Putting follow-up links in the
+   body (not a comment) makes them durable: comments scroll, the body persists — and an epic-integration
+   evaluation reads a merged story PR's deferrals from this section.
 3. **Thread the URLs into the handoff** under a "Follow-ups filed" bullet, separate from the "Procedural
-   notes" bullet that holds the capture-in-PR-body items. A pre-existing security or privacy follow-up
+   notes" bullet that holds the capture-in-PR-body items (in the body, each is a `- Note:` line, whose
+   issue mentions are never read as deferrals). A pre-existing security or privacy follow-up
    leads it.
 4. **Link the trigger** when the entry carries one: the risk goes live when X ships, so X is blocked by
    the follow-up (a native dependency, capability-gated with the `DEPS_UNSUPPORTED` prose-link fallback):

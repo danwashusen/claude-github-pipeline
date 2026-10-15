@@ -278,7 +278,15 @@ per [architecture.md §7](docs/architecture.md)'s mapping table).
   one import-only scanner for a contract it only reads: the legacy epic `## Stories` checklist
   (`parse_stories_section` / `stories_checklist_lists` — the planner's, slicer's and evaluator's
   story set and branching's legacy parent edge share this one copy; each prep carried its own, with
-  diverging grammars, until 4.33.1).
+  diverging grammars, until 4.33.1). And `scan_follow_ups` — a PR body's `## Follow-ups` section
+  (`skills/_shared/follow-ups-section.md`: `Filed:` lines with their ` · covers` ledger ids, `Note:`
+  lines skipped, pre-contract bullets read leniently; never raising) — which `prep_evaluator` composes,
+  with `scan_polish`, into an epic-integration PR's `facts.epic.residue`: every PR merged into the epic
+  branch, its story, its ledger entries but `applied`, the follow-ups it filed with their live state and
+  kind (one batched `gh api graphql` read), and the `file` entries no `Filed:` line covers (4.37.0). The
+  stories' deferrals stay on their own PRs; the residue reads them there rather than copying them into
+  the integration PR, which is why the evaluator's residual filing weaves `Filed:` lines into the body's
+  `## Follow-ups` instead of a comment.
 - `plan_parts.py` — one implementation plan, three comments (`skills/_shared/plan-parts.md`): the
   main `<!-- implementation-plan:v1 -->` comment plus a `build` part (`## Changes` / `## Data model` /
   `## Test plan` / `## Coverage gap`) and a `references` part (`## Doc grounding` / `## External
@@ -450,6 +458,12 @@ now the same rule everything else follows rather than an exception.
   rule that keeps a posted plan reviewer-verified. Rendered by the **planner** (before its
   `## Handoff`, whenever the session posted or refreshed a plan) and by the **resolver** (at session
   start, focused on the phase this run ships). It is never part of the `## Handoff` block.
+- `follow-ups-section.md` — the `## Follow-ups` PR-body section: one `- Filed: <ref> — <title>` line per
+  filed issue (one per group), ` · covers <ledger ids>` when the group files `## Polish` entries, and
+  `- Note:` lines for procedural notes, whose issue mentions are never deferrals. Written by the
+  resolver's URL weave and the evaluator's residual filing; read by `parse.py` `scan_follow_ups` into the
+  epic residue. The `covers` tie is what lets the epic-integration evaluation see a filed polish entry
+  resolved when its issue closes or is adopted as a story, instead of re-blocking on it.
 - `polish-ledger.md` — the `## Polish` PR-body section: the findings the resolver's review loop recorded
   instead of fixing — polish it left on the PR's own code, polish in code the PR does not change, and
   findings with no shown cost (recorded `drop` without asking) — per its provenance-first rubric (the loop exits on
@@ -464,7 +478,12 @@ now the same rule everything else follows rather than an exception.
   decision; a finalisation Re-plan re-routes the resolver's own handoff to the planner. An `apply` item is
   Addressable for the resolver whatever its tier, which is what stops a polish ping-pong. `file` entries
   file after the merge, whoever recorded them. `parse.py`'s `scan_polish` reads it for three preps; it
-  never raises.
+  never raises. A merged story PR's ledger is read once more by its epic's integration evaluation
+  (`facts.epic.residue`) and judged as deferrals against the epic's DoD — never put back on a `Polish`
+  card; a deferral that maps to it re-routes to the **slicer**, which adopts the deferred-to issue as a
+  story (the only way work reaches the epic branch, and the only writer of that edge). The resolver's
+  epic route keeps the integration PR's own ledger and `## Follow-ups` across its body refresh (S4.2
+  re-renders only the sections it owns, from `integration_pr.body_path`).
 - `polish-triage.md` — the one procedure both `Polish` cards run (the resolver's finalisation, the
   evaluator's S5.5): re-check each entry's claim at head, propose a disposition, group by **theme** (one
   proposal per group, so one answer fits it), print a **digest** showing the code at each entry's anchor,
@@ -475,7 +494,7 @@ now the same rule everything else follows rather than an exception.
   restate the card's options outside it.
 
 When changing behavior that touches handoffs, the plan summary, the plan's parts, DoD annotations, the worktree block
-format, the epic delivery log, or the open-question contracts, edit the `_shared` file (the single
+format, the epic delivery log, the follow-ups section, or the open-question contracts, edit the `_shared` file (the single
 source of truth)
 and keep the per-skill renderings consistent with it — **render, don't restate**.
 

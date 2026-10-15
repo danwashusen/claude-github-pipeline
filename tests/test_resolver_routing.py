@@ -689,6 +689,19 @@ class PrCreateContractTests(unittest.TestCase):
             "unknown files a second integration PR",
         )
 
+    def test_the_body_refresh_keeps_the_sections_it_does_not_own(self):
+        # 4.37.0: S4.2 re-rendered the whole body on every epic run, so a re-route back here wiped
+        # the integration PR's `## Polish` ledger (and the evaluator's dispositions in it) and its
+        # `## Follow-ups`. It re-renders only its own sections, from the body prep staged, and skips
+        # the write when that body could not be read.
+        text = re.sub(r"\s+", " ", (PLAYBOOKS_DIR / "epic.md").read_text(encoding="utf-8"))
+        self.assertIn("Re-render **only the sections this route owns**", text)
+        self.assertIn("`facts.epic.integration_pr.body_path`", text)
+        self.assertIn("`INTEGRATION_PR_BODY_UNAVAILABLE`), skip the write", text)
+        # S4.3's loop leaves its ledger and follow-ups on this PR, through spine S5.2 / S7.
+        self.assertIn("The loop exits through spine S5.2", text)
+        self.assertIn("woven into this PR's `## Follow-ups`", text)
+
     def test_playbooks_route_pr_open_through_create_pr_not_a_fabricated_flag_set(self):
         # The resolve-spine.md / epic.md prose must name the real op (create-pr), not the
         # non-existent `create --base/--head` shape this step originally (wrongly) drafted.

@@ -608,6 +608,24 @@ class EpicIntegrationPrFactsTests(PrepResolverSandboxTestCase):
             any("refreshes its body" in item for item in envelope["attention"]),
             envelope["attention"],
         )
+        # S4.2 re-renders only the sections it owns, so it needs the current body — the PR's own
+        # `## Polish` / `## Follow-ups` must survive the refresh.
+        body = Path(integration_pr["body_path"]).read_text(encoding="utf-8")
+        self.assertIn("## Polish\n- P1.1 · open", body)
+        self.assertIn("## Follow-ups\n- #310", body)
+        self.assertNotIn("INTEGRATION_PR_BODY_UNAVAILABLE", envelope["notices"])
+
+    def test_an_unreadable_integration_pr_body_is_a_notice_and_a_null_path(self):
+        # S4.2 skips its write on this notice: a refresh without the current body is the wipe.
+        self._push_epic_branch(extra_commit=True)
+        envelope = self._envelope(
+            issue="100", fixture_case="prep_resolver_epic_integration_pr_body_unavailable",
+            ambient="epic/100-sandbox-fixture",
+        )
+        integration_pr = envelope["epic"]["integration_pr"]
+        self.assertEqual(integration_pr["number"], 300)
+        self.assertIsNone(integration_pr["body_path"])
+        self.assertIn("INTEGRATION_PR_BODY_UNAVAILABLE", envelope["notices"])
 
     def test_open_pr_lookup_failure_is_a_notice_never_a_decision(self):
         # The dangerous degradation: a null integration_pr carried by this notice means UNKNOWN,

@@ -1441,6 +1441,96 @@ def absent_polish():
 
 
 # ============================================================================================
+# `## Follow-ups` section (a PR body) — import-only, NO subcommand and NO decision code
+# ============================================================================================
+#
+# skills/_shared/follow-ups-section.md: `- Filed: <ref> — <title>[ · covers <ledger ids>]` per filed
+# issue, `- Note: <text>` per procedural note. Read by `prep_evaluator`'s epic residue (the deferrals
+# an epic's merged story PRs left). Lenient, never raises: a body written before the contract (4.37.0)
+# has free-form bullets, so any other bullet's issue references are read too — except a `Note:` line
+# (and its indented continuation) and lines under a legacy *Procedural notes* label, whose issue
+# mentions are context, never deferrals.
+#
+# `#N` counts only when not preceded by a word character or `/`, so `owner/repo#5` (another repo) and
+# `abc#5` are not this repo's #5. A full URL counts only when it names `repo`; with `repo` None, bare
+# `#N` references alone are read.
+_FOLLOW_UP_HASH_RE = re.compile(r"(?<![\w/])#(\d+)\b")
+_FOLLOW_UPS_HEADING = r"Follow-?ups?(?:\s+filed)?"
+_FOLLOW_UP_FILED_RE = re.compile(r"^-\s*Filed:\s*(.*)$", re.IGNORECASE)
+_FOLLOW_UP_NOTE_RE = re.compile(r"^-\s*Note:", re.IGNORECASE)
+_FOLLOW_UP_COVERS_RE = re.compile(r"·\s*covers\s+(P\d+\.\d+(?:\s*,\s*P\d+\.\d+)*)", re.IGNORECASE)
+_LEDGER_ID_RE = re.compile(r"P\d+\.\d+")
+
+
+def _follow_up_label(line):
+    """A legacy sub-label line (`*Filed*`, `**Procedural notes:**`, …) reduced to its words, else None."""
+    words = re.sub(r"[-*_:\s]+", " ", line).strip().lower()
+    return words if words in ("filed", "procedural notes", "procedural note") else None
+
+
+def _issue_refs(text, url_re):
+    hits = []
+    if url_re is not None:
+        hits += [(m.start(), int(m.group(1))) for m in url_re.finditer(text)]
+        text = url_re.sub(lambda m: " " * len(m.group(0)), text)
+    hits += [(m.start(), int(m.group(1))) for m in _FOLLOW_UP_HASH_RE.finditer(text)]
+    return [number for _pos, number in sorted(hits)]
+
+
+def scan_follow_ups(pr_body_text, repo=None):
+    """A PR body's `## Follow-ups` section. Returns `{"present", "issues", "covers"}`:
+
+      - `present` — the section exists.
+      - `issues` — the filed issue numbers, in source order, de-duplicated: a `Filed:` line's own
+        reference (a mention in its title is not a second filing), and every reference on a legacy
+        free-form bullet.
+      - `covers` — `{issue: [ledger ids]}` from each `Filed:` line's ` · covers` segment.
+
+    Never raises."""
+    lines = (pr_body_text or "").splitlines()
+    found = _find_section(lines, _FOLLOW_UPS_HEADING)
+    if found is None:
+        return {"present": False, "issues": [], "covers": {}}
+    start, end = found
+    url_re = None
+    if repo:
+        url_re = re.compile(
+            r"https?://github\.com/" + re.escape(repo) + r"/issues/(\d+)\b", re.IGNORECASE
+        )
+    issues, covers = [], {}
+    in_notes = False  # under a legacy *Procedural notes* label
+    in_note = False  # inside a `- Note:` bullet (its indented continuation lines too)
+    for raw in lines[start:end]:
+        if not raw.strip():
+            continue
+        stripped = raw.strip()
+        label = _follow_up_label(stripped)
+        if label is not None:
+            in_notes = label != "filed"
+            in_note = False
+            continue
+        if raw[:1].isspace() and in_note:
+            continue
+        in_note = bool(_FOLLOW_UP_NOTE_RE.match(stripped))
+        if in_note or in_notes:
+            continue
+        filed = _FOLLOW_UP_FILED_RE.match(stripped)
+        if filed:
+            refs = _issue_refs(filed.group(1), url_re)[:1]
+            if refs:
+                cover = _FOLLOW_UP_COVERS_RE.search(filed.group(1))
+                if cover:
+                    ids = covers.setdefault(refs[0], [])
+                    ids += [i for i in _LEDGER_ID_RE.findall(cover.group(1)) if i not in ids]
+        else:
+            refs = _issue_refs(stripped, url_re)
+        for number in refs:
+            if number not in issues:
+                issues.append(number)
+    return {"present": True, "issues": issues, "covers": covers}
+
+
+# ============================================================================================
 # `## Stories` checklist parsing (legacy epic body) — import-only, NO subcommand and NO decision code
 # ============================================================================================
 #

@@ -68,6 +68,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
+import branching  # noqa: E402  (the `<N>-<slug>` branch grammar — a story PR's story)
 import config_block  # noqa: E402  (import after sys.path setup, by necessity; in-process composition)
 import doc_catalogue  # noqa: E402  (the consuming repo's declared grounding docs)
 import gh_gather  # noqa: E402
@@ -79,7 +80,7 @@ import workspace  # noqa: E402
 from pipelib import process  # noqa: E402
 from pipelib.decisions import AMBIGUOUS, DOC_CATALOGUE_ABSENT, needs_decision  # noqa: E402
 from pipelib.envelope import EXIT_OK, EXIT_USAGE_ERROR, emit_needs_decision, emit_ok  # noqa: E402
-from pipelib.spill import read_section, spill_bytes  # noqa: E402
+from pipelib.spill import read_section, resolve_threshold, spill_bytes  # noqa: E402
 from pipelib.thread import load_thread  # noqa: E402
 
 import delivery_log  # noqa: E402  (in-process composition, not a subprocess chain)
@@ -578,25 +579,52 @@ def _build_epic_facts(base_ref_name, repo, scratch_dir, story_numbers=()):
         return None, []
     epic_number = int(match.group(1))
 
-    notices = []
+    envelope = _gather_epic(epic_number, repo, scratch_dir)
+    if envelope is None:
+        return _unavailable_story_set(epic_number), []
+
+    # Name it `delivery_log_facts`, never `delivery_log`: a local of that name shadows the imported
+    # module for this whole scope, so a later `delivery_log.collect(...)` here would raise
+    # UnboundLocalError rather than resolve the import.
+    delivery_log_facts, log_notices = _build_delivery_log_facts(
+        envelope, scratch_dir, epic_number, story_numbers
+    )
+    facts = _story_set_facts(epic_number, envelope)
+    facts["delivery_log"] = delivery_log_facts
+    return facts, list(log_notices) + list(envelope.get("notices") or [])
+
+
+def _gather_epic(epic_number, repo, scratch_dir, envelope=None):
+    """The epic's gather envelope — ``envelope`` when the caller already holds it (the integration
+    route's closing issue IS the epic), else one ``gh_gather`` run. ``None`` on a failed gather: the
+    epic facts are routing/judgment context, never a gate, so the caller degrades rather than exits."""
+    if envelope is not None:
+        return envelope
     exit_code, envelope = gh_gather.run(
         str(epic_number),
         repo,
         scratch_dir=scratch_dir,
         stream=_DiscardStream(),
     )
-
     if exit_code != 0 or envelope is None or envelope.get("status") != "ok":
-        stub = {
-            "number": epic_number,
-            "stories_source": "unavailable",
-            "stories": [],
-            "sub_issues": [],
-            "sub_issues_summary": {},
-            "subissues_available": None,
-        }
-        return stub, notices
+        return None
+    return envelope
 
+
+def _unavailable_story_set(epic_number):
+    return {
+        "number": epic_number,
+        "stories_source": "unavailable",
+        "stories": [],
+        "sub_issues": [],
+        "sub_issues_summary": {},
+        "subissues_available": None,
+    }
+
+
+def _story_set_facts(epic_number, envelope):
+    """The epic's story set from its gather envelope, per ``skills/_shared/epic-story-hierarchy.md``'s
+    two-tier read — shared by the story route and the epic-integration route."""
     sub_issues = envelope.get("sub_issues") or []
     stories = [
         {
@@ -633,14 +661,6 @@ def _build_epic_facts(base_ref_name, repo, scratch_dir, story_numbers=()):
     else:
         stories_source = "checklist"
 
-    # Name it `delivery_log_facts`, never `delivery_log`: a local of that name shadows the imported
-    # module for this whole scope, so a later `delivery_log.collect(...)` here would raise
-    # UnboundLocalError rather than resolve the import.
-    delivery_log_facts, log_notices = _build_delivery_log_facts(
-        envelope, scratch_dir, epic_number, story_numbers
-    )
-    notices.extend(log_notices)
-
     return {
         "number": epic_number,
         "title": envelope.get("title"),
@@ -650,8 +670,269 @@ def _build_epic_facts(base_ref_name, repo, scratch_dir, story_numbers=()):
         "sub_issues": sub_issues,
         "sub_issues_summary": envelope.get("sub_issues_summary") or {},
         "subissues_available": envelope.get("subissues_available"),
-        "delivery_log": delivery_log_facts,
-    }, notices + list(envelope.get("notices") or [])
+    }
+
+
+# ---------------------------------------------------------------------------
+# The epic's story residue, for an epic-integration PR.
+# ---------------------------------------------------------------------------
+
+# Non-blocking notice (open notice vocabulary, architecture.md §3): the merged-story-PR list could
+# not be read — no auth, no network, an older `gh`. The integration verdict is judged without the
+# stories' residue and says so; never a decision, since the merge is always operator-gated and the
+# gap is visible on the card (the `attention` line names it).
+EPIC_RESIDUE_UNAVAILABLE = "EPIC_RESIDUE_UNAVAILABLE"
+
+# `gh pr list` defaults to 30 — an epic with more merged story PRs would silently lose the rest.
+_STORY_PR_LIST_LIMIT = 500
+_STORY_PR_FIELDS = "number,title,url,headRefName,body,closingIssuesReferences,mergedAt"
+# Follow-up states are read in one GraphQL query per chunk of this many references, never one
+# `gh issue view` each (an epic's follow-ups run to dozens). `issueOrPullRequest`, because a PR linked
+# under `## Follow-ups` is not an issue: `gh issue view` fails on it, and an unreadable reference is
+# judged open — a PR must read as a PR, never as an open deferral.
+_FOLLOW_UP_QUERY_CHUNK = 50
+_FOLLOW_UP_NODE = (
+    "i%d: issueOrPullRequest(number: %d) { __typename "
+    "... on Issue { number title state url } ... on PullRequest { number title state url } }"
+)
+# Ledger dispositions a merged story PR should not still carry: the story's own evaluation puts
+# every `open` entry to the operator and soft-rejects on an unfixed `apply`, so either one on a
+# MERGED story PR means it merged around that backstop.
+_UNDECIDED_POLISH = frozenset({"open", "apply"})
+
+
+def _story_for_pr(pr, story_numbers):
+    """The story a merged story PR delivered: its closing-issue set first, the pipeline's own
+    `<N>-<slug>` branch grammar second (a `Fixes #N` on a non-default base may not register as a
+    closing reference). ``None`` when neither names a story in the epic's set."""
+    for issue in pr.get("closingIssuesReferences") or []:
+        if issue.get("number") in story_numbers:
+            return issue["number"]
+    head_match = branching.ISSUE_BRANCH_NAME_RE.match(pr.get("headRefName") or "")
+    if head_match and int(head_match.group(1)) in story_numbers:
+        return int(head_match.group(1))
+    return None
+
+
+def _follow_up_query(repo, numbers):
+    owner, _, name = repo.partition("/")
+    return "query { repository(owner: %s, name: %s) { %s } }" % (
+        json.dumps(owner), json.dumps(name), " ".join(_FOLLOW_UP_NODE % (n, n) for n in numbers)
+    )
+
+
+def _read_follow_up_states(repo, numbers, cwd=None):
+    """``{number: node_or_None}`` for every referenced follow-up — ``None`` when unreadable (no such
+    number, or the query failed). One ``gh api graphql`` call per chunk. GraphQL reports a missing
+    number as an error beside the data that did resolve, and ``gh`` then exits non-zero, so a
+    non-zero exit still reads whatever data the response carries."""
+    nodes = {}
+    for i in range(0, len(numbers), _FOLLOW_UP_QUERY_CHUNK):
+        chunk = numbers[i:i + _FOLLOW_UP_QUERY_CHUNK]
+        result = process.run(
+            ["gh", "api", "graphql", "-f", "query=" + _follow_up_query(repo, chunk)], cwd=cwd
+        )
+        try:
+            repository = ((json.loads(result.stdout or "null") or {}).get("data") or {}).get(
+                "repository"
+            ) or {}
+        except (ValueError, AttributeError):
+            repository = {}
+        for number in chunk:
+            node = repository.get("i%d" % number)
+            nodes[number] = node if isinstance(node, dict) else None
+    return nodes
+
+
+def _build_epic_residue(epic_branch, epic_number, stories, repo, scratch_dir, cwd=None):
+    """``facts.epic.residue`` — what the epic's merged story PRs left behind: each one's `## Polish`
+    entries (everything but `applied`) and the issues its `## Follow-ups` section filed
+    (skills/_shared/follow-ups-section.md), plus the live state of every such follow-up. Read from
+    the story PR bodies themselves (the ledgers' and weaves' single home), so it covers every epic
+    retroactively and copies nothing.
+
+    A `file` ledger entry a `Filed: … · covers <id>` line ties to its issue is read through that
+    issue, once: listed under the follow-up's `covers`, never again in `file_polish`, and resolved
+    when the issue closes or the slicer adopts it as a story (it then leaves the follow-ups, being in
+    the story set). Only an unlinked `file` entry — a story PR merged before the contract — is listed
+    on its own, for the evaluator to re-check at head.
+
+    Returns ``(residue_or_None, notices, attention)``. Facts only: whether a deferral maps to an
+    epic `## Definition of done` bullet is the evaluator's judgment (epic-integration.md).
+    """
+    result = process.run(
+        [
+            "gh", "pr", "list",
+            "--repo", repo,
+            "--base", epic_branch,
+            "--state", "merged",
+            "--limit", str(_STORY_PR_LIST_LIMIT),
+            "--json", _STORY_PR_FIELDS,
+        ],
+        cwd=cwd,
+    )
+    prs = None
+    if result.returncode == 0:
+        try:
+            prs = json.loads(result.stdout)
+        except ValueError:
+            prs = None
+    if not isinstance(prs, list):
+        return None, [EPIC_RESIDUE_UNAVAILABLE], [
+            "the epic's merged story PRs could not be listed — story residue (deferred follow-ups, "
+            "polish ledgers) is not evaluated; say so in the review"
+        ]
+
+    notices, attention = [], []
+    if len(prs) >= _STORY_PR_LIST_LIMIT:
+        notices.append(
+            "%d merged PRs listed against %s — the list limit; older story PRs may be missing from "
+            "the residue" % (len(prs), epic_branch)
+        )
+    story_numbers = {s["number"] for s in stories if s.get("number") is not None}
+    pr_numbers = {pr.get("number") for pr in prs}
+    # A story PR's `## Follow-ups` may name the epic, a sibling story or a sibling PR in passing —
+    # none of those is a deferral. An adopted follow-up IS a story now, so it leaves here too.
+    not_follow_ups = story_numbers | pr_numbers | {epic_number}
+
+    story_prs, referenced, covers_by_issue = [], [], {}
+    for pr in sorted(prs, key=lambda p: p.get("number") or 0):
+        body = pr.get("body") or ""
+        scan = parse.scan_follow_ups(body, repo)
+        linked = {
+            ledger_id: issue for issue, ids in scan["covers"].items() for ledger_id in ids
+        }
+        polish = []
+        for entry in parse.scan_polish(body)["entries"]:
+            if entry["disposition"] == "applied":
+                continue
+            entry = dict(entry)
+            if entry["id"] in linked:
+                entry["issue"] = linked[entry["id"]]
+                covers_by_issue.setdefault(linked[entry["id"]], []).append(
+                    {"pr": pr.get("number"), "id": entry["id"]}
+                )
+            polish.append(entry)
+        follow_ups = [n for n in scan["issues"] if n not in not_follow_ups]
+        for number in follow_ups:
+            if number not in referenced:
+                referenced.append(number)
+        story_prs.append(
+            {
+                "number": pr.get("number"),
+                "title": pr.get("title"),
+                "url": pr.get("url"),
+                "head": pr.get("headRefName"),
+                "merged_at": pr.get("mergedAt"),
+                "story": _story_for_pr(pr, story_numbers),
+                "polish": polish,
+                "follow_ups": follow_ups,
+            }
+        )
+
+    nodes = _read_follow_up_states(repo, referenced, cwd=cwd)
+    follow_up_facts, unreadable = [], []
+    for number in referenced:
+        node = nodes.get(number)
+        if node is None:
+            unreadable.append(number)
+            node = {}
+        typename = node.get("__typename")
+        follow_up_facts.append(
+            {
+                "number": number,
+                # `pull_request`: a PR linked under `## Follow-ups` — context, never a deferral.
+                "kind": {"Issue": "issue", "PullRequest": "pull_request"}.get(typename),
+                "title": node.get("title"),
+                # `null` = unreadable: unknown, never "closed" — judge it as possibly open.
+                "state": node.get("state"),
+                "url": node.get("url"),
+                "from_prs": [p["number"] for p in story_prs if number in p["follow_ups"]],
+                "covers": covers_by_issue.get(number, []),
+            }
+        )
+    if unreadable:
+        notices.append(
+            "follow-up reference(s) %s could not be read — their state is null (unknown, not closed)"
+            % ", ".join("#%s" % n for n in unreadable)
+        )
+
+    undecided = [
+        {"pr": p["number"], "id": e["id"], "disposition": e["disposition"]}
+        for p in story_prs
+        for e in p["polish"]
+        if e["disposition"] in _UNDECIDED_POLISH
+    ]
+    if undecided:
+        attention.append(
+            "%d undecided polish entr%s on merged story PRs (%s) — each merged around its story's "
+            "evaluation; judge it as a deferral"
+            % (
+                len(undecided),
+                "y" if len(undecided) == 1 else "ies",
+                ", ".join("#%s %s" % (u["pr"], u["id"]) for u in undecided),
+            )
+        )
+
+    residue = {
+        "story_pr_count": len(story_prs),
+        "follow_ups": follow_up_facts,
+        "open_follow_ups": [
+            f["number"]
+            for f in follow_up_facts
+            if f["kind"] != "pull_request" and (f["state"] or "OPEN").upper() == "OPEN"
+        ],
+        # Only `file` entries no `Filed:` line covers: a covered one is its issue's deferral.
+        "file_polish": [
+            {"pr": p["number"], "id": e["id"]}
+            for p in story_prs
+            for e in p["polish"]
+            if e["disposition"] == "file" and "issue" not in e
+        ],
+        "undecided_polish": undecided,
+    }
+    # The per-PR detail carries every ledger line, so a long epic crosses the inline threshold:
+    # spill it as one JSON file (the summary keys above stay inline either way).
+    detail = json.dumps(story_prs, indent=2, ensure_ascii=False).encode("utf-8")
+    if len(detail) > resolve_threshold():
+        path = Path(scratch_dir) / ("epic-%s-story-prs.json" % epic_number)
+        path.write_bytes(detail)
+        residue.update({"story_prs_mode": "path", "story_prs_path": str(path)})
+    else:
+        residue.update({"story_prs_mode": "inline", "story_prs": story_prs})
+    residue["story_prs_bytes"] = len(detail)
+    return residue, notices, attention
+
+
+def _build_epic_integration_facts(
+    head_ref_name, repo, scratch_dir, gathered_envelopes, cwd=None
+):
+    """``facts.epic`` for an epic-integration PR: the epic's story set (the same read the story
+    route makes, from the PR's own HEAD ref) plus ``residue``. No delivery log — that is the story
+    route's write. Reuses the closing issue's envelope when the epic is it (the normal
+    ``Fixes #<epic>`` case), so the epic is gathered once.
+
+    Returns ``(facts_or_None, notices, attention)``; never a decision.
+    """
+    match = _EPIC_BRANCH_NUMBER_RE.match(head_ref_name or "")
+    if match is None:
+        return None, [], []
+    epic_number = int(match.group(1))
+    envelope = _gather_epic(
+        epic_number, repo, scratch_dir, envelope=gathered_envelopes.get(epic_number)
+    )
+    if envelope is None:
+        facts = _unavailable_story_set(epic_number)
+        notices = []
+    else:
+        facts = _story_set_facts(epic_number, envelope)
+        notices = [] if epic_number in gathered_envelopes else list(envelope.get("notices") or [])
+    facts["branch"] = head_ref_name
+    residue, residue_notices, attention = _build_epic_residue(
+        head_ref_name, epic_number, facts["stories"], repo, scratch_dir, cwd=cwd
+    )
+    facts["residue"] = residue
+    return facts, notices + residue_notices, attention
 
 
 # ---------------------------------------------------------------------------
@@ -940,6 +1221,7 @@ def build_facts(pr_number, repo, root=".", scratch_dir=None, refresh=False, cwd=
     blocked_by_by_issue = {}
     deps_available_by_issue = {}
     plans_by_issue = {}
+    issue_envelopes = {}
     issue_gather_notices = []
     for closing_issue in closing_issues:
         issue_number = closing_issue.get("number")
@@ -958,6 +1240,7 @@ def build_facts(pr_number, repo, root=".", scratch_dir=None, refresh=False, cwd=
             )
             sys.exit(1)
         issue_gather_notices.extend(issue_envelope.get("notices") or [])
+        issue_envelopes[issue_number] = issue_envelope
         issue_body = issue_envelope.get("issue_body")
         if issue_body is None and issue_envelope.get("issue_body_mode") == "path":
             issue_body = Path(issue_envelope["issue_body_path"]).read_text(encoding="utf-8")
@@ -977,10 +1260,14 @@ def build_facts(pr_number, repo, root=".", scratch_dir=None, refresh=False, cwd=
         plans_by_issue[str(issue_number)] = plan_facts
         issue_gather_notices.extend(plan_notices)
 
-    # 4b) The parent epic's story set, for a story PR (`facts.epic`). The story route needs it to
+    # 4b) `facts.epic`. A story PR: the parent epic's story set, which the story route needs to
     #     decide whether progress projection has anything to write and to route on whether siblings
-    #     remain (skills/evaluator/playbooks/story.md Action 2 + handoff).
+    #     remain (skills/evaluator/playbooks/story.md Action 2 + handoff). An epic-integration PR: the
+    #     epic's story set plus the residue its merged story PRs left (deferred follow-ups, polish
+    #     ledgers), which the integration verdict re-adjudicates against the epic's DoD
+    #     (skills/evaluator/playbooks/epic-integration.md). Built after PR-type detection (step 6).
     epic_facts = None
+    epic_attention = []
 
     # 5) Repo merge config + self-review (new prep-owned gh calls).
     merge_config, root_branch, merge_decision = _fetch_repo_merge_config(repo, cwd)
@@ -1009,6 +1296,13 @@ def build_facts(pr_number, repo, root=".", scratch_dir=None, refresh=False, cwd=
             repo,
             scratch_dir,
             [issue["number"] for issue in closing_issues if issue.get("number") is not None],
+        )
+        issue_gather_notices.extend(epic_notices)
+    elif pr_type == "epic-integration" and not refresh:
+        # Not on --refresh: its contract is PR state + CI, and the residue costs a list call plus a
+        # view per follow-up. The first run's facts block stays in context.
+        epic_facts, epic_notices, epic_attention = _build_epic_integration_facts(
+            pr_envelope.get("headRefName"), repo, scratch_dir, issue_envelopes, cwd=cwd
         )
         issue_gather_notices.extend(epic_notices)
 
@@ -1060,7 +1354,8 @@ def build_facts(pr_number, repo, root=".", scratch_dir=None, refresh=False, cwd=
         "grounding_docs": grounding_docs if grounding_docs is not None else [],
         "attention": _build_attention(workspace_envelope, pr_envelope, blocked_by_by_issue)
         + config_attention
-        + _catalogue_attention(grounding_docs, DOC_CATALOGUE_ABSENT in catalogue_notices),
+        + _catalogue_attention(grounding_docs, DOC_CATALOGUE_ABSENT in catalogue_notices)
+        + epic_attention,
         "notices": list(config_notices) + list(issue_gather_notices) + catalogue_notices,
     }
     if epic_facts is not None:

@@ -28,7 +28,9 @@ It returns one JSON **facts block** (`architecture.md §4`): `target`, `vector`,
 `fail_checks`), `health_cache` (`hit`/`sha`), `self_review`, `config` (the four gate blocks read from **the PR-head worktree's working tree**;
 `config.source` names the checkout/branch/SHA and its dirty state — this PR supplies the gates it
 is judged by, so report that source whenever it is dirty), `merge_config` (repo `allow_*` booleans), `dod`/`blocked_by`/`deps_available`
-(keyed per closing-issue number), `polish` (the PR body's `## Polish` ledger), `grounding_docs` (the
+(keyed per closing-issue number), `polish` (the PR body's `## Polish` ledger), `epic` (story and
+epic-integration PRs: the epic's story set; the integration route adds `residue`, what the merged story
+PRs deferred), `grounding_docs` (the
 repo's `<!-- doc-catalogue -->` entries, read at the same PR-head worktree), `sections` (spilled
 PR body/thread/reviews/marker paths), and `attention`. Consume every fact as **data** — never re-derive PR type, CI class, or cache-hit in
 prose; prep already did.
@@ -104,9 +106,10 @@ schema, omission rules, and closed-set state-marker vocabulary are owned by
 worked shapes are in [`references/handoff-renderings.md`](references/handoff-renderings.md). **Read
 that reference before composing the handoff** and match the run's outcome to its rubric (terminal
 merge, story-merged, epic-integration terminal, soft-reject re-route to the resolver or — for a polish
-`apply` that changes the plan, or a Re-plan answer — the planner, approve-but-skipped). Fill the
+`apply` that changes the plan, or a Re-plan answer — the planner, or — for an epic story deferral — the
+slicer, approve-but-skipped). Fill the
 snapshot from data in hand (the prep facts + this run's verdict / cache SHA / merge outcome); the
 `Next:` action and `Why:` line are judgment. Next-command skills are namespaced `/github-pipeline:<name>`
-(`planner`, `resolver`). A re-route does **not** invoke the prior skill via the `Skill` tool — the
+(`planner`, `resolver`, `slicer`). A re-route does **not** invoke the prior skill via the `Skill` tool — the
 handoff is the only signal; the user runs the command in a fresh session (session-per-skill is the
 context-isolation choice).

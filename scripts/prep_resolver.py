@@ -949,6 +949,42 @@ def _forward_decision(decision, notices=None):
     return False
 
 
+# Non-blocking notice (open notice vocabulary, architecture.md §3): the open integration PR's
+# current body could not be read. The epic route's S4.2 refresh then SKIPS its write — re-rendering
+# without the current body would drop every section it does not own (`## Polish`, `## Follow-ups`).
+INTEGRATION_PR_BODY_UNAVAILABLE = "INTEGRATION_PR_BODY_UNAVAILABLE"
+
+
+def _stage_integration_pr_body(integration_pr, repo, scratch_dir, cwd=None):
+    """Stage the open integration PR's current body (``integration_pr["body_path"]``, always a path)
+    for the epic route's S4.2: the refresh re-renders only the sections it owns and keeps the rest —
+    the PR's own review loop writes `## Polish` / `## Follow-ups` there, and the evaluator writes the
+    ledger's dispositions. The head-scoped lookup carries no body, hence this one extra read.
+    Returns a notice or ``None``; never a decision.
+
+    Deliberately not `gh_pr_gather.build_pr_facts` (which `_build_tracker` uses for the prior PR's
+    body): that core ``sys.exit(1)``s on a failed view and also fetches the comment thread. Here a
+    failed read must degrade to the notice, because the refresh it feeds is skippable and the prep
+    must not die over it — and only the body is needed."""
+    result = process.run(
+        ["gh", "pr", "view", str(integration_pr["number"]), "--repo", repo, "--json", "body"],
+        cwd=cwd,
+    )
+    body = None
+    if result.returncode == 0:
+        try:
+            body = (json.loads(result.stdout) or {}).get("body")
+        except ValueError:
+            body = None
+    if not isinstance(body, str):
+        integration_pr["body_path"] = None
+        return INTEGRATION_PR_BODY_UNAVAILABLE
+    staged = Path(scratch_dir) / ("epic-integration-pr-%s-current.md" % integration_pr["number"])
+    staged.write_text(body, encoding="utf-8")
+    integration_pr["body_path"] = str(staged)
+    return None
+
+
 def build_facts(issue_number, repo, root=".", scratch_dir=None, refresh=False, cwd=None):
     """Assemble the resolver's complete facts block and return the envelope dict WITHOUT printing
     it (the testable core, mirroring `prep_evaluator.build_facts`'s split). Returns `None` after a
@@ -1185,6 +1221,9 @@ def build_facts(issue_number, repo, root=".", scratch_dir=None, refresh=False, c
                     integration_pr.get("author") is not None
                     and integration_pr.get("author") == current_user_login
                 )
+                body_notice = _stage_integration_pr_body(integration_pr, repo, scratch_dir, cwd=cwd)
+                if body_notice:
+                    epic_notices.append(body_notice)
             epic_facts["integration_pr"] = integration_pr
             if open_pr_notice:
                 epic_notices.append(open_pr_notice)
