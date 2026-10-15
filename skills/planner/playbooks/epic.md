@@ -18,12 +18,17 @@ this route supplies:
   checked against), `## Integration strategy` (how the stories converge on `epic/<N>-<slug>` and reach
   `main`), and the epic `## Definition of done` grounding. The epic delivery log is
   **not** created here — the evaluator records each story's entry as that story merges.
-- **Altitude.** `## UI decisions`, `## Changes (file-level)` and `## Test plan` carry only what no
-  single story owns — a decision binding on two or more stories, a shared surface at directory/module
-  grain, a test that exercises the stories' convergence (`plan-schema.md`, "Altitude"). Everything
-  file-, control- or suite-specific is the just-in-time story plan's, for the same reason this route
-  doesn't fan out story plans at all: it would be grounded on an epic snapshot that is stale by the
-  second story.
+- **Lock ownership, not shapes (spine S5).** S5 states this bar for every route that drafts or revises
+  an epic plan (`revise.md` and `story-jit.md`'s bootstrap included); the reason is here. S5's "pin every
+  new symbol's signature, every field's shape … name the rejected one" is the **story** plan's bar — the
+  epic reviewer runs no Dimension 4, which is what that detail serves. So pin the cross-story principles,
+  which story lands what, and in `## Story contracts` only the shape a consuming story relies on; each
+  story's signatures, field shapes, orderings and rejected alternatives wait for its just-in-time plan,
+  and a revise never adds one story's mechanism to the epic plan.
+- **Altitude.** Every section carries only what no single story owns (`plan-schema.md`, "Altitude", which
+  lists what survives per section). Everything file-, control-, suite- or mechanism-specific is the
+  just-in-time story plan's, for the same reason this route doesn't fan out story plans at all: it would
+  be grounded on an epic snapshot that is stale by the second story.
 - **No delivery status.** Nothing here records what has shipped — not on a fresh epic (nothing has) and
   not on a revise (`plan-schema.md`, "Delivery status is not plan content"). The epic delivery log and a
   merged story's `shipped:` clause own that.

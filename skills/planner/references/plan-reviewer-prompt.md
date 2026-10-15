@@ -105,7 +105,8 @@ Run only the dimensions named in the inputs.
    `informative` doc is a SUGGESTION). **Extends** — the plan extends into territory the docs don't
    cover (SUGGESTION unless acknowledged). **Gap** — `## Doc grounding` cites a section that doesn't say
    what the plan claims, or omits a section that governs this change (cite both the plan claim and the
-   doc section).
+   doc section). On an epic plan, a section governing only one story's work is that story's plan's to
+   cite (Altitude), never a gap here.
 
 2. **Codebase coherence.** For every path, type, symbol, method, signature, identifier, or behaviour the
    plan names as **existing** (in `## Changes`, `## Architecture decisions`, `[precedent: …]` — a shipped
@@ -154,13 +155,23 @@ Run only the dimensions named in the inputs.
    `## Risks & watchpoints` false-positive-trap entry naming a live shim or dual-emit is a trap for the
    resolver, not a status report.
 
-   **Altitude** *(epic-level plan only; reads `## UI decisions` / `## Changes (file-level)` /
-   `## Test plan` against the plan's own `## Story breakdown`)*. Those three carry only what no single
-   story owns — a decision binding two or more stories, a shared surface at directory/module grain, a
-   test exercising the stories' convergence. An entry attributable to exactly one story is that story's
-   just-in-time plan's, and is a SUGGESTION here (name the story). Do not flag an entry you cannot
-   attribute to a single story — the shared ones are the section's whole purpose — and do not flag a
-   section rendered `- (none — story-owned)`, which is the correct empty form, not a gap.
+   **Altitude** *(epic-level plan only; reads every section against the plan's own `## Story breakdown`)*.
+   Each section carries only what no single story owns — a cross-story principle or which story lands
+   what, a decision binding two or more stories, a shared surface at directory/module grain, a test
+   exercising the stories' convergence, an invariant or doc two or more stories must honour (the schema's
+   "Altitude" lists what survives per section). An entry attributable to exactly one story — a
+   signature, field shape, ordering, rejected alternative, file, control, suite or watchpoint only that
+   story's build involves — is that story's just-in-time plan's, and is a SUGGESTION here (name the
+   story). So is a `## Story contracts` `delivers` item no `consumes` clause names, and a `delivers`
+   shape beyond what its consumer relies on — but **never on a merged story's entry** (one carrying
+   `shipped:`): its `delivers` stays verbatim as originally pinned, because trimming it would re-pin the
+   contract the staleness check compares against the delivery log. Nor flag a `[user decision <date>]`
+   entry labelled with the story it binds: an operator's answer stays at the epic grain until that
+   story's plan carries it. Do not flag an entry you cannot attribute to a single
+   story — the shared ones are the section's whole purpose — and do not flag a section rendered
+   `- (none — story-owned)`, which is the correct empty form, not a gap. Report the total count, as for
+   Delivery status: story-owned detail is always true, so only the aggregate shows the plan has become
+   its stories' plans.
 
 4. **Implementation readiness.** The executable-vs-vague bar. **Every place the plan defers a decision a
    developer would have to make before writing code is a BLOCKER** — the plan is where those decisions
@@ -205,7 +216,10 @@ Run only the dimensions named in the inputs.
    declared doc (`<<catalogue_entries>>` — e.g. `docs/architecture.md §X`; a document set's member file,
    never the directory), (c) a `DEVIATION (agreed <date>)` marker, or (d) a `[user decision <date>]`
    marker. Flag a decision with no citation (under-grounded — SUGGESTION unless load-bearing, then
-   BLOCKER) or a citation that fails dimension-2 verification (fabricated — BLOCKER).
+   BLOCKER) or a citation that fails dimension-2 verification (fabricated — BLOCKER). On an epic plan, an
+   ownership assignment ("#N lands X") is grounded by its `## Story contracts` entry and needs no
+   precedent of its own, and a section rendered `- (none — story-owned)` is the Altitude empty form, not
+   a decision missing its citation.
 
 7. **Phase coherence** *(multi-phase only; fires on a `## Phases` section — an epic uses `## Story
    contracts` with Dimensions 5/8)*. Read each phase's bullets and check: **all required keys present**

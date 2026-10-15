@@ -67,8 +67,9 @@ last — keeps the log complete. Format and the writer/reader contract are owned
 Derive the delivered contract **shape** from the merged diff (the new/changed type, service, or API
 signature — read from the workspace) — record **what actually merged**, not the plan's pinned
 contract; a divergence is deliberately visible and is the planner's feedback edge. Cross-check against
-the plan's `## Epic contract` `Delivers:` line (in hand from the facts). Under a `Plan override` (no
-plan), record the shape from the diff alone.
+the plan's `## Epic contract` `Delivers:` line (in hand from the facts); `Delivers: (none consumed)`
+means no later story relies on it — nothing to cross-check, so record the diff's shape alone, as under a
+`Plan override` (no plan).
 
 **One comment per story** (#41): stage **this story's entry alone** — marker line, then its one entry
 line — to `<facts.scratch>/delivery-log-entry.md`. Never assemble the whole log; a single accumulating

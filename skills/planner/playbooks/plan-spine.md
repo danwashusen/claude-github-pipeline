@@ -53,7 +53,7 @@ constitution violation is never negotiated here — reshape or surface that the 
 consequence and either two approaches are equally precedent-grounded **or precedent is absent
 entirely** (nothing in the repo or docs pins the choice — gate rather than silently invent); gate
 (`header: "Decision"`, planner's recommendation as option 1); the answer becomes
-`[user decision <date>]` in `## Architecture decisions`. Exhaust precedent first where any exists —
+`[user decision <date>]` in `## Architecture decisions`. On an epic plan only a choice binding two or more stories gates here; a single-story one gates when that story is planned. Exhaust precedent first where any exists —
 most "open" questions evaporate once you read the call site. **Falsifiable
 citation-completeness rule:** a citation pins a choice only when it covers the WHOLE choice — grounding
 one facet never licenses silently deciding an uncited, adjacent facet. Genuinely-silent or partial-only
@@ -67,7 +67,7 @@ Draft to the schema in [`../references/plan-schema.md`](../references/plan-schem
 resolver and evaluator parse these headings; omit optional sections when empty, never pad. **Lock
 decisions, not lines**: pin every new symbol's signature, every field's shape, every layer/file
 assignment, the choice between competing patterns (name the rejected one), each test's assertion intent
-— but leave line-level mechanics to the resolver. The `<!-- implementation-plan:v1 -->` marker is the
+— but leave line-level mechanics to the resolver. An **epic** plan locks ownership, not shapes, on every route that drafts or revises one: that bar is its stories' plans' (plan-schema.md, "Altitude"). The `<!-- implementation-plan:v1 -->` marker is the
 body's first line; the footer (template in the schema) records `<plan-ref>@<short-sha>`, rendered
 `origin/<default-branch>` (`facts.root.default_branch`, e.g. `origin/main`), the bare branch otherwise (never a bare `main@<sha>`; render-split
 + short-sha rule in [`../references/handoff-renderings.md`](../references/handoff-renderings.md)). The routed playbook names

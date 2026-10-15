@@ -511,7 +511,8 @@ the *consuming* repo provides — not by plugin config:
   `<!-- open-question-links:v1 -->` build-issue body section (drafter-written;
   planner/resolver/evaluator-read). For an **epic**, the planner's plan comment pins the
   cross-story contracts (`## Story contracts`) and sequencing up front and stays verified and
-  immutable; per-story plans are authored **just-in-time** against current epic HEAD, not fanned
+  immutable — at coordination altitude only (plan-schema.md "Altitude": every section carries what no
+  single story owns; signatures, shapes and rejected alternatives are the story plans'); per-story plans are authored **just-in-time** against current epic HEAD, not fanned
   out, so a later story never grounds on code a predecessor has since moved.
 - **Grounding docs the repo declares itself** — the `<!-- doc-catalogue -->` block in the consuming
   repo's `docs/README.md` ([`skills/_shared/doc-catalogue.md`](skills/_shared/doc-catalogue.md)), one
