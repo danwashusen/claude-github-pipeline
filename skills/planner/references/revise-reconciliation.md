@@ -5,7 +5,7 @@ of done` may already carry projected ticks attributed to phases of the **old** p
 (closed by phase 2, commit abc1234)`). Annotation shapes and the parser are in
 [`../../_shared/dod-annotations.md`](../../_shared/dod-annotations.md). The planner reconciles those
 projections against the new plan; the user is engaged at the spine S8 confirm gate to see what's about
-to change — what that gate renders is "What the confirm shows" below. The PR's `## Phase tracker` (which phases shipped) rides in `facts.revise.phase_tracker` —
+to change — what that gate renders is "What the confirm shows". The PR's `## Phase tracker` (which phases shipped) rides in `facts.revise.phase_tracker` —
 never re-fetched.
 
 ### SOFT vs HARD classification
@@ -146,26 +146,32 @@ ${CLAUDE_PLUGIN_ROOT}/scripts/gh_persist.py edit-body <owner/repo> <issue> \
 The operator is asked to replace a posted, reviewer-verified plan, so the gate has to say what the
 replacement changes. Asking "classified SOFT — post it in place?" after one prose sentence is the failure
 this section exists to stop: the change list is what the operator is approving, and rendering it only in
-the post-handoff `## Plan summary` shows it after the write it was needed for. Render these three
-blocks, in this order, in the message that carries the card — SOFT and HARD alike:
+the post-handoff `## Plan summary` shows it after the write it was needed for. Every route that reconciles
+a prior plan gates here before its post — `revise.md`, and `story-jit.md` when it reconciles shipped
+phases. Render these three blocks, in this order, in the message that carries the card — SOFT and HARD
+alike:
 
 1. **Classification** — SOFT or HARD, and the rule that decided it: the matching "Always SOFT" / "Always
    HARD" item from the classification lists, or, for a judgment call, which way it leaned and the
-   uncertainty.
-2. **`**What changed:**`** — the block in [`../../_shared/plan-summary.md`](../../_shared/plan-summary.md)'s
-   shape and at its altitude: one `<what moved> — <why it moved>` bullet per change, comparing the posted
-   plan (`facts.plan`) with the final verified `plan.md`, so edits the review passes made are in it. Every
-   added or retired story or phase, every decision added, reversed or dropped, and every new deviation
-   gets its bullet; an untouched section gets none. This is the block the handoff's `## Plan summary`
-   carries later — compute it once, here.
-3. **DoD body edits** — one line per bullet whose tick or annotation the chosen path would change
-   (before → after), every preserved evaluator rejection called out by name. With nothing to change, say
-   so in one line (`No DoD ticks to reconcile.`) rather than omitting the block: an epic revise has no
-   tracker and no ticks, and a missing block reads as one left out.
+   uncertainty. When the call turns on a shipped phase's reworded `## Changes` or `## Test plan` entry,
+   quote that entry old → new under it: the operator is judging whether the shipped diff still matches
+   the new wording, and the `**What changed:**` digest is too high-altitude to judge that from.
+2. **`**What changed:**`** — the block exactly as
+   [`../../_shared/plan-summary.md`](../../_shared/plan-summary.md) defines it (shape, coverage and cap),
+   comparing the posted plan (staged at `facts.plan.body_path`) with the final verified `plan.md`, so
+   edits the review passes made are in it. This is the block the handoff's `## Plan summary` carries
+   later — compute it once, here.
+3. **DoD body edits** — one line per bullet whose tick or annotation would change (before → after), each
+   preserved evaluator rejection quoted with its reason. SOFT lists the edits "SOFT-path body
+   reconciliation" stages. HARD lists them per option, because the two write different things: **Apply in
+   place anyway** writes the SOFT-path edits, **Start fresh** the predecessor-form un-ticks of "HARD-path:
+   Start fresh" step 4. With nothing to change, say so in one line (`No DoD ticks to reconcile.`) rather
+   than omitting the block: an epic revise has no tracker and no ticks, and a missing block reads as one
+   left out.
 
-Then the card. Its question names the classification and points at the blocks above ("SOFT — post the
-refreshed plan in place, with the changes above?"); it never restates them, and the options stay the
-playbook's.
+Then the card: SOFT → **Apply** / **Cancel**; HARD → **Start fresh (recommended)** / **Apply in place
+anyway** / **Cancel**. Its question names the classification and refers to the blocks it follows ("SOFT —
+post the refreshed plan in place, with these changes?"); it never restates them.
 
 ### HARD-path: Start fresh — close, re-ground, then post
 

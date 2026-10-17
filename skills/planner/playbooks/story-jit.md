@@ -49,7 +49,8 @@ this route supplies:
   phases, read [`../references/revise-reconciliation.md`](../references/revise-reconciliation.md)
   before redrafting `## Phases`: it owns the SOFT/HARD classification, the DoD-annotation
   reconciliation, and the renumbering rule for work landing between a shipped phase and an unshipped
-  one (the shipped prefix keeps its numbers). Keyed on the fact — no prior plan, nothing to reconcile.
+  one (the shipped prefix keeps its numbers), and the S8 confirm that gates the post ("What the confirm
+  shows" — its blocks and its card). Keyed on the fact — no prior plan, nothing to reconcile.
   On a polish re-route, the `apply` entries in `facts.revise.open_pr.polish` follow that
   reference's polish rule — a new phase after the shipped ones, or folded in when single-phase.
 - **Fold back shipped-phase records.** Whenever `facts.plan.shipped.present`, run

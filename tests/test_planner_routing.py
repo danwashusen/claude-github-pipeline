@@ -1499,17 +1499,34 @@ class OperatorGateCoverageTests(unittest.TestCase):
         # so nothing rendered. The `**What changed:**` list appeared only in the post-handoff summary.
         flat = " ".join(self.revise.split())
         self.assertNotIn("diff-style", flat)
-        bullet = flat[flat.index("**Show + confirm (spine S8 variant).**"):]
+        start = flat.index("**Show + confirm (spine S8 variant).**")
+        bullet = flat[start:flat.index('- **HARD "Start fresh"', start)]
         self.assertLess(bullet.index("**What changed:**"), bullet.index("**Apply** / **Cancel**"))
         self.assertIn("**before** the card", bullet)
         self.assertIn("the block the Show + confirm gate already rendered", flat)
         ref = " ".join((REFERENCES_DIR / "revise-reconciliation.md").read_text(encoding="utf-8").split())
         section = ref[ref.index("### What the confirm shows"):ref.index("### HARD-path")]
         self.assertIn("the rule that decided it", section)
+        self.assertIn("staged at `facts.plan.body_path`", section)
         self.assertIn("the final verified `plan.md`", section)
+        # A HARD judgment call on reworded shipped entries needs the text, not the digest.
+        self.assertIn("quote that entry old → new", section)
+        # The DoD edits differ by HARD option, and the option is not chosen until the card.
+        self.assertIn("HARD lists them per option", section)
         # An epic revise always has an empty DoD diff; silence there reads as a hidden block.
         self.assertIn("`No DoD ticks to reconcile.`", section)
         self.assertIn("compute it once, here", section)
+        # The options live here too, so story-jit (which may not read a second playbook) has a card.
+        self.assertIn("**Start fresh (recommended)** / **Apply in place anyway** / **Cancel**", section)
+        jit = " ".join((PLAYBOOKS_DIR / "story-jit.md").read_text(encoding="utf-8").split())
+        self.assertIn('the S8 confirm that gates the post ("What the confirm shows"', jit)
+        # The spine is read first and end to end: its auto-post line must defer to the revise gate.
+        spine = " ".join((PLAYBOOKS_DIR / SPINE).read_text(encoding="utf-8").split())
+        self.assertIn("**A revise is the exception:**", spine)
+        self.assertNotIn("diff-show", spine)
+        # Coverage and the cap live in the shared contract, not in a planner restatement.
+        shared = " ".join((SHARED_DIR / "plan-summary.md").read_text(encoding="utf-8").split())
+        self.assertIn("At most 6 bullets — changes of one kind share a bullet", shared)
 
 
 class HardReviseSequenceTests(unittest.TestCase):
