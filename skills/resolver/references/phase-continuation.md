@@ -35,7 +35,7 @@ Pause when **any** of these holds; otherwise continue:
   plan authored before the key, or a phase the planner left unmarked);
 - the session holds `--pause` (SKILL.md §1);
 - a **warning sign** fired during this phase's pass:
-  - a gate card rendered — `Audit`, `Doc conflict`, `Tracker drift`, `Tests red`, `Review loop`,
+  - a gate card rendered — `Audit`, `Doc conflict`, `Tracker`, `Tests red`, `Review loop`,
     `Settled item`, `Decision`, `Loop stall` (the emergency ceiling included) — whatever the continuing
     answer was;
   - this pass wrote an override or failure record to the PR body — `## Audit override`,

@@ -115,9 +115,9 @@ decline perform no writes and emit the *Declined at the write gate* shape (the p
 transcript; a re-run re-derives it).
 
 **A no cut skips the table and the write gate** — nothing would be written. Show the grounding summary,
-the strategy, and the one milestone with why each increment is a phase of it (method §9), then ask
-**one** `AskUserQuestion`. *File nothing — plan multi-phase* (recommended) writes nothing and emits the
-*No cut — plan it multi-phase* shape. *Cut anyway* has the operator name the milestones to track, and S2
+the strategy, the one milestone with why each increment is a phase of it (method §9), and what tracked slices would buy
+here (a board row and its own acceptance criteria per milestone), then ask **one** `AskUserQuestion`. *File nothing — plan
+multi-phase* (recommended unless the operator needs those) writes nothing and emits the *No cut — plan it multi-phase* shape. *Cut anyway* has the operator name the milestones to track, and S2
 re-runs with them as **fixed inputs**: the milestone pass never folds them, they reach the reviewer marked
 `operator-named`, and you contest any finding that re-folds them, citing the operator's answer. A genuine
 decision: the operator asked for slices, here or at the planner's "Slice first".

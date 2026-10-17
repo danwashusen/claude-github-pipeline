@@ -36,7 +36,7 @@ PR body/thread/reviews/marker paths), and `attention`. Consume every fact as **d
 prose; prep already did.
 
 **Decision card rule.** If prep exits with `status: needs_decision`, render its `decision` as one
-`AskUserQuestion` card (per [`../_shared/asking-the-user.md`](../_shared/asking-the-user.md)), act on
+`AskUserQuestion` card with its brief (per [`../_shared/asking-the-user.md`](../_shared/asking-the-user.md)), act on
 the answer, and re-run prep (`--refresh` for volatile facts). This is the single universal handler
 for every closed-set code (`AUTH_REQUIRED`, `MARKER_AMBIGUOUS`, `WORKSPACE_MISMATCH`,
 `DOD_MALFORMED`, …). A `WORKSPACE_MISMATCH` means the wrong checkout (wrong branch, the project
@@ -91,7 +91,7 @@ Universal across every route:
   re-fetch is the pre-merge `--refresh` above — external-action detection, not self-verification.
 - **Gates only for genuine decisions** (per [`../_shared/asking-the-user.md`](../_shared/asking-the-user.md)):
   the merge-approval decision, a CI-vs-local discrepancy, a missing health-config, an unlinked PR —
-  never to confirm a fact prep derived. A sub-agent (test-selection `Explore`, the Apple builder)
+  never to confirm a fact prep derived. A judgment gate left with one credible option is announced, not asked; every card opens with its brief. A sub-agent (test-selection `Explore`, the Apple builder)
   never calls `AskUserQuestion`; it returns its typed result to this loop, which asks.
 - **Faithful reporting.** Lead with the outcome; report failures verbatim with evidence; declare
   skipped work. A red health gate is an **unconditional hard block** — a red branch never approves.

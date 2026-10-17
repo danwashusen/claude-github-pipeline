@@ -67,7 +67,7 @@ reviewer Dimension 7 checks the coverage.
 
 A non-empty `diff.uncovered_open`, `diff.removed`, or `diff.rescoped` — or any open sub-issue your
 phase cut would leave unserved — **stops you before you draft `## Phases`**. Gate
-(`header: "Sub-issue reconciliation"`), quoting the findings from `facts.slices.diff`. Three options,
+(`header: "Sub-issues"`), quoting the findings from `facts.slices.diff`. Three options,
 in the order they usually apply:
 
 - **Re-cut the phases to cover the change** — the usual answer for an `added` sub-issue, and for a

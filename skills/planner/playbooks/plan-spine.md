@@ -14,7 +14,7 @@ maintainer may have settled a different approach downthread) and confirm it befo
 freeform — "body proposes X; thread settled on W, plan toward W?"). **Detect open-question dependencies**
 from `facts.open_questions`, `facts.open_question_candidates`, and `facts.target.blocked_by` — each is a
 human-owned decision, not a design choice you resolve. **DoD heading:** `facts.dod.other_checklists` set
-while `facts.dod.present` is false → that card first (plan-schema.md, "The `closes-dod` target").
+while `facts.dod.present` is false → that card, or its announce line, first (plan-schema.md, "The `closes-dod` target").
 
 ## S2 — Ingest research + external sources
 

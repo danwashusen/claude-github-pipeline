@@ -169,13 +169,18 @@ alike:
    than omitting the block: an epic revise has no tracker and no ticks, and a missing block reads as one
    left out.
 
-Then the card: SOFT → **Apply** / **Cancel**; HARD → **Start fresh (recommended)** / **Apply in place
-anyway** / **Cancel**. Its question names the classification and refers to the blocks it follows ("SOFT —
-post the refreshed plan in place, with these changes?"); it never restates them.
+Then the card: SOFT → **Apply** / **Cancel**; HARD → **Start fresh** / **Apply in place anyway** / **Cancel**.
+Its question names the classification and refers to the blocks it follows ("SOFT — post the refreshed plan in
+place, with these changes?"); it never restates them. The three blocks are the card's brief
+([`../../_shared/asking-the-user.md`](../../_shared/asking-the-user.md)): add only what it lacks — the end-user
+line, clear or close call, the *more* hint. The HARD recommendation follows the rule that decided it, never the
+card: an "Always HARD" rule makes **Start fresh** the clear call, because shipped work no longer matches the plan
+and only a fresh PR keeps the progress record true. A HARD from the judgment call's lean is a **close call** —
+say so: **Apply in place anyway** is the pick when the quoted shipped entries still describe what shipped.
 
 ### HARD-path: Start fresh — close, re-ground, then post
 
-When the user picks **Start fresh (recommended)** at S8's three-way confirm, this order is load-bearing:
+When the user picks **Start fresh** at S8's three-way confirm, this order is load-bearing:
 the plan drafted so far was grounded at `facts.plan_ref`, the open-PR-head row selected *before* this
 revise started — the very PR this decision is about to close. Posting that draft as-is (footer,
 precedent citations, everything) would cite a branch nothing can read the moment it closes. So the close

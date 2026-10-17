@@ -76,11 +76,11 @@ Fill `<<related_issues>>` from the native parent/sub-issue relation in the facts
 story — falling back to a legacy epic's `## Stories` checklist
 ([`../../_shared/epic-story-hierarchy.md`](../../_shared/epic-story-hierarchy.md)). Empty when the issue has no epic/story relationship.
 
-On **any BLOCKER**, gate (`header: "Audit"`): **Revise via drafter** (default — re-route to
-`/github-pipeline:drafter revise #<N>`, quoting the finding's evidence in the `Why:`) / **Override with
-reason** (record `Audit override: <reason>` for the PR body's `## Audit override` section and continue)
-/ **Abort** (stop the run). SUGGESTIONs/NITs are surfaced, never gating. A skip-by-override records
-"Audit skipped by user override" for the same section.
+On **any BLOCKER**, gate (`header: "Audit"`): **Revise via drafter** (re-route to `/github-pipeline:drafter revise #<N>`,
+quoting the finding's evidence in the `Why:`; recommend it when only an issue-body fix lets the DoD be met) / **Override
+with reason** (record `Audit override: <reason>` for the PR body's `## Audit override` section and continue; recommend it
+when the thread or plan already answers the blocker — name where) / **Abort** (stop the run). SUGGESTIONs/NITs are
+surfaced, never gating. A skip-by-override records "Audit skipped by user override" for the same section.
 
 ## S3 — Plan gate + doc grounding
 
@@ -138,12 +138,12 @@ Prep computed the classification in `facts.tracker.diff`:
   unknowable**: `unparsed` (row-shaped lines prep could not read — a `Phase 5c` row from a pre-gate
   plan, a hand-edit) or `duplicated` (two rows for one phase number). Rebuilding under either would
   mean guessing what shipped, which is the one thing this step exists to prevent.
-  Gate (`header: "Tracker drift"`), quoting each conflicting row with its `(commit <sha>)` or
-  `annotation`: **Re-plan** (default — re-route to `/github-pipeline:planner revise #<N>`) /
+  Gate (`header: "Tracker"`), quoting each conflicting row with its `(commit <sha>)` or `annotation`:
+  **Re-plan** (re-route to `/github-pipeline:planner revise #<N>`; recommend it when shipped work moved or vanished) /
   **Rebuild un-ticked** (write the reconciled rows with every conflicting row **unticked**, its
   displaced `(commit <sha>)`/`annotation` preserved in a `## Tracker reconciliation` note in the PR
   body — the same needs-re-verification posture as a DoD un-tick; never carry a tick onto work it did
-  not ship) / **Abort**.
+  not ship; recommend it when only the tick state is unknowable) / **Abort**.
 
 Write the reconciled tracker with the same `edit-pr-body` S6 uses, then select the cursor
 from it. Never select a phase by row title.

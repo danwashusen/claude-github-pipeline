@@ -471,7 +471,7 @@ class TrackerReconciliationTests(unittest.TestCase):
         self.assertIn("the only record that phase landed", self.flat)
 
     def test_conflict_is_a_gate_with_its_three_recorded_options(self):
-        self.assertIn('header: "Tracker drift"', self.flat)
+        self.assertIn('header: "Tracker"', self.flat)
         for option in ("**Re-plan**", "**Rebuild un-ticked**", "**Abort**"):
             self.assertIn(option, self.flat, option)
         self.assertIn("`diff.conflict`", self.flat)
