@@ -33,7 +33,9 @@ class ContractTests(unittest.TestCase):
     def test_consent_cards_are_a_closed_set_that_always_renders(self):
         self.assertIn("**A consent card always renders.** It is one of a closed set:", self.text)
         for act in ("a merge", "closing a PR", "a landing gate", "removing a worktree", "pushing with reds",
-                    "a tracked open question", "overriding a gate or audit blocker"):
+                    "a tracked open question", "overriding a gate or audit blocker",
+                    # The resolver's Tracker card un-ticks shipped rows; it must never be announced.
+                    "deciding what shipped (un-ticking or re-attributing a ticked phase or DoD row"):
             self.assertIn(act, self.text)
         self.assertIn("an honest confirm", self.text)
 
