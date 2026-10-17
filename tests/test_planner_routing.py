@@ -1493,6 +1493,24 @@ class OperatorGateCoverageTests(unittest.TestCase):
         self.assertIn("**Apply** / **Cancel**", self.revise)
         self.assertIn("Start fresh (recommended)", self.revise)
 
+    def test_revise_confirm_renders_the_change_list_before_the_card(self):
+        # A live #1373 epic revise asked "classified SOFT — post it in place?" after one sentence: the
+        # gate's old "diff-style plan update" was defined nowhere, and an epic has no DoD ticks to diff,
+        # so nothing rendered. The `**What changed:**` list appeared only in the post-handoff summary.
+        flat = " ".join(self.revise.split())
+        self.assertNotIn("diff-style", flat)
+        bullet = flat[flat.index("**Show + confirm (spine S8 variant).**"):]
+        self.assertLess(bullet.index("**What changed:**"), bullet.index("**Apply** / **Cancel**"))
+        self.assertIn("**before** the card", bullet)
+        self.assertIn("the block the Show + confirm gate already rendered", flat)
+        ref = " ".join((REFERENCES_DIR / "revise-reconciliation.md").read_text(encoding="utf-8").split())
+        section = ref[ref.index("### What the confirm shows"):ref.index("### HARD-path")]
+        self.assertIn("the rule that decided it", section)
+        self.assertIn("the final verified `plan.md`", section)
+        # An epic revise always has an empty DoD diff; silence there reads as a hidden block.
+        self.assertIn("`No DoD ticks to reconcile.`", section)
+        self.assertIn("compute it once, here", section)
+
 
 class HardReviseSequenceTests(unittest.TestCase):
     """S13 scenario-4 D4 fix: on HARD "Start fresh", grounding must follow the close decision, never

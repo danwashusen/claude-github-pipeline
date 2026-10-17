@@ -56,9 +56,9 @@ names that may have drifted, re-check open questions) — don't re-derive untouc
   an epic uses 1, 2, 3, 5, 6), plus 10 when the plan carries `## Open questions`.
 - **Off-ramp (spine S4).** Keyed on `facts.vector.type`: `offered` for a standalone issue, `not offered`
   for an epic revise. On "Split as epic" the superseded plan comment stays put — the Epic's re-plan supersedes it in place.
-- **Show + confirm (spine S8 variant).** Show the diff-style plan update **and** the proposed body-edit
-  diff together, then gate: SOFT → **Apply** / **Cancel**; HARD → **Start fresh (recommended)** /
-  **Apply in place anyway** / **Cancel**. **SOFT-Apply** runs the spine's persist immediately as written
+- **Show + confirm (spine S8 variant).** Render the classification, the `**What changed:**` block and the DoD
+  body edits **before** the card (revise-reconciliation.md, "What the confirm shows"), then gate: SOFT →
+  **Apply** / **Cancel**; HARD → **Start fresh (recommended)** / **Apply in place anyway** / **Cancel**. **SOFT-Apply** runs the spine's persist immediately as written
   (plan comment in place per the persist bullet, then the reconciled DoD body via `edit-body`) — the
   footer stays pinned at the open PR head correctly, because a SOFT revise never closes that PR; the
   next resolver run is a `continue` on the same branch, so grounding there stays valid.
@@ -124,6 +124,6 @@ Read [`../references/handoff-renderings.md`](../references/handoff-renderings.md
 
 - **Revise — plan refreshed**: same forward shape as the fresh route, with the **new** comment URL in the `Issue:` line (the stale one was deleted). `Next: /github-pipeline:resolver #<N>` — the issue, never the PR, whether or not a draft PR is open (the resolver re-enters an open PR in continue mode by itself).
   `Why:` names what changed (the renamed symbol, the resolved OQ) — and, on HARD Start-fresh, that the superseded PR was closed with the supersession note.
-  The `## Plan summary` block's `**What changed:**` section carries the **Compute reconciliation** result above — what moved and why, at the operator's altitude. Carry it; never re-derive it, and never let it become a history layer inside the plan body (the ban at the top of this file governs the body, not this session's output).
+  The `## Plan summary` block's `**What changed:**` section carries the **Compute reconciliation** result above — what moved and why, at the operator's altitude: the block the Show + confirm gate already rendered. Carry it; never re-derive it, and never let it become a history layer inside the plan body (the ban at the top of this file governs the body, not this session's output).
 - **Epic-shaped, planning aborted** (seam gate chose "Split as epic"; `Next:` the slicer promoting #N per the seam-analysis
   comment) or **Slice first chosen** ("Slice first"; nothing posted): `plan: ✗`, no `Grounding:`, `Next: /github-pipeline:slicer`.
