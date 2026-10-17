@@ -137,7 +137,8 @@ ground these are produced by implementation step S1. Lettered items are individu
   - (f) Multi-phase issues ship their phases onto one PR, one push per phase, tracked in a
     `## Phase tracker` section of the PR body (§7). One session ships phases in turn — each with
     its own push, tick, and review — until a phase the plan marks `checkpoint: pause` (the
-    operator reviews that phase's diff in-session and continues or ends), an operator phase, or
+    session ends there with a summary of what changed, the decisions and deviations, and what to
+    check; the operator reviews that phase's diff and starts the next session), an operator phase, or
     the last phase.
   - (g) Comment-only outcomes are supported without code changes.
   - (h) When the plan does not survive contact with the code, re-routes to the planner or

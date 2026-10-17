@@ -15,7 +15,7 @@ clear). If `git_repo` is false, stop.
 Tell the operator the compact inventory from `facts.inventory` (set / legacy / malformed / missing) and
 surface every `attention` line. **Malformed** (`dup`/`open`) blocks are refused — ask for a hand fix
 first. Pick the **target file**: keep writing where config already lives (`facts.target_file.suggested`);
-if `split` is true or neither file exists, confirm the canonical file (default: create `COMMANDS.md`).
+if neither file exists, create `COMMANDS.md` and announce it ("say if you'd rather keep config in `CLAUDE.md`"); if `split` is true, ask which file is canonical, recommending the one that already holds more blocks.
 `claude-code-stack-profile` always targets `CLAUDE.md` (its value is the every-session auto-load);
 `doc-catalogue` always targets `docs/README.md`.
 

@@ -471,7 +471,7 @@ class TrackerReconciliationTests(unittest.TestCase):
         self.assertIn("the only record that phase landed", self.flat)
 
     def test_conflict_is_a_gate_with_its_three_recorded_options(self):
-        self.assertIn('header: "Tracker drift"', self.flat)
+        self.assertIn('header: "Tracker"', self.flat)
         for option in ("**Re-plan**", "**Rebuild un-ticked**", "**Abort**"):
             self.assertIn(option, self.flat, option)
         self.assertIn("`diff.conflict`", self.flat)
@@ -1957,11 +1957,24 @@ class PhaseContinuationTests(unittest.TestCase):
         self.assertIn("Re-enter the spine at **S1** in continue mode", self.flat)
         self.assertIn("starts over, seeded only from GitHub", self.flat)
 
-    def test_the_card_and_its_per_phase_link(self):
+    def test_a_pause_ends_the_session_with_a_summary(self):
+        # A card answered hours later reloads the whole conversation only to discard it, so a pause
+        # ends the session instead, with what the operator needs to review it cold.
+        self.assertNotIn('header: "Checkpoint"', self.flat)
+        self.assertNotIn("**Continue here**", self.flat)
+        self.assertIn("A pause asks nothing: it ends the session.", self.flat)
+        for section in ("**Why the session ended**", "**What changed**", "**Decisions and deviations**",
+                        "**What to check**", "`None — built as planned.`"):
+            self.assertIn(section, self.flat, section)
+        # The card's free-text note is gone; the issue thread is how the operator steers the next phase.
+        self.assertIn("a comment on the issue before the next session starts reaches it", self.flat)
+        # The thread-refinement stop ends the session too, quoting the comment.
+        self.assertIn("refinement and end the session before S3", self.flat)
+        handoff_format = " ".join(self.HANDOFF_FORMAT.read_text(encoding="utf-8").split())
+        self.assertIn("Nor is the resolver's `## Session summary`", handoff_format)
+
+    def test_the_per_phase_link(self):
         for phrase in (
-            'header: "Checkpoint"',
-            "**Continue here**",
-            "**End session**",
             "scoped to **this phase's** push",
             "this pass's prep `facts.workspace.upstream_sha`",
             "unless an interrupted run left commits unpushed",
@@ -1995,7 +2008,8 @@ class PhaseContinuationTests(unittest.TestCase):
         flat = " ".join(router.split())
         self.assertIn("A trailing `--pause`", flat)
         self.assertIn("never passed to prep", flat)
-        self.assertIn("the phase checkpoint card", flat)
+        # A pause ends the session; there is no checkpoint card to gate (phase-continuation.md §4).
+        self.assertNotIn("checkpoint card", flat)
         fence = router.split("```bash", 1)[1].split("```", 1)[0]
         self.assertNotIn("--pause", fence, "prep's argparse rejects --pause; the router holds it")
 
@@ -2016,7 +2030,7 @@ class PhaseContinuationTests(unittest.TestCase):
         self.assertIn("from `facts.workspace.upstream_sha` as the session's **first** prep reported it", flat)
         self.assertIn("each phase's entry being the `upstream_sha` of the prep that started its pass", flat)
         self.assertIn("`/github-pipeline:resolver #<N> --pause`", flat)
-        self.assertIn("**End session** at the phase's checkpoint card", flat)
+        self.assertIn("typically at a phase checkpoint pause", flat)
         spine = " ".join(self.spine.split())
         self.assertIn("`facts.workspace.upstream_sha` as the session's **first** prep reported it", spine)
         self.assertIn("its `facts.workspace.sha` unless an interrupted run left commits unpushed", spine)
@@ -2178,7 +2192,7 @@ class FinalisationTests(unittest.TestCase):
 
     def test_the_contracts_credit_finalisation(self):
         router = " ".join((SKILL_DIR / "SKILL.md").read_text(encoding="utf-8").split())
-        self.assertIn("the phase checkpoint card, the finalisation `Polish` card", router)
+        self.assertIn("the loop-stall card, the finalisation `Polish` card", router)
         ledger = " ".join((self.SHARED / "polish-ledger.md").read_text(encoding="utf-8").split())
         self.assertIn("| `file` | the operator's answer — resolver (finalisation) or evaluator |", ledger)
         self.assertIn("an `apply` item fixed — at finalisation or in a revision run", ledger)

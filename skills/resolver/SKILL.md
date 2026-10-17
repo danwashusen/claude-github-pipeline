@@ -42,7 +42,7 @@ facts, `sections` (spilled issue-body/thread/ plan-marker paths), and `attention
 never re-derive the issue type, the mode, the branch, the audit ref, or the phase list in prose; prep already did.
 
 **Decision card rule.** If prep exits with `status: needs_decision`, render its `decision` as one
-`AskUserQuestion` card (per [`../_shared/asking-the-user.md`](../_shared/asking-the-user.md)), act on
+`AskUserQuestion` card with its brief (per [`../_shared/asking-the-user.md`](../_shared/asking-the-user.md)), act on
 the answer, and re-run prep (`--refresh` for volatile facts). This is the single universal handler
 for every closed-set code (`AUTH_REQUIRED`, `MARKER_AMBIGUOUS`, `TARGET_IS_PR`,
 `WORKSPACE_MISMATCH`, `DOD_MALFORMED`, `PHASES_MALFORMED`, `AMBIGUOUS`, `PLAN_MISSING`, …). A
@@ -123,8 +123,8 @@ Universal across every route:
   the comment/PR to check it landed (re-reads reintroduce races and burn context).
 - **Gates only for genuine decisions** (per [`../_shared/asking-the-user.md`](../_shared/asking-the-user.md)):
   the audit-blocker gate, the missing-plan gate, a doc conflict, an existing-PR contest, retry-ladder
-  escalation, review-loop guard rails, the loop-stall card, the phase checkpoint card, the finalisation
-  `Polish` card — never to confirm a fact prep derived. A judgment sub-agent (state-distiller, fitness audit,
+  escalation, review-loop guard rails, the loop-stall card, the finalisation
+  `Polish` card — never to confirm a fact prep derived. A judgment gate left with one credible option is announced, not asked; every card opens with its brief. A judgment sub-agent (state-distiller, fitness audit,
   test-selection, cold-read audit) never calls `AskUserQuestion`; it returns its typed result (a §3 decision
   code or its verdict) to this loop, which asks.
 - **Faithful reporting.** Lead with the outcome; report failures verbatim with evidence; declare

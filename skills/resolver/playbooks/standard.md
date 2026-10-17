@@ -18,8 +18,8 @@ outcome to its rubric:
 - **Forward — standard PR opened / updated** (default code outcome): `Issue:` line, `PR:` line
   (`base main · review: not run · health: not run · merge: not run` — the resolver runs none of the
   evaluator's checks), `Next: /github-pipeline:evaluator #<PR>`, `Why:`.
-- **Multi-phase** — pick **non-final code phase pushed** (the session ends after a non-final phase: an
-  **End session** answer at its checkpoint card, `../references/phase-continuation.md`, or an `Abort`
+- **Multi-phase** — pick **non-final code phase pushed** (the session ends after a non-final phase: a
+  pause at its phase checkpoint, `../references/phase-continuation.md`, or an `Abort`
   after S5.2 pushed; `plan: ✓ (multi-phase: K of M …)`, PR stays draft,
   `Next: /github-pipeline:resolver #<N>`, plus `--pause` when the session held it),
   **operator/decision-only next phase** (surface the `deliverable` + the

@@ -1491,7 +1491,9 @@ class OperatorGateCoverageTests(unittest.TestCase):
 
     def test_revise_reconciliation_confirm_soft_and_hard(self):
         self.assertIn("**Apply** / **Cancel**", self.revise)
-        self.assertIn("Start fresh (recommended)", self.revise)
+        self.assertIn("HARD → **Start fresh** / **Apply in place anyway** / **Cancel**", self.revise)
+        # The recommendation is the rule that decided HARD, never a fixed label (asking-the-user.md).
+        self.assertNotIn("Start fresh (recommended)", self.revise)
 
     def test_revise_confirm_renders_the_change_list_before_the_card(self):
         # A live #1373 epic revise asked "classified SOFT — post it in place?" after one sentence: the
@@ -1517,7 +1519,11 @@ class OperatorGateCoverageTests(unittest.TestCase):
         self.assertIn("`No DoD ticks to reconcile.`", section)
         self.assertIn("compute it once, here", section)
         # The options live here too, so story-jit (which may not read a second playbook) has a card.
-        self.assertIn("**Start fresh (recommended)** / **Apply in place anyway** / **Cancel**", section)
+        self.assertIn("HARD → **Start fresh** / **Apply in place anyway** / **Cancel**", section)
+        # A HARD reached only by the "lean HARD" judgment is a close call with a real alternative.
+        self.assertIn("an \"Always HARD\" rule makes **Start fresh** the clear call", section)
+        self.assertIn("A HARD from the judgment call's lean is a **close call**", section)
+        self.assertIn("The three blocks are the card's brief", section)
         jit = " ".join((PLAYBOOKS_DIR / "story-jit.md").read_text(encoding="utf-8").split())
         self.assertIn('the S8 confirm that gates the post ("What the confirm shows"', jit)
         # The spine is read first and end to end: its auto-post line must defer to the revise gate.
@@ -2132,7 +2138,10 @@ class ClosesDodTargetTests(unittest.TestCase):
 
     def test_the_card_offers_rename_first_and_verifies_it(self):
         self.assertIn('`header: "DoD heading"`', self.section)
-        rename = self.section.index("**Rename to `## Definition of done` (recommended).**")
+        rename = self.section.index("**Rename to `## Definition of done`.**")
+        # One criteria heading is a one-option judgment: renamed and announced, no card.
+        self.assertIn("**One heading holds criteria** → a judgment with one credible option", self.section)
+        self.assertIn("**Several hold criteria** → gate", self.section)
         self.assertLess(rename, self.section.index("**Plan without a DoD.**"))
         self.assertLess(self.section.index("**Plan without a DoD.**"), self.section.index("**Re-route to the drafter.**"))
         self.assertIn('parse.py dod "<facts.dod.body_path>"', self.section)

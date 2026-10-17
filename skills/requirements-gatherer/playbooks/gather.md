@@ -61,7 +61,7 @@ the operator explicitly approves the set. Silence or a tweak is keep-iterating, 
    correct consequence of adding scope mid-flight); a bare plan marker means the issue is planned
    even with zero annotations — and a plan with no `## Phases` section makes the resolver's
    single-phase fallback tick **every** top-level bullet on its next push, silently claiming the
-   appended requirements as delivered. Gate (`header: "DoD in flight"`): **Append anyway** /
+   appended requirements as delivered. Gate (`header: "In flight"`): **Append anyway** /
    **Abort** — never proceed silently.
 2. Build the revised body: the current body **byte-for-byte**, with one new bullet per approved
    requirement appended after the last existing top-level DoD bullet, in approved order, each in

@@ -605,9 +605,10 @@ class HandoffRenderingTests(unittest.TestCase):
 class AmbientIssueGateTests(unittest.TestCase):
     """The ambient-branch relationship gate. A drafter session invoked from inside `epic/95-<slug>`
     used to file an issue with no link to #95 at all; `facts.ambient` is the fact that lets it offer
-    one. Two properties are load-bearing and pinned here: the gate defaults to **Unrelated** (a
-    silent auto-link would be wrong — filing an unrelated bug from an epic's branch is normal), and
-    the drafter still writes NO parent edge, since both hierarchy edges are the slicer's (#16)."""
+    one. Two properties are load-bearing and pinned here: nothing is ever linked without the card (a
+    silent auto-link would be wrong — filing an unrelated bug from an epic's branch is normal, so only
+    the no-link outcome may be announced instead of asked), and the drafter still writes NO parent
+    edge, since both hierarchy edges are the slicer's (#16)."""
 
     def setUp(self):
         self.spine = (PLAYBOOKS_DIR / SPINE).read_text(encoding="utf-8")
@@ -616,18 +617,20 @@ class AmbientIssueGateTests(unittest.TestCase):
 
     def test_spine_consumes_the_ambient_fact_as_data(self):
         self.assertIn("facts.ambient", self.spine)
-        self.assertIn('header: "Ambient issue"', self.spine)
+        self.assertIn('header: "Branch issue"', self.spine)
 
     def test_router_names_the_fact_and_the_gate(self):
         self.assertIn("`ambient`", self.router)
         self.assertIn("ambient-branch relationship", self.router)
 
-    def test_gate_defaults_to_unrelated(self):
-        self.assertRegex(
-            self.spine,
-            r"defaulting to\s+\*\*Unrelated\*\*",
-            "the ambient gate must default to Unrelated — never link silently",
-        )
+    def test_only_the_no_link_outcome_is_announced(self):
+        flat = " ".join(self.spine.split())
+        self.assertIn("never link silently", flat)
+        # A plainly-unrelated draft is a one-option judgment: announced, filed unlinked, no card
+        # (skills/_shared/asking-the-user.md). Every link still needs the operator's answer.
+        self.assertIn("A draft plainly unrelated to #N files unlinked, announced", flat)
+        self.assertIn('plausibly belongs to #N asks once (`header: "Branch issue"`)', flat)
+        self.assertIn("**Unrelated** links nothing", flat)
 
     def test_child_arm_is_epic_only_and_routes_to_the_slicer(self):
         self.assertIn("`ambient.pattern` is `epic`", self.spine)
@@ -827,7 +830,7 @@ class OperatorGateCoverageTests(unittest.TestCase):
         text = self._skill_text()
         for header in (
             "Issue size",      # feature vs Epic
-            "Ambient issue",   # relationship to the issue this branch is standing in
+            "Branch issue",    # relationship to the issue this branch is standing in
             "PRD conflict",
             "File issue?",
             "OQ <id>",         # OQ disposition

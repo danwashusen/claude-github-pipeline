@@ -291,7 +291,7 @@ answers), with a re-run breadcrumb. `plan: ✗`.
 **Why:** every part of #142 is gated by `OQ-08` (phone vs video), tracked in question #212 (audience:clinical, audience:business). Planning now would lock a guess. Answer #212 in its thread, then re-run `/github-pipeline:planner #142`. (If no companion question existed, this would instead point at `/github-pipeline:drafter` to file one first.)
 ```
 
-**DoD heading — re-route to the drafter.** The DoD-heading card's third arm (`plan-schema.md`, "The
+**DoD heading — re-route to the drafter.** The DoD-heading card's last arm, or the operator's answer to its announce line (`plan-schema.md`, "The
 `closes-dod` target"): the issue's criteria sit under a heading no DoD reader parses and the operator chose
 to have the body fixed upstream rather than renamed here. Abort shape — no plan posted, no `planned`
 label, `plan: ✗` — pointing at a drafter revise, whose rename makes the criteria the `## Definition of

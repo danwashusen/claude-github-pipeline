@@ -2,7 +2,7 @@
 
 Read at the spine's "Return to the routed playbook" when a phase has shipped and an unshipped phase
 remains (S5.2 pushed it, S6 projected it, S7 filed its follow-ups). It decides whether this session
-ships the next phase too or ends with the non-final handoff. This **phase checkpoint** is not
+ships the next phase too or ends with a session summary and the non-final handoff. This **phase checkpoint** is not
 [`follow-up-tracking.md`](follow-up-tracking.md)'s end-of-loop checkpoint: that `file-at-checkpoint`
 batch ran at S7, minutes earlier, and is never a reason to pause.
 
@@ -35,7 +35,7 @@ Pause when **any** of these holds; otherwise continue:
   plan authored before the key, or a phase the planner left unmarked);
 - the session holds `--pause` (SKILL.md §1);
 - a **warning sign** fired during this phase's pass:
-  - a gate card rendered — `Audit`, `Doc conflict`, `Tracker drift`, `Tests red`, `Review loop`,
+  - a gate card rendered — `Audit`, `Doc conflict`, `Tracker`, `Tests red`, `Review loop`,
     `Settled item`, `Decision`, `Loop stall` (the emergency ceiling included) — whatever the continuing
     answer was;
   - this pass wrote an override or failure record to the PR body — `## Audit override`,
@@ -60,25 +60,42 @@ whole PR is this phase — link `<pr-url>/files`: the discriminating test of
 `facts.prior_pr.url`, or the `create-pr` envelope's `url` on a fresh first phase; SHAs in the text are
 7-char.
 
-## 4. The checkpoint card
+## 4. A pause ends the session
 
-Print one line first, so the link is clickable in the transcript:
+A pause asks nothing: it ends the session. The operator often comes back hours later, after the prompt
+cache has expired, and a card answered then reloads the whole conversation only to discard it — so the
+session ends at the pause and the next one starts cold on purpose. Print one line first, so the link is
+clickable in the transcript:
 
 > **Phase <N> — <title> shipped** (<K> of <M>) · <phase link> · paused: <`checkpoint: pause` | `--pause` | the warning sign>
 
-Then one `AskUserQuestion` (`header: "Checkpoint"`), its question carrying the phase link and naming the
-next phase:
-
-- **Continue here** — description: the next phase's title, `deliverable`, and `closes-dod`.
-- **End session** — description: the non-final handoff; the next session starts on a fresh context.
-
-Free text ("Other") is an operator note, and continues. Carry it into the next phase as an Addressable
-human comment in iteration 1's input, and record it verbatim in that phase's loop comment (S5.2) so it
-reaches GitHub. A note that reverses a locked decision is caught by the fix plan's plan-reversal check
-and re-enters the `Decision` card there.
+Then the `## Session summary` block ("The `## Session summary` block"), then the non-final handoff (§6). Nothing follows the handoff.
 
 No pause → print the same line ending `· continuing to Phase <N+1> — <title> (checkpoint: continue)`,
 and continue.
+
+### The `## Session summary` block
+
+The operator reads it cold, so it stands alone: plain words, no pipeline vocabulary left undecoded, each
+section a few bullets. It sits outside `## Handoff`, never a segment of it
+([`../../_shared/handoff-format.md`](../../_shared/handoff-format.md)).
+
+- **Why the session ended** — the trigger in plain words: the plan asked for a review after this phase
+  (`checkpoint: pause`, or none set), the operator asked to stop after each phase (`--pause`), or the
+  warning sign — which card rendered and why, which override or failure record was written, or the
+  thread comment that refines the plan (quoted).
+- **What changed** — per phase this session shipped: what it does now that it didn't before, at the
+  operator's altitude (behaviour, not file lists), its phase link, and the DoD bullets it ticked.
+- **Decisions and deviations** — every answer the operator gave on a card this session, every
+  announced choice (`Did X because Y`), every override or failure record written to the PR body, and
+  every place the build departs from the plan (a settled item fixed here, a refinement built on, a
+  `## Changes` entry built differently) — each with its reason. `None — built as planned.` when empty,
+  never omitted: a missing section reads as one left out.
+- **What to check** — before the next session: the specific places a reviewer should look (the
+  riskiest change, the code a warning sign touched, a deviation's effect), each with its file and the
+  phase link, and what the next phase will build on top of them. End with how to steer it: a comment
+  on the issue before the next session starts reaches it — that session reads the thread from GitHub,
+  and nothing else carries a note across.
 
 ## 5. Continue
 
@@ -104,14 +121,14 @@ and continue.
 4. **Warning sign before building.** The thread may have moved during the phase or at the card. Compare
    this pass's `facts.sections.thread_comment_count` with the previous prep's: when it rose **and** this
    pass's distiller reports `thread-vs-plan: refines` citing one of those new comments, print the
-   refinement and render the `Checkpoint` card before S3, its question naming the refinement —
-   **Continue here** builds the plan as refined; **End session** hands off. A refinement the thread
+   refinement and end the session before S3 (§4: no phase line — this pass shipped nothing — then the
+   `## Session summary`, its "Why" quoting the new comment, and the handoff). A refinement the thread
    already carried when the session started never pauses a later pass: the session's first pass built
    on it, and `refines` is a whole-thread judgment, so it would otherwise fire on every pass.
 
 ## 6. Ending the session
 
-End session (or a hard stop) → the routed playbook's handoff, composed per
+A pause (or a hard stop) → the routed playbook's handoff, composed per
 [`handoff-renderings.md`](handoff-renderings.md): it owns the session-wide `Changes:` line (anchored on
 the value step 2 carried, with per-phase ranges when the session shipped more than one phase) and the
 trailing `--pause` on resolver re-entry commands.

@@ -30,17 +30,17 @@ what you're drafting, not a project-wide sweep (that's `/github-pipeline:questio
 **Match first.** Consult the tracker de-dup search before proposing to file a companion (SKILL.md §1 names
 which source applies) — proposing a file before checking is how you duplicate a question that already exists.
 
-Then get the user's **disposition** per OQ — one `AskUserQuestion` card (`header: "OQ <id>"`), this closed set:
+Then get the user's **disposition** per OQ — one `AskUserQuestion` card (`header: "OQ <id>"`), this closed set, recommendation judged per OQ and listed first:
 
-- **Scope it out** *(default)* — the gated part leaves this issue's scope: a `## Out of scope` line names
-  the OQ; nothing undecided lands in the DoD. No native dependency.
+- **Scope it out** — the gated part leaves this issue's scope: a `## Out of scope` line names
+  the OQ; nothing undecided lands in the DoD. No native dependency. Recommend it when the OQ is peripheral to the issue.
 - **Keep in-scope (blocked)** — the gated part stays in the DoD; the build issue is set natively
-  `blocked by` the companion question (which holds the resolver/evaluator until it answers — warn the user).
-- **Build on a provisional default** — build now on a named provisional choice; record `default:` +
-  `retires-when:` so the planner carries it as a watchpoint.
+  `blocked by` the companion question (which holds the resolver/evaluator until it answers — warn the user). Recommend
+  it when the OQ is core to the issue's value.
+- **Build on a provisional default** — build now on a named provisional choice; record `default:` + `retires-when:` so the planner carries it as a watchpoint. Recommend it when a sensible default is cheap to retire.
 
-**Companion — reuse, file, or defer.** A match exists → default to **reusing** it (reach for
-`AskUserQuestion` only for genuine ambiguity: **Reuse #N** / **File a new one**); a reused companion is
+**Companion — reuse, file, or defer.** A match exists → reuse it and announce it ("Reusing #N as this OQ's companion; say if you'd rather file a new one"),
+reaching for `AskUserQuestion` only for genuine ambiguity (**Reuse #N** / **File a new one**); a reused companion is
 not re-filed — you post a lightweight `comment` on it cross-linking this build issue, and set this issue's
 `blocked by` / `## Open questions` reference. No match → offer to **file** a companion now (a normal
 `question` draft per `../../_shared/question-issue.md`, reusing this spine's review + gate) or **defer to
@@ -86,9 +86,9 @@ hedging (`May be resolved by #21`, `Related to #12`, `Blocked by #50`, `Duplicat
 #N` line also sets a native `blocked by` (below); the prose line is the always-present fallback.
 
 **The ambient issue.** `facts.ambient` (present only when the branch names one) is the issue this checkout
-is standing in — one the user never had to type. Offer it once (`header: "Ambient issue"`), defaulting to
-**Unrelated**: filing an unrelated bug from inside an epic's branch is normal, so never link silently.
-**Related to #N** / **Blocked by #N** write the forms above; **Child of #N** — offered only when
+is standing in — one the user never had to type. Filing an unrelated bug from inside an epic's branch is normal, so never
+link silently. A draft plainly unrelated to #N files unlinked, announced ("Not linking this to #N; say if it belongs there"); one that
+plausibly belongs to #N asks once (`header: "Branch issue"`), recommending the relation its text implies: **Unrelated** links nothing; **Related to #N** / **Blocked by #N** write the forms above; **Child of #N** — offered only when
 `ambient.pattern` is `epic` — writes `Related to #N` and routes the handoff to the slicer, sole writer of
 the parent edge since #16.
 

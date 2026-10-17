@@ -52,7 +52,8 @@ Use these exact words. Don't invent synonyms. The field names and block structur
 renderings are contract exactly like the marker values: emit the applicable shape verbatim, substituting
 only the values — never rename a field, drop a segment, restructure, or add a block the shape doesn't
 carry. (The separate `## Plan summary` block above is not an exception — it sits outside `## Handoff`,
-it is not a segment of it.)
+it is not a segment of it. Nor is the resolver's `## Session summary`, printed immediately before
+`## Handoff` when a phase checkpoint pause ends the session.)
 
 | Field | Values |
 |---|---|

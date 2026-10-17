@@ -58,7 +58,7 @@ names that may have drifted, re-check open questions) — don't re-derive untouc
   for an epic revise. On "Split as epic" the superseded plan comment stays put — the Epic's re-plan supersedes it in place.
 - **Show + confirm (spine S8 variant).** Render the classification, the `**What changed:**` block and the DoD
   body edits **before** the card (revise-reconciliation.md, "What the confirm shows"), then gate: SOFT →
-  **Apply** / **Cancel**; HARD → **Start fresh (recommended)** / **Apply in place anyway** / **Cancel**. **SOFT-Apply** runs the spine's persist immediately as written
+  **Apply** / **Cancel**; HARD → **Start fresh** / **Apply in place anyway** / **Cancel**, recommended by the rule that decided HARD ("What the confirm shows"). **SOFT-Apply** runs the spine's persist immediately as written
   (plan comment in place per the persist bullet, then the reconciled DoD body via `edit-body`) — the
   footer stays pinned at the open PR head correctly, because a SOFT revise never closes that PR; the
   next resolver run is a `continue` on the same branch, so grounding there stays valid.
