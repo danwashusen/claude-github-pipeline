@@ -113,8 +113,8 @@ or the cap, show the plan + a "Review notes" block and gate (`header: "Review no
 
 ## S8 — Show + persist
 
-On a **clean verify exit**, auto-post — no confirmation gate and no full-body dump on the common path; the operator reads the `## Plan summary` the handoff step renders.
-Show the **full body** only when the user said "don't post yet" — nothing is posted, so they need the exact text to approve (`revise.md` adds its diff-show + reconciliation confirm first).
+On a **clean verify exit**, auto-post — no confirmation gate and no full-body dump on the common path; the operator reads the `## Plan summary` the handoff step renders. **A revise is the exception:** a prior plan exists, so before any post it gates per `revise-reconciliation.md` "What the confirm shows" (`revise.md` Show + confirm; `story-jit.md` when it reconciles shipped phases).
+Show the **full body** only when the user said "don't post yet" — nothing is posted, so they need the exact text to approve.
 Restage the approved body (marker line first) to `<facts.scratch>/plan.md`, re-validate it per S7 — the gate's "Fix manually" can reintroduce a break — and post it as three comments, **parts first, main last**, per [`../../_shared/plan-parts.md`](../../_shared/plan-parts.md) "Writing" (`split`'s `comments[].size` is the size fact — plan-schema.md, "Size"):
 
 ```bash
