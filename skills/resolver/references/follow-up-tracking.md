@@ -70,8 +70,8 @@ commits (TODO markers, skip-annotation reasons, PR-body cross-links).
 
 ## The end-of-loop checkpoint
 
-After the review loop reports approval and before the handoff — or before the phase's `Checkpoint` card
-when the session continues to the next phase (`phase-continuation.md`; a different checkpoint from this
+After the review loop reports approval and before the handoff — or before the phase checkpoint
+that continues to the next phase or ends the session (`phase-continuation.md`; a different checkpoint from this
 one), or, on a terminating guard-rail answer (Re-plan, Restructure, Abort, Abort loop), before that exit's
 handoff — present the `file-at-checkpoint` items in the registry to the user:
 
