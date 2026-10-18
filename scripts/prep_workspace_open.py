@@ -16,6 +16,8 @@ Composition (architecture.md §2 "compose the executors in-process")::
     branching.*                          -- type detection, prior-PR row classification, epic
                                             branch discovery, parent-epic search, fresh naming
                                             (`-vN` collision suffixing), linked-branch listing
+    workspace.branch_in_use_decision     -- BRANCH_IN_USE, asked BEFORE the link create (a
+                                            declined card must leave no remote branch or link)
     gh issue develop                     -- the branch↔issue link (create); degrades to a local
                                             branch + ISSUE_LINK_UNSUPPORTED notice
     workspace._build_ensure_work(...)    -- root freshness (ROOT_*), BRANCH_IN_USE, the worktree
@@ -335,13 +337,22 @@ def build_open(issue_number, repo, root=".", scratch_dir=None, cwd=None):
             link["existing"] = linked
             collided_with = None
         else:
+            # Exclusivity first: the create pushes the branch to origin and links it, so a
+            # BRANCH_IN_USE raised by step 5 after it would leave both behind on a declined card
+            # (skills/workspace-open/SKILL.md §1 — every decision before any link or worktree side
+            # effect). The adopt and continue rows create nothing, so step 5's own check already
+            # comes first there.
+            in_use = workspace.branch_in_use_decision(root, branch)
+            if in_use is not None:
+                return None, None, in_use
             created, create_notice = _create_linked_branch(repo, issue_number, branch, base, cwd=cwd)
             link["created"] = created
             if create_notice:
                 notices.append(create_notice)
 
-    # 5) The worktree: root freshness (ROOT_*), BRANCH_IN_USE, create/reuse, info/exclude, setup
-    #    hooks — all the existing ensure --work contract. A develop-created remote branch is
+    # 5) The worktree: root freshness (ROOT_*), BRANCH_IN_USE (re-checked — for a fresh create,
+    #    step 4 already asked), create/reuse, info/exclude, setup hooks — all the existing
+    #    ensure --work contract. A develop-created remote branch is
     #    found by the ensure's own ls-remote probe and checked out at its head.
     workspace_envelope, ws_notices, ws_decision = workspace._build_ensure_work(
         root, branch, base, hook_root=invoker_root

@@ -610,6 +610,34 @@ def _run_teardown_hooks(root, workspace_path):
 # ---------------------------------------------------------------------------
 
 
+def branch_in_use_decision(root, branch, worktrees=None):
+    """The branch-exclusivity check, alone and non-mutating: the ``BRANCH_IN_USE`` decision when
+    ``branch`` is already checked out somewhere other than its ``.worktrees/<branch>`` path, else
+    ``None``. ``root`` must already be the main checkout. ``_build_ensure_work`` raises it from
+    here, and ``prep_workspace_open`` asks it first, BEFORE its ``gh issue develop`` link create —
+    a create pushes a branch to origin and links it, so a card raised after it would leave both
+    behind when declined (skills/workspace-open/SKILL.md §1)."""
+    if worktrees is None:
+        worktrees = _list_worktrees(root)
+    target_path = _work_path(root, branch)
+    existing_for_branch = _find_worktree_for_branch(worktrees, branch)
+    if existing_for_branch is None or existing_for_branch["path"] == target_path:
+        return None
+    return needs_decision(
+        BRANCH_IN_USE,
+        summary="branch %r is already checked out at %s" % (branch, existing_for_branch["path"]),
+        context={
+            "branch": branch,
+            "existing_path": str(existing_for_branch["path"]),
+            "requested_path": str(target_path),
+        },
+        options=[
+            "use the existing worktree at %s" % existing_for_branch["path"],
+            "remove that worktree first, then re-run",
+        ],
+    )
+
+
 def _build_ensure_work(root, branch, base, hook_root=None):
     """Pure ``ensure --work`` core (architecture.md §2's pure-core pattern, S8 pattern lock):
     create/reuse the work worktree on ``branch`` (checked out at its own head when it exists, else
@@ -653,21 +681,9 @@ def _build_ensure_work(root, branch, base, hook_root=None):
     target_path = _work_path(root, branch)
     worktrees = _list_worktrees(root)
 
-    existing_for_branch = _find_worktree_for_branch(worktrees, branch)
-    if existing_for_branch is not None and existing_for_branch["path"] != target_path:
-        return None, [], needs_decision(
-            BRANCH_IN_USE,
-            summary="branch %r is already checked out at %s" % (branch, existing_for_branch["path"]),
-            context={
-                "branch": branch,
-                "existing_path": str(existing_for_branch["path"]),
-                "requested_path": str(target_path),
-            },
-            options=[
-                "use the existing worktree at %s" % existing_for_branch["path"],
-                "remove that worktree first, then re-run",
-            ],
-        )
+    in_use = branch_in_use_decision(root, branch, worktrees)
+    if in_use is not None:
+        return None, [], in_use
 
     reused = target_path.is_dir() and _find_worktree_at_path(worktrees, target_path) is not None
     if not reused:
