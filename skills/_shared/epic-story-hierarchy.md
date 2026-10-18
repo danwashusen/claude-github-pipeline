@@ -74,6 +74,8 @@ The fallback is load-bearing, not vestigial: epics filed before the native relat
 
 `mixed` is reachable without anyone doing anything wrong: a slicer resume files a **new** story under a legacy epic with `--parent`, so that one story is native while its siblings remain checklist bullets. It is a real state to read correctly, not an error to report — the reader unions both halves, and the slicer keeps the checklist reconciled (behind its write gate) because for those entries it is still the only record.
 
+The read itself is one script, `scripts/story_set.py`, composed by the planner's, slicer's, evaluator's and coordinator's preps; each projects it onto its own facts shape.
+
 Consequences of the source in play:
 
 - **`sub-issues`.** Story state *is* the progress record. There is nothing to tick: a closed story updates the rollup by itself.

@@ -131,6 +131,7 @@ import branching  # noqa: E402  (import after sys.path setup, by necessity; shar
 import doc_catalogue  # noqa: E402  (the consuming repo's declared grounding docs)
 import gh_gather  # noqa: E402
 import parse  # noqa: E402  (the `## Open questions` parse for the in-scope-blocked refusal)
+import story_set  # noqa: E402  (the epic story set's two-tier read)
 from pipelib import process  # noqa: E402
 from pipelib.decisions import (  # noqa: E402
     AUTH_REQUIRED,
@@ -378,73 +379,23 @@ def _build_story_set(sub_issues, issue_body, repo, cwd=None):
     reconciling the body text is a write the flow proposes at its gate, not a fact this script
     computes. Returns `(children_dict, attention_lines, decision_or_none)`.
     """
-    attention = []
-
-    native = []
-    for node in sub_issues or []:
-        live_state = node.get("state")
-        native.append(
-            {
-                "number": node.get("number"),
-                "title": node.get("title"),
-                "state": live_state,
-                "checked": (live_state or "").upper() == "CLOSED",
-                "live_title": node.get("title"),
-            }
-        )
-
-    checklist_entries = parse.parse_stories_section(issue_body)
-    if native and not checklist_entries:
-        return _children("stories", native, source="sub-issues"), attention, None
-    if not native and not checklist_entries:
-        return _children("stories", [], source=None), attention, None
-
-    native_numbers = {entry["number"] for entry in native}
-    from_checklist = []
-    for entry in checklist_entries:
-        if entry["number"] is not None and entry["number"] in native_numbers:
-            # Already carried by the native half of a `mixed` epic, with authoritative live state.
-            continue
-        if entry["number"] is None:
-            from_checklist.append(
-                {
-                    "number": None,
-                    "title": entry["title"],
-                    "state": None,
-                    "checked": entry["checked"],
-                    "live_title": None,
-                }
-            )
-            continue
-        state_fact, decision = _fetch_story_state(repo, entry["number"], cwd=cwd)
-        if decision is not None:
-            return None, None, decision
-        live_state = state_fact["state"]
-        if entry["checked"] != ((live_state or "").upper() == "CLOSED"):
-            attention.append(
-                "story #%s checkbox is %s but live state is %s"
-                % (entry["number"], "checked" if entry["checked"] else "unchecked", live_state)
-            )
-        from_checklist.append(
-            {
-                "number": entry["number"],
-                "title": entry["title"],
-                "state": live_state,
-                "checked": entry["checked"],
-                "live_title": state_fact["title"],
-            }
-        )
+    stories, decision = story_set.read(
+        sub_issues, issue_body, fetch_state=lambda number: _fetch_story_state(repo, number, cwd=cwd)
+    )
+    if decision is not None:
+        return None, None, decision
+    attention = [
+        "story #%s checkbox is %s but live state is %s"
+        % (e["number"], "checked" if e["checked"] else "unchecked", e["state"])
+        for e in story_set.filed(stories["checklist"])
+        if e["checked"] != ((e["state"] or "").upper() == "CLOSED")
+    ]
     # `mixed` only when BOTH tiers actually contributed. A checklist whose every entry is already
-    # native contributes nothing after the dedup above, so calling that `mixed` would be untrue — and
-    # the attention line it triggers claims those entries have "no native relation", which is exactly
+    # native contributes nothing after the dedup, so calling that `mixed` would be untrue — and the
+    # attention line it triggers claims those entries have "no native relation", which is exactly
     # backwards, on the strength of which the flow proposes a parent-body write.
-    if native and from_checklist:
-        source = "mixed"
-    elif native:
-        source = "sub-issues"
-    else:
-        source = "checklist"
-    return _children("stories", native + from_checklist, source=source), attention, None
+    source = story_set.source(stories["native"], stories["checklist"])
+    return _children("stories", stories["native"] + stories["checklist"], source=source), attention, None
 
 
 def _children(kind, entries, source=None, next_index=None):
