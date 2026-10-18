@@ -25,8 +25,8 @@ session's loaded instructions contain no other type's flow — a router plus one
 
 ## §2 Personas & terminology
 
-- **Operator** — the single human who starts each session, answers gates, and approves persists
-  and merges. Exactly one; see §3 non-goals.
+- **Operator** — the single human who starts each session (directly, or through the
+  coordinator's one-click go-ahead, §6.8), answers gates, and approves persists and merges. Exactly one; see §3 non-goals.
 - **Consuming repo** — the GitHub repository the pipeline works on. Any tech stack. Provides
   configuration via marker blocks in its `CLAUDE.md`/`COMMANDS.md`. Its `main` is write-protected:
   every change lands via PR.

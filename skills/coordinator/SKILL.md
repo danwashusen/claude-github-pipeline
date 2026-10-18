@@ -89,6 +89,10 @@ The closed `stage` set, and what each asks for:
 - **GitHub is the authority.** Re-run prep on every wake, and check the claims that matter — merge
   (`pr.merged`, the issue `closed`), PR state, issue state — against it. A relayed `## Handoff` that
   disagrees with `stage` is a card, never a silent pick (spine §3).
+- **Gates only for genuine decisions** (per [`../_shared/asking-the-user.md`](../_shared/asking-the-user.md)): every
+  open, close and sync, and every disagreement between a handoff and GitHub, is a card; picking the
+  next story, or a reconciliation the evidence settles, is announced in one line. A judgment gate
+  left with one credible option is announced, not asked; every card opens with its brief.
 - **Holds nothing only in chat.** Anything a later stage needs must already be on GitHub, or the
   coordinator asks the stage that owns it to record it there.
 - **One stage session at a time per issue**; the coordinator writes no tracked file, runs no `git`

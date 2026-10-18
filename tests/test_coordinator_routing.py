@@ -118,6 +118,12 @@ class DesignRuleLanguageTests(unittest.TestCase):
         self.assertIn("never a silent pick", self.router)
         self.assertIn("quotes the handoff's `Why:` line verbatim", self.spine)
 
+    def test_a_handoff_one_step_past_the_coordinators_own_step_agrees(self):
+        """The normal path: a stage never opens, closes or syncs, so its next command names the
+        stage after the coordinator's step — that must never raise a disagreement card."""
+        self.assertIn("**The handoff names the step after one the coordinator runs itself**", self.spine)
+        self.assertIn("That is agreement, never a card", self.spine)
+
     def test_summary_not_a_handoff(self):
         self.assertIn("Summary — not a `## Handoff`", self.router)
 

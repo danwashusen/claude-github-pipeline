@@ -36,6 +36,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
+import gh_gather  # noqa: E402  (the Tier-1 tracker read is one gather of the question issue)
 import parse  # noqa: E402  (import after sys.path setup, by necessity; in-process composition)
 from pipelib import process  # noqa: E402
 from pipelib.decisions import AMBIGUOUS, AUTH_REQUIRED, needs_decision  # noqa: E402
@@ -43,6 +44,10 @@ from pipelib.decisions import AMBIGUOUS, AUTH_REQUIRED, needs_decision  # noqa: 
 # The `question`-issue label (skills/_shared/question-issue.md) — the tracker search's `--label`
 # filter; the ONE name both consumers (planner, drafter) filter on.
 QUESTION_LABEL = "question"
+
+# The question-resolver's durable decision marker — the Tier-1 "resolved" signal beside a CLOSED
+# state (skills/_shared/open-question-links.md "Status is the tracker's").
+QUESTION_DECISION_MARKER = "<!-- question-decision:v1 -->"
 
 
 def search_question_tracker(repo, query, cwd=None, env=None):
@@ -148,3 +153,115 @@ def build_oq_query(repo, queries, cwd=None, env=None):
             return None, [], decision
         results.append({"query": query, "candidates": matches})
     return {"repo": repo, "oq_query_candidates": results}, [], None
+
+
+# ---------------------------------------------------------------------------
+# The open-question gate: the body's `## Open questions` entries joined with each tracker's live
+# state. Promoted from prep_resolver.py (where it was `_build_open_question_facts` /
+# `_oq_tracker_status`) when the coordinator became its second consumer — the resolver's
+# semantics are the canonical ones, so both callers share this one copy.
+# ---------------------------------------------------------------------------
+
+
+class _DiscardStream:
+    """Write-sink for `gh_gather.run(stream=...)` — the same two-method shape every prep keeps."""
+
+    def write(self, _data):
+        return None
+
+    def flush(self):
+        return None
+
+
+def tracker_status(repo, question_number, scratch_dir, cwd=None):
+    """Tier 1 tracker read for one `question` issue number (skills/_shared/open-question-links.md
+    "Status is the tracker's"): resolved iff `state == CLOSED` OR a `<!-- question-decision:v1
+    -->` comment is present. Composes `gh_gather.run` in-process (per architecture.md §2), routing
+    its own envelope to a discard sink (the S8-retro accepted-reference emit-through-a-stream
+    pattern — see `prep_evaluator._DiscardStream`). Returns `(status_dict, decision_or_none)`.
+    """
+    exit_code, envelope = gh_gather.run(
+        str(question_number),
+        repo,
+        marker_prefix=QUESTION_DECISION_MARKER,
+        scratch_dir=scratch_dir,
+        env=None,
+        stream=_DiscardStream(),
+    )
+    if envelope is not None and envelope.get("status") == "needs_decision":
+        return None, envelope["decision"]
+    if exit_code != 0:
+        sys.stderr.write(
+            "oq_tracker: gh_gather on question tracker #%s failed (exit %d)\n"
+            % (question_number, exit_code)
+        )
+        sys.exit(1)
+    resolved = envelope.get("state") == "CLOSED" or bool(envelope.get("marker_comment_present"))
+    return {
+        "number": question_number,
+        "state": envelope.get("state"),
+        "decision_recorded": bool(envelope.get("marker_comment_present")),
+        "resolved": resolved,
+    }, None
+
+
+def build_open_question_facts(issue_body, repo, blocked_by, scratch_dir, cwd=None):
+    """Parse `## Open questions` (parse.parse_oq_links) and join each entry with its tracker's
+    live state + the issue's native `blocked_by` set (docs/specs/resolver.md step 3's "Native
+    `blocked by` is a hard gate"; skills/_shared/open-question-links.md). Returns
+    `(open_questions_list, blocked_bool, decision_or_none)`.
+
+    The hard-gate fact: any `in-scope (blocked)` entry whose tracker question is still open with
+    no Tier-1 resolution -> `blocked: true`. An entry whose `question:` field is `(not filed)` has
+    no tracker to join against and is surfaced with `status: unresolved-ambiguous` — Tier 2 (the
+    ambiguous-thread judgment read) is the router's job, never prep's (spec step 3 / open-question-
+    links.md's tiered read).
+    """
+    try:
+        entries = parse.parse_oq_links(issue_body)
+    except parse._OqLinksMalformed as exc:  # noqa: SLF001 — same internal-signal reuse parse.py's
+        # own run_oq_links does; prep forwards the identical AMBIGUOUS decision rather than
+        # re-deriving it (parse.py names no dedicated OQ_LINKS_MALFORMED code — see parse.py's
+        # `_OqLinksMalformed` docstring).
+        return None, None, needs_decision(
+            AMBIGUOUS,
+            summary=exc.reason,
+            context={"line_number": exc.line_number, "raw_line": exc.raw_line},
+            options=[
+                "fix the entry by hand to match the schema in "
+                "skills/_shared/open-question-links.md, then re-run"
+            ],
+        )
+
+    open_blocker_numbers = {
+        blocker.get("number")
+        for blocker in (blocked_by or [])
+        if (blocker.get("state") or "").upper() == "OPEN"
+    }
+
+    joined = []
+    blocked = False
+    for entry in entries:
+        joined_entry = dict(entry)
+        question_field = entry.get("question")
+        if question_field == "(not filed)":
+            joined_entry["tracker"] = None
+            joined_entry["status"] = "unresolved-ambiguous"
+            joined.append(joined_entry)
+            continue
+
+        question_number = int(question_field.lstrip("#"))
+        status, decision = tracker_status(repo, question_number, scratch_dir, cwd=cwd)
+        if decision is not None:
+            return None, None, decision
+        joined_entry["tracker"] = status
+        joined_entry["native_blocked"] = question_number in open_blocker_numbers
+
+        if entry.get("disposition") == "in-scope (blocked)" and not status["resolved"]:
+            joined_entry["status"] = "blocked"
+            blocked = True
+        else:
+            joined_entry["status"] = "clear"
+        joined.append(joined_entry)
+
+    return joined, blocked, None

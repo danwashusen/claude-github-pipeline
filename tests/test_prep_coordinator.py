@@ -107,6 +107,11 @@ class StageTableTests(unittest.TestCase):
         unit = _unit(worktree=_wt("100-fix"), pr={"number": 7, "draft": False, "merged": True})
         self._derive(_standalone(unit), pc.STAGE_MERGED_NEEDS_CLOSE, pc.NEXT_CLOSE)
 
+    def test_merged_pr_with_the_worktree_released_is_terminal_not_a_re_open(self):
+        """Merged work never gets a fresh worktree: the open issue rides attention instead."""
+        unit = _unit(worktree=None, pr={"number": 7, "draft": False, "merged": True})
+        self._derive(_standalone(unit), pc.STAGE_TERMINAL, pc.NEXT_NONE)
+
     def test_closed_and_released_is_terminal(self):
         self._derive(_standalone(_unit(closed=True)), pc.STAGE_TERMINAL, pc.NEXT_NONE)
 
@@ -150,6 +155,19 @@ class StageTableTests(unittest.TestCase):
         derived = self._derive(_epic(stories=stories), pc.STAGE_MERGED_NEEDS_CLOSE, pc.NEXT_CLOSE,
                                branch="151-sender")
         self.assertEqual(derived["focus"], 151)
+
+    def test_a_declined_story_close_never_blocks_the_story_in_focus(self):
+        """The operator kept #151's worktree: the run carries on with the story in focus."""
+        stories = [{"number": 151, "closed": True, "worktree": _wt("151-sender")},
+                   {"number": 152, "closed": False, "worktree": _wt("152-date")}]
+        focus = _unit(152, worktree=_wt("152-date"))
+        derived = self._derive(_epic(stories=stories, focus=focus), pc.STAGE_RESOLVING,
+                               command="/github-pipeline:resolver #152")
+        self.assertEqual(derived["focus"], 152)
+
+    def test_a_focus_story_whose_pr_merged_returns_to_the_pick(self):
+        focus = _unit(152, worktree=None, pr={"number": 160, "draft": False, "merged": True})
+        self._derive(_epic(focus=focus), pc.STAGE_NEXT_STORY, pc.NEXT_PICK)
 
     def test_no_story_in_flight_asks_for_the_next_story(self):
         self._derive(_epic(), pc.STAGE_NEXT_STORY, pc.NEXT_PICK)
@@ -196,6 +214,19 @@ class StageTableTests(unittest.TestCase):
         missing = set(pc.STAGES) - cls.seen
         if missing:
             raise AssertionError("stage-table rows with no test: %s" % sorted(missing))
+
+
+class GathererMemoTests(unittest.TestCase):
+    def test_remote_reads_are_made_once_and_decisions_are_never_cached(self):
+        g = pc._Gatherer("octo/widgets", ROOT, tempfile.mkdtemp(), None)
+        calls = []
+        self.assertEqual(g._memo("k", lambda: calls.append(1) or ("v", None)), ("v", None))
+        self.assertEqual(g._memo("k", lambda: calls.append(1) or ("w", None)), ("v", None))
+        self.assertEqual(len(calls), 1)
+        decision = {"code": "AUTH_REQUIRED"}
+        g._memo("d", lambda: calls.append(1) or (None, decision))
+        g._memo("d", lambda: calls.append(1) or (None, decision))
+        self.assertEqual(len(calls), 3, "a decision is re-fetched, never replayed from the cache")
 
 
 class PhaseFactTests(unittest.TestCase):
@@ -302,6 +333,13 @@ class ReadOnlyDerivationTests(CoordinatorSandboxTestCase):
         phases = envelope["unit"]["pr"]["phases"]
         self.assertEqual((phases["total"], phases["shipped"], phases["next_phase"]), (3, 1, 2))
 
+    def test_an_unreachable_remote_leaves_the_root_tip_unknown_and_raises_no_warning(self):
+        _git(["remote", "set-url", "origin", str(self.root / "no-such-remote")], self.root)
+        envelope = self._envelope(100, "prep_workspace_open_fresh")
+        self.assertEqual(envelope["stage"], pc.STAGE_NEEDS_PLAN)
+        self.assertIsNone(envelope["root"]["at_default_tip"])
+        self.assertFalse(any("not the tip" in line for line in envelope["attention"]), envelope["attention"])
+
     def test_a_question_is_refused(self):
         envelope = self._envelope(120, "prep_coordinator_question")
         self.assertEqual(envelope["stage"], pc.STAGE_REFUSED)
@@ -321,7 +359,9 @@ class ReadOnlyDerivationTests(CoordinatorSandboxTestCase):
         envelope = self._envelope(100, "prep_resolver_oq_blocked_open")
         self.assertEqual(envelope["stage"], pc.STAGE_REFUSED)
         self.assertEqual(envelope["refusal"]["reason"], pc.REFUSAL_OQ_BLOCKED)
-        self.assertEqual([b["question"] for b in envelope["refusal"]["context"]["blocking"]], ["#201"])
+        blocking = envelope["refusal"]["context"]["blocking"]
+        self.assertEqual([(b["oq_id"], b["question"]) for b in blocking], [("OQ-01", "#201")])
+        self.assertEqual(blocking[0]["gates"], "default sort order")
 
     def test_an_unsliced_epic_slices_first(self):
         envelope = self._envelope(150, "prep_coordinator_epic_unsliced")

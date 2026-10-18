@@ -30,6 +30,12 @@ end-of-turn note (short — about 400 characters) and, if the brief was followed
 Compare the handoff's next command with `next.command`:
 
 - **They agree** (same skill, same target): continue to §4.
+- **The handoff names the step after one the coordinator runs itself** — a stage never opens,
+  closes or syncs a worktree, so its next command lands one step later: the planner hands off
+  `resolver #N` while `next.kind` is `open`; the evaluator's story merge hands off
+  `planner #<next>` while `next.kind` is `close` or `pick`; a handoff naming `workspace-open` /
+  `workspace-close` names exactly the coordinator's step. That is agreement, never a card: run the
+  coordinator's own step (§4) first, and take a story number the handoff names as the pick.
 - **The handoff names a route GitHub cannot show** — resolver → planner (re-plan), planner →
   researcher, planner → slicer, anything → drafter (revise), evaluator → slicer (adopt): the
   facts still read the old stage, because a re-route leaves no trace until its stage runs. Render a

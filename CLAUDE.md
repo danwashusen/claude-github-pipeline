@@ -17,7 +17,8 @@ artifact and no package manager. The "source" is:
   open-question-links / phases), the thirteen `prep_*.py`
   state-assembly scripts (including `prep_workspace_open.py` / `prep_workspace_close.py`, whose
   prep IS the tool's action, and `prep_coordinator.py`, which composes their pure cores), the `oq_tracker.py` and `doc_catalogue.py` helpers the preps compose
-  (the open-question tracker search; the consuming repo's declared grounding docs), `plan_parts.py`
+  (the open-question tracker search and the open-question gate the resolver and coordinator share;
+  the consuming repo's declared grounding docs), `plan_parts.py`
   (one plan, three comments: the planner's `split`, every reader's assembly), `plan_shipped.py`
   (the legacy shipped-phase records' read model + the planner's fold-back `check`), and
   `scripts/pipelib/` (envelope, spill, decision codes, platform limits, hashing, the locked-down subprocess
