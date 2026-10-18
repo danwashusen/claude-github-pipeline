@@ -86,6 +86,29 @@ generate the options dynamically from what you found. When the answer is inheren
 open-ended (e.g. "paste any external doc URLs"), a prose ask is still fine — don't
 force it into options.
 
+## Relayed cards — when a coordinator started the session
+
+A stage session started by the `coordinator` (its opening brief says so) is not the only place the
+operator reads its cards. The host mirrors the card, and the text printed with it, into the
+coordinator's chat. The operator may answer in either session, and the card blocks as usual until
+they do. The operator there has not followed this session, so the card must carry its own context:
+
+- **The card is self-contained.** Its `question` opens with an identity line —
+  `<stage> · #<N> · <step>` (e.g. `resolver · #152 · finalisation`) — and then the brief. This
+  overrides "the card's `question` points at the brief" for this session only: here the brief goes
+  *in* the card, not just before it.
+- **A block that counts as the brief** (the `Polish` digest, the revise confirm's blocks, the slicer's
+  summary table, setup's diffs) is printed in the **same message** as the card, so the mirror carries
+  it. The card's question names it ("the Polish digest above").
+- **"more"** prints the evidence in the same message as the re-asked card — same header, same
+  options — for the same reason.
+- **An announced choice** (`Did X because Y; say if you'd rather Z`) raises no card, so nothing
+  mirrors it. Put it in the next milestone update to the coordinator, word for word, so the operator
+  can still redirect it.
+
+The coordinator never answers a mirrored card itself. An answer typed in either session is the
+operator's, and is recorded as `[user decision <date>]` like any other.
+
 ## Sub-agents never ask
 
 `AskUserQuestion` is not available inside a sub-agent spawned via the `Agent` tool.

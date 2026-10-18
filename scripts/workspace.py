@@ -24,6 +24,7 @@ Subcommands
     workspace.py attach --expect-branch <branch>     [--path <p>] [--base <ref>] [--no-hooks]
                         [--allow-root] [--pin-sha <sha>] [--expect-remote-sha <sha>]
     workspace.py remove --work <branch>              [--root <path>]
+    workspace.py sync --work <branch>                [--root <path>]
     workspace.py gc [--max-age <days>]               [--root <path>]
     workspace.py root-status                         [--root <path>]
     workspace.py lint <setup|teardown>               [--root <path>]
@@ -1200,6 +1201,118 @@ def _cmd_remove_work(args):
 
 
 # ---------------------------------------------------------------------------
+# sync --work — fast-forward a work worktree to its own branch's remote tip
+# ---------------------------------------------------------------------------
+
+
+def _build_sync_work(root, branch):
+    """Pure ``sync --work`` core: bring the work worktree for ``branch`` to ``origin/<branch>`` by
+    fast-forward only, re-run the setup hooks, and return ``(payload, notices, decision)`` —
+    **never emits**.
+
+    Why it exists: before each just-in-time story plan the epic worktree must contain the stories
+    merged since it was opened, or the planner's content grounding refuses a checkout that is
+    behind. The coordinator composes this as a named part of the operator's go-ahead for that plan
+    — prd.md §8.5's one carve-out from "a stale checkout is never auto-corrected". It is the
+    worktree's OWN branch, fast-forward only: a ref moves, no commit is made, so the §12 rule that a
+    session never commits outside its own workspace still holds.
+
+    Only a ``.worktrees/<branch>`` work worktree is a target — never the main checkout, which no
+    path writes (architecture.md §6). Every refusal is a decision, taken before anything moves:
+      - no work worktree for ``branch`` → ``AMBIGUOUS`` (nothing to sync; open it first);
+      - uncommitted changes → ``AMBIGUOUS``;
+      - local commits the remote lacks (ahead, or diverged) → ``AMBIGUOUS`` — syncing would either
+        do nothing useful or need a merge/rebase, which is the operator's call.
+    A HEAD already at the tip is an ok no-op (``fast_forwarded: False``). A setup-hook failure is an
+    ok payload with ``setup.succeeded: False`` (the caller exits non-zero, as ``ensure`` does).
+    """
+    root = str(_resolve_main_root(root))
+    target_path = _work_path(root, branch)
+    entry = _find_worktree_at_path(_list_worktrees(root), target_path)
+    if entry is None or entry["branch"] != branch:
+        return None, [], needs_decision(
+            AMBIGUOUS,
+            summary="no work worktree for branch %r at %s — nothing to sync" % (branch, target_path),
+            context={"branch": branch, "path": str(target_path), "main_root": root},
+            options=["open the worktree first (workspace-open), then re-run"],
+        )
+    path = str(target_path)
+
+    if _is_dirty(path):
+        return None, [], needs_decision(
+            AMBIGUOUS,
+            summary="work worktree for branch %r has uncommitted changes — refusing to sync" % branch,
+            context={"branch": branch, "path": path, "dirty": True},
+            options=[
+                "commit or discard the uncommitted changes, then re-run the sync",
+                "skip the sync and leave the worktree as it is",
+            ],
+        )
+
+    fetch = _git(["fetch", "origin", branch], path)
+    if fetch.returncode != 0:
+        sys.stderr.write(fetch.stderr)
+        sys.exit(1)
+    remote_ref = "origin/%s" % branch
+    before = _current_sha(path)
+    tip = _git_stdout(["rev-parse", remote_ref], path)
+
+    if before != tip:
+        if contains_commit(path, tip) is True:
+            # The remote tip is already in HEAD's history, and HEAD isn't it: local-only commits.
+            ahead = int(_git_stdout(["rev-list", "--count", "%s..HEAD" % remote_ref], path))
+            return None, [], needs_decision(
+                AMBIGUOUS,
+                summary="work worktree for branch %r has %d commit(s) the remote lacks — refusing to sync"
+                % (branch, ahead),
+                context={"branch": branch, "path": path, "head_sha": before, "remote_sha": tip,
+                         "unpushed_commits": ahead, "diverged": False},
+                options=[
+                    "push the branch, then re-run the sync",
+                    "skip the sync and leave the worktree as it is",
+                ],
+            )
+        if _git(["merge-base", "--is-ancestor", "HEAD", remote_ref], path).returncode != 0:
+            return None, [], needs_decision(
+                AMBIGUOUS,
+                summary="work worktree for branch %r has diverged from %s — refusing to sync"
+                % (branch, remote_ref),
+                context={"branch": branch, "path": path, "head_sha": before, "remote_sha": tip,
+                         "diverged": True},
+                options=[
+                    "reconcile the branch yourself (rebase or merge), then re-run the sync",
+                    "skip the sync and leave the worktree as it is",
+                ],
+            )
+        merge = _git(["merge", "--ff-only", remote_ref], path)
+        if merge.returncode != 0:
+            sys.stderr.write(merge.stderr)
+            sys.exit(1)
+
+    after = _current_sha(path)
+    setup_result = _run_setup_hooks(path, path)
+    return {
+        "op": "sync",
+        "kind": "work",
+        "branch": branch,
+        "path": path,
+        "sync": {"before": before, "after": after, "fast_forwarded": before != after},
+        "setup": setup_result,
+    }, [], None
+
+
+def _cmd_sync_work(args):
+    payload, notices, decision = _build_sync_work(args.root, args.branch)
+    if decision is not None:
+        emit_needs_decision(decision, notices=notices)
+        return EXIT_OK
+    emit_ok(payload=payload, notices=notices)
+    if not payload["setup"]["succeeded"]:
+        return 1
+    return EXIT_OK
+
+
+# ---------------------------------------------------------------------------
 # gc — removes only aged ro-* worktrees; work worktrees are never touched regardless of age.
 # ---------------------------------------------------------------------------
 
@@ -1345,6 +1458,10 @@ def _build_parser():
     p_remove.add_argument("--root", default=".")
     p_remove.add_argument("--work", dest="branch", metavar="BRANCH", required=True)
 
+    p_sync = sub.add_parser("sync")
+    p_sync.add_argument("--root", default=".")
+    p_sync.add_argument("--work", dest="branch", metavar="BRANCH", required=True)
+
     p_gc = sub.add_parser("gc")
     p_gc.add_argument("--root", default=".")
     p_gc.add_argument("--max-age", dest="max_age", type=int, default=DEFAULT_MAX_AGE_DAYS)
@@ -1373,6 +1490,8 @@ def main(argv):
         return _cmd_attach(args)
     if args.subcommand == "remove":
         return _cmd_remove_work(args)
+    if args.subcommand == "sync":
+        return _cmd_sync_work(args)
     if args.subcommand == "gc":
         return _cmd_gc(args)
     if args.subcommand == "root-status":

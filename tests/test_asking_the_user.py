@@ -64,6 +64,19 @@ class ContractTests(unittest.TestCase):
         self.assertIn("A fixed per-card default is allowed only as a consent card's safe action", self.text)
         self.assertIn('no "(recommended)" suffix', self.text)
 
+    def test_relayed_cards_are_self_contained(self):
+        relayed = self.text[self.text.index("## Relayed cards"):self.text.index("## Sub-agents never ask")]
+        for rule in ("**The card is self-contained.**", "`<stage> · #<N> · <step>`",
+                     "the brief goes *in* the card", "**same message** as the card",
+                     "same header, same options", "Put it in the next milestone update",
+                     "The coordinator never answers a mirrored card itself."):
+            self.assertIn(rule, relayed)
+
+    def test_the_stage_brief_points_at_relayed_cards(self):
+        brief = _flat((SKILLS_DIR / "coordinator" / "references" / "stage-brief.md").read_text(encoding="utf-8"))
+        self.assertIn("asking-the-user.md", brief)
+        self.assertIn("Relayed cards", brief)
+
     def test_shape_and_subagent_rules_survive(self):
         self.assertIn("`header` ≤ 12 chars", self.text)
         self.assertIn("Never tell a sub-agent to call `AskUserQuestion` itself.", self.text)

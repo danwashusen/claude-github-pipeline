@@ -82,6 +82,7 @@ class DispatchedCliScriptsAreExecutableTests(unittest.TestCase):
             "gh_gather.py",
             "gh_persist.py",
             "gh_pr_gather.py",
+            "prep_coordinator.py",
             "prep_drafter.py",
             "prep_evaluator.py",
             "prep_planner.py",

@@ -1279,6 +1279,126 @@ class AttachTests(WorkspaceGitSandboxTestCase):
         return Path(_parse_one_envelope(out)["path"])
 
 
+class SyncWorkTests(WorkspaceGitSandboxTestCase):
+    """`sync --work`: fast-forward a work worktree to its own branch's remote tip — the
+    coordinator's pre-plan sync of the epic worktree (prd.md §8.5's named carve-out). Fast-forward
+    only; dirty, ahead and diverged refuse before anything moves; the setup hooks re-run."""
+
+    def _mk_pushed_worktree(self, branch="epic/7-journal"):
+        envelope = self._envelope(["ensure", "--work", branch, "--base", "main"])
+        wt = Path(envelope["path"])
+        _git(["push", "-u", "origin", branch], wt)
+        return wt
+
+    def _push_elsewhere(self, branch="epic/7-journal", name="merged.txt"):
+        other = gitsandbox.mk_clone(self.origin)
+        self.addCleanup(other.cleanup)
+        _git(["fetch", "origin", branch], other.path)
+        _git(["checkout", "-b", branch, "origin/%s" % branch], other.path)
+        _write(Path(other.path) / name, "merged story\n")
+        _git(["add", name], other.path)
+        _git(["commit", "-m", "story merged into the epic"], other.path)
+        _git(["push", "origin", branch], other.path)
+        return _git(["rev-parse", "HEAD"], other.path)
+
+    def _assert_refused(self, envelope):
+        self.assertEqual(envelope["status"], "needs_decision")
+        self.assertEqual(envelope["decision"]["code"], "AMBIGUOUS")
+
+    def test_behind_fast_forwards_to_the_remote_tip(self):
+        wt = self._mk_pushed_worktree()
+        before = _git(["rev-parse", "HEAD"], wt)
+        root_head = _git(["rev-parse", "HEAD"], self.root)
+        tip = self._push_elsewhere()
+        envelope = self._envelope(["sync", "--work", "epic/7-journal"])
+        self.assertEqual(envelope["op"], "sync")
+        self.assertEqual(envelope["sync"], {"before": before, "after": tip, "fast_forwarded": True})
+        self.assertEqual(_git(["rev-parse", "HEAD"], wt), tip)
+        self.assertTrue((wt / "merged.txt").exists())
+        self.assertEqual(_git(["rev-parse", "HEAD"], self.root), root_head, "the main checkout is never written")
+
+    def test_already_at_the_tip_is_a_noop(self):
+        wt = self._mk_pushed_worktree()
+        head = _git(["rev-parse", "HEAD"], wt)
+        envelope = self._envelope(["sync", "--work", "epic/7-journal"])
+        self.assertEqual(envelope["sync"], {"before": head, "after": head, "fast_forwarded": False})
+
+    def test_dirty_refuses_and_moves_nothing(self):
+        wt = self._mk_pushed_worktree()
+        before = _git(["rev-parse", "HEAD"], wt)
+        self._push_elsewhere()
+        _write(wt / "scratch.txt", "uncommitted\n")
+        envelope = self._envelope(["sync", "--work", "epic/7-journal"])
+        self._assert_refused(envelope)
+        self.assertTrue(envelope["decision"]["context"]["dirty"])
+        self.assertEqual(_git(["rev-parse", "HEAD"], wt), before)
+
+    def test_local_commits_the_remote_lacks_refuse(self):
+        wt = self._mk_pushed_worktree()
+        _write(wt / "local.txt", "local\n")
+        _git(["add", "local.txt"], wt)
+        _git(["commit", "-m", "unpushed"], wt)
+        envelope = self._envelope(["sync", "--work", "epic/7-journal"])
+        self._assert_refused(envelope)
+        self.assertEqual(envelope["decision"]["context"]["unpushed_commits"], 1)
+        self.assertFalse(envelope["decision"]["context"]["diverged"])
+
+    def test_diverged_refuses_and_moves_nothing(self):
+        wt = self._mk_pushed_worktree()
+        self._push_elsewhere()
+        _write(wt / "local.txt", "local\n")
+        _git(["add", "local.txt"], wt)
+        _git(["commit", "-m", "local work"], wt)
+        before = _git(["rev-parse", "HEAD"], wt)
+        envelope = self._envelope(["sync", "--work", "epic/7-journal"])
+        self._assert_refused(envelope)
+        self.assertTrue(envelope["decision"]["context"]["diverged"])
+        self.assertEqual(_git(["rev-parse", "HEAD"], wt), before)
+
+    def test_no_worktree_for_the_branch_refuses(self):
+        envelope = self._envelope(["sync", "--work", "epic/7-journal"])
+        self._assert_refused(envelope)
+
+    def test_the_main_checkout_is_never_a_target(self):
+        envelope = self._envelope(["sync", "--work", "main"])
+        self._assert_refused(envelope)
+
+    def _hook_log(self):
+        # Outside the worktree: a hook writing an untracked file inside it would make it dirty,
+        # which sync (like remove) refuses.
+        import tempfile
+        log_dir = tempfile.mkdtemp()
+        self.addCleanup(lambda: __import__("shutil").rmtree(log_dir, ignore_errors=True))
+        return Path(log_dir) / "hook.log"
+
+    def test_setup_hooks_re_run_from_the_worktree(self):
+        log = self._hook_log()
+        _seed_repo_with_hooks(self.clone.path, setup_block=["- `echo synced >> %s`" % log])
+        self._mk_pushed_worktree()
+        self._push_elsewhere()
+        envelope = self._envelope(["sync", "--work", "epic/7-journal"])
+        self.assertTrue(envelope["setup"]["succeeded"])
+        self.assertEqual(log.read_text(encoding="utf-8").count("synced"), 2, "once at ensure, once at sync")
+
+    def test_a_failing_setup_hook_exits_one_with_an_ok_envelope(self):
+        marker = self._hook_log()
+        # Succeeds the first time (at ensure), fails every time after (at sync).
+        _seed_repo_with_hooks(self.clone.path, setup_block=["- `test ! -f %s && touch %s`" % (marker, marker)])
+        self._mk_pushed_worktree()
+        rc, out, err = self._run(["sync", "--work", "epic/7-journal"])
+        self.assertEqual(rc, 1, "stderr: %s" % err)
+        envelope = _parse_one_envelope(out)
+        self.assertEqual(envelope["status"], "ok")
+        self.assertFalse(envelope["setup"]["succeeded"])
+
+    def test_invoked_from_inside_the_worktree_behaves_identically(self):
+        wt = self._mk_pushed_worktree()
+        tip = self._push_elsewhere()
+        rc, out, err = _run_cli(["sync", "--work", "epic/7-journal", "--root", "."], cwd=str(wt))
+        self.assertEqual(rc, EXIT_OK, "stderr: %s" % err)
+        self.assertEqual(_parse_one_envelope(out)["sync"]["after"], tip)
+
+
 class RemoveWorkGuardTests(WorkspaceGitSandboxTestCase):
     """v3 remove --work guard: refuse (typed) when invoked from inside the target worktree; keep
     working when invoked from inside a SIBLING worktree (root normalization)."""
