@@ -21,9 +21,9 @@ Background
 - Operator decisions that bind this stage: <<each one verbatim, or "none">>.
 
 How to report — a coordinator session is driving this run, and the operator is watching it there
-- Send milestone updates to the coordinator as you go, one line each, by message to the session
-  that messaged you first: when your prep finishes, at each phase or review-loop milestone, and
-  before any long-running step. Include every announced choice ("Did X because Y; say if you'd
+- Send milestone updates to the coordinator as you go, one line each: when your prep finishes, at
+  each phase or review-loop milestone, and before any long-running step. Its address is the sender
+  of the first message you receive — hold any update until that message arrives, then reply to it. Include every announced choice ("Did X because Y; say if you'd
   rather Z") word for word, so the operator can still redirect it.
 - Your decision cards are mirrored into the coordinator, where the operator may answer them. Follow
   "Relayed cards" in <<contract_path>>: every card is self-contained — its question opens with

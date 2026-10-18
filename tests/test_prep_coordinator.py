@@ -291,6 +291,17 @@ class ReadOnlyDerivationTests(CoordinatorSandboxTestCase):
         self.assertFalse((self.root / ".worktrees").exists(), "a read never opens a worktree")
         self.assertNotIn("action", envelope)
 
+    def test_a_paused_multi_phase_draft_is_a_resolver_re_entry_with_its_phase_position(self):
+        """The checkpoint-pause re-entry: a draft PR whose tracker has phase 1 of 3 ticked."""
+        wt = self._add_worktree("100-fix-the-widget")
+        envelope = self._envelope(100, "prep_coordinator_draft_phases")
+        self.assertEqual(envelope["stage"], pc.STAGE_RESOLVING)
+        self.assertEqual(envelope["next"]["command"], "/github-pipeline:resolver #100")
+        self.assertEqual(envelope["next"]["folder"], str(wt))
+        self.assertEqual(envelope["unit"]["pr"]["number"], 58)
+        phases = envelope["unit"]["pr"]["phases"]
+        self.assertEqual((phases["total"], phases["shipped"], phases["next_phase"]), (3, 1, 2))
+
     def test_a_question_is_refused(self):
         envelope = self._envelope(120, "prep_coordinator_question")
         self.assertEqual(envelope["stage"], pc.STAGE_REFUSED)
