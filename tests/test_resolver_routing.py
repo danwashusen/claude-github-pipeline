@@ -2288,6 +2288,26 @@ class RubricProvenanceTests(unittest.TestCase):
         self.assertIn("The evaluator does not re-check them", ledger)
         self.assertNotIn('"not cheap"', triage)
 
+    def test_doc_findings_pass_a_materiality_bar(self):
+        # #87: bookkeeping fixes on docs bred loop-induced findings and stalled the loop phase after phase.
+        r = self.rubric
+        self.assertIn("**Materiality** — whether a finding on a doc change matters", r)
+        self.assertIn("would the doc or comment, as it stands, mislead a builder, reviewer or auditor into a "
+                      "wrong decision?", r)
+        self.assertIn("It takes the **No shown cost** bucket whatever its provenance: never a defect", r)
+        self.assertIn("The bar is always on: no operator switch, no test of the PR's shape", r)
+        self.assertIn("A doc or comment finding is a defect only when it is **material**.", r)
+        self.assertIn("the bookkeeping class: a doc or comment finding that fails the **materiality** test", r)
+        self.assertIn("a finding that is not material is never a defect, so it never counts as loop-induced", r)
+        self.assertIn('"for doc changes (doc files and code comments), report only material findings', r)
+        ledger = " ".join((REPO_ROOT / "skills" / "_shared" / "polish-ledger.md").read_text(encoding="utf-8").split())
+        self.assertIn("states something false **that would mislead a reader into a wrong decision**", ledger)
+        # The spine names the bar in the reviewer's context and as a floor; it is at its line bar, so the
+        # wording lives in the rubric.
+        spine = " ".join((PLAYBOOKS_DIR / SPINE).read_text(encoding="utf-8").split())
+        self.assertIn("the reference's **materiality** bar for doc findings, in its words", spine)
+        self.assertIn("its materiality bar too, whether or not they reached the reviewer", spine)
+
     def test_a_plan_defect_is_not_settled(self):
         r = self.rubric
         self.assertIn("**A plan defect is not settled.** Run the test the other way too", r)

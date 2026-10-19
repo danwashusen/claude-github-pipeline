@@ -504,6 +504,16 @@ stays its one PR-body write, through `gh_persist.py edit-pr-body`. Since 4.34.0 
 with one proposal per group and follows a digest that shows the code behind each entry; no-shown-cost
 findings are recorded `drop` by the loop and never reach it.
 
+**Doc findings pass a materiality bar (4.40.0).** Before its bucket, every finding on a doc file or a
+code comment, in any PR, is tested for materiality: would the text as it stands mislead a builder,
+reviewer or auditor into a wrong decision? A finding that would not (a stale date stamp, a version row, an
+index echo, a length convention) is recorded `drop` as no shown cost: never a defect, never in the defect
+count, never must-fix. The bar is always on, with no operator switch and no test of the PR's shape, and it
+reaches the reviewer through S5.1's `<context>`. The shared "Apply criteria" carry the same test, so the
+evaluator's `apply` bucket cannot send a PR back over bookkeeping either. The cause was a docs sweep whose
+bookkeeping fixes each created new sites to keep consistent: the next round found those as loop-induced
+defects, the count never fell, and the loop stalled phase after phase (#87).
+
 ## §9 Skill anatomy
 
 Every `SKILL.md` is a router with the same four sections, in order (for the standalone tools:

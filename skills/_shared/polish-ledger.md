@@ -71,7 +71,11 @@ The single list of what makes polish **actively bad to merge** — the evaluator
 proposes `apply` against a lower bar — in scope, true at head, clearly right
 ([`polish-triage.md`](polish-triage.md) "The apply bar"):
 
-- a comment, doc or message that states something false;
+- a comment, doc or message that states something false **that would mislead a reader into a wrong
+  decision** (`resolver/references/review-fix-round.md` "Materiality"). Bookkeeping drift (a stale date
+  stamp, version row or index echo) does not meet it: the resolver records it `drop`, no shown cost, at
+  S5.2, and an `open` one that reaches the evaluator is proposed `drop` on its card, never recorded
+  without asking;
 - a misleading name on a public or cross-module surface;
 - wrong user-visible copy.
 
@@ -80,7 +84,8 @@ proposes `apply` against a lower bar — in scope, true at head, clearly right
 - **Only what the loop chose not to fix enters** (`resolver/references/review-fix-round.md`
   "Classification rubric"): polish on the PR's own code that hit one of the rubric's exceptions (a
   guard-path refactor, a change beyond the PR's seam), polish in code the PR does not change, and
-  findings with **no shown cost**, which enter already `drop`, the note leading `no shown cost: <why>`.
+  findings with **no shown cost** (a doc or comment finding that is not material included), which enter
+  already `drop`, the note leading `no shown cost: <why>`.
   Polish the loop fixes itself is never recorded; a **defect** is never recorded here — it is
   fixed, deferred with a filed follow-up, or escalated. Polish meeting the "Apply criteria" never enters
   either: the resolver always fixes it in-loop, because parked it only buys a revision session.
