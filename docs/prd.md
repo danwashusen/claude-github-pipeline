@@ -25,16 +25,20 @@ session's loaded instructions contain no other type's flow — a router plus one
 
 ## §2 Personas & terminology
 
-- **Operator** — the single human who starts each session, answers gates, and approves persists
-  and merges. Exactly one; see §3 non-goals.
+- **Operator** — the single human who starts each session (directly, or through the
+  coordinator's one-click go-ahead, §6.8), answers gates, and approves persists and merges. Exactly one; see §3 non-goals.
 - **Consuming repo** — the GitHub repository the pipeline works on. Any tech stack. Provides
   configuration via marker blocks in its `CLAUDE.md`/`COMMANDS.md`. Its `main` is write-protected:
   every change lands via PR.
 - **Skills** — fixed names. Pipeline stages: `drafter`, `researcher`, `slicer`, `planner`,
   `resolver`, `evaluator`. Standalone tools: `setup`, `question-sweep`, `question-resolver`, `doc-reviewer`,
-  `requirements-gatherer`, `workspace-open`, `workspace-close`. Invoked as `/github-pipeline:<name>`.
+  `requirements-gatherer`, `workspace-open`, `workspace-close`, `coordinator`. Invoked as
+  `/github-pipeline:<name>`.
 - **Session** — one Claude Code run of one skill. **Handoff** — the summary + copy-pasteable
   next-command block a pipeline session emits on clean exit; the only bridge between sessions.
+  Under the `coordinator` (§6.8) a stage session also messages the coordinator: milestone updates
+  and a verbatim copy of its handoff. That channel copies the handoff and carries notifications;
+  it never carries state of its own.
 - **Gate** — an explicit decision question put to the operator.
 - **Router / playbook** — a skill's always-loaded routing prompt (the router) and the single
   on-demand flow document (the playbook) a session executes.
@@ -42,14 +46,15 @@ session's loaded instructions contain no other type's flow — a router plus one
   vs code, plan vs code, external facts vs today).
 - **Workspace** — a git worktree under the consuming repo's `.worktrees/`. Two kinds: a **work
   workspace** (branch checkout, where changes are made — opened by the operator with
-  `workspace-open`, the session started inside it, released with `workspace-close`) and a
+  `workspace-open`, the session started inside it, released with `workspace-close`; or opened and
+  released by the `coordinator`, on the operator's confirmation) and a
   **read workspace** (a pinned, read-only checkout, script-internal grounding plumbing).
 - **Question registry** — the set of `question`-labelled issues; the registry of record for open
   questions (docs are sources, never the registry).
 
 ## §3 Scope
 
-**In scope for v2:** all nine skills (v3 adds the two workspace tools, making eleven, the slicer, making twelve, and the requirements-gatherer, making thirteen), the bundled scripts, the shared cross-skill contracts, the
+**In scope for v2:** all nine skills (v3 adds the two workspace tools, making eleven, the slicer, making twelve, the requirements-gatherer, making thirteen, and the coordinator, making fourteen), the bundled scripts, the shared cross-skill contracts, the
 plugin manifests, and offline tests for the deterministic layer.
 
 **Out of scope / non-goals:**
@@ -57,8 +62,11 @@ plugin manifests, and offline tests for the deterministic layer.
 - No new pipeline stages, no reordering or merging of stages.
 - No schema changes to persisted GitHub artifacts (§7); v1-written artifacts must remain readable
   by v2 and vice versa on the same issues and PRs.
-- No autonomous chaining: a skill never starts another skill's session or crosses the session
-  boundary itself; re-routes are carried by the handoff for the operator to run.
+- No autonomous chaining: a pipeline stage never starts another stage's session or crosses the
+  session boundary itself (no `Skill` call to another stage, ever); re-routes are carried by the
+  handoff for the operator to run. The one sanctioned starter is the operator-invoked
+  `coordinator` (§6.8), which starts stage sessions only on the operator's word, each in its own
+  fresh session — context isolation, the reason for this rule, is unchanged.
 - No multi-operator concurrency features beyond what git and GitHub natively enforce.
 - No stack-specific behavior in skills; stack knowledge lives only in consuming-repo
   configuration and gated integrations.
@@ -67,7 +75,9 @@ plugin manifests, and offline tests for the deterministic layer.
 ## §4 Pipeline workflow requirements
 
 - **§4.1 Session-per-stage.** Each pipeline stage runs in its own session with fresh context.
-  Cross-session state travels only through GitHub artifacts (§7) and the handoff.
+  Cross-session state travels only through GitHub artifacts (§7) and the handoff. The
+  coordinator's message channel (§6.8) is not a third path: it carries a verbatim copy of the
+  handoff and progress notifications, nothing else.
 - **§4.2 Handoff.** On clean exit a pipeline skill emits a `## Handoff` per the shared handoff
   schema: cold-readable state using the closed-set state markers, plus the exact next command.
   A re-route to a prior stage carries a `Why:` line stating the evidence for the regression.
@@ -221,12 +231,14 @@ ground these are produced by implementation step S1. Lettered items are individu
 
 ## §6 Standalone tool requirements
 
-All seven run only on explicit invocation and end with a plain summary — not a pipeline handoff.
+All eight run only on explicit invocation and end with a plain summary — not a pipeline handoff.
 The five report-then-apply tools change nothing without the operator seeing the proposal;
 tracked-file edits follow §8.2: staged in a workspace, with the landing offered as a final gate
 (the requirements-gatherer, §6.7, edits no tracked files — its one write surface is a gated
 issue-body edit). The two workspace tools (§6.5/§6.6) edit no tracked files either — their
-action is the workspace lifecycle itself, and the explicit invocation is the authorization.
+action is the workspace lifecycle itself, and the explicit invocation is the authorization. The
+coordinator (§6.8) drives the same open and close logic, and there the operator's answer to its
+confirmation card — asked before every open and every close — is the authorization.
 
 - **§6.1 setup.** Proposes and reconciles the consuming repo's configuration blocks: inventories
   existing blocks, drafts grounded candidates from repo evidence, interviews the operator for
@@ -260,6 +272,16 @@ action is the workspace lifecycle itself, and the explicit invocation is the aut
   authors no documents, files no issues, and refuses epics, slices, question issues, and closed
   issues. (Appended after §6.6 rather than inserted at its conceptual position — §6.x numbers are
   cited individually elsewhere, so renumbering would dangle those references.)
+- **§6.8 coordinator.** Drives one filed issue — or an epic and its stories — through the pipeline
+  stages from one session. It derives where the issue stands from GitHub state and the local
+  worktree list (never from a session's note), writes each stage's brief, and starts every stage
+  in its own fresh session, in the folder that stage must run in, only on the operator's word in
+  its own chat; where the host has no session-start tool it prints the command and the folder
+  instead. It opens, syncs and closes work workspaces through the workspace tools' own logic, each
+  on the operator's confirmation; checks each stage's claims (merge, PR state, issue state)
+  against GitHub; and shows a card when a stage's relayed handoff disagrees with GitHub. It writes
+  nothing to GitHub itself and refuses question issues, slices, and issues gated by an in-scope
+  blocked open question. (Appended after §6.7, for the same reason.)
 
 ## §7 Persisted artifacts (the compatibility contract)
 
@@ -300,7 +322,8 @@ an artifact written by a v1 skill is consumed correctly by its v2 counterpart, a
   landing (commit + push + PR) as one explicit final gate: on decline they perform no git
   actions, and the summary reports the workspace path and the ready-to-run landing commands.
 - **§8.3 Workspaces.** A building or evaluating session runs **inside** the work worktree the
-  operator opened (`workspace-open`) and starts the session in; its prep asserts that checkout
+  operator opened (`workspace-open`, or the coordinator on the operator's confirmation) and starts
+  the session in; its prep asserts that checkout
   before judgment runs and reports it as the session's workspace. Gate config and worktree hooks
   are read from that checkout's working tree, committed or not, and each read reports its source;
   pinned-ref grounding views are script-internal.
@@ -309,7 +332,10 @@ an artifact written by a v1 skill is consumed correctly by its v2 counterpart, a
 - **§8.5 Checkout state is respected.** A mismatched, stale, or root-seated session checkout is
   surfaced as a decision gate (`WORKSPACE_MISMATCH`), never auto-corrected. The operator's own
   checkout is otherwise left alone: no path gates on its branch or dirty state, and none writes to
-  it.
+  it. One named carve-out: the coordinator may fast-forward the epic worktree to its own branch's
+  remote tip before a story's plan, only as a named part of a go-ahead the operator answers, and
+  reports it. Dirty, ahead, or diverged state is still a decision gate, and every other stale or
+  mismatched checkout is still never auto-corrected.
 
 ## §9 Engineering-quality requirements
 

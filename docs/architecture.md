@@ -43,7 +43,7 @@ Module filenames use underscores so the test suite can import them.
 ```
 scripts/
   pipelib/            # shared package: envelope, spill, decisions, sha256, subprocess runner
-  workspace.py        # ensure / attach / remove / gc / lint; default-branch derivation
+  workspace.py        # ensure / attach / remove / sync / gc / lint; default-branch derivation
   branching.py        # import-only: branch naming, type detection, prior-PR rows, linked branches,
                       #   ambient-branch issue detection
   parse.py            # dod | oq-links | phases subcommands (dod also reports DoD presence + other checklists; phases also reports body size, and DoD coverage with --issue-body); import-only tracker + polish-ledger scanners
@@ -51,6 +51,7 @@ scripts/
   prep_drafter.py  prep_researcher.py  prep_slicer.py  prep_planner.py  prep_resolver.py  prep_evaluator.py
   prep_question_sweep.py  prep_question_resolver.py  prep_requirements_gatherer.py
   prep_workspace_open.py  prep_workspace_close.py   # the v3 operator-side lifecycle tools
+  prep_coordinator.py # the coordinator: the issue's stage as a fact; composes the two above
 skills/
   <name>/SKILL.md     # thin router (§9)
   <name>/playbooks/   # one file per behaviorally distinct flow (§5)
@@ -311,7 +312,11 @@ DoD; the resolver's prep reports `dod_coverage`, and `drift` blocks projection a
 workspace is opened by the operator (`/github-pipeline:workspace-open <issue>` — linked branch via
 `gh issue develop`, worktree under `.worktrees/`, setup hooks), each resolver/evaluator session is
 **started inside that worktree**, and the workspace is released by the operator
-(`/github-pipeline:workspace-close` — teardown hooks, then the gated removal). Stage preps
+(`/github-pipeline:workspace-close` — teardown hooks, then the gated removal). The
+`coordinator` drives the same lifecycle on the operator's behalf: its prep composes the two
+tools' pure cores (`prep_workspace_open.build_open` / `prep_workspace_close.build_close`) and runs
+each only after the operator answered its confirmation card, so a session is still started inside
+a worktree the operator authorized, and each core's decision cards render unchanged. Stage preps
 **observe and assert** the ambient checkout (`workspace.py attach`: expected branch, not the
 project root, not detached, not stale against the expected remote state — every mismatch a
 `WORKSPACE_MISMATCH` decision) and re-run the setup hooks on every session entry; they never
@@ -366,7 +371,7 @@ hard-fails naming `git remote set-head origin --auto` rather than guessing. A re
 | Path | `.worktrees/<branch>` | `.worktrees/ro-<ref-slug>` |
 | Checkout | branch | detached HEAD at `origin/<ref>` |
 | Hooks | setup at workspace-open (create **and** reuse) and on every stage-session attach (fail-fast, discovered in the invoking / the session's own working tree); teardown at workspace-close, before removal (best-effort, discovered in the worktree being closed) | none |
-| Lifecycle | **operator-owned**: workspace-open creates (and owns epic/`<N>`-`<slug>` integration-branch creation); persists across sessions; workspace-close tears down + removes (`remove --work` — gated on dirty/unpushed, merged-PR-aware, and refused from inside the target) | script-internal: reuse per logical ref; **fetch, then reset to current `origin/<ref>` on every ensure**; `workspace.py gc` removes `ro-*` older than `--max-age` (default 7 days) — and only `ro-*` |
+| Lifecycle | **operator-owned**: workspace-open creates (and owns epic/`<N>`-`<slug>` integration-branch creation); persists across sessions; workspace-close tears down + removes (`remove --work` — gated on dirty/unpushed, merged-PR-aware, and refused from inside the target); the coordinator drives the same cores, each on an operator-answered confirmation, and fast-forwards the epic worktree before a story's plan (`sync --work`) | script-internal: reuse per logical ref; **fetch, then reset to current `origin/<ref>` on every ensure**; `workspace.py gc` removes `ro-*` older than `--max-age` (default 7 days) — and only `ro-*` |
 | Facts | observed: branch, expected_branch, derived base_ref, path, SHA, dirty/unpushed state | path + the exact SHA grounded on |
 
 - **`workspace.py` owns the mechanics**: `attach` (the stage-session assertion — expected
@@ -376,7 +381,11 @@ hard-fails naming `git remote set-head origin --auto` rather than guessing. A re
   `BRANCH_IN_USE` — live on this creating path), `remove --work` (teardown hooks best-effort, then
   `git worktree remove`; dirty or unpushed state is a decision, never a silent discard; merged-PR
   context reframes the squash-merge false positive; `cwd_inside_target` refuses to remove the
-  invoker's own checkout), `gc`, `root-status`, `lint`, and the `.worktrees/` exclusion. Every
+  invoker's own checkout), `sync --work` (fetch, then fast-forward a work worktree to its own
+  branch's remote tip and re-run the setup hooks; dirty, ahead, or diverged is an `AMBIGUOUS`
+  decision before anything moves; never the main checkout — prd.md §8.5's one named carve-out, run
+  only by the coordinator as part of a go-ahead the operator answered), `gc`, `root-status`,
+  `lint`, and the `.worktrees/` exclusion. Every
   `--root` is normalized to the MAIN checkout via `git rev-parse --git-common-dir`, so the scripts
   behave identically invoked from inside a linked worktree — which is now the normal posture. The
   `.worktrees/` exclusion is maintained in the repo's `info/exclude` — **never** a
@@ -599,6 +608,6 @@ not a deviation.
 | No ref arithmetic, no raw `gh` writes in prompts; the ambient checkout is prep-asserted (`WORKSPACE_MISMATCH`) before use, and sub-agent dispatches name absolute paths | the drift class the rewrite exists to kill | §10 prompt validators + prep tests (carve-outs in §10: `gh pr merge` / `gh pr ready` [evaluator `--undo`; resolver draft→ready flip]; bare `git show <commit>`) |
 | Contract tokens are frozen (marker strings, op names, closed sets) | cross-skill/GitHub parse compatibility | census greps (§10) |
 | Skills are stack-agnostic (gated integrations + ≥2-stack examples only) | multi-stack product | banned-pattern greps (§10) |
-| Session-per-skill; no autonomous stage chaining (a resolver session shipping several phases of one issue is one skill, not a chain — each phase still re-runs prep and stops at a plan-declared `checkpoint: pause`) | context isolation is the design | prompt invariant + review |
+| Session-per-skill; no autonomous stage chaining: a pipeline stage never starts another stage's session or crosses the session boundary (no `Skill` call to another stage, ever). Only the `coordinator`, an operator-invoked standalone tool, may start stage sessions — only on the operator's word, each in its own fresh session (a resolver session shipping several phases of one issue is one skill, not a chain — each phase still re-runs prep and stops at a plan-declared `checkpoint: pause`) | context isolation is the design | prompt invariant + review |
 | Scripts never author prose; sub-agents never write to GitHub | role separation (§2) | review + tests |
 | Scripts are stdlib-only Python spawning only `git`/`gh` (sole carve-out: `workspace.py`'s hook runner, §1) | excludes the BSD/GNU userland divergence class | review + dual-platform suite runs (§10) |

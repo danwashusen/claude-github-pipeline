@@ -50,7 +50,7 @@ import gh_gather  # noqa: E402
 import workspace  # noqa: E402
 from pipelib import process  # noqa: E402
 from pipelib.decisions import AMBIGUOUS, TARGET_IS_SLICE, needs_decision  # noqa: E402
-from pipelib.envelope import EXIT_OK, EXIT_USAGE_ERROR, emit_needs_decision, emit_ok  # noqa: E402
+from pipelib.envelope import EXIT_OK, emit_needs_decision, emit_ok  # noqa: E402
 
 PLAN_MARKER = "<!-- implementation-plan:v1 -->"
 
@@ -62,13 +62,6 @@ class _DiscardStream:
 
     def flush(self):
         return None
-
-
-def _forward_decision(decision, notices=None):
-    if decision is not None:
-        emit_needs_decision(decision, notices=notices)
-        return True
-    return False
 
 
 def _fetch_current_user(cwd):
@@ -108,9 +101,13 @@ def _create_linked_branch(repo, issue_number, branch, base, cwd=None):
     return True, None
 
 
-def build_facts(issue_number, repo, root=".", scratch_dir=None, cwd=None):
-    """Assemble the open receipt and return the envelope dict WITHOUT printing it. Returns
-    ``None`` after a ``needs_decision`` envelope has already been emitted."""
+def build_open(issue_number, repo, root=".", scratch_dir=None, cwd=None):
+    """The pure open core (architecture.md §2's executor pattern): perform the open and return
+    ``(payload, notices, decision)`` — **never emits**. ``decision is not None`` means nothing past
+    the point that raised it ran, and ``payload`` is ``None``; otherwise ``payload`` is the receipt
+    (``notices`` travel beside it, never inside). ``main`` is the thin emit wrapper; the
+    coordinator's prep composes this same core in-process, so every card it raises renders there
+    exactly as it does here. A hard failure still exits non-zero with no envelope (§3)."""
     # Capture the INVOKER's checkout before normalizing: `root` becomes the main checkout on the
     # next line, and the setup-hook block is discovered in the checkout the operator actually ran
     # this from (a different worktree whenever they invoke from inside one).
@@ -131,8 +128,8 @@ def build_facts(issue_number, repo, root=".", scratch_dir=None, cwd=None):
         stream=_DiscardStream(),
     )
     if issue_envelope is not None and issue_envelope.get("status") == "needs_decision":
-        if _forward_decision(issue_envelope["decision"], notices=issue_envelope.get("notices")):
-            return None
+        if issue_envelope.get("decision") is not None:
+            return None, issue_envelope.get("notices"), issue_envelope["decision"]
     if exit_code != 0:
         sys.stderr.write(
             "prep_workspace_open: gh_gather on issue #%s failed (exit %d)\n"
@@ -153,8 +150,8 @@ def build_facts(issue_number, repo, root=".", scratch_dir=None, cwd=None):
     # 2) Prior-PR row (the resolver's 7-row table, shared via branching) — a foreign open/draft
     #    PR gates BEFORE any side effect.
     current_user, user_decision = _fetch_current_user(cwd)
-    if _forward_decision(user_decision):
-        return None
+    if user_decision is not None:
+        return None, None, user_decision
     # This issue's OWN open PRs, not every PR that mentions it (an epic integration PR lists every
     # story by number). The narrowing must precede the `if not open_prs` gate below, because that
     # gate is what decides whether the closed search runs at all.
@@ -164,8 +161,8 @@ def build_facts(issue_number, repo, root=".", scratch_dir=None, cwd=None):
     closed_prs = None
     if not open_prs:
         closed_prs, closed_decision = branching.search_closed_prs(repo, issue_number, cwd=cwd)
-        if _forward_decision(closed_decision):
-            return None
+        if closed_decision is not None:
+            return None, None, closed_decision
     prior_pr_row, prior_pr_fact = branching.classify_prior_pr_row(
         open_prs, current_user, closed_prs, issue_envelope.get("state"), issue_number
     )
@@ -208,11 +205,10 @@ def build_facts(issue_number, repo, root=".", scratch_dir=None, cwd=None):
             "vector": vector,
             "prior_pr": prior_pr_fact,
             "attention": attention,
-            "notices": notices,
         }
         if prior_pr_rejected:
             gated_envelope["prior_pr_rejected"] = prior_pr_rejected
-        return gated_envelope
+        return gated_envelope, notices, None
 
     # 3) Branch/base selection (the resolver's retired ensure-side table).
     branch_source = None
@@ -225,8 +221,8 @@ def build_facts(issue_number, repo, root=".", scratch_dir=None, cwd=None):
         branch_source = "pr-head"
     elif issue_type == "epic":
         epic_facts, epic_decision = branching.discover_epic_branch(root, issue_number, issue_title)
-        if _forward_decision(epic_decision):
-            return None
+        if epic_decision is not None:
+            return None, None, epic_decision
         if epic_facts.get("branch"):
             branch = epic_facts["branch"]
             branch_source = "epic-discovered"
@@ -248,8 +244,8 @@ def build_facts(issue_number, repo, root=".", scratch_dir=None, cwd=None):
             classify=True,
         )
         notices.extend(parent_notices)
-        if _forward_decision(parent_decision):
-            return None
+        if parent_decision is not None:
+            return None, None, parent_decision
         if epic_facts is not None:
             if epic_facts.get("parent_kind") == branching.PARENT_KIND_NON_EPIC:
                 # A non-epic's sub-issue is a deliverable slice by construction
@@ -258,8 +254,7 @@ def build_facts(issue_number, repo, root=".", scratch_dir=None, cwd=None):
                 # silently promote it to a story, the same demotion-in-reverse #30 fixed. Emitted
                 # from step 3, BEFORE the link create and the worktree ensure, so a declined card
                 # leaves zero side effects.
-                emit_needs_decision(
-                    needs_decision(
+                return None, notices, needs_decision(
                         TARGET_IS_SLICE,
                         summary="#%s is a deliverable slice of #%s — a slice ships as a phase on "
                         "its parent's branch and has no branch or PR of its own"
@@ -284,10 +279,7 @@ def build_facts(issue_number, repo, root=".", scratch_dir=None, cwd=None):
                             "if #%s should ship on its own branch, re-parent it to the epic (or "
                             "clear its parent edge), then re-run" % issue_number,
                         ],
-                    ),
-                    notices=notices,
-                )
-                return None
+                    )
             branch_facts = epic_facts.get("branch_facts") or {}
             if branch_facts.get("branch"):
                 base = branch_facts["branch"]
@@ -320,25 +312,22 @@ def build_facts(issue_number, repo, root=".", scratch_dir=None, cwd=None):
         linked, link_notice, link_decision = branching.list_linked_branches(
             repo, issue_number, cwd=cwd
         )
-        if _forward_decision(link_decision):
-            return None
+        if link_decision is not None:
+            return None, None, link_decision
         link["attempted"] = True
         if link_notice:
             notices.append(link_notice)
         elif linked and len(linked) > 1:
-            emit_needs_decision(
-                needs_decision(
-                    AMBIGUOUS,
-                    summary="%d GitHub-linked branches already exist for issue #%s — expected at most one"
-                    % (len(linked), issue_number),
-                    context={"issue": issue_number, "candidates": linked},
-                    options=[
-                        "unlink or delete the stray branch(es), then re-run",
-                        "open the workspace for the branch you mean by hand",
-                    ],
-                )
+            return None, None, needs_decision(
+                AMBIGUOUS,
+                summary="%d GitHub-linked branches already exist for issue #%s — expected at most one"
+                % (len(linked), issue_number),
+                context={"issue": issue_number, "candidates": linked},
+                options=[
+                    "unlink or delete the stray branch(es), then re-run",
+                    "open the workspace for the branch you mean by hand",
+                ],
             )
-            return None
         elif linked:
             # Adopt — the linked branch IS the issue's branch, whatever this run would have named.
             branch = linked[0]
@@ -357,8 +346,8 @@ def build_facts(issue_number, repo, root=".", scratch_dir=None, cwd=None):
     workspace_envelope, ws_notices, ws_decision = workspace._build_ensure_work(
         root, branch, base, hook_root=invoker_root
     )
-    if _forward_decision(ws_decision):
-        return None
+    if ws_decision is not None:
+        return None, None, ws_decision
     # Forward the core's notices (e.g. HOOK_SOURCE_DIRTY — the hook block came from a checkout
     # with uncommitted changes). Nothing gates on it; dropping it would make the report invisible.
     notices.extend(ws_notices)
@@ -390,11 +379,16 @@ def build_facts(issue_number, repo, root=".", scratch_dir=None, cwd=None):
         "workspace": workspace_envelope,
         "next_step": "start the next session inside workspace.path",
         "attention": attention,
-        "notices": notices,
     }
     if prior_pr_rejected:
         envelope["prior_pr_rejected"] = prior_pr_rejected
-    return envelope
+    return envelope, notices, None
+
+
+def setup_failed(payload):
+    """True iff the open's worktree setup hook failed — the one ok outcome that exits non-zero."""
+    workspace_facts = (payload or {}).get("workspace") or {}
+    return (workspace_facts.get("setup") or {"succeeded": True}).get("succeeded", True) is False
 
 
 def main(argv):
@@ -408,17 +402,14 @@ def main(argv):
     parser.add_argument("--cwd", default=None, help="explicit cwd for the gh calls (test injection)")
     args = parser.parse_args(argv)
 
-    facts = build_facts(
+    payload, notices, decision = build_open(
         args.issue, args.repo, root=args.root, scratch_dir=args.scratch_dir, cwd=args.cwd
     )
-    if facts is None:
+    if decision is not None:
+        emit_needs_decision(decision, notices=notices)
         return EXIT_OK
-    notices = facts.pop("notices", [])
-    emit_ok(payload=facts, notices=notices)
-    workspace_facts = facts.get("workspace") or {}
-    if not (workspace_facts.get("setup") or {"succeeded": True}).get("succeeded", True):
-        return 1
-    return EXIT_OK
+    emit_ok(payload=payload, notices=notices)
+    return 1 if setup_failed(payload) else EXIT_OK
 
 
 if __name__ == "__main__":

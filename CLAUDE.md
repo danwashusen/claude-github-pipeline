@@ -12,12 +12,13 @@ artifact and no package manager. The "source" is:
   contract renderings).
 - **Stdlib-only Python scripts** — `scripts/*.py`: the four GitHub/git executors (`gh_gather.py`,
   `gh_pr_gather.py`, `gh_persist.py`, `config_block.py`), `workspace.py` (worktree mechanics:
-  ensure/attach/remove/gc/lint, plus the derived-default-branch helper) and `branching.py` (branch
+  ensure/attach/remove/sync/gc/lint, plus the derived-default-branch helper) and `branching.py` (branch
   naming / type detection / prior-PR rows / linked branches — import-only), `parse.py` (DoD /
-  open-question-links / phases), the twelve `prep_*.py`
+  open-question-links / phases), the thirteen `prep_*.py`
   state-assembly scripts (including `prep_workspace_open.py` / `prep_workspace_close.py`, whose
-  prep IS the tool's action), the `oq_tracker.py` and `doc_catalogue.py` helpers the preps compose
-  (the open-question tracker search; the consuming repo's declared grounding docs), `plan_parts.py`
+  prep IS the tool's action, and `prep_coordinator.py`, which composes their pure cores), the `oq_tracker.py` and `doc_catalogue.py` helpers the preps compose
+  (the open-question tracker search and the open-question gate the resolver and coordinator share;
+  the consuming repo's declared grounding docs), `plan_parts.py`
   (one plan, three comments: the planner's `split`, every reader's assembly), `plan_shipped.py`
   (the legacy shipped-phase records' read model + the planner's fold-back `check`), and
   `scripts/pipelib/` (envelope, spill, decision codes, platform limits, hashing, the locked-down subprocess
@@ -63,7 +64,7 @@ any prompt edit; they are cheap and they are the only regression net prose has.
 
 ## Architecture
 
-### Thirteen skills: six pipeline stages, seven standalone tools
+### Fourteen skills: six pipeline stages, eight standalone tools
 
 ```
 draft ──▶ research ──▶ slice ──▶ plan ──▶ resolve ──▶ evaluate
@@ -71,13 +72,29 @@ draft ──▶ research ──▶ slice ──▶ plan ──▶ resolve ──
 
 The **pipeline stages** are `drafter`, `researcher`, `slicer`, `planner`, `resolver`, `evaluator`; the
 **standalone tools** are `setup`, `question-sweep`, `question-resolver`, `doc-reviewer`,
-`requirements-gatherer`, `workspace-open`, `workspace-close` ([prd.md §2](docs/prd.md)). The two workspace tools are the
+`requirements-gatherer`, `workspace-open`, `workspace-close`, `coordinator` ([prd.md §2](docs/prd.md)). The two workspace tools are the
 v3 operator-owned lifecycle: the operator runs `workspace-open <issue>` between planning and
 resolving (linked branch + worktree + setup hooks), **starts the resolver and evaluator sessions
 inside that worktree** (their preps assert the checkout — `WORKSPACE_MISMATCH` on the wrong one —
 and re-run the setup hooks each entry), and releases it with `workspace-close` after the merge
 (the evaluator's terminal handoff hands the exact command; nothing removes a worktree
 automatically).
+
+The **`coordinator`** (#83) drives that whole sequence from one session, from the project root: its
+`prep_coordinator.py` derives the issue's `stage` (a closed set — `derive_stage` is a pure function,
+so the offline suite pins every row) from GitHub state and the local worktree list, never from a
+session's note, and names the next command and the absolute folder it runs in. It starts each stage
+in its **own fresh session** in that folder, only on the operator's word in its own chat (a host
+rule: a session start is refused on a turn another session's event started, so every start is the
+operator's click); where the host has no session-start tool it prints the command and folder
+instead. It opens, syncs and closes worktrees by composing the workspace tools' pure cores
+(`prep_workspace_open.build_open` / `prep_workspace_close.build_close` / `workspace.py sync --work`),
+each only after the operator answered its consent card — the cores act immediately, so state
+derivation never calls them. A stage's relayed `## Handoff` that disagrees with the derived stage is
+a card; the relay carries re-routes that leave no GitHub trace (resolver → planner, planner →
+researcher/slicer). The pipeline skills stay unaware of it: everything a stage must do differently
+lives in the brief it is started with (`skills/coordinator/references/stage-brief.md`) and in
+`asking-the-user.md`'s "Relayed cards".
 
 **That is the conceptual order, not the handoff topology:** the drafter forwards to the
 **planner**, and `research` is a conditional detour off `plan` — the planner re-routes to the
@@ -113,7 +130,9 @@ decomposition. The stage/tool split is load-bearing, not cosmetic:
   resolver → planner when the plan didn't survive contact with the code) point the handoff at a
   *prior* stage but **never** cross the session boundary by calling the `Skill` tool —
   session-per-skill is the deliberate context-isolation choice, and the handoff's `Why:` line is
-  the load-bearing carrier of *why* the regression happened.
+  the load-bearing carrier of *why* the regression happened. Only the operator-invoked
+  `coordinator` may start a stage session, on the operator's word, each in its own fresh session
+  (architecture.md §12; a stage never does).
 - A standalone tool runs only on explicit invocation, is report-then-apply (nothing changes without
   the operator seeing the proposal), and ends with a **plain summary**, not a handoff. Tools that
   edit tracked files (`setup`, `question-sweep`, `doc-reviewer`) stage edits in a workspace and
@@ -459,7 +478,11 @@ now the same rule everything else follows rather than an exception.
   and re-asks the same card. The recommendation is reasoned per instance, never a fixed label. Plus the
   card shape and the rule that a sub-agent returns a §3 decision code instead of asking. The routers'
   decision card rule renders "with its brief" at the point of use, since a linked file is not
-  guaranteed to be in context when a card renders.
+  guaranteed to be in context when a card renders. **Relayed cards**: a stage session started by the
+  coordinator has its cards mirrored into the coordinator's chat (the host does this, text beside the
+  card included, and accepts the answer in either session), so there the card is self-contained — its
+  question opens with a `<stage> · #<N> · <step>` identity line and the brief — and announced choices,
+  which raise no card, ride in the stage's milestone updates.
 - `plan-summary.md` — the `## Plan summary` block: the human-readable digest of an implementation
   plan, its fixed section set, its sourcing from the plan schema, the one `focus` parameter that
   varies between callers, and the planner-only invitation plus the **read-only after the handoff**
@@ -590,8 +613,9 @@ the *consuming* repo provides — not by plugin config:
 - **Model/effort are not pinned.** Skill frontmatter carries no `model:` or `effort:` keys — every
   skill inherits the invoking session's model and effort level. The v1 per-skill pins were removed
   2026-08-01; reintroducing one is a deviation through the normal gate.
-- **`disable-model-invocation: true` is exactly six tools** — `doc-reviewer`, `question-sweep`,
-  `question-resolver`, `requirements-gatherer`, `workspace-open`, `workspace-close`. **`setup` is the deliberate
+- **`disable-model-invocation: true` is exactly seven tools** — `doc-reviewer`, `question-sweep`,
+  `question-resolver`, `requirements-gatherer`, `workspace-open`, `workspace-close`, `coordinator`
+  (which must never auto-trigger on "work on #N", the resolver's trigger). **`setup` is the deliberate
   exception**: it is a standalone tool but stays model-invocable, because v1 never carried the key
   on it and the S17 parity run adjudicated the difference rather than "fixing" it
   (`docs/specs/parity/setup.md`, "ADJUDICATION RECORD"). Don't add the key to `setup` on the
@@ -704,7 +728,8 @@ Prose has no compiler, so these greps are it. Run them after any prompt edit; `d
 ```bash
 # 1. Contract-token census — the set must not shrink across an edit (S1 baseline + the S20 v2-only
 #    re-baseline are in docs/specs/baseline.md §2 and §6; the v3 workspace-model change GREW the
-#    set by `github-pipeline:workspace-open` / `github-pipeline:workspace-close`).
+#    set by `github-pipeline:workspace-open` / `github-pipeline:workspace-close`, and #83 by
+#    `github-pipeline:coordinator`).
 grep -roE '<!-- [a-z0-9:-]+(:<N>)? -->|§P?[0-9]+(\.[0-9]+)?|GATHER_[A-Z]+|PERSIST_[A-Z]+|github-pipeline:[a-z-]+' \
   skills/ | sort | uniq -c
 

@@ -53,7 +53,7 @@ import branching  # noqa: E402
 import gh_gather  # noqa: E402
 import workspace  # noqa: E402
 from pipelib.decisions import AMBIGUOUS, needs_decision  # noqa: E402
-from pipelib.envelope import EXIT_OK, EXIT_USAGE_ERROR, emit_needs_decision, emit_ok  # noqa: E402
+from pipelib.envelope import EXIT_OK, emit_needs_decision, emit_ok  # noqa: E402
 
 
 class _DiscardStream:
@@ -62,13 +62,6 @@ class _DiscardStream:
 
     def flush(self):
         return None
-
-
-def _forward_decision(decision, notices=None):
-    if decision is not None:
-        emit_needs_decision(decision, notices=notices)
-        return True
-    return False
 
 
 def _resolve_branch_for_issue(issue_number, repo, root, scratch_dir, cwd=None):
@@ -215,9 +208,13 @@ def _is_clean_but_unpushed(decision):
     return not context.get("dirty") and (context.get("unpushed_commits") or 0) > 0
 
 
-def build_facts(branch_or_issue, repo, root=".", scratch_dir=None, cwd=None):
-    """Assemble the close receipt and return the envelope dict WITHOUT printing it. Returns
-    ``None`` after a ``needs_decision`` envelope has already been emitted."""
+def build_close(branch_or_issue, repo, root=".", scratch_dir=None, cwd=None, invoker_cwd=None):
+    """The pure close core (architecture.md §2's executor pattern): perform the close and return
+    ``(payload, notices, decision)`` — **never emits**. ``decision is not None`` means the
+    worktree was left in place and ``payload`` is ``None``. ``main`` is the thin emit wrapper; the
+    coordinator's prep composes this same core in-process, so every card it raises renders there
+    exactly as it does here. ``invoker_cwd`` (default: the process cwd) is the checkout the close
+    was invoked from — the ``cwd_inside_target`` guard's subject."""
     root = str(workspace._resolve_main_root(root))
     if scratch_dir is None:
         scratch_dir = "/tmp/gh-workspace-close-%s" % branch_or_issue.replace("/", "-")
@@ -228,12 +225,12 @@ def build_facts(branch_or_issue, repo, root=".", scratch_dir=None, cwd=None):
         branch, via, decision, notices = _resolve_branch_for_issue(
             branch_or_issue, repo, root, scratch_dir, cwd=cwd
         )
-        if _forward_decision(decision, notices=notices):
-            return None
+        if decision is not None:
+            return None, notices, decision
     else:
         branch, via = branch_or_issue, "arg"
 
-    invoker_cwd = Path.cwd()
+    invoker_cwd = Path(invoker_cwd) if invoker_cwd is not None else Path.cwd()
     payload, _rm_notices, rm_decision = workspace._build_remove_work(
         root, branch, invoker_cwd=invoker_cwd, merged_pr=None
     )
@@ -248,18 +245,17 @@ def build_facts(branch_or_issue, repo, root=".", scratch_dir=None, cwd=None):
             payload, _rm_notices, rm_decision = workspace._build_remove_work(
                 root, branch, invoker_cwd=invoker_cwd, merged_pr=merged_pr
             )
-    if _forward_decision(rm_decision, notices=notices):
-        return None
+    if rm_decision is not None:
+        return None, notices, rm_decision
 
     facts = {
         "repo": repo,
         "scratch": scratch_dir,
         "root": {"path": root},
         "branch_resolution": {"input": branch_or_issue, "branch": branch, "via": via},
-        "notices": notices,
     }
     facts.update(payload)  # the remove receipt verbatim: op/kind/branch/path/removed/teardown
-    return facts
+    return facts, notices, None
 
 
 def main(argv):
@@ -273,13 +269,13 @@ def main(argv):
     parser.add_argument("--cwd", default=None, help="explicit cwd for the gh calls (test injection)")
     args = parser.parse_args(argv)
 
-    facts = build_facts(
+    payload, notices, decision = build_close(
         args.branch_or_issue, args.repo, root=args.root, scratch_dir=args.scratch_dir, cwd=args.cwd
     )
-    if facts is None:
+    if decision is not None:
+        emit_needs_decision(decision, notices=notices)
         return EXIT_OK
-    notices = facts.pop("notices", [])
-    emit_ok(payload=facts, notices=notices)
+    emit_ok(payload=payload, notices=notices)
     return EXIT_OK
 
 
