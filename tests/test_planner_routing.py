@@ -930,6 +930,41 @@ class SectionOwnershipAndSizeTests(unittest.TestCase):
         self.assertIn("re-reads the prior file", spine.replace("re-reading", "re-reads"))
 
 
+class ReviewLoopExitAndDeltaScopeTests(unittest.TestCase):
+    """#88 (part). The S7 loop exited only on a pass with zero findings, so one SUGGESTION or NIT bought
+    another full review pass, and every pass re-verified the whole plan because the reviewer had no
+    changed-since-last-pass input (its "keep each pass focused on what changed" hint had nothing to read).
+    Only a BLOCKER keeps the loop running now; SUGGESTIONs are applied on merit, NITs discarded."""
+
+    def setUp(self):
+        self.spine = " ".join((PLAYBOOKS_DIR / SPINE).read_text(encoding="utf-8").split())
+        self.reviewer = " ".join(
+            (REFERENCES_DIR / "plan-reviewer-prompt.md").read_text(encoding="utf-8").split()
+        )
+
+    def test_only_a_blocker_keeps_the_loop_running(self):
+        self.assertIn("**Only a BLOCKER keeps the loop running**", self.spine)
+        self.assertIn("its merited SUGGESTIONs applied without another pass", self.spine)
+        self.assertNotIn("on empty findings exit clean", self.spine)
+
+    def test_suggestions_on_merit_nits_discarded(self):
+        self.assertIn("each SUGGESTION on its merit", self.spine)
+        self.assertIn("never a NIT", self.spine)
+
+    def test_circular_and_cap_exits_count_blockers(self):
+        self.assertIn("On a BLOCKER repeated with no progress (circular) or BLOCKERs left at the cap", self.spine)
+
+    def test_spine_passes_the_changed_summary(self):
+        self.assertIn("on passes 2+ `changed_summary`", self.spine)
+
+    def test_reviewer_prompt_is_delta_scoped_with_a_whole_plan_carve_out(self):
+        # The drafter's issue reviewer is the precedent; a whole-plan property (coverage, sequencing,
+        # section ownership, the size cap) can break from an edit elsewhere, so it re-runs.
+        self.assertIn("<<changed_summary>>", self.reviewer)
+        self.assertIn("never re-verify an unchanged claim you already confirmed", self.reviewer)
+        self.assertIn("a whole-plan check re-runs when a listed change touches its inputs", self.reviewer)
+
+
 class ReviseRetentionAndContractCompressionTests(unittest.TestCase):
     """#38 Phase 2. The two contributors to unbounded growth: a revise that annotates forward instead of
     superseding (8% of the measured 266 KB — small per run, since each revise adds only 0.9-2.1 KB, and

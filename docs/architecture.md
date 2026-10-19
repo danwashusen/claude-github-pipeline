@@ -514,6 +514,17 @@ evaluator's `apply` bucket cannot send a PR back over bookkeeping either. The ca
 bookkeeping fixes each created new sites to keep consistent: the next round found those as loop-induced
 defects, the count never fell, and the loop stalled phase after phase (#87).
 
+**The plan and issue review loops exit on blockers (4.41.0).** The planner's S7 loop and the drafter's
+full-tier loop used to exit only on a pass with zero findings, so a single SUGGESTION or NIT bought another
+full review pass, though the plan reviewer's own severity scale says a NIT never gates. Now only a BLOCKER
+keeps either loop running, and the circular and cap exits count BLOCKERs alone. The planner applies a
+SUGGESTION on its merit (would the plan as written confuse or mislead its reader?) and discards NITs; on
+the exit pass its merited SUGGESTIONs land without a re-review. The drafter shows the exit pass's
+suggestions and nits unapplied at its filing gate, the lean tier's posture. The plan reviewer also gains
+the issue reviewer's changed-since-last-pass input, so passes 2+ verify only what changed plus the prior
+BLOCKERs' resolutions, re-running a whole-plan check (coverage, sequencing, section ownership, the size
+cap) only when a change touches its inputs (#88).
+
 ## §9 Skill anatomy
 
 Every `SKILL.md` is a router with the same four sections, in order (for the standalone tools:

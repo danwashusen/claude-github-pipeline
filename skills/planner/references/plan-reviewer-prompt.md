@@ -63,6 +63,12 @@ failure mode; do not flag a plan for leaving line-level mechanics to the impleme
   precedent, and never invent a doc path to check against.
 - **Recorded ref** (context only): `<<plan_ref_recorded>>` — the `<plan-ref>@<short-sha>` the plan footer
   records, so you can name it in a finding. Do not run any git command against it.
+- **Changed since last pass**: `<<changed_summary>>` — passes 2+ only (absent on pass 1): each edit the
+  planner made since your last pass, by plan section, plus that pass's BLOCKERs. When present, verify
+  **only** the listed changed claims plus whether your prior BLOCKERs were resolved; never re-verify an
+  unchanged claim you already confirmed. One carve-out: a whole-plan check re-runs when a listed change
+  touches its inputs — DoD and slice coverage (Dimension 7), sequencing (Dimension 5), section ownership
+  and the size cap (Dimension 3) — because an edit in one section can break a property of the whole.
 - **Dimensions to check**: `<<dimensions>>` — a subset of {1..10}. Run only the listed dimensions; don't
   fabricate findings outside the list.
 - **External sources**: `<<external_sources>>` — URLs or file paths the planner was told to treat as
@@ -384,5 +390,5 @@ unrelated branch and produce false findings), and never run ref arithmetic.
 - `WebFetch <url>` — fetch an external source from `<<external_sources>>`; if unreachable, note that in
   the finding rather than guessing.
 
-Be efficient: read each doc at most once, prefer `grep` over re-reading source, and keep each pass
-focused on what changed since the previous pass (the orchestrator may invoke you up to three times).
+Be efficient: read each doc at most once, prefer `grep` over re-reading source, and on passes 2+ keep to
+the changed-since-last-pass scope named in the inputs (the orchestrator may invoke you up to three times).
