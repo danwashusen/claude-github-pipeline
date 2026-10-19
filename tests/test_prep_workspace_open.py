@@ -14,6 +14,7 @@ import sys
 import tempfile
 import unittest
 from pathlib import Path
+from unittest import mock
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 SCRIPTS_DIR = REPO_ROOT / "scripts"
@@ -21,6 +22,7 @@ SCRIPT = SCRIPTS_DIR / "prep_workspace_open.py"
 
 sys.path.insert(0, str(SCRIPTS_DIR))
 
+import prep_workspace_open  # noqa: E402
 from tests.support import envelope_asserts, gitsandbox, shimenv  # noqa: E402
 
 
@@ -408,6 +410,36 @@ class EnsureGatePropagationTests(PrepWorkspaceOpenSandboxTestCase):
         self.assertEqual(envelope["status"], "needs_decision")
         self.assertEqual(envelope["decision"]["code"], "BRANCH_IN_USE")
 
+    def test_branch_in_use_is_raised_before_the_link_create(self):
+        """SKILL.md §1: every decision is raised before any link or worktree side effect. The
+        `gh issue develop <N> --name` create pushes a branch to origin and links it, so a declined
+        BRANCH_IN_USE card raised after it would leave both behind. The shim is stateless and the
+        create degrades any failure to a notice the decision path drops, so the only observable
+        proof is the core itself — driven in-process, as the coordinator composes it."""
+        elsewhere_ctx = tempfile.TemporaryDirectory()
+        self.addCleanup(elsewhere_ctx.cleanup)
+        elsewhere = Path(elsewhere_ctx.name) / "elsewhere-wt"
+        _git(["worktree", "add", str(elsewhere), "-b", "100-fix-the-widget"], self.root)
+        env = shimenv.intercepted_env(
+            base_env=os.environ, fixture_case="prep_workspace_open_fresh"
+        )
+        with mock.patch.dict(os.environ, env, clear=True), mock.patch.object(
+            prep_workspace_open, "_create_linked_branch", return_value=(True, None)
+        ) as create:
+            payload, _notices, decision = prep_workspace_open.build_open(
+                "100", "octo/widgets", root=str(self.root), scratch_dir=self.scratch
+            )
+        create.assert_not_called()
+        self.assertIsNone(payload)
+        self.assertEqual(decision["code"], "BRANCH_IN_USE")
+        context = decision["context"]
+        self.assertEqual(context["branch"], "100-fix-the-widget")
+        self.assertEqual(Path(context["existing_path"]), elsewhere.resolve())
+        self.assertEqual(
+            Path(context["requested_path"]),
+            (self.root / ".worktrees" / "100-fix-the-widget").resolve(),
+        )
+        self.assertFalse((self.root / ".worktrees").exists())
 
 if __name__ == "__main__":
     unittest.main()
