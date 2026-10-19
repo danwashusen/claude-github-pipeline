@@ -113,12 +113,12 @@ stated tier; a **proxy-filed follow-up (lean review)** invocation is always **le
 
 - **lean** — exactly one pass: drop unevidenced findings, apply blockers; show suggestions and nits
   **unapplied** at the filing gate (auto-applying is the ratchet — it regrows the review surface).
-- **full** — up to **3 passes** (the 3-pass cap): drop unevidenced findings; none left → exit clean; a
-  finding repeated across two passes with no progress → **circular** exit; three passes with findings
+- **full** — up to **3 passes** (the 3-pass cap): drop unevidenced findings; **only a blocker keeps the loop running** — a pass with none left exits clean, its suggestions and nits shown **unapplied** at the filing gate (the lean posture: no pass for polish);
+  a blocker repeated across two passes with no progress → **circular** exit; three passes with blockers
   left → **cap** exit; passes 2+ get a changed-since-last-pass summary and verify only changed claims +
   prior findings' resolutions — never re-verify an unchanged claim. On a cap/circular exit, show the
   draft + a "Review notes" block and gate (`header: "Review loop"`): **It's real, keep fixing** /
-  **Override and file**. Apply blockers always, suggestions by default, nits silently.
+  **Override and file**. A pass with a blocker left applies blockers always, suggestions by default, nits silently.
 
 ## Show + filing gate
 

@@ -926,6 +926,15 @@ class ReviewTierAndAnchorRuleTests(unittest.TestCase):
             "full-tier passes 2+ must be delta-scoped (pass 2 of the incident re-verified everything)",
         )
 
+    def test_full_tier_exits_on_blockers_with_polish_shown_unapplied(self):
+        # #88 (part): "none left → exit clean" let one suggestion or nit buy a full extra pass.
+        self.assertIn("**only a blocker keeps the loop running**", self.spine_flat)
+        self.assertIn(
+            "its suggestions and nits shown **unapplied** at the filing gate", self.spine_flat
+        )
+        self.assertIn("three passes with blockers left → **cap** exit", self.spine_flat)
+        self.assertNotIn("none left → exit clean", self.spine_flat)
+
     def test_spine_binds_grounding_to_absolute_root(self):
         self.assertIn(
             "by absolute path",
