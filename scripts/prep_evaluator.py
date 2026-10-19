@@ -76,6 +76,7 @@ import gh_pr_gather  # noqa: E402
 import parse  # noqa: E402
 import plan_parts  # noqa: E402  (the plan's part comments — skills/_shared/plan-parts.md)
 import plan_shipped  # noqa: E402  (the shipped-phase records a relocated plan's detail lives in)
+import story_set  # noqa: E402  (the epic story set's two-tier read)
 import workspace  # noqa: E402
 from pipelib import process  # noqa: E402
 from pipelib.decisions import AMBIGUOUS, DOC_CATALOGUE_ABSENT, needs_decision  # noqa: E402
@@ -353,15 +354,6 @@ def _detect_pr_type(base_ref_name, head_ref_name, root_branch):
 # ---------------------------------------------------------------------------
 
 
-def _parse_stories_checklist(epic_body):
-    """Filed-story entries in a legacy epic's ``## Stories`` section — the ``checklist`` source of the
-    story-set read, through the one shared scanner (`parse.parse_stories_section`; this module kept
-    its own grammar until 4.33.1). Placeholder bullets (no ``#NN`` yet) are skipped: this reader
-    answers "which stories exist and are they closed", and an unfiled bullet is neither.
-    """
-    return [entry for entry in parse.parse_stories_section(epic_body) if entry["number"] is not None]
-
-
 # The thread read-back lives in `pipelib.thread` (three preps scan threads; one home).
 _load_thread = load_thread
 
@@ -624,42 +616,18 @@ def _unavailable_story_set(epic_number):
 
 def _story_set_facts(epic_number, envelope):
     """The epic's story set from its gather envelope, per ``skills/_shared/epic-story-hierarchy.md``'s
-    two-tier read — shared by the story route and the epic-integration route."""
+    two-tier read — shared by the story route and the epic-integration route. `stories_source` reads
+    the checklist half as every filed bullet, and an epic with no stories as `checklist`."""
     sub_issues = envelope.get("sub_issues") or []
-    stories = [
-        {
-            "number": node.get("number"),
-            "title": node.get("title"),
-            "state": node.get("state"),
-            "closed": (node.get("state") or "").upper() == "CLOSED",
-        }
-        for node in sub_issues
-    ]
-    native_numbers = {story["number"] for story in stories}
-
     epic_body = envelope.get("issue_body")
     if epic_body is None and envelope.get("issue_body_mode") == "path":
         epic_body = Path(envelope["issue_body_path"]).read_text(encoding="utf-8")
-    checklist_entries = _parse_stories_checklist(epic_body or "")
-    stories.extend(
-        {
-            "number": entry["number"],
-            "title": entry["title"],
-            "state": None,
-            "closed": entry["checked"],
-        }
-        # Native state wins on overlap; a checklist bullet for an already-native story is a stale
-        # duplicate, not a second story.
-        for entry in checklist_entries
-        if entry["number"] not in native_numbers
+    read, _decision = story_set.read(sub_issues, epic_body or "")
+    stories = story_set.closed_view(read)
+    stories_source = (
+        story_set.source(read["native"], story_set.filed(read["checklist_raw"]))
+        or story_set.SOURCE_CHECKLIST
     )
-
-    if native_numbers and checklist_entries:
-        stories_source = "mixed"
-    elif native_numbers:
-        stories_source = "sub-issues"
-    else:
-        stories_source = "checklist"
 
     return {
         "number": epic_number,

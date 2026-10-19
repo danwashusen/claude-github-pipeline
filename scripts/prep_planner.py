@@ -242,6 +242,7 @@ import gh_gather  # noqa: E402
 import gh_pr_gather  # noqa: E402
 import oq_tracker  # noqa: E402
 import plan_shipped  # noqa: E402  (legacy shipped-phase records: the revise folds them back)
+import story_set  # noqa: E402  (the epic story set's two-tier read)
 import parse  # noqa: E402  (the prior plan's `## Phases` parse for the sub-issue diff — best-effort,
 # see step 4.5; also keeps `prep_planner.parse` resolving for tests/test_prep_planner.py's direct
 # `prep_planner.parse.parse_oq_links(...)` call, per the S14-promotion's "tests unmodified" bar.
@@ -447,6 +448,30 @@ def _discover_epic_branch(root, epic_number):
 # story. This module carried a byte-for-byte copy until 4.33.1, which is how the mention-is-parent
 # bug lived in two places.
 _search_parent_epic = branching.search_parent_epic
+
+
+def _epic_story_set(sub_issues, issue_body, repo, cwd=None):
+    """The epic's story set (`story_set.read`), each filed checklist-only story's live state fetched
+    so the flow can reconcile body checkboxes against reality. `stories_source` reads the checklist
+    half as every parsed bullet, and an epic with no stories as `checklist`. Returns
+    `(story_entries, stories_source, decision_or_none)`."""
+    stories, decision = story_set.read(
+        sub_issues, issue_body, fetch_state=lambda number: _fetch_story_state(repo, number, cwd=cwd)
+    )
+    if decision is not None:
+        return None, None, decision
+    story_entries = [
+        {
+            "number": e["number"],
+            "title": e["title"],
+            "checked": e["checked"],
+            "state": e["state"],
+            "live_title": e["live_title"],
+        }
+        for e in stories["native"] + stories["checklist"]
+    ]
+    stories_source = story_set.source(stories["native"], stories["checklist_raw"]) or story_set.SOURCE_CHECKLIST
+    return story_entries, stories_source, None
 
 
 def _fetch_story_state(repo, story_number, cwd=None):
@@ -1607,49 +1632,11 @@ def build_facts(
         # section at all, so reading only the body would report `stories_filed: false` for an epic
         # whose stories are filed — routing the planner's handoff to the drafter to file stories that
         # already exist.
-        story_entries = []
-        for node in issue_envelope.get("sub_issues") or []:
-            live_state = node.get("state")
-            story_entries.append(
-                {
-                    "number": node.get("number"),
-                    "title": node.get("title"),
-                    "checked": (live_state or "").upper() == "CLOSED",
-                    "state": live_state,
-                    "live_title": node.get("title"),
-                }
-            )
-        native_numbers = {e["number"] for e in story_entries}
-
-        checklist_entries = parse.parse_stories_section(issue_body)
-        for entry in checklist_entries:
-            if entry["number"] is not None and entry["number"] in native_numbers:
-                # Already carried natively, with authoritative live state.
-                continue
-            if entry["number"] is not None:
-                state_fact, decision = _fetch_story_state(repo, entry["number"], cwd=cwd)
-                if _forward_decision(decision, notices=notices):
-                    return None
-                story_entries.append(
-                    {
-                        "number": entry["number"],
-                        "title": entry["title"],
-                        "checked": entry["checked"],
-                        "state": state_fact["state"],
-                        "live_title": state_fact["title"],
-                    }
-                )
-            else:
-                story_entries.append(
-                    {"number": None, "title": entry["title"], "checked": entry["checked"], "state": None, "live_title": None}
-                )
-
-        if native_numbers and checklist_entries:
-            stories_source = "mixed"
-        elif native_numbers:
-            stories_source = "sub-issues"
-        else:
-            stories_source = "checklist"
+        story_entries, stories_source, decision = _epic_story_set(
+            issue_envelope.get("sub_issues"), issue_body, repo, cwd=cwd
+        )
+        if _forward_decision(decision, notices=notices):
+            return None
 
         delivery_log_facts, dl_decision = _read_delivery_log(
             thread_list, scratch_dir, issue_number

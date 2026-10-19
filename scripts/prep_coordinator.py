@@ -56,6 +56,7 @@ import plan_parts  # noqa: E402
 import oq_tracker  # noqa: E402  (the open-question gate the resolver also composes)
 import prep_workspace_close  # noqa: E402
 import prep_workspace_open  # noqa: E402
+import story_set  # noqa: E402
 import workspace  # noqa: E402
 from pipelib.envelope import EXIT_OK, emit_needs_decision, emit_ok  # noqa: E402
 from pipelib.thread import load_thread  # noqa: E402
@@ -486,27 +487,10 @@ def build_unit(g, envelope, branches):
 def _story_set(envelope):
     """The epic's stories through `epic-story-hierarchy.md`'s two-tier read (native first, the
     legacy `## Stories` checklist second, unioned) — the same shape as the evaluator's
-    ``_story_set_facts``."""
-    sub_issues = envelope.get("sub_issues") or []
-    stories = [
-        {"number": node.get("number"), "title": node.get("title"), "state": node.get("state"),
-         "closed": (node.get("state") or "").upper() == "CLOSED"}
-        for node in sub_issues
-    ]
-    native = {story["number"] for story in stories}
-    checklist = [e for e in parse.parse_stories_section(_text(envelope, "issue_body")) if e["number"] is not None]
-    stories.extend(
-        {"number": e["number"], "title": e["title"], "state": None, "closed": e["checked"]}
-        for e in checklist if e["number"] not in native
-    )
-    if native and checklist:
-        source = "mixed"
-    elif native:
-        source = "sub-issues"
-    elif checklist:
-        source = "checklist"
-    else:
-        source = None
+    ``_story_set_facts``, through `story_set`; no stories at all reports no source."""
+    read, _decision = story_set.read(envelope.get("sub_issues"), _text(envelope, "issue_body"))
+    stories = story_set.closed_view(read)
+    source = story_set.source(read["native"], story_set.filed(read["checklist_raw"]))
     return stories, source
 
 

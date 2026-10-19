@@ -16,9 +16,9 @@ artifact and no package manager. The "source" is:
   naming / type detection / prior-PR rows / linked branches — import-only), `parse.py` (DoD /
   open-question-links / phases), the thirteen `prep_*.py`
   state-assembly scripts (including `prep_workspace_open.py` / `prep_workspace_close.py`, whose
-  prep IS the tool's action, and `prep_coordinator.py`, which composes their pure cores), the `oq_tracker.py` and `doc_catalogue.py` helpers the preps compose
+  prep IS the tool's action, and `prep_coordinator.py`, which composes their pure cores), the `oq_tracker.py`, `doc_catalogue.py` and `story_set.py` helpers the preps compose
   (the open-question tracker search and the open-question gate the resolver and coordinator share;
-  the consuming repo's declared grounding docs), `plan_parts.py`
+  the consuming repo's declared grounding docs; an epic's two-tier story set), `plan_parts.py`
   (one plan, three comments: the planner's `split`, every reader's assembly), `plan_shipped.py`
   (the legacy shipped-phase records' read model + the planner's fold-back `check`), and
   `scripts/pipelib/` (envelope, spill, decision codes, platform limits, hashing, the locked-down subprocess
@@ -401,7 +401,8 @@ now the same rule everything else follows rather than an exception.
   filing time on every path that files a child (fresh cut, promotion, a resume's new children), plus the
   one after-the-fact path, `gh_persist.py add-parent`, which adopts an already-filed issue so an epic can
   be drawn around stories authored upstream. Read by the **planner**, **resolver**, and **evaluator** through a two-tier read — native
-  first, the legacy `## Stories` checklist second, `stories_source` reporting which answered. A fresh
+  first, the legacy `## Stories` checklist second, `stories_source` reporting which answered
+  (one read, `scripts/story_set.py`, which the slicer's and coordinator's preps compose too). A fresh
   epic body has **no** `## Stories` section (a checklist can't self-tick and can't drive GitHub's panel,
   rollup, or a Project's Sub-issues progress field). The fallback is load-bearing: there is **no
   backfill path**, so epics filed before 3.1.0 — and any host where `subissues_available: false` — live
