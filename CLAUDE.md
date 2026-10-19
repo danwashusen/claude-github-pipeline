@@ -498,7 +498,7 @@ now the same rule everything else follows rather than an exception.
   resolved when its issue closes or is adopted as a story, instead of re-blocking on it.
 - `polish-ledger.md` — the `## Polish` PR-body section: the findings the resolver's review loop recorded
   instead of fixing — polish it left on the PR's own code, polish in code the PR does not change, and
-  findings with no shown cost (recorded `drop` without asking) — per its provenance-first rubric (the loop exits on
+  findings with no shown cost, a non-material doc or comment finding included (recorded `drop` without asking) — per its provenance-first rubric (the loop exits on
   **defect** progress alone, so polish never keeps it running). One line per item with a stable `P<phase>.<seq>` id and a closed disposition set
   (`open` / `applied` resolver-written; `apply` / `file` / `drop` the **operator's** answers, recorded by
   whichever skill asked). The operator decides every entry on a `Polish` card, first at the **resolver's

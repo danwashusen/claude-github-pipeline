@@ -73,8 +73,9 @@ Classify every listed item on three axes, in order: its **provenance**, its **bu
 Addressable item — its **tier**. Provenance comes first because it predicts the right call best: an
 audit of one repo's review-loop follow-ups found that the findings a PR introduced were the ones most
 often wrongly deferred (fixable in the PR, or a plan gap), and that the ones it did not introduce were
-correctly deferred four times in five. Record provenance and tier beside each item in the round reply, so the call can be
-audited.
+correctly deferred four times in five. A finding on a doc change also passes the **materiality** test
+after provenance and before its bucket. Record provenance and tier beside each item in the round reply,
+so the call can be audited.
 
 **Provenance** — whose problem it is:
 
@@ -87,6 +88,28 @@ audited.
   the same invariant, guard, helper, contract row or ruling, in the same file or seam — unless a later
   phase in `facts.phases` ships that site, which is Deferred-by-plan.
 - **pre-existing** — neither: found in code this PR does not change and the plan does not assign to it.
+
+**Materiality** — whether a finding on a doc change matters. It applies to every finding whose site is a
+doc file or a code comment, in any PR. A finding about what code does is never tested here. The test:
+would the doc or comment, as it stands, mislead a builder, reviewer or auditor into a wrong decision?
+
+- **material** — yes: a documented key or contract that disagrees with the code (a builder would drop
+  valid rows), a race between two writers described as "no contention", an access-control residual the
+  doc denies. It takes its bucket and tier as normal — a defect when it breaks a contract.
+- **not material** — no: bookkeeping. Status and date stamps, version rows, citation dates, summary or
+  index rows echoing a correction made elsewhere, a length or format convention with no reader impact.
+  It takes the **No shown cost** bucket whatever its provenance: never a defect, never in S5.1's defect
+  count, never fixed in-loop by the polish rule or the "Apply criteria" rule.
+
+The bar is always on: no operator switch, no test of the PR's shape, so a resumed session applies it
+from this text and nothing records it. Append it to the reviewer's `<context>` (S5.1 "Invocation") as
+"for doc changes (doc files and code comments), report only material findings — ones that would mislead
+a builder, reviewer or auditor into a wrong decision"; this rubric stays the floor when the reviewer
+reports one anyway. Bookkeeping findings that share a theme (every date stamp a fix left stale) are one
+ledger entry naming the sites, not one entry each, so the `## Polish` ledger does not grow toward the
+body cap on a docs sweep. It exists because a docs sweep's bookkeeping fixes each created new sites to keep
+consistent, the next round found those as loop-induced defects, and the loop stalled phase after phase
+on findings the operator called "trivial and almost pointless" (#87).
 
 **Buckets:** check the other buckets first — a finding that fits Plan-settled, Refuted, Deferred-by-plan,
 No shown cost or Decision-required takes that bucket. Addressable is the default for the introduced and
@@ -105,10 +128,11 @@ adjacent findings none of them fits.
   - **defect** — correctness, a broken contract or invariant, data loss or corruption, security, a test
     gap that would let a real bug through (a test or control this PR wrote that cannot fail included), or
     an unfinished `## Changes` entry of the phase being built (the plan requires it; the diff does not
-    deliver it yet). Keeps the loop open (S5.1 step 3 counts these). **Tie-break:** when defect-vs-polish
-    is unclear, tier it defect if the finding cites a plan decision or shows a test that could not fail,
-    and record the doubt in the round reply — the likely mis-tiering is a test gap under-tiered as polish,
-    which settles the loop early. An **introduced** defect is fixed in this PR: it leaves only through an
+    deliver it yet). A doc or comment finding is a defect only when it is **material**. Keeps the loop
+    open (S5.1 step 3 counts these). **Tie-break:** when defect-vs-polish is unclear, tier it defect if
+    the finding cites a plan decision or shows a test that could not fail, and record the doubt in the
+    round reply — the likely mis-tiering is a test gap under-tiered as polish, which settles the loop
+    early. An **introduced** defect is fixed in this PR: it leaves only through an
     operator answer — a guard-rail card's **Re-plan**, **Accept + defer**, **Accept current**, **Defer the
     tests**, **Push with reds**, **Restructure**, **Abort** or **Abort loop**, or their approval on the
     end-of-loop checkpoint card (step 6's unprovable assertion) — never through a filing of your own, and
@@ -124,15 +148,17 @@ adjacent findings none of them fits.
       review — so record it for the ledger;
     - it reaches beyond this PR's seam (an extraction across modules, a convention changed in files this
       PR does not touch) → record it for the ledger;
-    - it is a doc the repo routes through a named command or process this session may not run → the
-      **docs lane** (Explicitly-deferred);
+    - it is a **material** finding on a doc the repo routes through a named command or process this
+      session may not run → the **docs lane** (Explicitly-deferred); a non-material one is no shown cost;
     - it has no shown cost — taste (two reasonable forms, and the reviewer prefers the other), a
-      speculative performance or memoisation win, hardening code the plan is removing → record it for the
-      ledger as `drop` with the note `no shown cost: <why>` (the **No shown cost** bucket).
+      speculative performance or memoisation win, hardening code the plan is removing, a doc or comment
+      finding that is not material → record it for the ledger as `drop` with the note
+      `no shown cost: <why>` (the **No shown cost** bucket).
 
     **Always fix in-loop, never ledger**, polish matching the evaluator's `apply` criteria
     ([`../../_shared/polish-ledger.md`](../../_shared/polish-ledger.md) "Apply criteria"), whatever it
-    costs: parked, it only buys a revision session later. Polish never keeps the loop open. (This
+    costs: parked, it only buys a revision session later. A doc or comment finding meets those criteria
+    only when it is material. Polish never keeps the loop open. (This
     replaced the Cheap-fix-override bucket, which forced every ≤ ~20-line fix and fed an unbounded tail
     of polish rounds — and then a cost gate, which parked the PR's own small fixes as follow-ups.)
     "Record it for the ledger" means hold it for S5.2's `## Polish` write (step 8); the final pass's
@@ -143,7 +169,8 @@ adjacent findings none of them fits.
   changed — a site in the defect-fix record, this session's or a prior session's on this phase — or when
   it is the same change at a sibling site of a class fix already addressed (that fix was incomplete). The
   record names defect-fix sites only, because one round commit also carries that round's polish. A file
-  touched only by polish or comment edits never makes a finding loop-induced. S5.1 step 3 reads this;
+  touched only by polish or comment edits never makes a finding loop-induced, and a finding that is not
+  material is never a defect, so it never counts as loop-induced either. S5.1 step 3 reads this;
   nothing else does.
 
 - **Pre-existing** — what the reviewer found in code this PR does not change:
@@ -154,7 +181,8 @@ adjacent findings none of them fits.
   - polish → record it for the ledger, unfixed; finalisation puts it to the operator.
 - **No shown cost** — a claim with no reachable path or demonstrated cost: a speculative performance or
   memoisation win, a bypass with no instance, hardening code the plan is removing, a dev-only tool with no
-  failure. Record it for the ledger as `drop` with the note `no shown cost: <why>` — decided, so it never
+  failure — and the bookkeeping class: a doc or comment finding that fails the **materiality** test.
+  Record it for the ledger as `drop` with the note `no shown cost: <why>` — decided, so it never
   reaches a `Polish` card (finalisation's digest lists it, and the operator can revive it); never file
   it. It applies whatever the provenance — the PR's own code included, which the polish rule's
   no-shown-cost exception routes here. It is not Refuted: Refuted needs evidence the claim is false,

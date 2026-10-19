@@ -230,13 +230,13 @@ every phase.
 non-final phase, `high` on the final one (`review` inherits whatever level the operator last typed when
 none is passed); the three-dot range on **every** phase — the scope rule's `<base>`, the cumulative
 range on the final one — because a `review` left to find its own target reads the stale PR, or only the
-commits since upstream; `<context>` on every phase =
-`facts.phases` with the current phase marked, plus the plan's `## Architecture decisions` /
-`## UI decisions` / `## Deviations from project docs` bullets, so the reviewer can read a half-wired
-seam as deferred and a locked decision as locked. Assemble `<context>` once at loop entry and reuse it
+commits since upstream; `<context>` on every phase = `facts.phases` with the current phase marked, the
+plan's `## Architecture decisions` / `## UI decisions` / `## Deviations from project docs` bullets (so
+the reviewer reads a half-wired seam as deferred and a locked decision as locked), and the reference's
+**materiality** bar for doc findings, in its words. Assemble `<context>` once at loop entry and reuse it
 verbatim every round; only the current-phase marker differs between phases. Range and context are
 best-effort — an argument the skill does not honour is appended to its prompt as text — and the fix
-round's settled buckets are the floor whether or not they reached the reviewer. A verdict that read
+round's settled buckets are the floor, its materiality bar too, whether or not they reached the reviewer. A verdict that read
 nothing (no file named, an approve with no evidence of the diff) — or that cites hunks absent from the
 local range — is not a verdict: stage `git diff <base>...HEAD` to `<facts.scratch>/review-diff.patch`
 and re-invoke naming that path.
