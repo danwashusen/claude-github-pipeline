@@ -35,7 +35,8 @@ Editing this repo means editing prompts and Python. The README is the user-facin
 file is for someone *modifying the plugin*.
 
 Runtime dependencies: `python3` (≥ 3.9, **stdlib only** — no third-party packages, no venv, no pip
-step), `git` (≥ 2.38), and `gh` (≥ 2.40, authenticated — `gh auth status`). Nothing else. Scripts
+step), `git` (≥ 2.38), and `gh` (≥ 2.40, authenticated — `gh auth status`; `--attach` needs ≥ 2.99
+and is gated). Nothing else. Scripts
 are executables (`#!/usr/bin/env python3`) invoked by absolute path via
 `${CLAUDE_PLUGIN_ROOT}/scripts/...`.
 
@@ -234,7 +235,16 @@ per [architecture.md §7](docs/architecture.md)'s mapping table).
   are capability-gated with a `DEPS_UNSUPPORTED` notice and a prose-link fallback, and
   `create --parent` — the native parent/sub-issue write that makes an epic's stories real
   sub-issues — with a `SUBISSUES_UNSUPPORTED` notice. A create carrying both relations descends a
-  rung-per-relation ladder, safe because a failed `create` files nothing.
+  rung-per-relation ladder, safe because a failed `create` files nothing. The body ops and the
+  issue/pr `comment` take a repeatable `--attach FILE[#alt]` (gh ≥ 2.99, 4.41.0). That is how a PR
+  that changes what a user sees carries screenshots (`skills/resolver/references/pr-screenshots.md`).
+  gh rewrites a body reference only when it names the file by the **exact** path passed. Unlike
+  the relations, an old gh is never retried without the flag, since the body would ship dangling
+  local paths: exit 1, stderr `ATTACH_UNSUPPORTED:`. A partial upload (non-zero exit, URL printed)
+  is a landed write with an `ATTACH_PARTIAL` notice, never a hard failure the caller would re-run
+  into a duplicate. A body op reads the rewritten body back as `posted_body_path` (`<stem>.posted.md`),
+  and the next restage starts from that file, not the local copy. This derives the rewritten body,
+  it does not verify the write, so §12 holds.
 - `config_block.py` — deterministic marker-block `read`/`list`/`upsert`/`remove`; the single
   execution path for `setup`, and the block reader `workspace.py` composes in-process.
 - `workspace.py` — the worktree mechanics owner: `attach` (the v3 stage-session assertion —

@@ -495,7 +495,7 @@ class CreateDepsUnsupportedFallbackTests(unittest.TestCase):
             )
             buf = io.StringIO()
             with contextlib.redirect_stdout(buf):
-                exit_code = gh_persist._cmd_create(args)
+                exit_code = gh_persist._cmd_create(args, parser)
             env = json.loads(buf.getvalue().splitlines()[0])
             self.assertEqual(exit_code, 0)
             self.assertEqual(env["status"], "ok")
