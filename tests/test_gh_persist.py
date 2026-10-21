@@ -2314,6 +2314,35 @@ class AttachTests(unittest.TestCase):
                 self._assert_refused(["edit-pr-body", "o/r", "6", str(self.body), "--attach", value],
                                      fragment)
 
+    def test_a_relative_path_is_refused_even_when_it_resolves_under_cwd(self):
+        # gh resolves a relative path against --cwd, the check against the script's own cwd: the two
+        # can disagree, and the body's exact-string match needs the absolute path anyway.
+        self._assert_refused(
+            ["--cwd", str(self.tmp), "edit-pr-body", "o/r", "6", str(self.body),
+             "--attach", "after.png"],
+            "needs an absolute path",
+        )
+
+    def test_a_hash_inside_the_path_is_named_not_reported_missing(self):
+        hashed_dir = self.tmp / "run#3"
+        hashed_dir.mkdir()
+        (hashed_dir / "shot.png").write_bytes(b"x")
+        for value in (str(hashed_dir / "shot.png"), str(hashed_dir / "shot.png") + "#Alt"):
+            with self.subTest(value=value):
+                self._assert_refused(
+                    ["edit-pr-body", "o/r", "6", str(self.body), "--attach", value],
+                    "path contains '#'",
+                )
+
+    def test_alt_text_containing_a_hash_still_attaches(self):
+        code, env, err, _calls = self._in_process(
+            ["edit-pr-body", "o/r", "6", str(self.body), "--attach", "%s#C# sample" % self.shot,
+             "--dry-run"],
+            [],
+        )
+        self.assertEqual(code, 0, msg=err)
+        self.assertEqual(env["attachments"], ["%s#C# sample" % self.shot])
+
     def test_more_than_fifty_attachments_is_refused(self):
         argv = ["create-pr", "o/r", str(self.body), "--title", "T", "--base", "b", "--head", "h"]
         argv += ["--attach", str(self.shot)] * 51
@@ -2328,8 +2357,11 @@ class AttachTests(unittest.TestCase):
         self.assertEqual(code, 0)
         self.assertEqual(calls, [])
         self.assertEqual(env["decision"]["code"], "BODY_TOO_LONG")
-        self.assertEqual(env["decision"]["context"]["attachment_allowance_chars"],
-                         gh_persist._ATTACH_CHAR_ALLOWANCE)
+        context = env["decision"]["context"]
+        self.assertEqual(context["attachment_allowance_chars"], gh_persist._ATTACH_CHAR_ALLOWANCE)
+        # actual_chars stays the body's own length; only the overage counts the allowance.
+        self.assertEqual(context["actual_chars"], gh_persist.BODY_CHAR_LIMIT - 100)
+        self.assertEqual(context["overage_chars"], gh_persist._ATTACH_CHAR_ALLOWANCE - 100)
 
     # -- capability miss: an old gh --
 
@@ -2388,6 +2420,19 @@ class AttachTests(unittest.TestCase):
         self.assertEqual(code, 0, msg=err)
         self.assertEqual(env["notices"], ["ATTACH_PARTIAL"])
         self.assertEqual([c[1:3] for c in calls], [["issue", "create"], ["issue", "view"]])
+
+    def test_non_url_stdout_on_a_failed_write_is_a_hard_failure(self):
+        # Only a GitHub URL proves the write landed; a stray stdout line on a failure must not turn a
+        # real failure into `ok` + ATTACH_PARTIAL.
+        failure = process.CommandResult(returncode=1, stdout="warning: something odd\n",
+                                        stderr="GraphQL: could not resolve\n")
+        code, env, err, calls = self._in_process(
+            ["edit-pr-body", "o/r", "6", str(self.body), "--attach", str(self.shot)], [failure]
+        )
+        self.assertEqual(code, 1)
+        self.assertIsNone(env)
+        self.assertEqual(len(calls), 1)
+        self.assertEqual(err, "GraphQL: could not resolve\n")
 
     def test_a_failed_read_back_is_a_notice_not_a_failure(self):
         code, env, err, calls = self._in_process(

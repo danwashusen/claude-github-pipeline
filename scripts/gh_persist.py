@@ -197,7 +197,9 @@ gh rewrites each body reference that names the file to a repo-scoped ``user-atta
 appends any attachment the body does not reference (``#alt`` is its alt text; gh's syntax, forwarded
 verbatim). The match is the **exact string** passed as ``F`` (checked live: ``![a](/abs/shot.png)``
 is rewritten for ``--attach /abs/shot.png``; ``./shot.png`` and ``shot.png`` are not, and get
-appended instead), so a caller references each file by the same absolute path it attaches.
+appended instead), so a caller references each file by the same absolute path it attaches — and
+the path must be absolute, refused otherwise (a relative one would resolve against ``--cwd`` for gh
+but against this script's cwd for the existence check).
 ``gh pr review`` has no ``--attach``, so ``comment pr-review`` refuses it as a usage error. Every
 other refusal is up front too, before any write: a missing or empty file, a type gh rejects, more
 than gh's 50 per command. gh would refuse those itself without writing (checked live), but
@@ -212,8 +214,8 @@ refusing here keeps the failure a usage error, not a hard one. Four further rule
   sub-issue classifiers — ``_DEPS_ERROR_PATTERN``'s bare ``unknown flag`` would otherwise read an
   attach miss as a deps miss and descend ``create``'s ladder.
 - **Partial upload.** When some attachments fail, gh still writes with the ones that succeeded and
-  prints the URL, but exits non-zero. A non-zero exit WITH a URL on stdout is therefore a landed
-  write: ``ok`` with an ``ATTACH_PARTIAL`` notice and gh's stderr as ``attach_stderr``. Treating it
+  prints the URL, but exits non-zero. A non-zero exit whose stdout is a GitHub issue/PR/comment URL
+  (``_GITHUB_URL_PATTERN``; any other stdout is not proof of a write) is therefore a landed write: ``ok`` with an ``ATTACH_PARTIAL`` notice and gh's stderr as ``attach_stderr``. Treating it
   as a hard failure would make the caller re-run and double-file.
 - **Size headroom.** A rewritten reference is longer than the local path it replaces, and an
   appended attachment adds a line, so the size gate counts ``_ATTACH_CHAR_ALLOWANCE`` characters per
@@ -334,6 +336,9 @@ _ATTACH_TYPES = frozenset({"png", "jpg", "jpeg", "gif", "webp", "svg", "mp4", "m
 # path it replaces, and an unreferenced attachment is appended as a new `![alt](url)` line.
 _ATTACH_CHAR_ALLOWANCE = 200
 
+# The one thing gh prints on stdout for a write that landed: the issue, PR or comment URL.
+_GITHUB_URL_PATTERN = re.compile(r"https://[^\s]+/(issues|pull)/\d+(#issuecomment-\d+)?")
+
 _ATTACH_UNSUPPORTED_MESSAGE = (
     "ATTACH_UNSUPPORTED: gh >= 2.99 is required for --attach; nothing was written. Restage the "
     "body without the attachment references and retry without --attach.\n"
@@ -346,13 +351,27 @@ def _is_attach_error(stderr_text):
 
 def _check_attachments(attach, parser):
     """Refuse a bad ``--attach`` list as a usage error, before the body gate and before any gh call.
-    ``#alt`` is split off only to find the file; the value is forwarded to gh unchanged."""
+    ``#alt`` is split off only to find the file; the value is forwarded to gh unchanged.
+
+    Paths must be absolute. gh resolves a relative one against ``--cwd`` while this check would
+    resolve it against the script's own cwd, so the two could disagree; and gh matches the body's
+    reference by exact string, which only an absolute path keeps stable across both.
+    """
     if len(attach) > _ATTACH_MAX:
         parser.error("--attach takes at most %d files per write (gh's limit), got %d"
                      % (_ATTACH_MAX, len(attach)))
     for value in attach:
         path = Path(value.split("#", 1)[0])
+        if not path.is_absolute():
+            parser.error("--attach needs an absolute path (the body must reference the same "
+                         "string), got: %s" % path)
         if not path.is_file():
+            # gh splits FILE#ALT at the first `#` too, so a path containing one can't be attached
+            # at all; say that rather than report a file the caller can see as missing.
+            hashes = [i for i, ch in enumerate(value) if ch == "#"][1:]
+            if any(Path(value[:i]).is_file() for i in hashes) or Path(value).is_file():
+                parser.error("--attach path contains '#', which FILE#ALT reads as the start of the "
+                             "alt text; rename the file: %s" % value)
             parser.error("--attach file not found: %s" % path)
         if path.stat().st_size == 0:
             parser.error("--attach file is empty: %s" % path)
@@ -375,7 +394,9 @@ def _landed_write(result, attach):
     url = result.stdout.strip()
     if result.returncode == 0:
         return url, [], {}
-    if attach and url:
+    # Only a URL counts: any other stdout on a failed write (a warning, a stray line) is not proof
+    # that anything was written, and reading it as a landed write would swallow a real failure.
+    if attach and _GITHUB_URL_PATTERN.fullmatch(url):
         return url, [ATTACH_PARTIAL], {"attach_stderr": result.stderr}
     return None
 
@@ -525,20 +546,21 @@ def _verify_body_file(body_path, attachments=0):
     # Each attachment reserves `_ATTACH_CHAR_ALLOWANCE` on top: gh lengthens the body as it rewrites
     # references and appends unreferenced files, so what is gated is the body as POSTED.
     allowance = attachments * _ATTACH_CHAR_ALLOWANCE
-    chars = len(data.decode("utf-8", errors="replace")) + allowance
-    if chars > BODY_CHAR_LIMIT:
+    chars = len(data.decode("utf-8", errors="replace"))
+    overage = chars + allowance - BODY_CHAR_LIMIT
+    if overage > 0:
         return needs_decision(
             BODY_TOO_LONG,
             summary="staged body file is %d characters%s; the limit is %d (over by %d): %s"
-            % (chars, " counting %d reserved for attachments" % allowance if allowance else "",
-               BODY_CHAR_LIMIT, chars - BODY_CHAR_LIMIT, body_path),
+            % (chars, " plus %d reserved for attachments" % allowance if allowance else "",
+               BODY_CHAR_LIMIT, overage, body_path),
             context={
                 "body_path": str(body_path),
                 "reason": "over character limit",
                 "actual_chars": chars,
                 "actual_bytes": len(data),
                 "limit_chars": BODY_CHAR_LIMIT,
-                "overage_chars": chars - BODY_CHAR_LIMIT,
+                "overage_chars": overage,
                 "attachment_allowance_chars": allowance,
             },
             options=[
@@ -633,15 +655,13 @@ def _cmd_create(args, parser):
             break
         # An attach miss is checked first: the deps/sub-issue patterns' bare `unknown flag` matches
         # it too, and dropping a relation can't cure it.
-        if args.attach and _is_attach_error(attempt.stderr):
-            return _fail_write(attempt, args.attach)
+        attach_miss = bool(args.attach) and _is_attach_error(attempt.stderr)
         is_last_rung = index == len(ladder) - 1
         capability_miss = (dep_flags and _is_deps_error(attempt.stderr)) or (
             parent_flags and _is_subissues_error(attempt.stderr)
         )
-        if is_last_rung or not capability_miss:
-            sys.stderr.write(attempt.stderr)
-            return 1
+        if attach_miss or is_last_rung or not capability_miss:
+            return _fail_write(attempt, args.attach)
 
     payload = {"op": "create", "dry_run": False, "url": url}
     payload.update(_write_receipt_fields(args.body_path))

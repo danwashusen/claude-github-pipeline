@@ -238,9 +238,10 @@ per [architecture.md §7](docs/architecture.md)'s mapping table).
   rung-per-relation ladder, safe because a failed `create` files nothing. The body ops and the
   issue/pr `comment` take a repeatable `--attach FILE[#alt]` (gh ≥ 2.99, 4.41.0). That is how a PR
   that changes what a user sees carries screenshots (`skills/resolver/references/pr-screenshots.md`).
-  gh rewrites a body reference only when it names the file by the **exact** path passed. Unlike
+  gh rewrites a body reference only when it names the file by the **exact** path passed, so the
+  path must be absolute (a relative one is a usage error). Unlike
   the relations, an old gh is never retried without the flag, since the body would ship dangling
-  local paths: exit 1, stderr `ATTACH_UNSUPPORTED:`. A partial upload (non-zero exit, URL printed)
+  local paths: exit 1, stderr `ATTACH_UNSUPPORTED:`. A partial upload (non-zero exit, a GitHub URL printed)
   is a landed write with an `ATTACH_PARTIAL` notice, never a hard failure the caller would re-run
   into a duplicate. A body op reads the rewritten body back as `posted_body_path` (`<stem>.posted.md`),
   and the next restage starts from that file, not the local copy. This derives the rewritten body,

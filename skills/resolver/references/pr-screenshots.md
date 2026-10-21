@@ -1,10 +1,10 @@
 # PR screenshots — showing the reviewer what changed on screen
 
-Read at S4 when you stage a phase whose change a user sees, and again at S5.2's PR write. A reviewer
-reading a diff can't see a layout, a new state or a reworded error. A screenshot shows them in one
-look, and without one the evaluator and the human reviewer either guess or have to check out the
-branch and run it. `gh_persist.py` uploads the files with the write (`--attach`, gh >= 2.99), so the
-images sit in the PR body itself.
+Read at S5 when you stage a phase whose change a user sees ("Stage the PR, commit, then loop"), and
+again at S5.2's PR write. A reviewer reading a diff can't see a layout, a new state or a reworded
+error. A screenshot shows them in one look, and without one the evaluator and the human reviewer
+either guess or have to check out the branch and run it. `gh_persist.py` uploads the files with the
+write (`--attach`, gh >= 2.99), so the images sit in the PR body itself.
 
 ## 1. When
 
@@ -21,19 +21,19 @@ the repo's own run skill. When the consuming repo's `CLAUDE.md` says how to capt
 profile, or a line like "a PR that changes what a user sees carries screenshots"), that guidance wins.
 Capture the after-state always. Add a before-state when the phase changes an existing screen and the
 default branch is cheap to run. Save each file under `<facts.scratch>/shots/` with a name that says
-the state (`phase-2-empty-list.png`). gh uploads png, jpg, jpeg, gif, webp and svg, plus mp4, mov and
-webm for a flow a still can't show. When nothing in the session can run or drive the app, capture
-nothing and add one line under `## Screenshots`: `Not captured: <why>`. Never ask the operator to
-take them.
+the state (`phase-2-empty-list.png`), and no `#` in it: `FILE#ALT` reads a `#` as the start of the alt
+text. gh uploads png, jpg, jpeg, gif, webp and svg, plus mp4, mov and webm for a flow a still can't
+show. When nothing in the session can run or drive the app, capture nothing and add one line under
+`## Screenshots`: `Not captured: <why>`. Never ask the operator to take them.
 
 ## 3. Reference them in the body
 
 Add a `## Screenshots` section to the PR body. Write one `![<the state, in words>](<absolute path>)`
 per file, labelled by phase on a multi-phase PR. The path must be the **same absolute path** you pass
-to `--attach`: gh matches the body's reference to the file by exact string. A relative `./shot.png`
-is not matched; it stays a dangling link, and gh appends the image at the end of the body instead.
-The alt text is what a screen reader and a failed load show, so describe the state ("Export button
-disabled while the report loads"), not the file.
+to `--attach`: gh matches the body's reference to the file by exact string (a relative `./shot.png`
+would stay a dangling link while gh appended the image at the end), so `gh_persist.py` refuses a
+relative path. The alt text is what a screen reader and a failed load show, so describe the state
+("Export button disabled while the report loads"), not the file.
 
 ## 4. Write
 

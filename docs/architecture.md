@@ -433,12 +433,12 @@ hard-fails naming `git remote set-head origin --auto` rather than guessing. A re
 - **Attachments.** `create` / `create-pr` / `edit-body` / `edit-pr-body` / `comment` (issue and pr
   targets) take a repeatable `--attach FILE[#alt]`: gh ≥ 2.99 uploads the image or video and
   rewrites the body reference that names it by the exact same path. This is how a PR that changes
-  what a user sees carries screenshots (`skills/resolver/references/pr-screenshots.md`). A missing,
-  empty or unsupported file, more than 50 files, or `--attach` on a `pr-review` comment (gh has no
+  what a user sees carries screenshots (`skills/resolver/references/pr-screenshots.md`). A relative,
+  missing, empty or unsupported file, more than 50 files, or `--attach` on a `pr-review` comment (gh has no
   such flag) is a usage error, and the size gate reserves room per attachment. An older gh is
   **not** retried without the flag, because the body would ship dangling local references: exit 1
   with an `ATTACH_UNSUPPORTED:` stderr, and the caller restages without them. A partial upload
-  (non-zero exit, URL printed) is a landed write: `ok` plus an `ATTACH_PARTIAL` notice, never a hard
+  (non-zero exit, a GitHub URL printed) is a landed write: `ok` plus an `ATTACH_PARTIAL` notice, never a hard
   failure the caller would re-run into a duplicate. The gh ≥ 2.40 floor is unchanged.
 - **Atomicity & idempotency stay as built:** marker replacement posts the new comment before
   deleting the old; `close` on a closed issue is a no-op; native-dependency writes are
