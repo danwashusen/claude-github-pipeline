@@ -7,11 +7,11 @@ Subcommands (unchanged surface from v1 — same names, same flags, same position
 
     gh_persist.py create      <repo> <body_path> --title <title> [--label L]...
                                [--blocked-by <nums/urls>] [--blocking <nums/urls>]
-                               [--parent <num/url>]                                 [--dry-run]
+                               [--parent <num/url>] [--attach F[#alt]]...         [--dry-run]
     gh_persist.py create-pr   <repo> <body_path> --title <title> --base <ref> --head <ref>
-                               [--draft]                                        [--dry-run]
-    gh_persist.py edit-body   <repo> <issue>     <body_path>                      [--dry-run]
-    gh_persist.py edit-pr-body <repo> <pr>       <body_path>                      [--dry-run]
+                               [--draft] [--attach F[#alt]]...                  [--dry-run]
+    gh_persist.py edit-body   <repo> <issue>     <body_path> [--attach F[#alt]]...  [--dry-run]
+    gh_persist.py edit-pr-body <repo> <pr>       <body_path> [--attach F[#alt]]...  [--dry-run]
     gh_persist.py edit-title  <repo> <issue>     --title <title>                  [--dry-run]
     gh_persist.py edit-pr-title <repo> <pr>      --title <title>                  [--dry-run]
     gh_persist.py edit-labels <repo> <issue>     [--add L]... [--remove L]...     [--dry-run]
@@ -21,14 +21,14 @@ Subcommands (unchanged surface from v1 — same names, same flags, same position
     gh_persist.py add-parent  <repo> <child> <parent>                              [--dry-run]
     gh_persist.py comment     <repo> <target> <id> <body_path>
                                [--review-action approve|comment|request-changes]
-                               [--delete-marker-id <id>]                            [--dry-run]
+                               [--delete-marker-id <id>] [--attach F[#alt]]...      [--dry-run]
     gh_persist.py edit-comment <repo> <comment_id> <body_path>                      [--dry-run]
     gh_persist.py close       <repo> <issue> [--reason completed|"not planned"]     [--dry-run]
     gh_persist.py close-pr    <repo> <pr>     [--comment-file <path>]               [--dry-run]
     gh_persist.py reopen      <repo> <issue>                                        [--dry-run]
 
 ``<target>`` for ``comment`` is one of: issue | pr | pr-review. ``--review-action`` is required
-when target=pr-review and forbidden otherwise.
+when target=pr-review and forbidden otherwise; so is ``--attach`` forbidden there.
 
 The body the script posts is the byte stream the *caller* already staged to its own scratch dir
 (the drafter's ``/tmp/gh-drafter-<slug>/story-N.md``, the planner's ``/tmp/gh-planner-<N>/plan.md``,
@@ -190,6 +190,46 @@ notice. That property is NOT free from ``_SUBISSUES_ERROR_PATTERN`` alone — it
 list necessary: ``already parented`` is unreachable through ``create --parent``, since a
 freshly-created issue has no parent to conflict with.
 
+``--attach F[#alt]`` (repeatable, on ``create``/``create-pr``/``edit-body``/``edit-pr-body`` and on
+``comment`` for the issue and pr targets) uploads an image or video with the write — gh >= 2.99's
+``--attach``, which is how a PR that changes what a user sees carries screenshots for its reviewer.
+gh rewrites each body reference that names the file to a repo-scoped ``user-attachments`` URL and
+appends any attachment the body does not reference (``#alt`` is its alt text; gh's syntax, forwarded
+verbatim). The match is the **exact string** passed as ``F`` (checked live: ``![a](/abs/shot.png)``
+is rewritten for ``--attach /abs/shot.png``; ``./shot.png`` and ``shot.png`` are not, and get
+appended instead), so a caller references each file by the same absolute path it attaches — and
+the path must be absolute, refused otherwise (a relative one would resolve against ``--cwd`` for gh
+but against this script's cwd for the existence check).
+``gh pr review`` has no ``--attach``, so ``comment pr-review`` refuses it as a usage error. Every
+other refusal is up front too, before any write: a missing or empty file, a type gh rejects, more
+than gh's 50 per command. gh would refuse those itself without writing (checked live), but
+refusing here keeps the failure a usage error, not a hard one. Four further rules:
+
+- **Capability gate.** The plugin's floor is gh >= 2.40, so an older gh answers
+  ``unknown flag: --attach``. That write is atomic (nothing filed), and unlike the native relations
+  it is NOT retried without the flag: the staged body still references the local files, and
+  posting it would ship dangling image links. The script exits 1 with stderr opening
+  ``ATTACH_UNSUPPORTED:``; the caller restages the body without the references and retries without
+  ``--attach``. ``_ATTACH_ERROR_PATTERN`` is its own narrow pattern, checked before the deps and
+  sub-issue classifiers — ``_DEPS_ERROR_PATTERN``'s bare ``unknown flag`` would otherwise read an
+  attach miss as a deps miss and descend ``create``'s ladder.
+- **Partial upload.** When some attachments fail, gh still writes with the ones that succeeded and
+  prints the URL, but exits non-zero. A non-zero exit whose stdout is a GitHub issue/PR/comment URL
+  (``_GITHUB_URL_PATTERN``; any other stdout is not proof of a write) is therefore a landed write: ``ok`` with an ``ATTACH_PARTIAL`` notice and gh's stderr as ``attach_stderr``. Treating it
+  as a hard failure would make the caller re-run and double-file.
+- **Size headroom.** A rewritten reference is longer than the local path it replaces, and an
+  appended attachment adds a line, so the size gate counts ``_ATTACH_CHAR_ALLOWANCE`` characters per
+  attachment on top of the staged body: a body that fits as staged must still fit as posted.
+- **Receipt and read-back.** ``body_bytes``/``body_sha256`` still describe the STAGED file, which no
+  longer equals GitHub's copy once gh rewrites references; ``attachments`` lists what was passed. A
+  body op (not ``comment``) then reads the posted body back and writes it beside the staged file as
+  ``<stem>.posted<suffix>``, reported as ``posted_body_path``. That is not a verification re-read
+  (§12 still holds: a zero exit with a URL is authoritative) — it derives the one thing the caller
+  cannot: the body with GitHub's URLs in it. Without it, a caller that restages from its own local
+  copy (the resolver rewrites a PR body several times a run) would put the dangling local paths back
+  on its next write. A failed read-back is an ``ATTACH_READBACK_UNAVAILABLE`` notice; the write
+  already landed. Comments skip it, since nothing restages a comment.
+
 Exit codes (architecture.md §3 — the only two forms this script uses):
     0   envelope present on stdout; consult ``status`` (``ok`` or ``needs_decision`` — both are
         exit 0; ``needs_decision`` is not an error).
@@ -211,6 +251,8 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 from pipelib import process  # noqa: E402  (import after sys.path setup, by necessity)
 from pipelib.decisions import (  # noqa: E402
+    ATTACH_PARTIAL,
+    ATTACH_READBACK_UNAVAILABLE,
     AUTH_REQUIRED,
     BODY_TOO_LONG,
     DEPS_UNSUPPORTED,
@@ -278,6 +320,132 @@ def _is_subissues_error(stderr_text):
     return bool(_SUBISSUES_ERROR_PATTERN.search(text))
 
 
+# Capability signature for a gh that predates `--attach` (added in gh 2.99, well after the >= 2.40
+# floor). Names the flag itself, unlike the two patterns above: gh's parser reports the exact flag it
+# rejected (`unknown flag: --attach`), and a bare `unknown flag` would claim a deps or parent miss as
+# an attach one. Checked BEFORE those two, because their bare alternative matches this message too.
+_ATTACH_ERROR_PATTERN = re.compile(r"unknown flag:? --attach\b", re.IGNORECASE)
+
+# gh's own per-command limit and accepted types (`gh pr create --help`; the type list is the one gh
+# prints when it rejects a file). Refused here as usage errors so a bad attachment never reaches gh.
+_ATTACH_MAX = 50
+_ATTACH_TYPES = frozenset({"png", "jpg", "jpeg", "gif", "webp", "svg", "mp4", "mov", "webm"})
+
+# Characters the size gate reserves per attachment: a rewritten reference
+# (`https://github.com/user-attachments/assets/<uuid>`, ~85 characters) is longer than the local
+# path it replaces, and an unreferenced attachment is appended as a new `![alt](url)` line.
+_ATTACH_CHAR_ALLOWANCE = 200
+
+# The one thing gh prints on stdout for a write that landed: the issue, PR or comment URL.
+_GITHUB_URL_PATTERN = re.compile(r"https://[^\s]+/(issues|pull)/\d+(#issuecomment-\d+)?")
+
+_ATTACH_UNSUPPORTED_MESSAGE = (
+    "ATTACH_UNSUPPORTED: gh >= 2.99 is required for --attach; nothing was written. Restage the "
+    "body without the attachment references and retry without --attach.\n"
+)
+
+
+def _is_attach_error(stderr_text):
+    return bool(_ATTACH_ERROR_PATTERN.search(stderr_text or ""))
+
+
+def _check_attachments(attach, parser):
+    """Refuse a bad ``--attach`` list as a usage error, before the body gate and before any gh call.
+    ``#alt`` is split off only to find the file; the value is forwarded to gh unchanged.
+
+    Paths must be absolute. gh resolves a relative one against ``--cwd`` while this check would
+    resolve it against the script's own cwd, so the two could disagree; and gh matches the body's
+    reference by exact string, which only an absolute path keeps stable across both.
+    """
+    if len(attach) > _ATTACH_MAX:
+        parser.error("--attach takes at most %d files per write (gh's limit), got %d"
+                     % (_ATTACH_MAX, len(attach)))
+    for value in attach:
+        path = Path(value.split("#", 1)[0])
+        if not path.is_absolute():
+            parser.error("--attach needs an absolute path (the body must reference the same "
+                         "string), got: %s" % path)
+        if not path.is_file():
+            # gh splits FILE#ALT at the first `#` too, so a path containing one can't be attached
+            # at all; say that rather than report a file the caller can see as missing.
+            hashes = [i for i, ch in enumerate(value) if ch == "#"][1:]
+            if any(Path(value[:i]).is_file() for i in hashes) or Path(value).is_file():
+                parser.error("--attach path contains '#', which FILE#ALT reads as the start of the "
+                             "alt text; rename the file: %s" % value)
+            parser.error("--attach file not found: %s" % path)
+        if path.stat().st_size == 0:
+            parser.error("--attach file is empty: %s" % path)
+        if path.suffix.lower().lstrip(".") not in _ATTACH_TYPES:
+            parser.error("--attach file type is not one gh uploads (%s): %s"
+                         % (", ".join(sorted(_ATTACH_TYPES)), path))
+
+
+def _attach_flags(attach):
+    flags = []
+    for value in attach:
+        flags += ["--attach", value]
+    return flags
+
+
+def _landed_write(result, attach):
+    """``(url, notices, extra_payload)`` when the write landed, else ``None``. A zero exit always
+    landed. With ``--attach``, so did a non-zero exit that still printed a URL: gh writes with the
+    attachments that uploaded and exits non-zero for the rest (see the module docstring)."""
+    url = result.stdout.strip()
+    if result.returncode == 0:
+        return url, [], {}
+    # Only a URL counts: any other stdout on a failed write (a warning, a stray line) is not proof
+    # that anything was written, and reading it as a landed write would swallow a real failure.
+    if attach and _GITHUB_URL_PATTERN.fullmatch(url):
+        return url, [ATTACH_PARTIAL], {"attach_stderr": result.stderr}
+    return None
+
+
+def _fail_write(result, attach):
+    if attach and _is_attach_error(result.stderr):
+        sys.stderr.write(_ATTACH_UNSUPPORTED_MESSAGE)
+    sys.stderr.write(result.stderr)
+    return 1
+
+
+def _read_back_posted_body(noun, target, repo, body_path, cwd):
+    """Write the body GitHub now holds beside the staged file; ``(payload, notices)``.
+
+    Not a verification re-read (§12): the write is already authoritative. This derives the body with
+    gh's rewritten attachment URLs, which only GitHub has, so the caller's next restage starts from
+    it instead of from local paths that no longer resolve.
+    """
+    result = process.run(
+        ["gh", noun, "view", target, "--repo", repo, "--json", "body", "--jq", ".body"], cwd=cwd
+    )
+    if result.returncode != 0:
+        return {"posted_body_path": None}, [ATTACH_READBACK_UNAVAILABLE]
+    staged = Path(body_path)
+    posted = staged.with_name("%s.posted%s" % (staged.stem, staged.suffix))
+    # `--jq` prints the string plus one newline of its own; the body is otherwise byte-faithful.
+    posted.write_text(result.stdout[:-1] if result.stdout.endswith("\n") else result.stdout,
+                      encoding="utf-8")
+    return {"posted_body_path": str(posted)}, []
+
+
+def _attach_payload(attach):
+    # Present only when attachments were passed, so a write without them reports exactly what it
+    # did before `--attach` existed.
+    return {"attachments": list(attach)} if attach else {}
+
+
+def _finish_attach_write(payload, notices, args, noun, target):
+    """Body ops only: report the attachments and read the posted body back (see the docstring)."""
+    if not args.attach:
+        return
+    payload.update(_attach_payload(args.attach))
+    readback, readback_notices = _read_back_posted_body(
+        noun, target, args.repo, args.body_path, args.cwd
+    )
+    payload.update(readback)
+    notices.extend(readback_notices)
+
+
 def _create_flag_ladder(dep_flags, parent_flags):
     """The ordered ``(extra_flags, notices_for_what_was_dropped)`` attempts a `create` walks, most
     complete first.
@@ -334,7 +502,7 @@ class _OrderedLinkFlagAction(argparse.Action):
         getattr(namespace, self.dest).append((option_string, values))
 
 
-def _verify_body_file(body_path):
+def _verify_body_file(body_path, attachments=0):
     """The size gate (architecture.md §12, #626/#627 empty-body race): the caller stages the
     verbatim body to ``body_path`` and passes only the path — never the bytes — across the prompt
     boundary. This check runs *before* any `gh` call, so the failure mode that bit #626/#627 (an
@@ -375,19 +543,25 @@ def _verify_body_file(body_path):
     # crash here would surface as a traceback with no envelope — strictly worse than a decision.
     # The cost is that an invalid byte counts as one U+FFFD, so a non-UTF-8 file is measured
     # approximately; that is acceptable because such a file is already malformed for `gh`.
+    # Each attachment reserves `_ATTACH_CHAR_ALLOWANCE` on top: gh lengthens the body as it rewrites
+    # references and appends unreferenced files, so what is gated is the body as POSTED.
+    allowance = attachments * _ATTACH_CHAR_ALLOWANCE
     chars = len(data.decode("utf-8", errors="replace"))
-    if chars > BODY_CHAR_LIMIT:
+    overage = chars + allowance - BODY_CHAR_LIMIT
+    if overage > 0:
         return needs_decision(
             BODY_TOO_LONG,
-            summary="staged body file is %d characters; the limit is %d (over by %d): %s"
-            % (chars, BODY_CHAR_LIMIT, chars - BODY_CHAR_LIMIT, body_path),
+            summary="staged body file is %d characters%s; the limit is %d (over by %d): %s"
+            % (chars, " plus %d reserved for attachments" % allowance if allowance else "",
+               BODY_CHAR_LIMIT, overage, body_path),
             context={
                 "body_path": str(body_path),
                 "reason": "over character limit",
                 "actual_chars": chars,
                 "actual_bytes": len(data),
                 "limit_chars": BODY_CHAR_LIMIT,
-                "overage_chars": chars - BODY_CHAR_LIMIT,
+                "overage_chars": overage,
+                "attachment_allowance_chars": allowance,
             },
             options=[
                 "shorten the staged body to %d characters or fewer and retry" % BODY_CHAR_LIMIT,
@@ -419,8 +593,9 @@ def _auth_decision(result):
 # ---- create ----
 
 
-def _cmd_create(args):
-    gate = _verify_body_file(args.body_path)
+def _cmd_create(args, parser):
+    _check_attachments(args.attach, parser)
+    gate = _verify_body_file(args.body_path, len(args.attach))
     if gate is not None:
         emit_needs_decision(gate)
         return EXIT_OK
@@ -429,6 +604,8 @@ def _cmd_create(args):
            "--body-file", args.body_path]
     for label in args.label or []:
         cmd += ["--label", label]
+    # On every rung: the ladder drops native relations, never the attachments (see the docstring).
+    cmd += _attach_flags(args.attach)
 
     dep_flags = []
     if args.blocked_by:
@@ -449,6 +626,7 @@ def _cmd_create(args):
         # reports what WOULD be posted, byte-for-byte, not just the command line.
         payload = {"op": "create", "dry_run": True, "would_run": _quote_cmd(preview)}
         payload.update(_write_receipt_fields(args.body_path))
+        payload.update(_attach_payload(args.attach))
         emit_ok(payload=payload)
         return EXIT_OK
 
@@ -461,26 +639,34 @@ def _cmd_create(args):
     # claim "created without them" ahead of a create that didn't actually happen.
     notices = []
     url = None
+    extra_payload = {}
     ladder = _create_flag_ladder(dep_flags, parent_flags)
     for index, (extra_flags, dropped_notices) in enumerate(ladder):
         attempt = process.run(cmd + extra_flags, cwd=args.cwd)
         if attempt.auth_required:
             emit_needs_decision(_auth_decision(attempt))
             return EXIT_OK
-        if attempt.returncode == 0:
-            url = attempt.stdout.strip()
-            notices = dropped_notices
+        # A landed write stops the descent — including a partial upload, whose non-zero exit would
+        # otherwise read as a capability miss and file the issue a second time on the next rung.
+        landed = _landed_write(attempt, args.attach)
+        if landed is not None:
+            url, write_notices, extra_payload = landed
+            notices = dropped_notices + write_notices
             break
+        # An attach miss is checked first: the deps/sub-issue patterns' bare `unknown flag` matches
+        # it too, and dropping a relation can't cure it.
+        attach_miss = bool(args.attach) and _is_attach_error(attempt.stderr)
         is_last_rung = index == len(ladder) - 1
         capability_miss = (dep_flags and _is_deps_error(attempt.stderr)) or (
             parent_flags and _is_subissues_error(attempt.stderr)
         )
-        if is_last_rung or not capability_miss:
-            sys.stderr.write(attempt.stderr)
-            return 1
+        if attach_miss or is_last_rung or not capability_miss:
+            return _fail_write(attempt, args.attach)
 
     payload = {"op": "create", "dry_run": False, "url": url}
     payload.update(_write_receipt_fields(args.body_path))
+    payload.update(extra_payload)
+    _finish_attach_write(payload, notices, args, "issue", url)
     emit_ok(payload=payload, notices=notices)
     return EXIT_OK
 
@@ -488,8 +674,9 @@ def _cmd_create(args):
 # ---- create-pr ----
 
 
-def _cmd_create_pr(args):
-    gate = _verify_body_file(args.body_path)
+def _cmd_create_pr(args, parser):
+    _check_attachments(args.attach, parser)
+    gate = _verify_body_file(args.body_path, len(args.attach))
     if gate is not None:
         emit_needs_decision(gate)
         return EXIT_OK
@@ -498,6 +685,7 @@ def _cmd_create_pr(args):
            "--body-file", args.body_path, "--base", args.base, "--head", args.head]
     if args.draft:
         cmd.append("--draft")
+    cmd += _attach_flags(args.attach)
 
     if args.dry_run:
         # Same convention as every other body-bearing op: body_bytes/body_sha256 are hashed
@@ -505,6 +693,7 @@ def _cmd_create_pr(args):
         # live `gh` round-trip.
         payload = {"op": "create-pr", "dry_run": True, "would_run": _quote_cmd(cmd)}
         payload.update(_write_receipt_fields(args.body_path))
+        payload.update(_attach_payload(args.attach))
         emit_ok(payload=payload)
         return EXIT_OK
 
@@ -512,32 +701,38 @@ def _cmd_create_pr(args):
     if result.auth_required:
         emit_needs_decision(_auth_decision(result))
         return EXIT_OK
-    if result.returncode != 0:
-        sys.stderr.write(result.stderr)
-        return 1
+    landed = _landed_write(result, args.attach)
+    if landed is None:
+        return _fail_write(result, args.attach)
+    url, notices, extra_payload = landed
 
-    payload = {"op": "create-pr", "dry_run": False, "url": result.stdout.strip()}
+    payload = {"op": "create-pr", "dry_run": False, "url": url}
     payload.update(_write_receipt_fields(args.body_path))
-    emit_ok(payload=payload)
+    payload.update(extra_payload)
+    _finish_attach_write(payload, notices, args, "pr", url)
+    emit_ok(payload=payload, notices=notices)
     return EXIT_OK
 
 
 # ---- edit-body ----
 
 
-def _cmd_edit_body(args):
-    gate = _verify_body_file(args.body_path)
+def _cmd_edit_body(args, parser):
+    _check_attachments(args.attach, parser)
+    gate = _verify_body_file(args.body_path, len(args.attach))
     if gate is not None:
         emit_needs_decision(gate)
         return EXIT_OK
 
     cmd = ["gh", "issue", "edit", args.issue, "--repo", args.repo, "--body-file", args.body_path]
+    cmd += _attach_flags(args.attach)
 
     if args.dry_run:
         # See _cmd_create's matching comment: v1's emit_envelope reports body_bytes/body_sha256
         # unconditionally, dry-run or not.
         payload = {"op": "edit-body", "dry_run": True, "would_run": _quote_cmd(cmd)}
         payload.update(_write_receipt_fields(args.body_path))
+        payload.update(_attach_payload(args.attach))
         emit_ok(payload=payload)
         return EXIT_OK
 
@@ -545,30 +740,36 @@ def _cmd_edit_body(args):
     if result.auth_required:
         emit_needs_decision(_auth_decision(result))
         return EXIT_OK
-    if result.returncode != 0:
-        sys.stderr.write(result.stderr)
-        return 1
+    landed = _landed_write(result, args.attach)
+    if landed is None:
+        return _fail_write(result, args.attach)
+    url, notices, extra_payload = landed
 
-    payload = {"op": "edit-body", "dry_run": False, "url": result.stdout.strip()}
+    payload = {"op": "edit-body", "dry_run": False, "url": url}
     payload.update(_write_receipt_fields(args.body_path))
-    emit_ok(payload=payload)
+    payload.update(extra_payload)
+    _finish_attach_write(payload, notices, args, "issue", url or args.issue)
+    emit_ok(payload=payload, notices=notices)
     return EXIT_OK
 
 
 # ---- edit-pr-body ----
 
 
-def _cmd_edit_pr_body(args):
-    gate = _verify_body_file(args.body_path)
+def _cmd_edit_pr_body(args, parser):
+    _check_attachments(args.attach, parser)
+    gate = _verify_body_file(args.body_path, len(args.attach))
     if gate is not None:
         emit_needs_decision(gate)
         return EXIT_OK
 
     cmd = ["gh", "pr", "edit", args.pr, "--repo", args.repo, "--body-file", args.body_path]
+    cmd += _attach_flags(args.attach)
 
     if args.dry_run:
         payload = {"op": "edit-pr-body", "dry_run": True, "would_run": _quote_cmd(cmd)}
         payload.update(_write_receipt_fields(args.body_path))
+        payload.update(_attach_payload(args.attach))
         emit_ok(payload=payload)
         return EXIT_OK
 
@@ -576,13 +777,16 @@ def _cmd_edit_pr_body(args):
     if result.auth_required:
         emit_needs_decision(_auth_decision(result))
         return EXIT_OK
-    if result.returncode != 0:
-        sys.stderr.write(result.stderr)
-        return 1
+    landed = _landed_write(result, args.attach)
+    if landed is None:
+        return _fail_write(result, args.attach)
+    url, notices, extra_payload = landed
 
-    payload = {"op": "edit-pr-body", "dry_run": False, "url": result.stdout.strip()}
+    payload = {"op": "edit-pr-body", "dry_run": False, "url": url}
     payload.update(_write_receipt_fields(args.body_path))
-    emit_ok(payload=payload)
+    payload.update(extra_payload)
+    _finish_attach_write(payload, notices, args, "pr", url or args.pr)
+    emit_ok(payload=payload, notices=notices)
     return EXIT_OK
 
 
@@ -830,6 +1034,9 @@ def _cmd_comment(args, parser):
         parser.error("--review-action is forbidden when target is '%s'" % args.target)
     if args.target == "pr-review" and not args.review_action:
         parser.error("--review-action is required when target is 'pr-review'")
+    if args.target == "pr-review" and args.attach:
+        parser.error("--attach is forbidden when target is 'pr-review' (gh pr review has no "
+                     "--attach); attach in a target=pr comment instead")
     if args.delete_marker_id is not None and not args.delete_marker_id.isdigit():
         # The delete below is REST (`repos/{owner}/{repo}/issues/comments/{id}`), which takes the
         # NUMERIC comment id only — a GraphQL node id (`IC_kwDO…`, what gh_gather's normalized
@@ -845,7 +1052,8 @@ def _cmd_comment(args, parser):
             % args.delete_marker_id
         )
 
-    gate = _verify_body_file(args.body_path)
+    _check_attachments(args.attach, parser)
+    gate = _verify_body_file(args.body_path, len(args.attach))
     if gate is not None:
         emit_needs_decision(gate)
         return EXIT_OK
@@ -857,12 +1065,14 @@ def _cmd_comment(args, parser):
     else:  # pr-review
         cmd = ["gh", "pr", "review", args.id, "--repo", args.repo,
                "--%s" % args.review_action, "--body-file", args.body_path]
+    cmd += _attach_flags(args.attach)
 
     if args.dry_run:
         # See _cmd_create's matching comment: v1's emit_envelope reports body_bytes/body_sha256
         # unconditionally, dry-run or not.
         payload = {"op": "comment", "dry_run": True, "would_run": _quote_cmd(cmd)}
         payload.update(_write_receipt_fields(args.body_path))
+        payload.update(_attach_payload(args.attach))
         emit_ok(payload=payload)
         return EXIT_OK
 
@@ -875,12 +1085,11 @@ def _cmd_comment(args, parser):
     if result.auth_required:
         emit_needs_decision(_auth_decision(result))
         return EXIT_OK
-    if result.returncode != 0:
-        sys.stderr.write(result.stderr)
-        return 1
-    url = result.stdout.strip()
+    landed = _landed_write(result, args.attach)
+    if landed is None:
+        return _fail_write(result, args.attach)
+    url, notices, extra_payload = landed
 
-    notices = []
     if args.delete_marker_id:
         delete_cmd = ["gh", "api", "-X", "DELETE",
                       "repos/%s/issues/comments/%s" % (args.repo, args.delete_marker_id)]
@@ -897,6 +1106,8 @@ def _cmd_comment(args, parser):
 
     payload = {"op": "comment", "dry_run": False, "url": url}
     payload.update(_write_receipt_fields(args.body_path))
+    payload.update(extra_payload)
+    payload.update(_attach_payload(args.attach))
     emit_ok(payload=payload, notices=notices)
     return EXIT_OK
 
@@ -1082,6 +1293,7 @@ def _build_parser():
     p_create.add_argument("--blocked-by", default="")
     p_create.add_argument("--blocking", default="")
     p_create.add_argument("--parent", default="")
+    p_create.add_argument("--attach", action="append", default=[], metavar="FILE[#ALT]")
     p_create.add_argument("--dry-run", action="store_true")
 
     p_create_pr = sub.add_parser("create-pr")
@@ -1091,18 +1303,21 @@ def _build_parser():
     p_create_pr.add_argument("--base", required=True)
     p_create_pr.add_argument("--head", required=True)
     p_create_pr.add_argument("--draft", action="store_true")
+    p_create_pr.add_argument("--attach", action="append", default=[], metavar="FILE[#ALT]")
     p_create_pr.add_argument("--dry-run", action="store_true")
 
     p_edit = sub.add_parser("edit-body")
     p_edit.add_argument("repo")
     p_edit.add_argument("issue")
     p_edit.add_argument("body_path")
+    p_edit.add_argument("--attach", action="append", default=[], metavar="FILE[#ALT]")
     p_edit.add_argument("--dry-run", action="store_true")
 
     p_edit_pr_body = sub.add_parser("edit-pr-body")
     p_edit_pr_body.add_argument("repo")
     p_edit_pr_body.add_argument("pr")
     p_edit_pr_body.add_argument("body_path")
+    p_edit_pr_body.add_argument("--attach", action="append", default=[], metavar="FILE[#ALT]")
     p_edit_pr_body.add_argument("--dry-run", action="store_true")
 
     p_edit_title = sub.add_parser("edit-title")
@@ -1148,6 +1363,7 @@ def _build_parser():
     p_comment.add_argument("--review-action", choices=["approve", "comment", "request-changes"],
                             default=None)
     p_comment.add_argument("--delete-marker-id", default=None)
+    p_comment.add_argument("--attach", action="append", default=[], metavar="FILE[#ALT]")
     p_comment.add_argument("--dry-run", action="store_true")
 
     p_edit_comment = sub.add_parser("edit-comment")
@@ -1199,13 +1415,13 @@ def main(argv):
     args = parser.parse_args(argv)
 
     if args.subcommand == "create":
-        return _cmd_create(args)
+        return _cmd_create(args, subparsers_by_name["create"])
     if args.subcommand == "create-pr":
-        return _cmd_create_pr(args)
+        return _cmd_create_pr(args, subparsers_by_name["create-pr"])
     if args.subcommand == "edit-body":
-        return _cmd_edit_body(args)
+        return _cmd_edit_body(args, subparsers_by_name["edit-body"])
     if args.subcommand == "edit-pr-body":
-        return _cmd_edit_pr_body(args)
+        return _cmd_edit_pr_body(args, subparsers_by_name["edit-pr-body"])
     if args.subcommand == "edit-title":
         return _cmd_edit_title(args)
     if args.subcommand == "edit-pr-title":

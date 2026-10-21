@@ -99,8 +99,8 @@ section a few bullets. It sits outside `## Handoff`, never a segment of it
 
 ## 5. Continue
 
-1. Delete this phase's staging files from `facts.scratch` — `pr.md`, `issue-body-projected.md`,
-   `review-diff.patch`, `cold-read-diff.patch`, any `slice-<M>-ticked.md`. A surviving fresh-mode
+1. Delete this phase's staging files from `facts.scratch` — `pr.md`, `pr.posted.md`, `shots/`,
+   `issue-body-projected.md`, `review-diff.patch`, `cold-read-diff.patch`, any `slice-<M>-ticked.md`. A surviving fresh-mode
    `pr.md` restaged by a later `edit-pr-body` would overwrite the tracker tick S6 just wrote. The next
    pass's first PR-body write restages from `facts.tracker.body_path` — the PR body the new prep
    fetched, which at that point *is* the body this session last wrote — and S6's "restage from the body

@@ -109,6 +109,18 @@ SUBISSUES_UNSUPPORTED = "SUBISSUES_UNSUPPORTED"
 # as absent.
 SUBISSUE_FIELD_UNAVAILABLE = "SUBISSUE_FIELD_UNAVAILABLE"
 
+# A write carrying ``--attach`` (gh >= 2.99 uploads the file and rewrites the body's reference to a
+# ``user-attachments`` URL) LANDED, but gh reported that some attachments did not upload — gh exits
+# non-zero yet still prints the written URL. A notice, not a failure: the issue/PR/comment exists,
+# so a caller that read the exit as "nothing written" would re-run and double-file. gh's stderr
+# rides in the payload as ``attach_stderr``.
+ATTACH_PARTIAL = "ATTACH_PARTIAL"
+
+# A body write carrying ``--attach`` landed, but reading the posted body back (the copy whose
+# references gh rewrote) failed, so no ``posted_body_path`` is reported. The caller's next restage
+# of that body has no rewritten base; it re-reads the body through its gather instead.
+ATTACH_READBACK_UNAVAILABLE = "ATTACH_READBACK_UNAVAILABLE"
+
 # The consuming repo declares no grounding documents: no ``docs/README.md``, no
 # ``<!-- doc-catalogue -->`` block in it, or a malformed one
 # (skills/_shared/doc-catalogue.md). Deliberately loud rather than silent, because the fallback is

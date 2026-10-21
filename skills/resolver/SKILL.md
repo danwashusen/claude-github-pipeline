@@ -113,7 +113,7 @@ Universal across every route:
   dir (`facts.scratch`, i.e. `/tmp/gh-resolver-<issue>/…`) and pass the **path**. The script verifies
   the round-trip hash, returns `body_sha256`, and gates empty bodies (`EMPTY_BODY_FILE`) — the
   #626/#627 race fix. This covers every write the resolver makes (issue-body DoD projection via
-  `edit-body`, PR open via `create-pr` and PR-body writes via `edit-pr-body` — `edit-body` is
+  `edit-body`, PR open via `create-pr` and PR-body writes via `edit-pr-body`, screenshots on either via `--attach` ([`references/pr-screenshots.md`](references/pr-screenshots.md)) — `edit-body` is
   `gh issue edit` and rejects a PR number — `## Phase tracker`, comment-only answers, epic baseline
   comments, epic body-tick). Never re-serialize a body across the prompt boundary; never hand-roll a
   persist/gather `gh` call. The resolver's **only** scriptless raw-`gh` executor is `gh pr ready <N>`,

@@ -264,7 +264,12 @@ does **not** apply: multi-line prose, lists, and several code spans on a line ar
 - the stack's terse/machine-readable output formatter, and its fast-subset / re-run-only-failures
   invocation syntax;
 - parallelism knobs and any per-worker resource (e.g. a test database per worker) a session should
-  know about.
+  know about;
+- for a stack with a user-facing UI, how a session runs the app and captures a screenshot of a
+  changed state, so a PR that changes what a user sees carries them. The resolver attaches what it
+  captures to the PR body (`skills/resolver/references/pr-screenshots.md`), and this line is the
+  guidance that procedure defers to. Name the run command and the capture route; a stack with no UI
+  omits it.
 
 What does **not** belong: coding conventions, architecture, or style (those are the human's
 CLAUDE.md), and a plain command list (that's what `/init` produces — complement it, don't
@@ -294,6 +299,7 @@ to run them cheaply; leave the fast ones alone* — then fill it in. Same shape,
 - Re-run only what failed; keep iterating on the named test rather than the whole suite.
 - Tests parallelize above ~50 examples, one test DB per worker (auto-created, suffixed by worker number) — don't assume a single shared DB; pair with `worktree-setup` when isolating per worktree.
 - One-time slow setup (`bundle install`, `bin/rails db:prepare`, `assets:precompile`) — run backgrounded and wait, don't poll the output.
+- A PR that changes what a user sees carries screenshots: run `bin/dev` backgrounded, open each changed page in the in-app browser, and save a capture of each changed state.
 <!-- /claude-code-stack-profile -->
 ```
 
@@ -307,6 +313,7 @@ to run them cheaply; leave the fast ones alone* — then fill it in. Same shape,
 - The full suite, e2e runs, and coverage are slow/noisy — background and log: `npm run test:e2e > /tmp/e2e.log 2>&1`, then read the tail / `grep` failures. Prefer the reporter's terse mode (`--reporter=dot`) over the verbose default.
 - Re-run only failures (`vitest --changed`, `jest --onlyFailures`) instead of the full run.
 - One-time slow steps (`npm ci`, a cold production build) — background and wait.
+- A PR that changes what a user sees carries screenshots: run `npm run dev` backgrounded, open each changed view in the in-app browser, and save a capture of each changed state.
 <!-- /claude-code-stack-profile -->
 ```
 

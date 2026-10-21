@@ -186,7 +186,10 @@ Every script emits exactly one JSON envelope on stdout.
   (default 25600; legacy `GH_OPS_INLINE_THRESHOLD_BYTES` honored). Diffs and line-comment sets
   are always `path`.
 - **Write receipts.** Body-bearing writes return `body_bytes` + `body_sha256`; a zero exit with a
-  URL is authoritative and is never re-read to verify (§12).
+  URL is authoritative and is never re-read to verify (§12). With `--attach` (below) the receipt
+  still describes the *staged* file, which no longer equals GitHub's copy once gh rewrites the
+  attachment references; a body op then reads the posted body back as `posted_body_path`. That
+  read derives the rewritten body for the next restage and is not a verification re-read.
 
 ## §4 The facts block
 
@@ -427,6 +430,16 @@ hard-fails naming `git remote set-head origin --auto` rather than guessing. A re
   fix); an empty staged file is an `EMPTY_BODY_FILE` decision, and one over the platform's per-body
   character limit is a `BODY_TOO_LONG` decision — both raised before any `gh` call, on every
   body-bearing op.
+- **Attachments.** `create` / `create-pr` / `edit-body` / `edit-pr-body` / `comment` (issue and pr
+  targets) take a repeatable `--attach FILE[#alt]`: gh ≥ 2.99 uploads the image or video and
+  rewrites the body reference that names it by the exact same path. This is how a PR that changes
+  what a user sees carries screenshots (`skills/resolver/references/pr-screenshots.md`). A relative,
+  missing, empty or unsupported file, more than 50 files, or `--attach` on a `pr-review` comment (gh has no
+  such flag) is a usage error, and the size gate reserves room per attachment. An older gh is
+  **not** retried without the flag, because the body would ship dangling local references: exit 1
+  with an `ATTACH_UNSUPPORTED:` stderr, and the caller restages without them. A partial upload
+  (non-zero exit, a GitHub URL printed) is a landed write: `ok` plus an `ATTACH_PARTIAL` notice, never a hard
+  failure the caller would re-run into a duplicate. The gh ≥ 2.40 floor is unchanged.
 - **Atomicity & idempotency stay as built:** marker replacement posts the new comment before
   deleting the old; `close` on a closed issue is a no-op; native-dependency writes are
   capability-gated (`DEPS_UNSUPPORTED` notice + prose-link fallback), as is the native

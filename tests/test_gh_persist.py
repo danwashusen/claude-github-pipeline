@@ -805,7 +805,7 @@ class CreateDepsCapabilityGatingTests(unittest.TestCase):
         parser, _subparsers_by_name = gh_persist._build_parser()
         args = parser.parse_args(cli_args)
         with contextlib.redirect_stdout(buf):
-            exit_code = gh_persist._cmd_create(args)
+            exit_code = gh_persist._cmd_create(args, parser)
         lines = buf.getvalue().splitlines()
         self.assertEqual(len(lines), 1, "expected exactly one JSON line, got %r" % (lines,))
         return exit_code, json.loads(lines[0]), fake.calls
@@ -857,7 +857,7 @@ class CreateDepsCapabilityGatingTests(unittest.TestCase):
                 ["create", "o/r", str(body_path), "--title", "T", "--blocked-by", "9"]
             )
             with contextlib.redirect_stdout(buf_out), contextlib.redirect_stderr(buf_err):
-                exit_code = gh_persist._cmd_create(args)
+                exit_code = gh_persist._cmd_create(args, parser)
             self.assertEqual(exit_code, 1)
             self.assertEqual(buf_out.getvalue(), "")
             self.assertIn("validation failed", buf_err.getvalue())
@@ -993,7 +993,7 @@ class CreateParentSubIssueTests(CreateDepsCapabilityGatingTests):
             )
             buf = io.StringIO()
             with contextlib.redirect_stdout(buf):
-                exit_code = gh_persist._cmd_create(args)
+                exit_code = gh_persist._cmd_create(args, parser)
             self.assertEqual(exit_code, 1)
             self.assertEqual(buf.getvalue(), "")
             self.assertEqual(len(fake.calls), 1)
@@ -1030,7 +1030,7 @@ class CreateParentSubIssueTests(CreateDepsCapabilityGatingTests):
             )
             buf = io.StringIO()
             with contextlib.redirect_stdout(buf):
-                exit_code = gh_persist._cmd_create(args)
+                exit_code = gh_persist._cmd_create(args, parser)
             self.assertEqual(exit_code, 1)
             self.assertEqual(buf.getvalue(), "")
             self.assertEqual(len(fake.calls), 1)
@@ -1047,7 +1047,7 @@ class CreateParentSubIssueTests(CreateDepsCapabilityGatingTests):
             )
             buf = io.StringIO()
             with contextlib.redirect_stdout(buf):
-                exit_code = gh_persist._cmd_create(args)
+                exit_code = gh_persist._cmd_create(args, parser)
             self.assertEqual(exit_code, 0)
             env = json.loads(buf.getvalue().splitlines()[0])
             self.assertIn("--parent 95", env["would_run"])
@@ -2180,6 +2180,279 @@ class AuthRequiredClassificationTests(unittest.TestCase):
             self.assertEqual(result.returncode, 0, msg=result.stderr)
             env = _parse_envelope(result)
             self.assertEqual(env["decision"]["code"], "AUTH_REQUIRED")
+
+
+class AttachTests(unittest.TestCase):
+    """``--attach FILE[#ALT]`` (gh >= 2.99): forwarded verbatim on the body ops and issue/pr comments,
+    refused up front where it can't work, never retried without on an old gh, a partial upload is a
+    landed write, and a body op reads the rewritten body back as ``posted_body_path``. Shim tests
+    prove the argv end-to-end; the stderr-driven branches run in-process (module docstring,
+    strategy 2)."""
+
+    def setUp(self):
+        self._original_run = gh_persist.process.run
+        self.addCleanup(setattr, gh_persist.process, "run", self._original_run)
+        self._tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self._tmp.cleanup)
+        self.tmp = Path(self._tmp.name)
+        self.body = self.tmp / "pr.md"
+        self.body.write_text("body ![after](%s)\n" % (self.tmp / "after.png"), encoding="utf-8")
+        self.shot = self.tmp / "after.png"
+        self.shot.write_bytes(b"\x89PNG\r\n\x1a\nfake")
+
+    def _in_process(self, argv, results):
+        """Run ``main`` in-process against scripted results; ``(exit, envelope|None, stderr, calls)``.
+        A usage error is ``SystemExit(2)`` from argparse, reported as exit 2."""
+        fake = _ScriptedProcessRun(results)
+        gh_persist.process.run = fake
+        out, err = io.StringIO(), io.StringIO()
+        with contextlib.redirect_stdout(out), contextlib.redirect_stderr(err):
+            try:
+                code = gh_persist.main(argv)
+            except SystemExit as exc:
+                code = exc.code
+        lines = out.getvalue().splitlines()
+        return code, (json.loads(lines[0]) if lines else None), err.getvalue(), fake.calls
+
+    def _ok(self, stdout):
+        return process.CommandResult(returncode=0, stdout=stdout, stderr="")
+
+    # -- forwarding --
+
+    def test_create_pr_forwards_attach_and_reads_the_posted_body_back(self):
+        attach = "%s#The after state" % self.shot
+        pr_cmd = ["pr", "create", "--repo", "o/r", "--title", "T", "--body-file", str(self.body),
+                  "--base", "main", "--head", "h", "--attach", attach]
+        view_cmd = ["pr", "view", "https://github.com/o/r/pull/7", "--repo", "o/r", "--json",
+                    "body", "--jq", ".body"]
+        posted = "body ![after](https://github.com/user-attachments/assets/abc)\n"
+        _write_stdout_file(self.tmp, "url.txt", b"https://github.com/o/r/pull/7\n")
+        _write_stdout_file(self.tmp, "posted.txt", posted.encode("utf-8") + b"\n")
+        _write_manifest(self.tmp, [{"argv": pr_cmd, "stdout_file": "url.txt"},
+                                   {"argv": view_cmd, "stdout_file": "posted.txt"}])
+        result = _run_script(["create-pr", "o/r", str(self.body), "--title", "T", "--base", "main",
+                              "--head", "h", "--attach", attach], fixtures_dir=self.tmp)
+        self.assertEqual(result.returncode, 0, msg=result.stderr)
+        env = _parse_envelope(result)
+        envelope_asserts.assert_full_envelope_conformance(env)
+        envelope_asserts.assert_write_receipt_shape(env)
+        self.assertEqual(env["attachments"], [attach])
+        self.assertEqual(env["notices"], [])
+        # The receipt describes the STAGED body; the posted copy is the rewritten one.
+        self.assertEqual(env["body_sha256"], hashing.sha256_hex(self.body.read_bytes()))
+        self.assertEqual(env["posted_body_path"], str(self.tmp / "pr.posted.md"))
+        self.assertEqual(Path(env["posted_body_path"]).read_text(encoding="utf-8"), posted)
+
+    def test_every_attach_op_forwards_each_flag_in_its_dry_run_preview(self):
+        second = self.tmp / "before.webp"
+        second.write_bytes(b"x")
+        attach = ["--attach", str(self.shot), "--attach", str(second)]
+        cases = [
+            ["create", "o/r", str(self.body), "--title", "T"],
+            ["create-pr", "o/r", str(self.body), "--title", "T", "--base", "b", "--head", "h"],
+            ["edit-body", "o/r", "5", str(self.body)],
+            ["edit-pr-body", "o/r", "6", str(self.body)],
+            ["comment", "o/r", "issue", "5", str(self.body)],
+            ["comment", "o/r", "pr", "6", str(self.body)],
+        ]
+        for argv in cases:
+            with self.subTest(op=argv[0], target=argv[2] if argv[0] == "comment" else None):
+                code, env, err, calls = self._in_process(argv + attach + ["--dry-run"], [])
+                self.assertEqual(code, 0, msg=err)
+                self.assertEqual(calls, [])
+                self.assertIn("--attach %s --attach %s" % (self.shot, second), env["would_run"])
+                self.assertEqual(env["attachments"], [str(self.shot), str(second)])
+
+    def test_comment_forwards_attach_without_a_read_back(self):
+        code, env, err, calls = self._in_process(
+            ["comment", "o/r", "pr", "6", str(self.body), "--attach", str(self.shot)],
+            [self._ok("https://github.com/o/r/pull/6#issuecomment-1\n")],
+        )
+        self.assertEqual(code, 0, msg=err)
+        self.assertEqual(len(calls), 1)  # nothing restages a comment, so no `pr view`
+        self.assertEqual(calls[0][-2:], ["--attach", str(self.shot)])
+        self.assertNotIn("posted_body_path", env)
+
+    def test_without_attach_the_envelope_carries_no_attach_keys(self):
+        code, env, err, calls = self._in_process(
+            ["edit-pr-body", "o/r", "6", str(self.body)],
+            [self._ok("https://github.com/o/r/pull/6\n")],
+        )
+        self.assertEqual(code, 0, msg=err)
+        self.assertEqual(len(calls), 1)
+        self.assertNotIn("--attach", calls[0])
+        for key in ("attachments", "posted_body_path", "attach_stderr"):
+            self.assertNotIn(key, env)
+
+    # -- up-front refusals: usage errors, nothing written --
+
+    def _assert_refused(self, argv, fragment):
+        code, env, err, calls = self._in_process(argv, [])
+        self.assertEqual(code, 2)
+        self.assertIsNone(env)
+        self.assertEqual(calls, [])
+        self.assertIn(fragment, err)
+
+    def test_pr_review_refuses_attach(self):
+        self._assert_refused(
+            ["comment", "o/r", "pr-review", "6", str(self.body), "--review-action", "approve",
+             "--attach", str(self.shot)],
+            "--attach is forbidden when target is 'pr-review'",
+        )
+
+    def test_missing_empty_and_untyped_files_are_refused(self):
+        empty = self.tmp / "empty.png"
+        empty.write_bytes(b"")
+        untyped = self.tmp / "notes.txt"
+        untyped.write_text("x")
+        for value, fragment in [
+            (str(self.tmp / "nope.png") + "#alt", "file not found"),
+            (str(empty), "file is empty"),
+            (str(untyped), "file type is not one gh uploads"),
+        ]:
+            with self.subTest(fragment=fragment):
+                self._assert_refused(["edit-pr-body", "o/r", "6", str(self.body), "--attach", value],
+                                     fragment)
+
+    def test_a_relative_path_is_refused_even_when_it_resolves_under_cwd(self):
+        # gh resolves a relative path against --cwd, the check against the script's own cwd: the two
+        # can disagree, and the body's exact-string match needs the absolute path anyway.
+        self._assert_refused(
+            ["--cwd", str(self.tmp), "edit-pr-body", "o/r", "6", str(self.body),
+             "--attach", "after.png"],
+            "needs an absolute path",
+        )
+
+    def test_a_hash_inside_the_path_is_named_not_reported_missing(self):
+        hashed_dir = self.tmp / "run#3"
+        hashed_dir.mkdir()
+        (hashed_dir / "shot.png").write_bytes(b"x")
+        for value in (str(hashed_dir / "shot.png"), str(hashed_dir / "shot.png") + "#Alt"):
+            with self.subTest(value=value):
+                self._assert_refused(
+                    ["edit-pr-body", "o/r", "6", str(self.body), "--attach", value],
+                    "path contains '#'",
+                )
+
+    def test_alt_text_containing_a_hash_still_attaches(self):
+        code, env, err, _calls = self._in_process(
+            ["edit-pr-body", "o/r", "6", str(self.body), "--attach", "%s#C# sample" % self.shot,
+             "--dry-run"],
+            [],
+        )
+        self.assertEqual(code, 0, msg=err)
+        self.assertEqual(env["attachments"], ["%s#C# sample" % self.shot])
+
+    def test_more_than_fifty_attachments_is_refused(self):
+        argv = ["create-pr", "o/r", str(self.body), "--title", "T", "--base", "b", "--head", "h"]
+        argv += ["--attach", str(self.shot)] * 51
+        self._assert_refused(argv, "at most 50")
+
+    def test_size_gate_reserves_room_for_each_attachment(self):
+        self.body.write_text("x" * (gh_persist.BODY_CHAR_LIMIT - 100), encoding="utf-8")
+        base = ["edit-pr-body", "o/r", "6", str(self.body), "--dry-run"]
+        code, env, _err, _calls = self._in_process(base, [])
+        self.assertEqual(env["status"], "ok")
+        code, env, _err, calls = self._in_process(base + ["--attach", str(self.shot)], [])
+        self.assertEqual(code, 0)
+        self.assertEqual(calls, [])
+        self.assertEqual(env["decision"]["code"], "BODY_TOO_LONG")
+        context = env["decision"]["context"]
+        self.assertEqual(context["attachment_allowance_chars"], gh_persist._ATTACH_CHAR_ALLOWANCE)
+        # actual_chars stays the body's own length; only the overage counts the allowance.
+        self.assertEqual(context["actual_chars"], gh_persist.BODY_CHAR_LIMIT - 100)
+        self.assertEqual(context["overage_chars"], gh_persist._ATTACH_CHAR_ALLOWANCE - 100)
+
+    # -- capability miss: an old gh --
+
+    def test_unknown_attach_flag_fails_without_a_retry(self):
+        miss = process.CommandResult(returncode=1, stdout="", stderr="unknown flag: --attach\n")
+        code, env, err, calls = self._in_process(
+            ["create-pr", "o/r", str(self.body), "--title", "T", "--base", "b", "--head", "h",
+             "--attach", str(self.shot)],
+            [miss],
+        )
+        self.assertEqual(code, 1)
+        self.assertIsNone(env)
+        self.assertEqual(len(calls), 1)  # never re-posted without the flag: refs would dangle
+        self.assertTrue(err.startswith("ATTACH_UNSUPPORTED:"), err)
+
+    def test_create_ladder_does_not_read_an_attach_miss_as_a_deps_miss(self):
+        miss = process.CommandResult(returncode=1, stdout="", stderr="unknown flag: --attach\n")
+        code, _env, err, calls = self._in_process(
+            ["create", "o/r", str(self.body), "--title", "T", "--blocked-by", "9",
+             "--attach", str(self.shot)],
+            [miss],
+        )
+        self.assertEqual(code, 1)
+        self.assertEqual(len(calls), 1)
+        self.assertTrue(err.startswith("ATTACH_UNSUPPORTED:"), err)
+
+    def test_attach_classifier_names_the_flag(self):
+        self.assertTrue(gh_persist._is_attach_error("unknown flag: --attach\n\nUsage: ..."))
+        self.assertFalse(gh_persist._is_attach_error("unknown flag: --blocked-by"))
+        self.assertFalse(gh_persist._is_attach_error("unknown flag: --attachments"))
+
+    # -- partial upload and read-back --
+
+    def test_partial_upload_is_a_landed_write_with_a_notice(self):
+        partial = process.CommandResult(returncode=1, stdout="https://github.com/o/r/pull/6\n",
+                                        stderr="failed to upload after.png\n")
+        code, env, err, calls = self._in_process(
+            ["edit-pr-body", "o/r", "6", str(self.body), "--attach", str(self.shot)],
+            [partial, self._ok("posted body\n")],
+        )
+        self.assertEqual(code, 0, msg=err)
+        self.assertEqual(env["status"], "ok")
+        self.assertEqual(env["url"], "https://github.com/o/r/pull/6")
+        self.assertEqual(env["notices"], ["ATTACH_PARTIAL"])
+        self.assertEqual(env["attach_stderr"], "failed to upload after.png\n")
+        self.assertEqual([c[1:3] for c in calls], [["pr", "edit"], ["pr", "view"]])
+
+    def test_partial_upload_stops_the_create_ladder(self):
+        partial = process.CommandResult(returncode=1, stdout="https://github.com/o/r/issues/12\n",
+                                        stderr="unknown flag: --blocked-by\nupload failed\n")
+        code, env, err, calls = self._in_process(
+            ["create", "o/r", str(self.body), "--title", "T", "--blocked-by", "9",
+             "--attach", str(self.shot)],
+            [partial, self._ok("posted\n")],
+        )
+        self.assertEqual(code, 0, msg=err)
+        self.assertEqual(env["notices"], ["ATTACH_PARTIAL"])
+        self.assertEqual([c[1:3] for c in calls], [["issue", "create"], ["issue", "view"]])
+
+    def test_non_url_stdout_on_a_failed_write_is_a_hard_failure(self):
+        # Only a GitHub URL proves the write landed; a stray stdout line on a failure must not turn a
+        # real failure into `ok` + ATTACH_PARTIAL.
+        failure = process.CommandResult(returncode=1, stdout="warning: something odd\n",
+                                        stderr="GraphQL: could not resolve\n")
+        code, env, err, calls = self._in_process(
+            ["edit-pr-body", "o/r", "6", str(self.body), "--attach", str(self.shot)], [failure]
+        )
+        self.assertEqual(code, 1)
+        self.assertIsNone(env)
+        self.assertEqual(len(calls), 1)
+        self.assertEqual(err, "GraphQL: could not resolve\n")
+
+    def test_a_failed_read_back_is_a_notice_not_a_failure(self):
+        code, env, err, calls = self._in_process(
+            ["edit-body", "o/r", "5", str(self.body), "--attach", str(self.shot)],
+            [self._ok("https://github.com/o/r/issues/5\n"),
+             process.CommandResult(returncode=1, stdout="", stderr="HTTP 502\n")],
+        )
+        self.assertEqual(code, 0, msg=err)
+        self.assertEqual(env["notices"], ["ATTACH_READBACK_UNAVAILABLE"])
+        self.assertIsNone(env["posted_body_path"])
+        self.assertEqual(calls[1][1:4], ["issue", "view", "https://github.com/o/r/issues/5"])
+
+    def test_a_non_attach_failure_still_surfaces_hard(self):
+        failure = process.CommandResult(returncode=1, stdout="", stderr="GraphQL: not found\n")
+        code, env, err, calls = self._in_process(
+            ["edit-pr-body", "o/r", "6", str(self.body), "--attach", str(self.shot)], [failure]
+        )
+        self.assertEqual(code, 1)
+        self.assertIsNone(env)
+        self.assertEqual(err, "GraphQL: not found\n")
 
 
 if __name__ == "__main__":

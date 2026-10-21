@@ -2432,5 +2432,48 @@ class DodDriftFactTests(unittest.TestCase):
         self.assertIn("Slice body with no `## Acceptance criteria` section", self.rule)
 
 
+
+class PrScreenshotTests(unittest.TestCase):
+    """4.41.0: a PR that changes what a user sees carries screenshots in its body, uploaded by the
+    PR write's `--attach`. The procedure lives in a reference (the spine sits at the prompt-economy
+    bar); the spine names it on both PR writes and restages later body writes from the rewritten
+    copy, because a restage from `pr.md` would put the local paths back and break the images."""
+
+    def setUp(self):
+        self.flat = " ".join((PLAYBOOKS_DIR / SPINE).read_text(encoding="utf-8").split())
+        self.reference = REFERENCES_DIR / "pr-screenshots.md"
+
+    def test_the_spine_attaches_on_the_pr_writes_and_restages_from_the_posted_body(self):
+        self.assertIn('[--attach "<shot>"]...', self.flat)
+        self.assertIn("Both writes take one `--attach` per screenshot", self.flat)
+        self.assertIn("`## Screenshots` when a user sees the change", self.flat)
+        self.assertIn("its envelope's `posted_body_path` when it carried `--attach`", self.flat)
+
+    def test_the_reference_carries_the_contract_the_script_enforces(self):
+        flat = " ".join(self.reference.read_text(encoding="utf-8").split())
+        for fragment in (
+            "**same absolute path** you pass to `--attach`",  # gh matches by exact string
+            "`posted_body_path`",
+            "`ATTACH_PARTIAL`",
+            "Never re-run `create-pr`",
+            "`ATTACH_READBACK_UNAVAILABLE`",
+            "`ATTACH_UNSUPPORTED:`",
+            "`<facts.scratch>/shots/`",
+        ):
+            self.assertIn(fragment, flat)
+
+    def test_the_spine_create_pr_shape_with_attach_dry_runs(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            shot = Path(tmp) / "phase-1-after.png"
+            shot.write_bytes(b"\x89PNG")
+            proc, env = _run_persist(
+                ["create-pr", "octo/widgets", "@BODY@", "--title", "Fix: export (#142)",
+                 "--base", "main", "--head", "142-export", "--attach", str(shot), "--dry-run"],
+                body_text="Fixes #142\n\n## Screenshots\n![Export done](%s)\n" % shot,
+            )
+        self.assertEqual(proc.returncode, 0, msg=proc.stderr)
+        self.assertEqual(env["attachments"], [str(shot)])
+        self.assertIn("--attach", env["would_run"])
+
 if __name__ == "__main__":
     unittest.main()

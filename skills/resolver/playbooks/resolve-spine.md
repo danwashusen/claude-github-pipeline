@@ -181,19 +181,18 @@ skip) / **Restructure** (re-route to the planner). Never run the **full** canoni
 — targeted selection is the whole cost model (the full suite runs only in the epic baseline flow, in
 CI, and in the evaluator).
 
-**Stage the PR, commit, then loop — nothing is pushed until S5.2.** Commit the phase's work in the
-workspace. Fresh mode: stage the body to `<facts.scratch>/pr.md` now (it gains sections during the
-loop) and open the PR only at S5.2. The body's **first line must be `Fixes #<issue-number>` (or `Closes
-#<issue-number>`)** — mandatory, not optional prose — so GitHub auto-links and auto-closes the issue
-on merge; without it the issue never auto-closes and the evaluator's "No closingIssuesReferences" gate
-trips on a PR that should have linked cleanly. Then carry `## Doc grounding` + the `## Plan` link +
-`## Audit override`/`## Plan override` when they fired + a `## Phase tracker` for multi-phase + a
-`## Predecessor` when the branch is a `-vN` (predecessor PR detected). Title is `Fix: <summary>
-(#<issue-number>)` (mandatory shape — `<summary>` is a short present-tense description of the fix; the
-evaluator's later squash-subject derivation reads a Conventional-Commits-prefixed title, so a
-consistently-shaped fresh-PR title keeps that derivation clean). Continue mode stages nothing here: the
-PR exists, and its closing keyword and title were set at fresh-PR open. Then run the **review loop**
-(S5.1).
+**Stage the PR, commit, then loop — nothing is pushed until S5.2.** Commit the phase's work in the workspace. Fresh
+mode: stage the body to `<facts.scratch>/pr.md` now (it gains sections during the loop) and open the PR only at
+S5.2. The body's **first line must be `Fixes #<issue-number>` (or `Closes #<issue-number>`)** — mandatory, not
+optional prose — so GitHub auto-links and auto-closes the issue on merge; without it the issue never auto-closes
+and the evaluator's "No closingIssuesReferences" gate trips on a PR that should have linked cleanly. Then carry `##
+Doc grounding` + the `## Plan` link + `## Audit override`/`## Plan override` when they fired + a `## Phase tracker`
+for multi-phase + a `## Predecessor` for a `-vN` branch + `## Screenshots` when a user sees the change
+([`pr-screenshots.md`](../references/pr-screenshots.md)). Title is `Fix: <summary> (#<issue-number>)` (mandatory
+shape — `<summary>` is a short present-tense description of the fix; the evaluator's later squash-subject
+derivation reads a Conventional-Commits-prefixed title, so a consistently-shaped fresh-PR title keeps that
+derivation clean). Continue mode stages nothing here: the PR exists, and its closing keyword and title were set at
+fresh-PR open. Then run the **review loop** (S5.1).
 
 **Interrupted prior run.** `facts.workspace.unpushed_commits` > 0 (either mode) means an earlier run
 stopped before its S5.2 push (workspace-open or the prior session's S5.2 pushed the branch, so the count
@@ -349,17 +348,18 @@ Fresh mode: open the PR from the staged `pr.md` through the single write path:
 ```bash
 ${CLAUDE_PLUGIN_ROOT}/scripts/gh_persist.py create-pr <owner/repo> "<facts.scratch>/pr.md" \
   --title "Fix: <summary> (#<issue-number>)" --base "<facts.workspace.base_ref>" \
-  --head "<facts.workspace.branch>" [--draft]   # --draft only for a multi-phase issue (S4)
+  --head "<facts.workspace.branch>" [--draft] [--attach "<shot>"]...  # --draft: multi-phase (S4)
 ```
 
-`--base`/`--head` are always explicit facts from the workspace (never inferred from cwd). Continue mode:
-when the loop added PR-body items (outstanding settled items, ledger entries, an `Accept current`
-override, `## Known failures`), stage the updated body and apply it with `edit-pr-body`. Either mode,
-the `## Polish` ledger ([`../../_shared/polish-ledger.md`](../../_shared/polish-ledger.md)) gains one
-entry per polish item the loop left — `open`, `drop` if no shown cost, or finalisation's answer — and
-`applied (commit <sha>)` on each `apply` item it fixed. Then post the loop comment — every round's staged reply, in order, one
-`comment` on the PR; a `BODY_TOO_LONG` decision splits it one comment per round. It is the GitHub-side
-record the next session's resume re-read seeds from. Delete `<facts.scratch>/loop-comment.md` once posted.
+`--base`/`--head` are always explicit facts from the workspace (never inferred from cwd). Continue mode: when the
+loop added PR-body items (outstanding settled items, ledger entries, an `Accept current` override, `## Known
+failures`), stage the updated body and apply it with `edit-pr-body`. Both writes take one `--attach` per
+screenshot ([`pr-screenshots.md`](../references/pr-screenshots.md) §4). Either mode, the `## Polish` ledger
+([`../../_shared/polish-ledger.md`](../../_shared/polish-ledger.md)) gains one entry per polish item the loop left
+— `open`, `drop` if no shown cost, or finalisation's answer — and `applied (commit <sha>)` on each `apply` item it
+fixed. Then post the loop comment — every round's staged reply, in order, one `comment` on the PR; a
+`BODY_TOO_LONG` decision splits it one comment per round. It is the GitHub-side record the next session's resume
+re-read seeds from. Delete `<facts.scratch>/loop-comment.md` once posted.
 
 ## S6 — DoD projection on the push that shipped the phase
 
@@ -378,17 +378,17 @@ ${CLAUDE_PLUGIN_ROOT}/scripts/gh_persist.py edit-body <owner/repo> <issue> \
   "<facts.scratch>/issue-body-projected.md"
 ```
 
-Then update the PR's `## Phase tracker` with `edit-pr-body` (the issue-body op `edit-body` rejects
-a PR number) — the **reconciled** row set from S4, never the rows a prior session wrote. Restage from the
-body this run last wrote (S5.2's, which carries the ledger), never prep's session-start copy: each write
-replaces the whole body, so a stale base silently drops the other's sections. Never tick a bullet the
-phase's `closes-dod` doesn't claim (the resolver projects the planner's declaration, it doesn't infer).
-Never re-tick a bullet the evaluator rejected (`… evaluator rejected: …` is a **sticky veto** —
-resolve it by re-planning or a new phase, never by silent re-ticking); a veto a re-plan reassigned
-(`facts.dod_vetoes[].reassigned_to`) is projected when that phase ships, per the projection rule. Never mark a multi-phase PR
-ready except at the last-phase handoff or a revision run's end ("Return to the routed playbook"), and never add `Closes #N` in reaction to shipping a phase — both
-are the evaluator's judgment. Projection failure does **not** abort the run (re-entry reconciliation is
-the backstop); log it and continue.
+Then update the PR's `## Phase tracker` with `edit-pr-body` (the issue-body op `edit-body` rejects a PR number) —
+the **reconciled** row set from S4, never the rows a prior session wrote. Restage from the body this run last wrote
+(S5.2's, which carries the ledger; its envelope's `posted_body_path` when it carried `--attach`), never prep's
+session-start copy: each write replaces the whole body, so a stale base silently drops the other's sections. Never
+tick a bullet the phase's `closes-dod` doesn't claim (the resolver projects the planner's declaration, it doesn't
+infer). Never re-tick a bullet the evaluator rejected (`… evaluator rejected: …` is a **sticky veto** — resolve it
+by re-planning or a new phase, never by silent re-ticking); a veto a re-plan reassigned
+(`facts.dod_vetoes[].reassigned_to`) is projected when that phase ships, per the projection rule. Never mark a
+multi-phase PR ready except at the last-phase handoff or a revision run's end ("Return to the routed playbook"),
+and never add `Closes #N` in reaction to shipping a phase — both are the evaluator's judgment. Projection failure
+does **not** abort the run (re-entry reconciliation is the backstop); log it and continue.
 
 **Close the slice its last phase just completed.** When the shipped phase carries `sub_issue: <M>`
 (`facts.phases`, the tri-state key — `"(none)"` is substrate and `null` is unmapped; both close
