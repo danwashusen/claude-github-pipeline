@@ -941,6 +941,19 @@ class MergeGuardTests(unittest.TestCase):
             self.assertIn(token, row)
         self.assertIn("never a `gh pr merge`", row)
 
+    def test_the_head_moved_fence_moves_the_branch_instead_of_fast_forwarding(self):
+        # P1.1: a head moved by a force push (a rebase, or the epic drift rectification's) is no
+        # fast-forward of the worktree's branch, so `merge --ff-only` failed with no next step.
+        row = next(line for line in self.RENDERINGS.read_text(encoding="utf-8").splitlines()
+                   if "**Re-gate → `/github-pipeline:evaluator" in line)
+        self.assertIn("git -C <workspace-path> reset --keep origin/<branch>", row)
+        self.assertNotIn("--ff-only", row)
+        text = self.HANDOFF_FORMAT.read_text(encoding="utf-8")
+        entry = next(line for line in text[text.index("## Re-routes"):].splitlines()
+                     if line.startswith("- evaluator → evaluator (a re-gate"))
+        self.assertIn("reset --keep", entry)
+        self.assertNotIn("fast-forwarded", entry)
+
     def test_the_worked_re_gate_fence_re_runs_the_evaluator_and_prints_no_merge(self):
         text = self.RENDERINGS.read_text(encoding="utf-8")
         fences = text.split("```")[1::2]  # the odd segments are the fence interiors
