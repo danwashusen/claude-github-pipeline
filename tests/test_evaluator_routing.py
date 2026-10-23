@@ -893,6 +893,7 @@ class MergeGuardTests(unittest.TestCase):
         self.assertIn("--gated-head", merge)
         self.assertIn("merge_guard.skip_reason", merge)
         self.assertIn("on the `ask` path too", merge)
+        self.assertIn("or the operator\ndeferred the merge", merge)
         # The non-zero-exit recovery reads the fact, never gh's stderr.
         self.assertIn("merge_guard.head_moved", merge)
 
@@ -903,6 +904,9 @@ class MergeGuardTests(unittest.TestCase):
         gate = _between(spine, "**S7-gate**", "**S7-merge**")
         self.assertIn("--refresh --gated-head", gate)
         self.assertIn("`merge_guard.skip_reason` outranks `deferred`", gate)
+        # The deferred path reads a fresh guard at S7-merge's refresh, not step 1's stale one.
+        self.assertIn('Approve, or the "Other" deferred-merge → S7-merge', gate)
+        self.assertIn("named, never `deferred`", gate)
         # A guard skip found before the post posts no review — no card, no APPROVE on a head
         # nobody gated (the plan's "A guard skip found before S7-post posts no review").
         self.assertIn("`merge_guard.skip_reason` set → S7-skip now, with no card and no review post", gate)

@@ -168,9 +168,12 @@ ground these are produced by implementation step S1. Lettered items are individu
   - (d) Judges scope match, doc grounding, and plan adherence.
   - (e) Issues APPROVE or COMMENT review actions and never approves its own PR.
   - (f) Merges per the configured per-PR-type policy (default `ask`) and the strategy rules for
-    the PR's shape — and only the head SHA it gated and reviewed, and only when that head contains
-    the base tip; otherwise it skips the merge with a named reason (`head-moved` / `base-moved`) and
-    hands the new head to a fresh evaluator session to re-gate.
+    the PR's shape — and only the head SHA it gated and reviewed, and only when that head contained the base tip at its last pre-merge refresh (`--match-head-commit`
+    pins the head through the merge; the base is not re-checked after that refresh, nor by the
+    head-pinned manual command printed for a BLOCKED or deferred merge); otherwise it skips the merge
+    with a named reason (`head-moved` / `base-moved`), and a fresh evaluator session re-gates the new
+    head — on the epic-integration PR, `base-moved` and `DIRTY` route through the resolver's epic drift
+    rectification first.
   - (g) On story merge: closes the story and records its entry in the epic delivery log (one comment per shipped story). Closing the story is
     what advances the epic's progress — GitHub recomputes the sub-issue rollup from issue state
     ([`skills/_shared/epic-story-hierarchy.md`](../skills/_shared/epic-story-hierarchy.md)); only a legacy epic still carrying a

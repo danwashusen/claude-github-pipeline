@@ -34,8 +34,7 @@ external processes any script may spawn are git/gh")::
                                              also downgrade an entry's `binding` authority
     _fetch_base_compare(...)              -- one `gh api .../compare/<base>...<head>` read: does
                                              the head contain the base tip? With `--gated-head`
-                                             it becomes the `merge_guard` fact (#93) — the merge
-                                             lands only the gated head, and only on a current base
+                                             it becomes the `merge_guard` fact (#93) — the merge lands only the gated head, and only on a base current at the last refresh
 
 Every executor exposes a **pure, non-emitting core** — ``build_*(...) -> (payload, notices,
 decision|None)`` — as of the S8 pattern lock (docs/specs/baseline.md §5): ``gh_pr_gather``,
@@ -996,8 +995,9 @@ def _fetch_current_user(cwd):
 
 # ---------------------------------------------------------------------------
 # The merge guard (#93): the merge lands only the gated head, and only when that head contains the
-# base tip. Both halves are facts so the spine compares nothing itself (CLAUDE.md "facts by script,
-# meaning by model"); `gh pr merge --match-head-commit` covers the window after the last refresh.
+# base tip as of the last refresh. Both halves are facts so the spine compares nothing itself (CLAUDE.md "facts by script,
+# meaning by model"); `gh pr merge --match-head-commit` covers the head in the window
+# after the last refresh — nothing covers the base there.
 # ---------------------------------------------------------------------------
 
 # The compare reduced to the four values the guard reads. `--jq` keeps the multi-KB commit/file
@@ -1222,7 +1222,8 @@ def _build_attention(workspace_envelope, pr_envelope, blocked_by_by_issue=None, 
 def build_facts(pr_number, repo, root=".", scratch_dir=None, refresh=False, cwd=None, gated_head=None):
     """Assemble the evaluator's complete facts block and return the envelope dict WITHOUT
     printing it (the testable core, mirroring gh_gather.run's split — main() does the printing).
-    ``refresh`` re-derives PR state + CI classification + health-cache hit/miss without
+    ``refresh`` re-derives PR state + CI classification + health-cache hit/miss + ``merge_guard``
+    (against ``gated_head``) without
     re-`ensure`-ing the work worktree (so setup hooks are not re-run) and without re-reading gate
     config (config is pinned at the root SHA already recorded on a prior run's facts, per
     architecture.md §4: "prep supports --refresh and is re-run at the points where currency
@@ -1291,7 +1292,7 @@ def build_facts(pr_number, repo, root=".", scratch_dir=None, refresh=False, cwd=
         #     (S4's doc-grounding dimension). `None` on --refresh, which reads no checkout.
         grounding_docs, catalogue_notices = doc_catalogue.read_catalogue(gate_root)
     else:
-        # --refresh: re-derive only PR state + CI + health-cache hit/miss. Root freshness,
+        # --refresh: re-derive only PR state + CI + health-cache hit/miss + merge_guard. Root freshness,
         # workspace ensure (and its setup hooks), and gate config are NOT re-run/re-read — the S6
         # brief and this step's DoD are explicit that --refresh must not re-run hooks. A caller
         # that needs a workspace/config fact on a --refresh run is expected to hold onto the
@@ -1520,7 +1521,7 @@ def main(argv):
     parser.add_argument(
         "--refresh",
         action="store_true",
-        help="re-derive volatile facts (PR state, CI, health-cache hit) without re-running hooks",
+        help="re-derive volatile facts (PR state, CI, health-cache hit, merge_guard) without re-running hooks",
     )
     parser.add_argument(
         "--gated-head",

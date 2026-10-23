@@ -51,8 +51,8 @@ flips a PR ready immediately before its forward handoff, so this guard is the lo
 that contract, not a missed handoff.
 
 The **gated head** is the `pr.headRefOid` of the opening full run — the one whose facts block asserted
-the workspace. Re-run prep with `--refresh --gated-head <gated head>` before the merge-approval
-gate and before any merge, so the verdict and merge act on the PR's current state, not the opening
+the workspace. Re-run prep with `--refresh --gated-head <gated head>` after a CI wait, before the
+merge-approval gate, before any merge (a deferred one included) and after a failed one, so the verdict and merge act on the PR's current state, not the opening
 snapshot — and never pass a refresh's own head, which would silently disable the merge pin. This detects **external operator
 action** (approve/comment/merge/close on GitHub mid-run); it is not the forbidden re-verify of your
 own write.
@@ -91,8 +91,7 @@ Universal across every route:
   `body_sha256`, and gates empty bodies (`EMPTY_BODY_FILE`) — the #626/#627 race fix. Never
   re-serialize a body across the prompt boundary; never hand-roll a persist/gather `gh` call.
 - **Successful write is self-confirming.** A zero exit with a URL *is* the confirmation; never re-read
-  the comment/review to check it landed (re-reads reintroduce races and burn context). The one allowed
-  re-fetch is the pre-merge `--refresh` above — external-action detection, not self-verification.
+  the comment/review to check it landed (re-reads reintroduce races and burn context). The only allowed re-fetches are the `--refresh --gated-head` re-runs §1 lists — external-action detection, not self-verification.
 - **Gates only for genuine decisions** (per [`../_shared/asking-the-user.md`](../_shared/asking-the-user.md)):
   the merge-approval decision, a CI-vs-local discrepancy, a missing health-config, an unlinked PR —
   never to confirm a fact prep derived. A judgment gate left with one credible option is announced, not asked; every card opens with its brief. A sub-agent (test-selection `Explore`, the Apple builder)
@@ -111,9 +110,10 @@ worked shapes are in [`references/handoff-renderings.md`](references/handoff-ren
 that reference before composing the handoff** and match the run's outcome to its rubric (terminal
 merge, story-merged, epic-integration terminal, soft-reject re-route to the resolver or — for a polish
 `apply` that changes the plan, or a Re-plan answer — the planner, or — for an epic story deferral — the
-slicer, approve-but-skipped). Fill the
+slicer, the re-gate route to the evaluator, the epic drift re-route to the resolver,
+approve-but-skipped). Fill the
 snapshot from data in hand (the prep facts + this run's verdict / cache SHA / merge outcome); the
 `Next:` action and `Why:` line are judgment. Next-command skills are namespaced `/github-pipeline:<name>`
-(`planner`, `resolver`, `slicer`). A re-route does **not** invoke the prior skill via the `Skill` tool — the
+(`planner`, `resolver`, `slicer`, `evaluator`, `workspace-close`). A re-route does **not** invoke the prior skill via the `Skill` tool — the
 handoff is the only signal; the user runs the command in a fresh session (session-per-skill is the
 context-isolation choice).
