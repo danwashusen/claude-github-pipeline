@@ -34,7 +34,9 @@ external processes any script may spawn are git/gh")::
                                              also downgrade an entry's `binding` authority
     _fetch_base_compare(...)              -- one `gh api .../compare/<base>...<head>` read: does
                                              the head contain the base tip? With `--gated-head`
-                                             it becomes the `merge_guard` fact (#93) — the merge lands only the gated head, and only on a base current at the last refresh
+                                             it becomes the `merge_guard` fact (#93) — the merge
+                                             lands only the gated head, and only on a base
+                                             current at the last refresh
 
 Every executor exposes a **pure, non-emitting core** — ``build_*(...) -> (payload, notices,
 decision|None)`` — as of the S8 pattern lock (docs/specs/baseline.md §5): ``gh_pr_gather``,

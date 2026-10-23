@@ -893,7 +893,7 @@ class MergeGuardTests(unittest.TestCase):
         self.assertIn("--gated-head", merge)
         self.assertIn("merge_guard.skip_reason", merge)
         self.assertIn("on the `ask` path too", merge)
-        self.assertIn("or the operator\ndeferred the merge", merge)
+        self.assertIn("or the operator deferred the merge", " ".join(merge.split()))
         # The non-zero-exit recovery reads the fact, never gh's stderr.
         self.assertIn("merge_guard.head_moved", merge)
 

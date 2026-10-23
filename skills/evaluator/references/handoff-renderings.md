@@ -134,9 +134,9 @@ re-deadlocking on the draft-PR guard the next time it hands back.
 **Why:** the review cites <N> dimension gaps (acceptance-criterion #3 unaddressed; one plan-locked test missing — see the review comment for the full evidence). The draft-flip put the PR back to draft so the resolver's existing-PR check picks it up as in-progress work, not as drift; the resolver's review loop will address each finding, re-push, and re-flip to ready before its next forward handoff.
 ```
 
-**APPROVE but merge skipped — re-gate.** The PR earned approval, but the merge guard held it: the base
-gained commits the gated head lacks (`base-moved`), the head moved after review (`head-moved`), or the
-branch conflicts (`DIRTY`). An approval covers one commit, so no `gh pr merge` is printed — the fence
+**APPROVE but merge skipped — re-gate.** The PR earned approval, but the merge is held: the merge guard
+found the base gained commits the gated head lacks (`base-moved`) or the head moved after review
+(`head-moved`), or `mergeStateStatus` reports the branch conflicts (`DIRTY`). An approval covers one commit, so no `gh pr merge` is printed — the fence
 updates the branch (or the worktree) and starts a fresh evaluator session to gate the new head.
 
 ```

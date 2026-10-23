@@ -39,11 +39,13 @@ prose; prep already did.
 **Decision card rule.** If prep exits with `status: needs_decision`, render its `decision` as one
 `AskUserQuestion` card with its brief (per [`../_shared/asking-the-user.md`](../_shared/asking-the-user.md)), act on
 the answer, and re-run the call that raised it: a card from the opening run re-runs the full prep (no
-facts block exists yet); a card from a later call re-runs `--refresh --gated-head <gated head>`. This is the single universal handler
-for every closed-set code (`AUTH_REQUIRED`, `MARKER_AMBIGUOUS`, `WORKSPACE_MISMATCH`,
-`DOD_MALFORMED`, …). A `WORKSPACE_MISMATCH` means the wrong checkout (wrong branch, the project
-root, or ambient HEAD ≠ the PR's head OID — stale or diverged): the fix is the operator's (start
-the session in the PR's worktree / pull it to the head), never a checkout this session performs.
+facts block exists yet); a card from a later call re-runs `--refresh --gated-head <gated head>`. This
+is the single universal handler for every closed-set code (`AUTH_REQUIRED`, `MARKER_AMBIGUOUS`,
+`WORKSPACE_MISMATCH`, `DOD_MALFORMED`, …). A `WORKSPACE_MISMATCH` means the wrong checkout (wrong
+branch, the project root, or ambient HEAD ≠ the PR's head OID — stale or diverged): the fix is the
+operator's (start the session in the PR's worktree / move its branch to the PR's remote head —
+`git fetch origin <branch>` then `git reset --keep origin/<branch>`, since a force-pushed head is no
+fast-forward), never a checkout this session performs.
 
 **Draft-PR guard.** If `target.state` is `DRAFT` (surfaced in `attention`), stop: tell the user to
 mark it ready before evaluating. A draft reaching here is genuinely in-progress work — the resolver
@@ -52,8 +54,9 @@ that contract, not a missed handoff.
 
 The **gated head** is the `pr.headRefOid` of the opening full run — the one whose facts block asserted
 the workspace. Re-run prep with `--refresh --gated-head <gated head>` after a CI wait, before the
-merge-approval gate, before any merge (a deferred one included) and after a failed one, so the verdict and merge act on the PR's current state, not the opening
-snapshot — and never pass a refresh's own head, which would silently disable the merge pin. This detects **external operator
+merge-approval gate, before any merge (a deferred one included) and after a failed one, so the
+verdict and merge act on the PR's current state, not the opening snapshot — and never pass a
+refresh's own head, which would silently disable the merge pin. This detects **external operator
 action** (approve/comment/merge/close on GitHub mid-run); it is not the forbidden re-verify of your
 own write.
 
@@ -91,7 +94,8 @@ Universal across every route:
   `body_sha256`, and gates empty bodies (`EMPTY_BODY_FILE`) — the #626/#627 race fix. Never
   re-serialize a body across the prompt boundary; never hand-roll a persist/gather `gh` call.
 - **Successful write is self-confirming.** A zero exit with a URL *is* the confirmation; never re-read
-  the comment/review to check it landed (re-reads reintroduce races and burn context). The only allowed re-fetches are the `--refresh --gated-head` re-runs §1 lists — external-action detection, not self-verification.
+  the comment/review to check it landed (re-reads reintroduce races and burn context). The only allowed re-fetches are the
+  `--refresh --gated-head` re-runs §1 lists — external-action detection, not self-verification.
 - **Gates only for genuine decisions** (per [`../_shared/asking-the-user.md`](../_shared/asking-the-user.md)):
   the merge-approval decision, a CI-vs-local discrepancy, a missing health-config, an unlinked PR —
   never to confirm a fact prep derived. A judgment gate left with one credible option is announced, not asked; every card opens with its brief. A sub-agent (test-selection `Explore`, the Apple builder)
