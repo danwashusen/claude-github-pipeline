@@ -72,6 +72,8 @@ On a **no-merge** exit, emit the matching rubric shape instead — **soft-reject
 `/github-pipeline:resolver #<issue>` (COMMENT verdict or operator Needs-Revision / Reject; PR is
 back in draft, `merge: skipped (verdict)`, no Cleanup line) — or to `/github-pipeline:planner revise
 #<issue>` when the soft-reject carries an S4-untick or a plan-changing polish `apply`, since only a
-re-plan clears either — or **APPROVE-but-skipped** (DIRTY/BLOCKED
-or operator-deferred; `merge: skipped (DIRTY|BLOCKED|deferred)`, the `Next:` quotes the manual `gh pr
-merge` command).
+re-plan clears either — or the **re-gate** route (`merge: skipped (DIRTY|head-moved|base-moved)`: a
+`Workspace:` line, the fence updates the branch or worktree and re-runs `/github-pipeline:evaluator
+#<PR>`, no `gh pr merge`) — or **APPROVE-but-skipped** (BLOCKED or operator-deferred;
+`merge: skipped (BLOCKED|deferred)`, the `Next:` quotes the manual `gh pr merge` command, pinned with
+`--match-head-commit`).

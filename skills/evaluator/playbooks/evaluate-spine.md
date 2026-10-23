@@ -65,8 +65,10 @@ failing check names when red):
   gh pr checks <PR> --repo <owner/repo> --watch --interval 30 > "<facts.scratch>/ci-watch.log" 2>&1
   ```
   `--watch` returns when every check is terminal. The wait is **unbounded**: if the harness interrupts
-  it, re-invoke until it returns. Then re-run prep `--refresh` and re-read `facts.ci.class`. If the PR
-  head advanced during the wait, the `--refresh` facts already key on the new SHA — re-enter S3.1.
+  it, re-invoke until it returns. Then re-run prep `--refresh --gated-head <gated head>` and re-read
+  `facts.ci.class`. If `merge_guard.head_moved` is true the PR head advanced during the wait, to a
+  commit this worktree does not hold: never cache or judge it — stop at S7-skip as `head-moved`, before
+  any verdict (no review posts; the handoff carries `review: not run` and `health: not run`).
 
 **S3.3 Local gate config.** `facts.config` carries the gate blocks read from the asserted PR-head
 worktree (`facts.config.source`):
@@ -266,9 +268,10 @@ bug) before appending `(#<PR>)`. Body = the PR body's `## Summary` (or first par
 #<issue>` if not already present. Stage the body to `<facts.scratch>/squash-body.md`.
 
 **Merge-readiness flags** — surface these **alongside** the verdict, never let them block approval
-(code merit and merge-readiness are orthogonal). From `facts.pr.mergeStateStatus` /
-`reviewDecision` (also raised in `attention`): `BEHIND` → "rebase or merge base before merging";
-`DIRTY` → "conflicts — resolve before merging"; `BLOCKED` → "merge blocked by branch protection";
+(code merit and merge-readiness are orthogonal; the verdict never consults `merge_guard`). From
+`facts.merge_guard` / `pr.mergeStateStatus` / `reviewDecision` (also raised in `attention`):
+`merge_guard.base_moved` → "the base moved — the merge skips as `base-moved` until the branch is
+updated and re-gated"; `DIRTY` → "conflicts — resolve before merging"; `BLOCKED` → "merge blocked by branch protection";
 `REVIEW_REQUIRED` owed to another reviewer → "approval will post, but merge may be gated."
 
 ## S7 — Merge-approval gate and merge
@@ -299,7 +302,7 @@ gh pr ready <PR> --repo <owner/repo> --undo
 canonical state). The self-approval downgrade is the exception: it stays ready for manual merge.
 
 **S7-gate** (the deferred APPROVE-under-`ask` / epic-integration path — the operator decision gate):
-1. **Refresh** first (`prep_evaluator.py --refresh …`) so you act on current truth — the operator may
+1. **Refresh** first (`prep_evaluator.py --refresh --gated-head <gated head> …`) so you act on current truth — the operator may
    have approved/commented/merged/closed on GitHub mid-run. If `target.state` is `merged`/`closed`,
    stop and treat as "merge did not run" (externally resolved); let the handoff carry it. A human
    `CHANGES_REQUESTED` at head → default the gate to **Needs Revision**; a human `APPROVED` at head →
@@ -313,32 +316,39 @@ canonical state). The self-approval downgrade is the exception: it stays ready f
    header prepended per [`../references/review-comment.md`](../references/review-comment.md) (mirrors
    the `operator action <ISO-date>` form). Post with `--review-action approve` on Approve (or `comment`
    when self-authored), `comment` on Needs Revision / Reject.
-4. **Route:** Approve + mergeable → merge (S7-merge). Approve but `mergeStateStatus ∈ {DIRTY, BLOCKED}`
-   or the "Other" deferred-merge → S7-skip (print the command, no merge). Needs Revision / Reject →
+4. **Route:** Approve → S7-merge, whose pre-check owns the guard and DIRTY/BLOCKED. The "Other"
+   deferred-merge → S7-skip, where step 1's `merge_guard.skip_reason` outranks `deferred`. Needs Revision / Reject →
    flip to draft (`gh pr ready <PR> --undo`) and take the soft-reject path (no merge; review already
    posted as `comment` in step 3).
 
-**S7-merge** (APPROVE, mergeable). Before invoking, confirm the PR is still `open` and mergeable (the
-`ask`/epic path already refreshed in S7-gate step 1; on the `auto` path, run `--refresh` now and stop
-if `state` isn't `open` or `mergeStateStatus` went DIRTY/BLOCKED — don't fire a stale merge). Print
-the command so it's visible in the transcript, then run it. This is the merge executor — there is no
-`gh_persist.py` merge op, so the merge runs as a direct `gh pr merge`:
+**S7-merge** (APPROVE). The **gated head** is the opening prep's `pr.headRefOid` — what the worktree
+was asserted at and the health gate keyed on. Immediately before merging — on the `ask` path too,
+since the operator may have sat on the card — run `--refresh --gated-head <gated head>`. Stop if
+`state` isn't `open`; go to S7-skip if `merge_guard.skip_reason` is set or `mergeStateStatus` is
+DIRTY/BLOCKED; a refresh that failed is a stop, never a merge. Print the command so it's visible in the
+transcript, then run it. This is the merge executor — there is no `gh_persist.py` merge op, so the
+merge runs as a direct `gh pr merge`, pinned so GitHub refuses any head but the gated one:
 ```bash
 # squash (standard / story / single-commit epic):
-gh pr merge <PR> --repo <owner/repo> --squash \
+gh pr merge <PR> --repo <owner/repo> --squash --match-head-commit <gated head> \
   --subject "<composed subject>" --body-file "<facts.scratch>/squash-body.md" [--delete-branch]
 # merge commit (multi-commit epic-integration):
-gh pr merge <PR> --repo <owner/repo> --merge [--delete-branch]
+gh pr merge <PR> --repo <owner/repo> --merge --match-head-commit <gated head> [--delete-branch]
 ```
 Append `--delete-branch` only when `facts.merge_config.delete_branch_on_merge` is false. Never
-`--auto` (repo `allow_auto_merge` is false). On non-zero exit, surface the `gh` output and stop — do
+`--auto` (repo `allow_auto_merge` is false). On non-zero exit, refresh with `--gated-head`:
+`merge_guard.head_moved` → S7-skip as `head-moved`; otherwise surface the `gh` output and stop — do
 **not** proceed to the routed playbook's post-merge actions or cleanup. (The worktree is retained on
 every exit under v3 — success included; what a failed merge preserves is the *retry*, not the tree.)
 
-**S7-skip** (APPROVE but DIRTY/BLOCKED, or operator-deferred). Print the recommended `gh pr merge`
-command for the user to run after clearing the blocker, name the blocker (`DIRTY` → conflicts;
-`BLOCKED` → branch protection), then stop. Do **not** run the post-merge actions or cleanup — the
-worktree stays for the retry.
+**S7-skip** (APPROVE, no merge). The reason is the first that holds, in this order — a guard reason
+always outranks the rest: `merge_guard.skip_reason` (`head-moved`, then `base-moved`), `DIRTY`
+(conflicts), `BLOCKED` (branch protection), operator-`deferred`. `BLOCKED` / `deferred`: print the
+recommended `gh pr merge` — pinned with `--match-head-commit <gated head>` — for the user to run after
+clearing the blocker. `DIRTY` / `head-moved` / `base-moved`: print **no** `gh pr merge` — an approval
+covers one commit, and the branch or worktree must carry a new head that a fresh session re-gates (the
+routed playbook's re-gate route). Name the reason, then stop. Do **not** run the post-merge actions or
+cleanup — the worktree stays for the retry.
 
 ## Return to the routed playbook
 

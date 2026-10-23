@@ -25,7 +25,8 @@ ${CLAUDE_PLUGIN_ROOT}/scripts/prep_evaluator.py <PR> <owner/repo>
 
 It returns one JSON **facts block** (`architecture.md §4`): `target`, `vector`, `suggested_playbook`,
 `pr` (with `mergeStateStatus`/`reviewDecision`/`closingIssuesReferences`), `pr_type`, `ci` (`class` +
-`fail_checks`), `health_cache` (`hit`/`sha`), `self_review`, `config` (the four gate blocks read from **the PR-head worktree's working tree**;
+`fail_checks`), `health_cache` (`hit`/`sha`), `merge_guard` (`head_moved`/`base_moved`/`skip_reason` — may
+the merge land the gated head on the current base?), `self_review`, `config` (the four gate blocks read from **the PR-head worktree's working tree**;
 `config.source` names the checkout/branch/SHA and its dirty state — this PR supplies the gates it
 is judged by, so report that source whenever it is dirty), `merge_config` (repo `allow_*` booleans), `dod`/`blocked_by`/`deps_available`
 (keyed per closing-issue number), `polish` (the PR body's `## Polish` ledger), `epic` (story and
@@ -48,8 +49,9 @@ mark it ready before evaluating. A draft reaching here is genuinely in-progress 
 flips a PR ready immediately before its forward handoff, so this guard is the load-bearing half of
 that contract, not a missed handoff.
 
-Re-run prep with `--refresh` before the merge-approval gate and before any merge, so the verdict and
-merge act on the PR's current state, not the opening snapshot. This detects **external operator
+Re-run prep with `--refresh --gated-head <the opening run's pr.headRefOid>` before the merge-approval
+gate and before any merge, so the verdict and merge act on the PR's current state, not the opening
+snapshot — and never pass a refresh's own head, which would silently disable the merge pin. This detects **external operator
 action** (approve/comment/merge/close on GitHub mid-run); it is not the forbidden re-verify of your
 own write.
 
