@@ -1173,6 +1173,38 @@ class PureHelperUnitTests(unittest.TestCase):
                     (guard["head_moved"], guard["base_moved"], guard["skip_reason"]), expected
                 )
 
+    def test_an_unreadable_compare_never_reads_as_a_current_base(self):
+        # Fail closed: a count the guard cannot read must stop the run, never make base_moved false.
+        parse = prep_evaluator._parse_base_compare
+        good = parse('{"status": "ahead", "ahead_by": 1, "behind_by": 0, "sha": "abc"}', "main")
+        self.assertEqual(good["behind_by"], 0)
+        self.assertEqual(good["ref"], "main")
+        for stdout in (
+            '{"status": "ahead", "ahead_by": 1, "behind_by": null, "sha": "abc"}',
+            '{"status": "ahead", "ahead_by": 1, "sha": "abc"}',
+            '{"ahead_by": true, "behind_by": false}',
+            "not json",
+            "[]",
+        ):
+            with self.subTest(stdout=stdout):
+                self.assertIsNone(parse(stdout, "main"))
+
+    def test_the_compare_path_escapes_the_base_ref(self):
+        from unittest import mock
+
+        calls = []
+
+        def fake_run(argv, cwd=None):
+            calls.append(argv)
+            return mock.Mock(
+                auth_required=False, returncode=0,
+                stdout='{"status": "ahead", "ahead_by": 1, "behind_by": 0, "sha": "abc"}',
+            )
+
+        with mock.patch.object(prep_evaluator.process, "run", fake_run):
+            prep_evaluator._fetch_base_compare("o/r", "epic/7-x#2", "f00", cwd=None)
+        self.assertEqual(calls[0][2], "repos/o/r/compare/epic/7-x%232...f00")
+
     def test_classify_ci_rollup_green(self):
         cls, fails = prep_evaluator._classify_ci_rollup([{"name": "a", "conclusion": "SUCCESS"}])
         self.assertEqual(cls, "green")

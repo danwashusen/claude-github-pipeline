@@ -72,6 +72,7 @@ import argparse
 import json
 import re
 import sys
+import urllib.parse
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
@@ -1021,9 +1022,11 @@ def _fetch_base_compare(repo, base_ref, head_sha, cwd):
     notice with a null fact: this guards a merge, and a missed read must never read as clear.
     Needs no checkout, so it runs on ``--refresh`` too. Returns ``(base, decision_or_none)``.
     """
+    # A ref may carry `#`, `?` or `%`, which would otherwise end or corrupt the REST path.
     result = process.run(
         [
-            "gh", "api", "repos/%s/compare/%s...%s" % (repo, base_ref, head_sha),
+            "gh", "api",
+            "repos/%s/compare/%s...%s" % (repo, urllib.parse.quote(base_ref, safe="/"), head_sha),
             "--jq", _BASE_COMPARE_JQ,
         ],
         cwd=cwd,
@@ -1033,14 +1036,36 @@ def _fetch_base_compare(repo, base_ref, head_sha, cwd):
     if result.returncode != 0:
         sys.stderr.write(result.stderr)
         sys.exit(1)
-    data = json.loads(result.stdout)
+    base = _parse_base_compare(result.stdout, base_ref)
+    if base is None:
+        sys.stderr.write(
+            "prep_evaluator: the base compare for %s returned no ahead_by/behind_by counts: %r\n"
+            % (base_ref, result.stdout)
+        )
+        sys.exit(1)
+    return base, None
+
+
+def _parse_base_compare(stdout, base_ref):
+    """The compare's reduced JSON as the ``merge_guard.base`` dict, or ``None`` when the counts are
+    not integers — a response the guard cannot read must stop the run, never read as "base current"
+    (a null ``behind_by`` would otherwise make ``base_moved`` false: fail open)."""
+    try:
+        data = json.loads(stdout)
+    except ValueError:
+        return None
+    if not isinstance(data, dict):
+        return None
+    counts = (data.get("ahead_by"), data.get("behind_by"))
+    if not all(isinstance(n, int) and not isinstance(n, bool) for n in counts):
+        return None
     return {
         "ref": base_ref,
         "sha": data.get("sha"),
-        "ahead_by": data.get("ahead_by"),
-        "behind_by": data.get("behind_by"),
+        "ahead_by": counts[0],
+        "behind_by": counts[1],
         "status": data.get("status"),
-    }, None
+    }
 
 
 def _merge_guard(gated_head, head_sha, base):
@@ -1052,7 +1077,7 @@ def _merge_guard(gated_head, head_sha, base):
     did. DIRTY/BLOCKED stay on ``pr.mergeStateStatus``; the spine ranks the guard ahead of both.
     """
     head_moved = gated_head != head_sha
-    base_moved = (base.get("behind_by") or 0) > 0
+    base_moved = base["behind_by"] > 0  # an int: _parse_base_compare refuses anything else
     if head_moved:
         skip_reason = SKIP_HEAD_MOVED
     elif base_moved:

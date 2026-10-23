@@ -903,6 +903,9 @@ class MergeGuardTests(unittest.TestCase):
         gate = _between(spine, "**S7-gate**", "**S7-merge**")
         self.assertIn("--refresh --gated-head", gate)
         self.assertIn("`merge_guard.skip_reason` outranks `deferred`", gate)
+        # A guard skip found before the post posts no review — no card, no APPROVE on a head
+        # nobody gated (the plan's "A guard skip found before S7-post posts no review").
+        self.assertIn("`merge_guard.skip_reason` set → S7-skip now, with no card and no review post", gate)
         skip = _between(spine, "**S7-skip**", "## Return to the routed playbook")
         order = [skip.index(token) for token in (
             "merge_guard.skip_reason", "`head-moved`", "`base-moved`", "`DIRTY`", "`BLOCKED`",
