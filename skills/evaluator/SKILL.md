@@ -38,7 +38,8 @@ prose; prep already did.
 
 **Decision card rule.** If prep exits with `status: needs_decision`, render its `decision` as one
 `AskUserQuestion` card with its brief (per [`../_shared/asking-the-user.md`](../_shared/asking-the-user.md)), act on
-the answer, and re-run prep (`--refresh` for volatile facts). This is the single universal handler
+the answer, and re-run the call that raised it: a card from the opening run re-runs the full prep (no
+facts block exists yet); a card from a later call re-runs `--refresh --gated-head <gated head>`. This is the single universal handler
 for every closed-set code (`AUTH_REQUIRED`, `MARKER_AMBIGUOUS`, `WORKSPACE_MISMATCH`,
 `DOD_MALFORMED`, …). A `WORKSPACE_MISMATCH` means the wrong checkout (wrong branch, the project
 root, or ambient HEAD ≠ the PR's head OID — stale or diverged): the fix is the operator's (start
@@ -49,7 +50,8 @@ mark it ready before evaluating. A draft reaching here is genuinely in-progress 
 flips a PR ready immediately before its forward handoff, so this guard is the load-bearing half of
 that contract, not a missed handoff.
 
-Re-run prep with `--refresh --gated-head <the opening run's pr.headRefOid>` before the merge-approval
+The **gated head** is the `pr.headRefOid` of the opening full run — the one whose facts block asserted
+the workspace. Re-run prep with `--refresh --gated-head <gated head>` before the merge-approval
 gate and before any merge, so the verdict and merge act on the PR's current state, not the opening
 snapshot — and never pass a refresh's own head, which would silently disable the merge pin. This detects **external operator
 action** (approve/comment/merge/close on GitHub mid-run); it is not the forbidden re-verify of your

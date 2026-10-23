@@ -913,6 +913,8 @@ class MergeGuardTests(unittest.TestCase):
         )]
         self.assertEqual(order, sorted(order), "S7-skip must rank the guard ahead of the rest")
         self.assertIn("print **no** `gh pr merge`", skip)
+        # The route is the routed playbook's (epic-integration splits it), never the spine's.
+        self.assertNotIn("re-gate route", skip)
 
     def test_a_head_moved_during_the_ci_wait_is_skipped_not_re_gated(self):
         ci = _between(self.SPINE.read_text(encoding="utf-8"), "**S3.2 CI class.**", "**S3.3")

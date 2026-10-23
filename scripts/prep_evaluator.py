@@ -50,7 +50,7 @@ retro's rule for S9+).
 Usage::
 
     prep_evaluator.py <pr-number> <owner/repo> [--root PATH] [--scratch-dir DIR] [--refresh]
-                      [--gated-head SHA]
+                      [--gated-head <40-char SHA>]
 
 ``--root`` defaults to ``.`` and is normalized to the MAIN checkout via
 ``workspace._resolve_main_root`` — under v3 the session (and therefore the ambient cwd) sits
@@ -1378,7 +1378,8 @@ def build_facts(pr_number, repo, root=".", scratch_dir=None, refresh=False, cwd=
     if compare_decision is not None:
         emit_needs_decision(compare_decision)
         return None
-    merge_guard = _merge_guard(gated_head or head_sha, head_sha, base)
+    # Only an ABSENT pin means "this run's head": an empty or other present value is compared.
+    merge_guard = _merge_guard(head_sha if gated_head is None else gated_head, head_sha, base)
 
     # 6) CI rollup classification, PR-type detection, health-cache SHA compare.
     ci_class, ci_fail_checks = _classify_ci_rollup(pr_envelope.get("statusCheckRollup"))
@@ -1518,10 +1519,18 @@ def main(argv):
     parser.add_argument(
         "--gated-head",
         default=None,
-        help="the opening run's pr.headRefOid; merge_guard.head_moved compares the current head to it",
+        help="the opening run's full 40-character pr.headRefOid; merge_guard.head_moved compares the "
+        "current head to it",
     )
     parser.add_argument("--cwd", default=None, help="explicit cwd for the repo-merge-config/user gh calls")
     args = parser.parse_args(argv)
+    # The guard compares by exact string equality, so a short or empty SHA would read every head as
+    # moved, or (empty) slip past the pin — refuse it as a usage error, before any gh call.
+    if args.gated_head is not None and not re.fullmatch(r"[0-9a-f]{40}", args.gated_head):
+        parser.error(
+            "--gated-head takes the opening run's full 40-character pr.headRefOid, got %r"
+            % args.gated_head
+        )
 
     facts = build_facts(
         args.pr,

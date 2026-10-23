@@ -349,7 +349,7 @@ always outranks the rest: `merge_guard.skip_reason` (`head-moved`, then `base-mo
 recommended `gh pr merge` — pinned with `--match-head-commit <gated head>` — for the user to run after
 clearing the blocker. `DIRTY` / `head-moved` / `base-moved`: print **no** `gh pr merge` — an approval
 covers one commit, and the branch or worktree must carry a new head that a fresh session re-gates (the
-routed playbook's re-gate route). Name the reason, then stop. Do **not** run the post-merge actions or
+route the routed playbook names for that reason). Name the reason, then stop. Do **not** run the post-merge actions or
 cleanup — the worktree stays for the retry.
 
 ## Return to the routed playbook

@@ -1274,6 +1274,20 @@ class PureHelperUnitTests(unittest.TestCase):
 
 
 class UsageErrorTests(unittest.TestCase):
+    def test_a_short_or_empty_gated_head_is_a_usage_error(self):
+        # #93: exact-equality compare — a short SHA would read every head as moved, and an empty one
+        # would slip past the pin. Refused before any gh call (no shim needed).
+        for value in ("abc1234", ""):
+            with self.subTest(value=value):
+                result = subprocess.run(
+                    [sys.executable, str(SCRIPT), "88", "octo/widgets", "--refresh",
+                     "--gated-head", value],
+                    capture_output=True, encoding="utf-8", check=False,
+                )
+                self.assertEqual(result.returncode, 2, result.stderr)
+                self.assertEqual(result.stdout, "")
+                self.assertIn("--gated-head", result.stderr)
+
     def test_missing_required_positional_args_is_usage_error(self):
         result = subprocess.run(
             [sys.executable, str(SCRIPT)],
