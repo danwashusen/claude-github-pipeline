@@ -1020,7 +1020,7 @@ def _fetch_base_compare(repo, base_ref, head_sha, cwd):
 
     A failed read FAILS CLOSED — ``AUTH_REQUIRED``, else a hard exit with no envelope — never a
     notice with a null fact: this guards a merge, and a missed read must never read as clear.
-    Needs no checkout, so it runs on ``--refresh`` too. Returns ``(base, decision_or_none)``.
+    Needs no checkout, so it runs on ``--refresh`` too — on an OPEN PR only (``build_facts``). Returns ``(base, decision_or_none)``.
     """
     # A ref may carry `#`, `?` or `%`, which would otherwise end or corrupt the REST path.
     result = process.run(
@@ -1370,16 +1370,22 @@ def build_facts(pr_number, repo, root=".", scratch_dir=None, refresh=False, cwd=
     self_review = pr_author_login is not None and pr_author_login == current_user
 
     # 5b) The merge guard (#93), on the full run AND on --refresh — it is the pre-merge currency
-    #     fact. Without --gated-head the gated head IS this run's head (the opening run).
-    head_sha = pr_envelope.get("headRefOid")
-    base, compare_decision = _fetch_base_compare(
-        repo, pr_envelope.get("baseRefName"), head_sha, cwd
-    )
-    if compare_decision is not None:
-        emit_needs_decision(compare_decision)
-        return None
-    # Only an ABSENT pin means "this run's head": an empty or other present value is compared.
-    merge_guard = _merge_guard(head_sha if gated_head is None else gated_head, head_sha, base)
+    #     fact. Without --gated-head the gated head IS this run's head (the opening run). Only on an
+    #     OPEN PR: any other state has no merge to guard (every merge-reaching step stops on state
+    #     first), and its base branch may be gone — a compare there would turn a readable merged PR
+    #     into a hard failure. `merge_guard` is then null, never a partial guard reading "clear".
+    pr_open = pr_envelope.get("state") == "OPEN"
+    merge_guard = None
+    if pr_open:
+        head_sha = pr_envelope.get("headRefOid")
+        base, compare_decision = _fetch_base_compare(
+            repo, pr_envelope.get("baseRefName"), head_sha, cwd
+        )
+        if compare_decision is not None:
+            emit_needs_decision(compare_decision)
+            return None
+        # Only an ABSENT pin means "this run's head": an empty or other present value is compared.
+        merge_guard = _merge_guard(head_sha if gated_head is None else gated_head, head_sha, base)
 
     # 6) CI rollup classification, PR-type detection, health-cache SHA compare.
     ci_class, ci_fail_checks = _classify_ci_rollup(pr_envelope.get("statusCheckRollup"))
@@ -1408,7 +1414,7 @@ def build_facts(pr_number, repo, root=".", scratch_dir=None, refresh=False, cwd=
 
     # 7) Assemble the facts block (architecture.md §4 common core + evaluator extensions).
     vector = {"type": pr_type, "mode": "continue", "pr_state": "open-by-you" if self_review else "open"}
-    if pr_envelope.get("state") != "OPEN":
+    if not pr_open:
         vector["pr_state"] = pr_envelope.get("state", "unknown").lower()
 
     facts = {

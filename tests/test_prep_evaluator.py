@@ -1092,6 +1092,23 @@ class RefreshModeTests(unittest.TestCase):
         self.assertTrue(guard["base_moved"])
         self.assertEqual(guard["skip_reason"], "head-moved")
 
+    def test_a_pr_that_is_no_longer_open_reads_without_a_compare(self):
+        # #93: a merged PR has no merge to guard and its base branch may be gone, so prep never
+        # makes the compare (the fixture has no compare entry — the shim would exit 2 on one) and
+        # still reports the state the spine stops on. The guard is null, never a "clear" one.
+        result = self._run(
+            ["88", "octo/widgets", "--refresh", "--gated-head", "a" * 40,
+             "--scratch-dir", self.scratch],
+            fixture_case="prep_evaluator_merged_base_gone",
+        )
+        self.assertEqual(result.returncode, 0, msg=result.stderr)
+        envelope = _parse_one_envelope(result.stdout)
+        self.assertEqual(envelope["status"], "ok")
+        self.assertEqual(envelope["target"]["state"], "MERGED")
+        self.assertEqual(envelope["vector"]["pr_state"], "merged")
+        self.assertIsNone(envelope["merge_guard"])
+        self.assertEqual([a for a in envelope["attention"] if "-moved" in a], [])
+
     def test_refresh_without_a_gated_head_still_emits_the_guard(self):
         result = self._run(
             ["88", "octo/widgets", "--refresh", "--scratch-dir", self.scratch],
