@@ -985,5 +985,25 @@ class ReviewerSignalTests(unittest.TestCase):
             self.assertNotIn("`/review`", text, path.name)
             self.assertNotIn("/review` command", text, path.name)
 
+
+class SecurityReviewStepTests(unittest.TestCase):
+    """#95: S4.5 runs the security pass before the verdict, and an open entry blocks APPROVE."""
+
+    def test_the_step_sits_between_s4_and_the_verdict(self):
+        spine = (PLAYBOOKS_DIR / "evaluate-spine.md").read_text(encoding="utf-8")
+        self.assertLess(spine.index("## S4 — "), spine.index("## S4.5 — Security review"))
+        self.assertLess(spine.index("## S4.5 — Security review"), spine.index("## S5 — Verdict"))
+        self.assertIn("../../_shared/security-review.md", spine)
+
+    def test_both_verdict_conditions_name_the_open_entry(self):
+        flat = " ".join((PLAYBOOKS_DIR / "evaluate-spine.md").read_text(encoding="utf-8").split())
+        approve = flat[flat.index("**APPROVE** when"):flat.index("**COMMENT (soft-reject)** when")]
+        comment = flat[flat.index("**COMMENT (soft-reject)** when"):flat.index("Compose the review body")]
+        self.assertIn("no `## Security review` entry is `open`", approve)
+        # Audit F1/F4 + review round 1: an unparsed line or an incomplete pass blocks too.
+        self.assertIn("(an unparsed line or a pass that did not complete counts as one)", approve)
+        self.assertIn("an open security finding (S4.5), as APPROVE counts it", comment)
+
+
 if __name__ == "__main__":
     unittest.main()

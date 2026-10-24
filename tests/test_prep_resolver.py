@@ -665,6 +665,10 @@ class EpicIntegrationPrGateDowngradeTests(PrepResolverSandboxTestCase):
         # The workspace assertion is the thing the gate would have suppressed — S1-S3 need it.
         self.assertIn("workspace", envelope)
         self.assertFalse(envelope["epic"]["integration_pr"]["is_yours"])
+        # The row was gated when step 4b skipped the prior-PR fetch, so the ledger and the security
+        # record come from the staged integration-PR body — else finalisation would re-mint P1.1/SEC-1.
+        self.assertEqual([e["id"] for e in envelope["polish"]["entries"]], ["P1.1"])
+        self.assertEqual([e["id"] for e in envelope["security"]["entries"]], ["SEC-1"])
         self.assertTrue(
             any("someone-else" in item for item in envelope["attention"]),
             envelope["attention"],
@@ -1467,6 +1471,15 @@ class RevisionAndPolishFactTests(PrepResolverSandboxTestCase):
         self.assertEqual(polish["entries"][0]["note"], "misleading to operators")
         self.assertEqual(len(polish["unparsed"]), 1)
 
+    def test_the_security_record_is_scanned_from_the_same_pr_fetch(self):
+        # skills/_shared/security-review.md: finalisation matches its pass's findings against these.
+        security = self._envelope(fixture_case="prep_resolver_revision")["security"]
+        self.assertTrue(security["present"])
+        self.assertEqual(security["reviewed_sha"], "3f9c2ab41d0e8c7b6a5f4e3d2c1b0a9f8e7d6c5b")
+        self.assertEqual([e["id"] for e in security["entries"]], ["SEC-1", "SEC-2"])
+        self.assertEqual([e["disposition"] for e in security["entries"]], ["dismissed", "open"])
+        self.assertEqual(security["unparsed"], [])
+
     def test_a_commented_review_on_a_ready_pr_is_not_a_soft_reject(self):
         # The evaluator's self-approval downgrade posts an APPROVE as a COMMENTED review at head and
         # leaves the PR ready; only a real soft-reject flips it to draft.
@@ -1480,6 +1493,12 @@ class RevisionAndPolishFactTests(PrepResolverSandboxTestCase):
         facts = self._envelope(fixture_case="prep_resolver_tracker_clean")
         self.assertEqual(facts["revision"], {"active": False, "reasons": []})
         self.assertFalse(facts["polish"]["present"])
+        self.assertFalse(facts["security"]["present"])
+
+    def test_fresh_mode_has_no_security_record(self):
+        facts = self._envelope(fixture_case="prep_resolver_row_no_prior_pr")
+        self.assertEqual(facts["vector"]["mode"], "fresh")
+        self.assertEqual(facts["security"], parse.absent_security())
 
 
 class RevisionUnitTests(unittest.TestCase):

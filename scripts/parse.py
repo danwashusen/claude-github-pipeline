@@ -1441,6 +1441,106 @@ def absent_polish():
 
 
 # ============================================================================================
+# `## Security review` record (PR body) — import-only, NO subcommand and NO decision code
+# ============================================================================================
+#
+# skills/_shared/security-review.md: the security pass's record, one `Reviewed:` line (the full HEAD
+# SHA the latest pass was dispatched at) plus one line per finding. Like the polish ledger it is a
+# rendering the resolver and evaluator rewrite, so it never raises: a `SEC-`-led line that does not
+# parse lands in `unparsed`. Read by `prep_evaluator` (the S4.5 gate and its `covers_head` skip) and
+# `prep_resolver` (finalisation's security pass).
+
+# The closed disposition set (security-review.md "Dispositions"). `fixed` always carries
+# `(commit <sha>)`; `dismissed` is the operator's answer, so its note must lead `operator:`.
+SECURITY_DISPOSITIONS = ("open", "fixed", "dismissed")
+
+# `- SEC-<n> · <disposition> — <claim> — <anchor> [— <note>]`, split on ` — ` as `## Polish` is.
+_SECURITY_ROW_RE = re.compile(
+    r"^-\s*SEC-(\d+)\s*·\s*([a-z]+)(?:\s*\(commit\s+([0-9a-f]{7,40})\))?\s*—\s*(.+)$"
+)
+_SECURITY_ROWLIKE_RE = re.compile(r"^(?:[-*+]|\d+[.)])?\s*SEC-", re.IGNORECASE)
+_SECURITY_REVIEWED_RE = re.compile(r"^-\s*Reviewed:(.*)$")
+_SECURITY_FIELD_SEP = " — "
+_FULL_SHA_RE = re.compile(r"[0-9a-f]{40}")
+
+
+def scan_security(pr_body_text):
+    """Scan a PR body's `## Security review` record. Returns
+    `{"present", "reviewed_sha", "entries", "unparsed"}`:
+
+      - `present` — the section exists (independent of whether any line parsed).
+      - `reviewed_sha` — the last `Reviewed:` value when it is exactly 40 lowercase hex characters,
+        else `None` (a short or malformed SHA never claims a head was reviewed).
+      - `entries` — `{"id", "seq", "disposition", "commit_sha", "claim", "anchor", "note"}` dicts in
+        source order. `commit_sha` is set only on `fixed`; `note` is `None` when absent.
+      - `unparsed` — finding lines led by `SEC-` (any case, any or no bullet) that did not parse,
+        verbatim: an off-vocabulary disposition, a missing anchor, a `fixed` without `(commit …)` or a
+        `(commit …)` on anything else, a `dismissed` whose note does not lead `operator:` — and every
+        line after the first that carries an already-used id, so a `dismissed` or `fixed` duplicate
+        never shadows an `open` one for a reader that keys entries by id.
+
+    Never raises.
+    """
+    lines = (pr_body_text or "").splitlines()
+    found = _find_section(lines, r"Security review")
+    if found is None:
+        return absent_security()
+    start, end = found
+
+    reviewed_sha, entries, unparsed, seen_ids = None, [], [], set()
+    for raw_line in lines[start:end]:
+        stripped = raw_line.strip()
+        if not stripped:
+            continue
+        reviewed = _SECURITY_REVIEWED_RE.match(stripped)
+        if reviewed:
+            # The last `Reviewed:` line wins, and a malformed one resets it: a stale valid SHA left
+            # above a hand-edited line must never claim the head was reviewed. It never goes to
+            # `unparsed`, which holds findings (an unparsed line counts as an open one): a bad SHA
+            # only costs the evaluator's skip, so the pass reruns and rewrites it.
+            value = reviewed.group(1).strip()
+            reviewed_sha = value if _FULL_SHA_RE.fullmatch(value) else None
+            continue
+        match = _SECURITY_ROW_RE.match(stripped)
+        fields = match.group(4).split(_SECURITY_FIELD_SEP) if match else []
+        disposition = match.group(2) if match else None
+        commit_sha = match.group(3) if match else None
+        note = _SECURITY_FIELD_SEP.join(fields[2:]).strip() or None
+        valid = (
+            match is not None
+            and disposition in SECURITY_DISPOSITIONS
+            and (commit_sha is not None) == (disposition == "fixed")
+            and len(fields) >= 2
+            and all(part.strip() for part in fields[:2])
+            and (disposition != "dismissed" or (note or "").startswith("operator:"))
+        )
+        if valid and int(match.group(1)) in seen_ids:
+            unparsed.append(stripped)
+        elif valid:
+            seen_ids.add(int(match.group(1)))
+            entries.append(
+                {
+                    "id": "SEC-%s" % match.group(1),
+                    "seq": int(match.group(1)),
+                    "disposition": disposition,
+                    "commit_sha": commit_sha,
+                    "claim": fields[0].strip(),
+                    "anchor": fields[1].strip(),
+                    "note": note,
+                }
+            )
+        elif _SECURITY_ROWLIKE_RE.match(stripped):
+            unparsed.append(stripped)
+    return {"present": True, "reviewed_sha": reviewed_sha, "entries": entries, "unparsed": unparsed}
+
+
+def absent_security():
+    """The security fact when there is no PR body, or no section, to scan. A factory (fresh dicts per
+    call), as `absent_polish` is."""
+    return {"present": False, "reviewed_sha": None, "entries": [], "unparsed": []}
+
+
+# ============================================================================================
 # `## Follow-ups` section (a PR body) — import-only, NO subcommand and NO decision code
 # ============================================================================================
 #

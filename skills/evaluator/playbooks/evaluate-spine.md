@@ -12,10 +12,8 @@ dir is `facts.scratch`.
 
 ## S1 — Identify and self-approval fact
 
-`facts.target` names the PR; `facts.self_review` says whether you authored it. If `self_review` is
-true, the final review posts as `--comment` (not `--approve`) regardless of verdict — GitHub 422s a
-self-`--approve`; the body content is identical, only the review action changes. (Prep already
-checked `PR author == current_user`.)
+`facts.target` names the PR; `facts.self_review` (prep compared its author with `current_user`) says whether you
+authored it — if true, the final review posts as `--comment` whatever the verdict (S7-post's 422 workaround).
 
 ## S2 — Read the PR, issue, plan, and prior review
 
@@ -202,23 +200,27 @@ un-tick makes the evaluator a per-phase nitpicker. On an edit-body failure, stil
 resolver's reconciliation respects the un-tick either way. This is a soft-reject regardless of other
 dimensions.
 
+## S4.5 — Security review
+
+Run the pass per the evaluator section of [`../../_shared/security-review.md`](../../_shared/security-review.md)
+(the `covers_head` skip, the `Security` card), dispatching [the prompt](../references/security-review-prompt.md).
+
 ## S5 — Verdict
 
-**APPROVE** when `HEALTH_OK == true`, every dimension passes, no unresolved `/code-review` issues remain,
-and `reviewDecision` isn't `REVIEW_REQUIRED` owed to another named reviewer.
+**APPROVE** when `HEALTH_OK == true`, every dimension passes, no unresolved `/code-review` issues remain, no
+`## Security review` entry is `open` (an unparsed line or a pass that did not complete counts as one), and
+`reviewDecision` isn't `REVIEW_REQUIRED` owed to another named reviewer.
 
 **COMMENT (soft-reject)** when any of: `HEALTH_OK == false` (**unconditional hard block** — a red branch never
-approves; lead the body with `HEALTH_BODY`, name the failing command, link the cache comment); any dimension fails
-(list each gap with the evidence that closes it); an S4-untick fired; a `## Follow-ups` entry judged an in-scope
-violation; an open native blocker; an operator-confirmed polish `apply` (S5.5). Use `--comment`, never
-`--request-changes` (the project's soft-reject convention; `--request-changes` only on explicit user ask). When
-`HEALTH_OK == null` (skipped), proceed with the dimension-only verdict and carry `HEALTH_BODY` verbatim at the top of
-the review body.
+approves; lead the body with `HEALTH_BODY`, name the failing command, link the cache comment); any dimension
+fails (list each gap with the evidence that closes it); an S4-untick fired; a `## Follow-ups` entry judged an
+in-scope violation; an open native blocker; an operator-confirmed polish `apply` (S5.5); an open security
+finding (S4.5), as APPROVE counts it. Use `--comment`, never `--request-changes` (the project's soft-reject
+convention; `--request-changes` only on explicit user ask). When `HEALTH_OK == null` (skipped), proceed with the
+dimension-only verdict and carry `HEALTH_BODY` verbatim at the top of the review body.
 
-Compose the review body starting with `HEALTH_BODY`, then the dimension-by-dimension assessment. When
-per-phase verification ran, include a `## DoD verification` section per
-[`../references/review-comment.md`](../references/review-comment.md) (omit it when no per-phase
-verification ran or every tick verified clean with nothing to surface).
+Compose the review body: `HEALTH_BODY`, the dimension-by-dimension assessment, then the `## DoD verification`
+and `## Security review` fragments when [`review-comment.md`](../references/review-comment.md) includes them.
 
 **Other gates** in this dimension (ask only when genuine): unresolved `/code-review` issues (`header: "Open
 review"`: **Hard rejection** / **Note + proceed**); a `REVIEW_REQUIRED` owed to a named reviewer
@@ -227,19 +229,17 @@ evidently met by the accumulated diff (surface before approval).
 
 ## S5.5 — Polish ledger
 
-When `facts.polish` carries an `open`, unfixed `apply`, `file`, or `premise false` `drop` entry (the
-resolver's unfixed polish — [`../../_shared/polish-ledger.md`](../../_shared/polish-ledger.md)), adjudicate
-it per [`../references/polish-adjudication.md`](../references/polish-adjudication.md) **before S7's post
-timing** — under `auto` an APPROVE posts and merges at once. This is the backstop: the resolver's
-finalisation already put every entry its final pass left to the operator, and a decided entry is not
-re-asked unless it is an unfixed `apply` or a `premise false` drop whose claim holds at head. Re-check each
-entry's claim at head and propose `apply` / re-plan / `file` / `drop` with a reason (an unfixed `apply`
-from an earlier run is re-proposed, so the operator can release it). The operator decides **every**
-entry, on any verdict and
-under either policy — the reference's digest and `Polish` card, per the shared triage, asked before
-the S7-gate card, which never carries the ledger. An answer that applies an entry makes the verdict
-COMMENT, routed to the resolver (`#<issue>`) or — on a re-plan, or when applying it changes the plan — `planner revise`.
-Write the final dispositions once — after any answer, before the review posts — with
+When `facts.polish` carries an `open`, unfixed `apply`, `file`, or `premise false` `drop` entry (the resolver's
+unfixed polish — [`../../_shared/polish-ledger.md`](../../_shared/polish-ledger.md)), adjudicate it per
+[`../references/polish-adjudication.md`](../references/polish-adjudication.md) **before S7's post timing** —
+under `auto` an APPROVE posts and merges at once. This is the backstop: the resolver's finalisation already put
+every entry its final pass left to the operator, and a decided entry is not re-asked unless it is an unfixed
+`apply` or a `premise false` drop whose claim holds at head. Re-check each entry's claim at head and propose
+`apply` / re-plan / `file` / `drop` with a reason. The operator decides **every** entry, on any verdict and
+under either policy — the reference's digest and `Polish` card, per the shared triage, asked before the S7-gate
+card, which never carries the ledger. An answer that applies an entry makes the verdict COMMENT, routed to the
+resolver (`#<issue>`) or — on a re-plan, or when applying it changes the plan — `planner revise`. Write the
+final dispositions once, with the S4.5 security record — after any answer, before the review posts — with
 `gh_persist.py edit-pr-body`; `file` entries are filed after the merge by the playbook's residual step.
 
 ## S6 — Merge strategy

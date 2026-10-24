@@ -1,0 +1,106 @@
+"""#95: the security review's shared contract (skills/_shared/security-review.md) and its sub-agent
+prompt (skills/evaluator/references/security-review-prompt.md).
+
+The record is script-parsed (`parse.scan_security`), so its disposition table must name exactly the
+scanner's closed set. The prompt must stay stack-agnostic (CLAUDE.md "Validators" 5) and carry its inputs
+and output grammar. And DoD 3 — a dismissal reaches the operator, a finding is never silently dropped — is
+prose, so its load-bearing sentences are pinned here.
+"""
+
+import re
+import unittest
+from pathlib import Path
+
+from scripts import parse
+
+REPO_ROOT = Path(__file__).resolve().parent.parent
+CONTRACT = REPO_ROOT / "skills" / "_shared" / "security-review.md"
+PROMPT = REPO_ROOT / "skills" / "evaluator" / "references" / "security-review-prompt.md"
+
+# CLAUDE.md "Validators" 5, and the stacks a labelled example may name.
+_STACK_RE = re.compile(r"swift|xcode|xcb\.sh|foodjournal|rails|rspec|pytest", re.IGNORECASE)
+# Names only: no stack whose name is also a common English word ("go", "rust"), which would count as a stack.
+_STACK_NAMES = ("python", "rails", "ruby", "swift", "node", "java", "kotlin", "php", "javascript", "typescript")
+
+
+def _flat(path):
+    return " ".join(path.read_text(encoding="utf-8").split())
+
+
+class SecurityContractTests(unittest.TestCase):
+    def test_the_disposition_table_names_exactly_the_scanners_set(self):
+        text = CONTRACT.read_text(encoding="utf-8")
+        table = text[text.index("## Dispositions (closed set)"):text.index("## The procedure")]
+        rows = re.findall(r"^\| `([a-z]+)", table, re.MULTILINE)
+        self.assertEqual(tuple(rows), parse.SECURITY_DISPOSITIONS)
+
+    def test_a_dismissal_is_the_operators_answer_on_a_consent_card(self):
+        flat = _flat(CONTRACT)
+        self.assertIn('`header: "Security"`', flat)
+        self.assertIn("**only as the operator's answer**", flat)
+        self.assertIn("the note led by `operator: <reason>`", flat)
+        self.assertIn('"Consent vs judgment"', flat)
+
+    def test_nothing_leaves_the_record_silently(self):
+        flat = _flat(CONTRACT)
+        self.assertIn("`premise false: <evidence>`. It **still goes on the card**", flat)
+        self.assertIn("**An `unparsed` line counts as `open`**", flat)
+        self.assertIn("never fixed silently", flat)
+        self.assertIn("**never approves while an entry is `open`**", flat)
+
+    def test_a_re_reported_finding_keeps_its_id_and_a_dismissal_is_not_re_asked(self):
+        flat = _flat(CONTRACT)
+        self.assertIn("Same anchor and same claim → the same finding, which keeps its id", flat)
+        self.assertIn("A recorded dismissal is not re-asked", flat)
+        self.assertIn("**Matching errs toward asking**", flat)
+        self.assertIn("an id is never reused or renumbered", flat)
+
+    def test_only_a_dismiss_proposal_takes_a_question(self):
+        # Cold read: steps 4 and 5 disagreed on whether a fix proposal gets a question.
+        flat = _flat(CONTRACT)
+        self.assertIn("One question per dismiss proposal", flat)
+        self.assertIn("so it takes no question", flat)
+        self.assertNotIn("One question per finding", flat)
+        self.assertIn("a duplicated id must never let a `dismissed` or `fixed` line shadow an `open` one", flat)
+
+    def test_the_one_record_write_is_what_later_restages_start_from(self):
+        # Cold read: the S5.5 write and the post-merge restage did not carry S4.5's record.
+        flat = _flat(CONTRACT)
+        self.assertIn("when it has none, S4.5's write stands alone", flat)
+        self.assertIn("a playbook's post-merge restage starts from it", flat)
+        evaluator = REPO_ROOT / "skills" / "evaluator"
+        self.assertIn("the one S4.5/S5.5 record write", _flat(evaluator / "playbooks" / "standard.md"))
+        self.assertIn("and the `## Security review` section when S4.5 ran the pass or changed an entry",
+                      _flat(evaluator / "references" / "polish-adjudication.md"))
+
+    def test_the_skip_needs_the_head_and_the_own_account(self):
+        flat = _flat(CONTRACT)
+        self.assertIn("`Reviewed:` equals the gated head **and** `facts.self_review` is true", flat)
+        self.assertIn("Never write it after a fix commit", flat)
+
+
+class SecurityPromptTests(unittest.TestCase):
+    def test_the_prompt_carries_its_four_inputs_and_findings_grammar(self):
+        text = PROMPT.read_text(encoding="utf-8")
+        for placeholder in ("<<workspace_path>>", "<<diff_path>>", "<<base_ref>>", "<<catalogue_entries>>"):
+            self.assertIn(placeholder, text)
+        self.assertIn("## Findings\n1. <path>:<line> — <category> — <high|medium> — <claim> — <exploit path>", text)
+        self.assertIn("code: AMBIGUOUS", text)
+        # Review round 2: a directory catalogue entry reaches the pass with its member files.
+        self.assertIn("read and cite the member, never the directory", " ".join(text.split()))
+        self.assertIn("a `kind: dir` entry's `members` listed under it", _flat(CONTRACT))
+
+    def test_every_stack_mention_is_a_labelled_multi_stack_example(self):
+        for line in PROMPT.read_text(encoding="utf-8").splitlines():
+            if _STACK_RE.search(line):
+                named = [n for n in _STACK_NAMES if re.search(r"\b%s\b" % n, line, re.IGNORECASE)]
+                self.assertGreaterEqual(len(named), 2, line)
+
+    def test_the_prompt_names_none_of_the_built_ins_stack_specifics(self):
+        lower = PROMPT.read_text(encoding="utf-8").lower()
+        for token in ("pickle", "flask", "jinja", "escape()"):
+            self.assertNotIn(token, lower)
+
+
+if __name__ == "__main__":
+    unittest.main()

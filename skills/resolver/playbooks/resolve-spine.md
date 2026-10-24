@@ -335,8 +335,8 @@ not tell a round of nits from a round of new bugs.
 Every exit from S5.1 lands here — settle, **Accept current**, or a terminating guard-rail answer — and this is the
 phase's **only** push: the loop commits locally and never pushes, because each per-round push started CI on code the
 next round was about to change. Uncommitted edits are never pushed. On the **final** pass (S5.1 "Scope"), a settle or
-**Accept current** exit first runs **finalisation** once — the operator's triage of every undecided `## Polish` entry,
-the applied ones fixed in one more S5.1 round — per [`../references/finalisation.md`](../references/finalisation.md).
+**Accept current** exit first runs **finalisation** once — the security pass, then the polish triage, fixes landing
+in one more S5.1 round — per [`../references/finalisation.md`](../references/finalisation.md).
 Push from the workspace:
 
 ```bash

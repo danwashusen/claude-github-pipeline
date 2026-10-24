@@ -47,6 +47,10 @@ This is **not** a sub-agent prompt: no placeholders, no JSON return, and every g
   Every entry marked `apply` is Addressable on iteration 1 whatever its tier or provenance — it is the
   operator's answer, recorded by the evaluator or at [`finalisation.md`](finalisation.md), so it has been
   decided; recording it as `open` again would bounce the PR between the two skills.
+- **Security findings** — in finalisation's round only, each finding its security pass sent to fix
+  ([`finalisation.md`](finalisation.md) §1.5): Addressable, defect tier, whatever the rubric would say.
+  Only the operator dismisses one, so it never takes the Refuted, Plan-settled or No shown cost bucket and
+  never reaches step 4's dismissal check; one found false at head goes on a `Security` card instead.
 - **Doc-grounding statement** (from S3) and any audit / plan overrides carried into the PR body — use them
   when defending an implementation choice in a PR reply.
 - **Test config**: `facts.config.static_checks` and `facts.config.test_target_raw`.

@@ -145,7 +145,10 @@ ground these are produced by implementation step S1. Lettered items are individu
   - (d) Projects Definition-of-done ticks with annotations as phases ship.
   - (e) Loops with code review until approved; a finding whose claim would be defect-tier and which
     the resolver dismisses as refuted, plan-settled or of no shown cost is checked by a context-blind
-    pass, and an overturned dismissal returns to the loop.
+    pass, and an overturned dismissal returns to the loop. On the final pass, before the push, it
+    runs the security pass: each finding is fixed in one more reviewed round or dismissed on the
+    operator's word with a recorded reason, and is recorded in the PR body; one left unfixed (an
+    accepted stall) is recorded open, and the evaluator blocks on it.
   - (f) Multi-phase issues ship their phases onto one PR, one push per phase, tracked in a
     `## Phase tracker` section of the PR body (§7). One session ships phases in turn — each with
     its own push, tick, and review — until a phase the plan marks `checkpoint: pause` (the
@@ -169,6 +172,9 @@ ground these are produced by implementation step S1. Lettered items are individu
   - (c) Verifies DoD ticks against their annotations, un-ticking with a sticky veto on mismatch.
   - (d) Judges scope match, doc grounding, and plan adherence.
   - (e) Issues APPROVE or COMMENT review actions and never approves its own PR.
+    It never approves while a security finding is open: each finding clears only by a fix or by
+    an operator dismissal with a recorded reason, and it reruns the security pass unless the PR
+    body records one at the gated head on a PR the evaluator's own account opened.
   - (f) Merges per the configured per-PR-type policy (default `ask`) and the strategy rules for
     the PR's shape — and only the head SHA it gated and reviewed, and only when that head contained
     the base tip at its last pre-merge refresh (`--match-head-commit` pins the head through the

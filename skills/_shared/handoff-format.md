@@ -156,7 +156,7 @@ A re-route is a handoff whose `Next:` points at a prior skill, or re-runs the sa
 
 The schema does not change. The `Why:` line is the load-bearing piece — it must name the specific evidence so the user (and the prior skill, when re-run) can act without re-investigating:
 
-- Plan re-routes: quote the locked decision verbatim and cite the `file:line` where the contradiction surfaced. From the evaluator, quote each `… evaluator rejected: …` annotation for an un-tick, or the ledger item by id and the plan decision it would reverse for a polish `apply`; from the resolver's finalisation, each re-plan entry by id and the decision its note names (or the two intents).
+- Plan re-routes: quote the locked decision verbatim and cite the `file:line` where the contradiction surfaced. From the evaluator, quote each `… evaluator rejected: …` annotation for an un-tick, or the ledger item by id and the plan decision it would reverse for a polish `apply`; from the resolver's finalisation, each re-plan entry by id and the decision its note names (or the two intents). Any `## Security review` entry still `open` rides in the same `Why:` by its `SEC-<n>` id (`security-review.md`).
 - Drafter re-routes: quote the body's claim verbatim, name the missing or contradictory symbol, and cite the closest-match `file:line`.
 - Researcher re-routes (planner → researcher): name the specific ungroundable fact verbatim (the dependency/API/version and what's unknown), so the researcher targets exactly that gap rather than re-researching the whole issue.
 - Open-question re-routes (planner → answer the question): name the blocking OQ id and the companion `question` issue `#N` (and its `audience:*`), so the reader knows exactly which decision unblocks the plan.

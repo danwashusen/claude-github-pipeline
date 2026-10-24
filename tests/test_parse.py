@@ -1050,6 +1050,123 @@ class PolishLedgerParseTests(unittest.TestCase):
         self.assertEqual([e["id"] for e in scan["entries"]], ["P1.1"])
 
 
+class SecurityRecordParseTests(unittest.TestCase):
+    """`scan_security` — the `## Security review` record (skills/_shared/security-review.md). Like the
+    polish ledger it never raises; a malformed line lands in `unparsed`. Its `reviewed_sha` decides the
+    evaluator's skip, so only a full 40-hex SHA counts."""
+
+    CONTRACT = REPO_ROOT / "skills" / "_shared" / "security-review.md"
+    HEAD = "0123456789abcdef0123456789abcdef01234567"
+
+    def _contract_example(self):
+        text = self.CONTRACT.read_text(encoding="utf-8")
+        start = text.index("```\n## Security review\n") + len("```\n")
+        return text[start:text.index("```", start)]
+
+    def test_the_contract_worked_example_parses_whole(self):
+        scan = parse.scan_security(self._contract_example())
+        self.assertTrue(scan["present"])
+        self.assertEqual(scan["unparsed"], [])
+        self.assertIsNotNone(scan["reviewed_sha"])
+        self.assertEqual(
+            [(e["id"], e["disposition"]) for e in scan["entries"]],
+            [("SEC-1", "fixed"), ("SEC-2", "dismissed"), ("SEC-3", "open")],
+        )
+        self.assertIsNotNone(scan["entries"][0]["commit_sha"])
+        self.assertTrue(scan["entries"][1]["note"].startswith("operator:"))
+
+    def test_each_disposition_parses(self):
+        body = (
+            "## Security review\n- Reviewed: %s\n"
+            "- SEC-1 · open — a query built from input — src/q.py / build — still to fix\n"
+            "- SEC-2 · fixed (commit abc1234) — a token in the log — lib/log.rb / Log#write\n"
+            "- SEC-3 · dismissed — path joined from input — app/files.py / open_upload — operator: admin-only route\n"
+            "- SEC-4 · open — a secret in source — config/keys.swift / Keys\n" % self.HEAD
+        )
+        scan = parse.scan_security(body)
+        self.assertEqual(scan["reviewed_sha"], self.HEAD)
+        self.assertEqual(scan["unparsed"], [])
+        entries = scan["entries"]
+        self.assertEqual([e["disposition"] for e in entries], ["open", "fixed", "dismissed", "open"])
+        self.assertEqual(entries[1]["commit_sha"], "abc1234")
+        self.assertIsNone(entries[0]["commit_sha"])
+        self.assertEqual(entries[0]["note"], "still to fix")
+        self.assertIsNone(entries[3]["note"])
+        self.assertEqual(entries[2]["anchor"], "app/files.py / open_upload")
+        self.assertEqual((entries[3]["id"], entries[3]["seq"]), ("SEC-4", 4))
+        self.assertEqual(parse.SECURITY_DISPOSITIONS, ("open", "fixed", "dismissed"))
+
+    def test_malformed_lines_are_unparsed_not_raised(self):
+        body = (
+            "## Security review\n"
+            "- SEC-1 · open (commit abc1234) — a commit on open — a.py / f\n"
+            "- SEC-2 · dismissed (commit abc1234) — a commit on dismissed — a.py / f — operator: x\n"
+            "- SEC-3 · fixed — fixed with no commit — a.py / f\n"
+            "- SEC-4 · ignored — off-vocabulary disposition — a.py / f\n"
+            "- SEC-5 · open — missing its anchor field\n"
+            "- SEC-6 · dismissed — no operator reason — a.py / f — looked fine\n"
+            "- SEC-7 · open — fine — a.py / f\n"
+            "prose inside the section is ignored\n"
+        )
+        scan = parse.scan_security(body)
+        self.assertEqual([e["id"] for e in scan["entries"]], ["SEC-7"])
+        self.assertEqual(len(scan["unparsed"]), 6)
+
+    def test_only_a_full_sha_is_a_reviewed_head(self):
+        for value in ("abc1234", self.HEAD.upper(), self.HEAD + "0", "", self.HEAD + " (phase 2)"):
+            scan = parse.scan_security("## Security review\n- Reviewed: %s\n" % value)
+            self.assertTrue(scan["present"])
+            self.assertIsNone(scan["reviewed_sha"], value)
+            # `unparsed` holds findings, and each one blocks approval; a bad SHA is not a finding.
+            self.assertEqual(scan["unparsed"], [], value)
+
+    def test_a_malformed_later_reviewed_line_resets_a_stale_valid_one(self):
+        scan = parse.scan_security(
+            "## Security review\n- Reviewed: %s\n- Reviewed: %s (phase 2)\n" % (self.HEAD, self.HEAD)
+        )
+        self.assertIsNone(scan["reviewed_sha"])
+
+    def test_a_duplicated_id_never_shadows_an_open_entry(self):
+        # Operator-raised (review round 3 re-examined): keyed by id, a later `dismissed` line hid an
+        # `open` one with the same id. A repeat of an id lands in `unparsed`, which counts as open.
+        for first, second in (("open", "dismissed"), ("dismissed", "open"), ("open", "fixed (commit abc1234)")):
+            note = " — operator: x" if "dismissed" in (first, second) else ""
+            body = (
+                "## Security review\n"
+                "- SEC-2 · %s — token in log — lib/log.rb / Log#write%s\n"
+                "- SEC-2 · %s — token in log — lib/log.rb / Log#write%s\n"
+                % (first, note if first == "dismissed" else "", second, note if second == "dismissed" else "")
+            )
+            scan = parse.scan_security(body)
+            self.assertEqual([e["disposition"] for e in scan["entries"]], [first.split()[0]], body)
+            self.assertEqual(len(scan["unparsed"]), 1, body)
+            blocking = any(e["disposition"] == "open" for e in scan["entries"]) or scan["unparsed"]
+            self.assertTrue(blocking, body)
+
+    def test_any_sec_led_line_that_does_not_parse_is_unparsed(self):
+        for line in ("* SEC-3 · open — c — a.py / f", "SEC-3 · open — c — a.py / f",
+                     "- sec-3 · open — c — a.py / f", "1. SEC-3 · open — c — a.py / f"):
+            scan = parse.scan_security("## Security review\n%s\n" % line)
+            self.assertEqual(scan["entries"], [], line)
+            self.assertEqual(scan["unparsed"], [line], line)
+
+    def test_absent_section_is_not_present(self):
+        self.assertEqual(parse.scan_security("no record"), parse.absent_security())
+        self.assertEqual(
+            parse.scan_security(None), {"present": False, "reviewed_sha": None, "entries": [], "unparsed": []}
+        )
+
+    def test_the_section_ends_at_the_next_heading(self):
+        scan = parse.scan_security(
+            "## Security review\n- SEC-1 · open — a — b.py / c\n## Polish\n- SEC-2 · open — x — y / z\n"
+        )
+        self.assertEqual([e["id"] for e in scan["entries"]], ["SEC-1"])
+
+    def test_garbage_never_raises(self):
+        for body in ("## Security review\n- SEC-", "## Security review\n- SEC-x · · — —\n\x00", "\n" * 3, "##"):
+            parse.scan_security(body)
+
+
 class FollowUpsScanTests(unittest.TestCase):
     """`scan_follow_ups` — a PR body's `## Follow-ups` section (skills/_shared/follow-ups-section.md),
     the epic residue's source for what each merged story PR deferred. Lenient for pre-contract bodies,

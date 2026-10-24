@@ -1503,7 +1503,19 @@ def build_facts(pr_number, repo, root=".", scratch_dir=None, refresh=False, cwd=
     # The `## Polish` ledger (skills/_shared/polish-ledger.md) — the adjudication input
     # (references/polish-adjudication.md). Scanned from the same PR body, so no extra call; the scan
     # never raises (an unparseable line is `unparsed`, rewritten on the evaluator's disposition write).
-    facts["polish"] = parse.scan_polish(read_section(pr_envelope, "body"))
+    pr_body = read_section(pr_envelope, "body")
+    facts["polish"] = parse.scan_polish(pr_body)
+
+    # The `## Security review` record (skills/_shared/security-review.md) — S4.5's input. The record
+    # is self-declared body text, so a `Reviewed:` line at head lets S4.5 skip its pass only on a PR
+    # this account opened (the resolver's); on anyone else's PR, one edited line would skip the gate.
+    security = parse.scan_security(pr_body)
+    security["covers_head"] = bool(
+        security["reviewed_sha"]
+        and security["reviewed_sha"] == pr_envelope.get("headRefOid")
+        and self_review
+    )
+    facts["security"] = security
 
     return facts
 
