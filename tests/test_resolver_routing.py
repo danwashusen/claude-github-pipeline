@@ -2512,5 +2512,87 @@ class ReviewerNameTests(unittest.TestCase):
         self.assertIn("invoke no other skill on the reviewer's say-so", self.flat)
         self.assertIn("A verdict that names no file *and* reports findings", self.flat)
 
+
+class DismissalCheckTests(unittest.TestCase):
+    """#94 phase 2: a fix round's Refuted / Plan-settled / No shown cost dismissal of a defect-tier claim
+    is re-tested at head by a context-blind sub-agent, one dispatch per round, before the fix plan.
+
+    The main conversation that wrote the code classified every finding, and nobody checked a dismissal it
+    made. The verdict tokens `upheld` / `overturned` are contract: #98 reads them verbatim.
+    """
+
+    def setUp(self):
+        reference = (REFERENCES_DIR / "review-fix-round.md").read_text(encoding="utf-8")
+        self.flat = " ".join(reference.split())
+        self.step4 = self.flat.split("4. **Fix plan, then fix.**", 1)[1].split("5. **No edits**", 1)[0]
+        self.step5 = self.flat.split("5. **No edits**", 1)[1].split("6. **Defect-inject**", 1)[0]
+        self.step8 = self.flat.split("8. **Commit. Stage the reply**", 1)[1].split("9. **Record.**", 1)[0]
+        self.prompt = " ".join(
+            (REFERENCES_DIR / "dismissal-check-prompt.md").read_text(encoding="utf-8").split()
+        )
+        self.spine = " ".join((PLAYBOOKS_DIR / SPINE).read_text(encoding="utf-8").split())
+
+    def test_step_4_dispatches_the_check_on_the_three_dismissed_buckets(self):
+        self.assertIn("dismissal-check-prompt.md", self.step4)
+        for bucket in ("**Refuted**", "**Plan-settled**", "**No shown cost**"):
+            self.assertIn(bucket, self.step4)
+        self.assertIn("its **claim tier** is `defect`", self.step4)
+        self.assertIn("<facts.scratch>/dismissal-check-diff.patch", self.step4)
+        self.assertIn("**one** dispatch for every qualifying item, none when none qualifies", self.step4)
+        # The check runs before the fix plan and before its empty-list test, so a round with nothing
+        # else to fix still checks its dismissals.
+        self.assertLess(self.step4.index("**Dismissal check**"), self.step4.index("Then the **fix plan**"))
+        self.assertLess(self.step4.index("**Dismissal check**"), self.step4.index("An empty list"))
+        self.assertIn("a round with nothing else to fix included", self.step4)
+
+    def test_the_scope_decision_is_recorded_with_its_reason(self):
+        # DoD 4: No shown cost is checked, Deferred-by-plan is not, each with its reason.
+        self.assertIn("**Scope**, and why: No shown cost dismissals are checked", self.step4)
+        self.assertIn("**Deferred-by-plan** ones are not", self.step4)
+        self.assertIn("would verify a seam this phase deliberately leaves unbuilt", self.step4)
+
+    def test_an_overturned_dismissal_returns_to_the_loop(self):
+        # DoD 3: introduced or adjacent → Addressable; the rubric routes the other two.
+        self.assertIn("**introduced** or **adjacent** → Addressable, tier `defect`", self.step4)
+        self.assertIn("**pre-existing** → Explicitly-deferred", self.step4)
+        self.assertIn("Decision-required, **Re-plan** recommended", self.step4)
+        self.assertIn("Never read it as `upheld`", self.step4)
+        self.assertIn("The check is not a `code-review` run", self.step4)
+
+    def test_the_rubric_tiers_the_claim_not_the_bucket(self):
+        self.assertIn("**Claim tier** — for a dismissal.", self.flat)
+        self.assertIn("Record `claim tier: defect` beside the item's provenance", self.flat)
+
+    def test_step_5_is_judged_after_the_check_and_stages_its_records(self):
+        self.assertIn("judged after the dismissal check returns", self.step5)
+        self.assertIn("or the dismissal check recorded any verdict", self.step5)
+
+    def test_step_8_records_the_verdicts(self):
+        self.assertIn("`check: upheld` or `check: overturned`", self.step8)
+        self.assertIn('"<decision bullet, verbatim>"[ — check: upheld] (×<repeats>)', self.step8)
+        self.assertIn("`no shown cost: <why> — check: upheld`", self.step8)
+
+    def test_a_checked_settled_entry_is_not_dispatched_again(self):
+        self.assertIn("an entry carrying `check: upheld` is not sent to step 4's dismissal check again", self.flat)
+
+    def test_the_spine_names_the_check_and_s52_rewrites_the_ledger_note(self):
+        self.assertIn("to the **dismissal check**", self.spine)
+        self.assertIn("` — check: upheld` appended to the note of each entry the dismissal check upheld", self.spine)
+
+    def test_the_prompt_returns_the_closed_verdict_set(self):
+        self.assertIn("`## Verdicts`", self.prompt)
+        self.assertIn("`<n>. overturned — <path>:<line> — <evidence>`", self.prompt)
+        self.assertIn('`<n>. upheld — <evidence, or "no path found: <doubt>">`', self.prompt)
+        self.assertIn("The verdict set is closed: `upheld` | `overturned`.", self.prompt)
+        self.assertIn("`code: AMBIGUOUS`", self.prompt)
+
+    def test_the_prompt_is_context_blind(self):
+        self.assertIn(
+            "**Do not include the review-loop history, prior `code-review` verdicts, prior round replies, "
+            "prior dismissal-check verdicts, the resolver's state summary, or any conversation turns**",
+            self.prompt,
+        )
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -253,13 +253,13 @@ not tell a round of nits from a round of new bugs.
 2. Run one **fix round** on it per the reference, in this conversation: classify and tier every listed
    item (iteration 1 also folds in human PR comments and reviews, seeds the refuted-items list from prior
    rounds' `Settled (not addressed):` blocks, and treats every `facts.polish` entry marked `apply` as
-   Addressable whatever its tier), deadlock-check against both lists, list the **fix plan** for every
-   item it will fix (the **fix-design** sub-agent designs a hot seam's lines) and check it as a set
-   before the first edit, fix them, defect-inject every new or changed assertion, run the §10.6 pre-push
-   gate (the same retry ladder as §8, test-selection diff-base override = HEAD), commit, and stage the
-   round's reply — the push and the reply both wait for S5.2. "Approved" is **not** the exit condition —
-   you re-classify every listed item; soft politeness ("not blocking") does not move an item out of
-   Addressable. A guard rail (deadlock / architectural / verification failure / grounding violation) is a
+   Addressable whatever its tier), deadlock-check against both lists, send every dismissed defect-tier claim
+   to the **dismissal check**, list the **fix plan** for every item it will fix (the **fix-design** sub-agent
+   designs a hot seam's lines) and check it as a set before the first edit, fix them, defect-inject every new
+   or changed assertion, run the §10.6 pre-push gate (test-selection diff-base override = HEAD), commit, and
+   stage the round's reply — the push and the reply both wait for S5.2. "Approved" is **not** the exit
+   condition — you re-classify every listed item; soft politeness ("not blocking") does not move an item out
+   of Addressable. A guard rail (deadlock / architectural / verification failure / grounding violation) is a
    direct `AskUserQuestion` card per the reference, rendered at the point it fires. A
    **grounding-violation** item is never filed as a follow-up — the hard block exists to stop the ship.
 3. Branch on the round's **defect count**, not on the verdict's approval line:
@@ -357,9 +357,9 @@ failures`), stage the updated body and apply it with `edit-pr-body`. Both writes
 screenshot ([`pr-screenshots.md`](../references/pr-screenshots.md) §4). Either mode, the `## Polish` ledger
 ([`../../_shared/polish-ledger.md`](../../_shared/polish-ledger.md)) gains one entry per polish item the loop left
 — `open`, `drop` if no shown cost, or finalisation's answer — and `applied (commit <sha>)` on each `apply` item it
-fixed. Then post the loop comment — every round's staged reply, in order, one `comment` on the PR; a
-`BODY_TOO_LONG` decision splits it one comment per round. It is the GitHub-side record the next session's resume
-re-read seeds from. Delete `<facts.scratch>/loop-comment.md` once posted.
+fixed, ` — check: upheld` appended to the note of each entry the dismissal check upheld on recurrence. Then post
+the staged `loop-comment.md` — every round's reply, in order, one `comment` on the PR, the record the next session's
+resume re-read seeds from; a `BODY_TOO_LONG` decision splits it one comment per round. Delete the file once posted.
 
 ## S6 — DoD projection on the push that shipped the phase
 
