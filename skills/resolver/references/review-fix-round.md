@@ -281,8 +281,8 @@ materiality is never a defect. Under-tiering a claim skips the check, so the rec
    re-settled silently on its second occurrence: no card, no second reply beyond a dismissal-check verdict
    line (step 8), only the entry's repeat count bumped — in the bucket the entry records, never re-bucketed.
    Whether it goes to step 4's dismissal check again is step 4's rule — an entry carrying `check: upheld`
-   or marked `kept` does not. An entry marked `kept` (the operator answered **Keep settled**, this session or an earlier one)
-   is re-settled silently on **every** verbatim occurrence: that question is answered. A repeat that
+   or marked `kept` does not. An entry marked `kept` (the operator answered **Keep settled**, this session
+   or an earlier one) is re-settled silently on **every** verbatim occurrence: that question is answered. A repeat that
    **brings new evidence** is classified fresh on the merits — a `kept` one included, its mark dropped, and
    a refuted-items entry's ` — check: upheld` dropped too: the prior settlement, the operator's answer to it
    and the check's verdict on it are not a citation for evidence they never saw. A **recurrence that stays
@@ -320,9 +320,10 @@ materiality is never a defect. Under-tiering a claim skips the check, so the rec
    none when none qualifies — filling `<<items>>` with each item numbered: the finding verbatim with its
    site, its bucket, and its citation exactly as the round reply will record it (the Refuted evidence line,
    the verbatim decision bullet, the `no shown cost: <why>` note); `<<plan_decisions>>` with the plan's
-   decision bullets; `<<plan_changes>>` with the plan's `## Changes (file-level)` section verbatim (plan
-   text, so a refutation of an unfinished-`## Changes` claim is tested against the entry as the plan writes
-   it); `<<phase_context>>` as for the cold read; `<<base_ref>>` with the scope base. Never
+   decision bullets; `<<plan_changes>>` with the plan's `## Changes (file-level)` section verbatim, read
+   from the assembled plan at `facts.distiller_bundle.plan_marker_path` — the main comment holds only a
+   stub link to it (plan text, so a refutation of an unfinished-`## Changes` claim is tested against the
+   entry as the plan writes it); `<<phase_context>>` as for the cold read; `<<base_ref>>` with the scope base. Never
    the round history, prior verdicts or your reasoning. Print its `## Verdicts`, then route each item:
    - `upheld` → it stays in its bucket, recorded `check: upheld` (step 8).
    - `overturned` → it re-enters classification with the check's evidence as new evidence, and the

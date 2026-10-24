@@ -12,8 +12,8 @@ The orchestrator fills the `<<...>>` placeholders before sending. **Do not inclu
 history, prior `code-review` verdicts, prior round replies, prior dismissal-check verdicts, the resolver's
 state summary, or any conversation turns** — the check is only meaningful uncontaminated. Each item carries
 the finding verbatim, its bucket, and the citation exactly as the round reply records it — never the
-author's reasoning beyond that citation. The plan's phase list and decision bullets are plan text, not
-history. The sub-agent is context-blind, cannot call `AskUserQuestion`, and never writes to GitHub or the
+author's reasoning beyond that citation. The plan's phase list, decision bullets and `## Changes` section are
+plan text, not history. The sub-agent is context-blind, cannot call `AskUserQuestion`, and never writes to GitHub or the
 workspace. The per-bucket checks below render `review-fix-round.md`'s "Classification rubric" (Refuted,
 Plan-settled — its still-true and plan-defect tests — and No shown cost), which owns them — an edit there
 propagates here.

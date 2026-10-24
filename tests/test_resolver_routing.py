@@ -2579,6 +2579,9 @@ class DismissalCheckTests(unittest.TestCase):
         self.assertIn("**Plan changes**: `<<plan_changes>>`", self.prompt)
         self.assertIn("as `<<plan_changes>>` writes it", self.prompt)
         self.assertIn("`<<plan_changes>>` with the plan's `## Changes (file-level)` section verbatim", self.step4)
+        # The main plan comment holds only a stub link to `## Changes`; the assembled plan carries it.
+        self.assertIn("read from the assembled plan at `facts.distiller_bundle.plan_marker_path`", self.step4)
+        self.assertIn("decision bullets and `## Changes` section are plan text, not history", self.prompt)
 
     def test_step_5_is_judged_after_the_check_and_stages_its_records(self):
         self.assertIn("judged after the dismissal check returns", self.step5)
@@ -2642,9 +2645,11 @@ class DismissalCheckTests(unittest.TestCase):
         # C13: a no-verdict line is staged in a no-edit round.
         self.assertIn("or returned none for an item", self.step5)
         # C4: a light re-review's dismissal of a defect-tier claim goes through a fix round.
-        self.assertIn("or a dismissal of a defect-tier claim, re-enters this loop at step 2, which checks it", self.spine)
+        # Only a dismissal step 4 would dispatch re-enters: a `kept` or `check: upheld` repeat does not.
+        self.assertIn("or a dismissal step 4 would check, re-enters this loop at step 2", self.spine)
         finalisation = " ".join((REFERENCES_DIR / "finalisation.md").read_text(encoding="utf-8").split())
-        self.assertIn("unless its claim is defect-tier. A defect it finds, or a dismissal of a defect-tier claim", finalisation)
+        self.assertIn("unless step 4 would check it. A defect it finds, or a dismissal step 4's dismissal check would dispatch", finalisation)
+        self.assertIn("not already `check: upheld` or `kept`", finalisation)
         # C2: the prompt renders the rubric's still-true exception in full.
         self.assertIn('says "only" / "exactly" or records the omission as a choice', self.prompt)
 

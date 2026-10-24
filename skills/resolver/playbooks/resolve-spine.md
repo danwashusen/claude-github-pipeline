@@ -269,8 +269,8 @@ not tell a round of nits from a round of new bugs.
      must not spin an unchanged PR; name the outstanding items with their follow-up URLs or plan
      citations in the PR body — fresh mode: the staged `pr.md`). A round whose only fixes were polish
      first gets one **light re-review**: `code-review` at `medium` over that round's own commits
-     (`<round sha>^...HEAD` — the round's single step-8 commit) — a defect it finds, or a dismissal of a
-     defect-tier claim, re-enters this loop at step 2, which checks it; polish it finds goes to the ledger unfixed.
+     (`<round sha>^...HEAD` — the round's single step-8 commit) — a defect it finds, or a dismissal step 4
+     would check, re-enters this loop at step 2; polish it finds goes to the ledger unfixed.
    - **Progress** — the count fell from the previous round's, **or** none of its defects is
      **loop-induced** (the reference's test: on lines an earlier defect fix changed, or a sibling-site
      miss of an addressed class fix) — new defects in untouched code are real progress, not a stall;

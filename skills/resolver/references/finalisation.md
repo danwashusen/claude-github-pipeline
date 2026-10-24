@@ -75,9 +75,9 @@ reply. Then continue at S5.1 step 3:
 - **Every fix was polish** → the round settles and takes step 3's one **light re-review** (`code-review` at
   `medium` over the round's commit). Polish it finds goes to the ledger `open`, unfixed — for the
   evaluator, never back to this card — except a no-shown-cost item, which goes in as `drop` like any other
-  (`review-fix-round.md` "No shown cost") unless its claim is defect-tier. A defect it finds, or a dismissal
-  of a defect-tier claim (`review-fix-round.md` "Claim tier" — only a fix round's step 4 dismissal check
-  clears one):
+  (`review-fix-round.md` "No shown cost") unless step 4 would check it. A defect it finds, or a dismissal
+  step 4's dismissal check would dispatch (a defect-tier claim — `review-fix-round.md` "Claim tier" — not
+  already `check: upheld` or `kept`; only a fix round's step 4 clears one):
   - after a **settle** exit, re-enters the loop at step 2 under step 3's **Reset** rule (a fresh baseline); a
     dismissal is checked in that round's step 4;
   - after an **Accept current** exit, does **not** reopen the loop the operator closed. Revert the round's
