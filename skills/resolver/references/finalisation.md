@@ -71,7 +71,7 @@ whatever its tier and built to its note's `intent:` when it carries one. The rou
 plan checked as a set, fix design on a hot seam, defect injection, the §10.6 gate, one commit, the staged
 reply. Then continue at S5.1 step 3:
 
-- **Every fix was polish** → the round settles and takes step 3's one **light re-review** (`review` at
+- **Every fix was polish** → the round settles and takes step 3's one **light re-review** (`code-review` at
   `medium` over the round's commit). Polish it finds goes to the ledger `open`, unfixed — for the
   evaluator, never back to this card — except a no-shown-cost item, which goes in as `drop` like any other
   (`review-fix-round.md` "No shown cost"). A defect it finds:

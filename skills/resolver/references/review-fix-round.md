@@ -6,7 +6,7 @@ Until 4.11.0 this was a `general-purpose` sub-agent prompt dispatched once per i
 because the per-iteration cold start plus the JSON → card → re-dispatch serialization was slow and left the
 operator with no view of what was being fixed (a sub-agent's tool calls don't stream to the parent). The
 steps now run in the **main conversation**, which also already holds the plan, the audit, the doc grounding,
-and the code it just wrote. `review` itself always ran in main and still does — it is unreachable from
+and the code it just wrote. `code-review` itself always ran in main and still does — it is unreachable from
 inside an `Agent`-dispatched sub-agent (PR #607).
 
 This is **not** a sub-agent prompt: no placeholders, no JSON return, and every gate is a direct
@@ -15,7 +15,7 @@ This is **not** a sub-agent prompt: no placeholders, no JSON return, and every g
 
 ## What you hold at round entry
 
-- **The verdict text** — this round's `review` output, or the cold read's `## Findings` when S5.1 step 4
+- **The verdict text** — this round's `code-review` output, or the cold read's `## Findings` when S5.1 step 4
   fed you one. Classify it; act on it.
 - **PR** number, URL, and `<owner/repo>` in continue mode — in fresh mode the PR does not exist until
   S5.2 and you hold the staged `<facts.scratch>/pr.md` instead; the originating issue and its parent epic (or none);
@@ -451,7 +451,7 @@ Where the answer arrives decides what is left to do:
 - **Stall card** (S5.1 step 3) → **no pass**: the round's fixes are already committed, and the churn that
   offered Re-plan says its defects are coupled to the loop's own sites.
 
-Either way **no further `review`**: the next session's final-scope review re-reads them. A gate that
+Either way **no further `code-review`**: the next session's final-scope review re-reads them. A gate that
 escalates past
 the retry ladder → revert those fixes and record them, with no `Tests red` card. Coupled defects are
 recorded in the round reply, the PR body, and the handoff `Why:`. **Restructure** (the gate is already

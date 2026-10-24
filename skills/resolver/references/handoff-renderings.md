@@ -31,7 +31,7 @@ shape that hands back to the resolver (the non-final `Next:`, the operator-phase
 AND every re-route (including a mid-phases continue-mode re-route back to the resolver itself).** Per
 `_shared/handoff-format.md`'s closed set, `review:` is the **evaluator's** posted GitHub review verdict
 (`APPROVE` / `COMMENT (soft-reject)` / …) and `health:` is the **evaluator's** branch-health gate result
-— neither field means "the resolver's own `/review` skill or §8 pre-push gate ran." The resolver runs
+— neither field means "the resolver's own `code-review` skill or §8 pre-push gate ran." The resolver runs
 both internally on every phase, but that is not what these two fields denote, so they stay `not run`
 until the evaluator has actually acted on the PR — even on a re-route where a phase's review loop and
 health gate passed cleanly. Never render an off-closed-set glyph (e.g. a bare `✓`) here; there is no

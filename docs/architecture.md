@@ -503,7 +503,7 @@ cold read; it decides fix-or-defer only.
 
 **The review loop's exit is a tier, not a sub-agent (4.21.0).** The resolver's fix round tiers every
 Addressable finding `defect` or `polish`, and the loop runs while the defect count keeps falling (one
-grace round, then a stall card; an emergency ceiling of 8 `review` runs). This reintroduces a severity
+grace round, then a stall card; an emergency ceiling of 8 `code-review` runs). This reintroduces a severity
 axis on purpose, and it is **not** the convergence machinery 4.11.0 removed (`finding_provenance`,
 severity decay, one-shot suppression): that decided *when to cold-read*, and the cold read is still
 unconditional once per phase; this decides *when the loop ends*, replacing a fixed 2/4 cap that could not
