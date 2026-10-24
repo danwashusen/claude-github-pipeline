@@ -32,6 +32,11 @@ external processes any script may spawn are git/gh")::
                                              entry) is judged against its own post-edit copy, and
                                              — the same knowing trade as gate config — a PR could
                                              also downgrade an entry's `binding` authority
+    _fetch_base_compare(...)              -- one `gh api .../compare/<base>...<head>` read: does
+                                             the head contain the base tip? With `--gated-head`
+                                             it becomes the `merge_guard` fact (#93) — the merge
+                                             lands only the gated head, and only on a base
+                                             current at the last refresh
 
 Every executor exposes a **pure, non-emitting core** — ``build_*(...) -> (payload, notices,
 decision|None)`` — as of the S8 pattern lock (docs/specs/baseline.md §5): ``gh_pr_gather``,
@@ -46,14 +51,18 @@ retro's rule for S9+).
 Usage::
 
     prep_evaluator.py <pr-number> <owner/repo> [--root PATH] [--scratch-dir DIR] [--refresh]
+                      [--gated-head <40-char SHA>]
 
 ``--root`` defaults to ``.`` and is normalized to the MAIN checkout via
 ``workspace._resolve_main_root`` — under v3 the session (and therefore the ambient cwd) sits
 INSIDE the PR-head worktree. ``--scratch-dir`` defaults to ``/tmp/gh-evaluator-<pr-number>``
 (CLAUDE.md's ``/tmp/gh-<skill>-<N>/`` convention) when omitted. ``--refresh`` re-derives the
-volatile facts (PR state, CI rollup class, health-cache hit/miss) without re-asserting the
-workspace, re-running the setup hooks, or re-reading the gate config — architecture.md §4: "prep
-supports --refresh and is re-run at the points where currency matters."
+volatile facts (PR state, CI rollup class, health-cache hit/miss, ``merge_guard``) without
+re-asserting the workspace, re-running the setup hooks, or re-reading the gate config —
+architecture.md §4: "prep supports --refresh and is re-run at the points where currency matters."
+``--gated-head`` is the opening run's ``pr.headRefOid``, passed back on every later refresh so
+``merge_guard.head_moved`` says whether the head changed since it was gated; absent, the gated
+head is this run's own head (never pass a refresh's head — that would disable the pin).
 
 Exit codes (architecture.md §3): 0 with the facts-block envelope present (``status`` is ``"ok"``
 or ``"needs_decision"``); 2 on a usage error (no envelope). Any other non-zero is an unclassified
@@ -64,6 +73,7 @@ import argparse
 import json
 import re
 import sys
+import urllib.parse
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
@@ -986,6 +996,107 @@ def _fetch_current_user(cwd):
 
 
 # ---------------------------------------------------------------------------
+# The merge guard (#93): the merge lands only the gated head, and only when that head contains the
+# base tip as of the last refresh. Both halves are facts so the spine compares nothing itself (CLAUDE.md "facts by script,
+# meaning by model"); `gh pr merge --match-head-commit` covers the head in the window
+# after the last refresh — nothing covers the base there.
+# ---------------------------------------------------------------------------
+
+# The compare reduced to the four values the guard reads. `--jq` keeps the multi-KB commit/file
+# payload off stdout.
+_BASE_COMPARE_JQ = "{status, ahead_by, behind_by, sha: .base_commit.sha}"
+
+# `skip_reason` values — members of the closed `merge: skipped (<reason>)` set in
+# skills/_shared/handoff-format.md, spelled exactly as the handoff renders them.
+SKIP_HEAD_MOVED = "head-moved"
+SKIP_BASE_MOVED = "base-moved"
+
+
+def _fetch_base_compare(repo, base_ref, head_sha, cwd):
+    """``gh api repos/<repo>/compare/<base>...<head>`` — whether the head contains the base tip.
+
+    An ancestry fact, deliberately not ``mergeStateStatus == BEHIND``: BEHIND is reported only when
+    the base's branch protection requires up-to-date branches, which an `epic/<N>-<slug>` branch
+    never has, so a gate keyed on it would not fire where the pipeline runs. ``behind_by > 0``
+    means the base gained commits the head lacks, however the base moved.
+
+    A failed read FAILS CLOSED — ``AUTH_REQUIRED``, else a hard exit with no envelope — never a
+    notice with a null fact: this guards a merge, and a missed read must never read as clear.
+    Needs no checkout, so it runs on ``--refresh`` too — on an OPEN PR only (``build_facts``). Returns ``(base, decision_or_none)``.
+    """
+    # A ref may carry `#`, `?` or `%`, which would otherwise end or corrupt the REST path.
+    result = process.run(
+        [
+            "gh", "api",
+            "repos/%s/compare/%s...%s" % (repo, urllib.parse.quote(base_ref, safe="/"), head_sha),
+            "--jq", _BASE_COMPARE_JQ,
+        ],
+        cwd=cwd,
+    )
+    if result.auth_required:
+        return None, _auth_decision(result)
+    if result.returncode != 0:
+        sys.stderr.write(result.stderr)
+        sys.exit(1)
+    base = _parse_base_compare(result.stdout, base_ref)
+    if base is None:
+        sys.stderr.write(
+            "prep_evaluator: the base compare for %s returned no ahead_by/behind_by counts: %r\n"
+            % (base_ref, result.stdout)
+        )
+        sys.exit(1)
+    return base, None
+
+
+def _parse_base_compare(stdout, base_ref):
+    """The compare's reduced JSON as the ``merge_guard.base`` dict, or ``None`` when the counts are
+    not integers — a response the guard cannot read must stop the run, never read as "base current"
+    (a null ``behind_by`` would otherwise make ``base_moved`` false: fail open)."""
+    try:
+        data = json.loads(stdout)
+    except ValueError:
+        return None
+    if not isinstance(data, dict):
+        return None
+    counts = (data.get("ahead_by"), data.get("behind_by"))
+    if not all(isinstance(n, int) and not isinstance(n, bool) for n in counts):
+        return None
+    return {
+        "ref": base_ref,
+        "sha": data.get("sha"),
+        "ahead_by": counts[0],
+        "behind_by": counts[1],
+        "status": data.get("status"),
+    }
+
+
+def _merge_guard(gated_head, head_sha, base):
+    """The ``merge_guard`` fact. ``gated_head`` is the opening run's ``pr.headRefOid`` — the SHA
+    the workspace was asserted at and the health gate keyed on — passed back as ``--gated-head`` on
+    every later refresh; comparing it here, not in prose, is what lets the offline suite pin it.
+
+    ``head-moved`` wins over ``base-moved``: a moved head needs a fresh session whatever the base
+    did. DIRTY/BLOCKED stay on ``pr.mergeStateStatus``; the spine ranks the guard ahead of both.
+    """
+    head_moved = gated_head != head_sha
+    base_moved = base["behind_by"] > 0  # an int: _parse_base_compare refuses anything else
+    if head_moved:
+        skip_reason = SKIP_HEAD_MOVED
+    elif base_moved:
+        skip_reason = SKIP_BASE_MOVED
+    else:
+        skip_reason = None
+    return {
+        "gated_head": gated_head,
+        "head_sha": head_sha,
+        "head_moved": head_moved,
+        "base": base,
+        "base_moved": base_moved,
+        "skip_reason": skip_reason,
+    }
+
+
+# ---------------------------------------------------------------------------
 # Closing-issue DoD (parse.py dod — a pure function; no redirect_stdout needed).
 # ---------------------------------------------------------------------------
 
@@ -1059,7 +1170,7 @@ def _catalogue_attention(grounding_docs, catalogue_absent):
     return attention
 
 
-def _build_attention(workspace_envelope, pr_envelope, blocked_by_by_issue=None):
+def _build_attention(workspace_envelope, pr_envelope, blocked_by_by_issue=None, merge_guard=None):
     attention = []
     if workspace_envelope is not None:
         setup = workspace_envelope.get("setup") or {}
@@ -1074,8 +1185,19 @@ def _build_attention(workspace_envelope, pr_envelope, blocked_by_by_issue=None):
         unpushed = workspace_envelope.get("unpushed_commits") or 0
         if unpushed:
             attention.append("work worktree has %d unpushed commit(s)" % unpushed)
-    if pr_envelope.get("mergeStateStatus") == "BEHIND":
-        attention.append("Branch is behind base — rebase or merge base before merging.")
+    guard = merge_guard or {}
+    if guard.get("head_moved"):
+        attention.append(
+            "PR head moved to %s after it was gated at %s — the merge will skip as head-moved; a "
+            "fresh session re-gates the new head"
+            % ((guard.get("head_sha") or "")[:7], (guard.get("gated_head") or "")[:7])
+        )
+    if guard.get("base_moved"):
+        base = guard.get("base") or {}
+        attention.append(
+            "%s is %s commit(s) ahead of this PR's head — the merge will skip as base-moved until "
+            "the branch is updated and re-gated" % (base.get("ref"), base.get("behind_by"))
+        )
     if pr_envelope.get("mergeStateStatus") == "DIRTY":
         attention.append("Branch has conflicts — resolve before merging.")
     if pr_envelope.get("mergeStateStatus") == "BLOCKED":
@@ -1099,10 +1221,11 @@ def _build_attention(workspace_envelope, pr_envelope, blocked_by_by_issue=None):
 # ---------------------------------------------------------------------------
 
 
-def build_facts(pr_number, repo, root=".", scratch_dir=None, refresh=False, cwd=None):
+def build_facts(pr_number, repo, root=".", scratch_dir=None, refresh=False, cwd=None, gated_head=None):
     """Assemble the evaluator's complete facts block and return the envelope dict WITHOUT
     printing it (the testable core, mirroring gh_gather.run's split — main() does the printing).
-    ``refresh`` re-derives PR state + CI classification + health-cache hit/miss without
+    ``refresh`` re-derives PR state + CI classification + health-cache hit/miss + ``merge_guard``
+    (against ``gated_head``) without
     re-`ensure`-ing the work worktree (so setup hooks are not re-run) and without re-reading gate
     config (config is pinned at the root SHA already recorded on a prior run's facts, per
     architecture.md §4: "prep supports --refresh and is re-run at the points where currency
@@ -1171,7 +1294,7 @@ def build_facts(pr_number, repo, root=".", scratch_dir=None, refresh=False, cwd=
         #     (S4's doc-grounding dimension). `None` on --refresh, which reads no checkout.
         grounding_docs, catalogue_notices = doc_catalogue.read_catalogue(gate_root)
     else:
-        # --refresh: re-derive only PR state + CI + health-cache hit/miss. Root freshness,
+        # --refresh: re-derive only PR state + CI + health-cache hit/miss + merge_guard. Root freshness,
         # workspace ensure (and its setup hooks), and gate config are NOT re-run/re-read — the S6
         # brief and this step's DoD are explicit that --refresh must not re-run hooks. A caller
         # that needs a workspace/config fact on a --refresh run is expected to hold onto the
@@ -1249,6 +1372,24 @@ def build_facts(pr_number, repo, root=".", scratch_dir=None, refresh=False, cwd=
     pr_author_login = (pr_envelope.get("author") or {}).get("login")
     self_review = pr_author_login is not None and pr_author_login == current_user
 
+    # 5b) The merge guard (#93), on the full run AND on --refresh — it is the pre-merge currency
+    #     fact. Without --gated-head the gated head IS this run's head (the opening run). Only on an
+    #     OPEN PR: any other state has no merge to guard (every merge-reaching step stops on state
+    #     first), and its base branch may be gone — a compare there would turn a readable merged PR
+    #     into a hard failure. `merge_guard` is then null, never a partial guard reading "clear".
+    pr_open = pr_envelope.get("state") == "OPEN"
+    merge_guard = None
+    if pr_open:
+        head_sha = pr_envelope.get("headRefOid")
+        base, compare_decision = _fetch_base_compare(
+            repo, pr_envelope.get("baseRefName"), head_sha, cwd
+        )
+        if compare_decision is not None:
+            emit_needs_decision(compare_decision)
+            return None
+        # Only an ABSENT pin means "this run's head": an empty or other present value is compared.
+        merge_guard = _merge_guard(head_sha if gated_head is None else gated_head, head_sha, base)
+
     # 6) CI rollup classification, PR-type detection, health-cache SHA compare.
     ci_class, ci_fail_checks = _classify_ci_rollup(pr_envelope.get("statusCheckRollup"))
     # `root_branch` came from the repo API fetched above — never `workspace.default_branch`, which
@@ -1276,7 +1417,7 @@ def build_facts(pr_number, repo, root=".", scratch_dir=None, refresh=False, cwd=
 
     # 7) Assemble the facts block (architecture.md §4 common core + evaluator extensions).
     vector = {"type": pr_type, "mode": "continue", "pr_state": "open-by-you" if self_review else "open"}
-    if pr_envelope.get("state") != "OPEN":
+    if not pr_open:
         vector["pr_state"] = pr_envelope.get("state", "unknown").lower()
 
     facts = {
@@ -1311,6 +1452,7 @@ def build_facts(pr_number, repo, root=".", scratch_dir=None, refresh=False, cwd=
         "pr_type": pr_type,
         "ci": {"class": ci_class, "fail_checks": ci_fail_checks},
         "health_cache": health_cache,
+        "merge_guard": merge_guard,
         "self_review": self_review,
         "current_user": current_user,
         "config": gate_config,
@@ -1320,7 +1462,7 @@ def build_facts(pr_number, repo, root=".", scratch_dir=None, refresh=False, cwd=
         "deps_available": deps_available_by_issue,
         "plans": plans_by_issue,
         "grounding_docs": grounding_docs if grounding_docs is not None else [],
-        "attention": _build_attention(workspace_envelope, pr_envelope, blocked_by_by_issue)
+        "attention": _build_attention(workspace_envelope, pr_envelope, blocked_by_by_issue, merge_guard)
         + config_attention
         + _catalogue_attention(grounding_docs, DOC_CATALOGUE_ABSENT in catalogue_notices)
         + epic_attention,
@@ -1381,10 +1523,23 @@ def main(argv):
     parser.add_argument(
         "--refresh",
         action="store_true",
-        help="re-derive volatile facts (PR state, CI, health-cache hit) without re-running hooks",
+        help="re-derive volatile facts (PR state, CI, health-cache hit, merge_guard) without re-running hooks",
+    )
+    parser.add_argument(
+        "--gated-head",
+        default=None,
+        help="the opening run's full 40-character pr.headRefOid; merge_guard.head_moved compares the "
+        "current head to it",
     )
     parser.add_argument("--cwd", default=None, help="explicit cwd for the repo-merge-config/user gh calls")
     args = parser.parse_args(argv)
+    # The guard compares by exact string equality, so a short or empty SHA would read every head as
+    # moved, or (empty) slip past the pin — refuse it as a usage error, before any gh call.
+    if args.gated_head is not None and not re.fullmatch(r"[0-9a-f]{40}", args.gated_head):
+        parser.error(
+            "--gated-head takes the opening run's full 40-character pr.headRefOid, got %r"
+            % args.gated_head
+        )
 
     facts = build_facts(
         args.pr,
@@ -1393,6 +1548,7 @@ def main(argv):
         scratch_dir=args.scratch_dir,
         refresh=args.refresh,
         cwd=args.cwd,
+        gated_head=args.gated_head,
     )
     if facts is None:
         # A needs_decision envelope was already emitted by build_facts (via a composed executor's

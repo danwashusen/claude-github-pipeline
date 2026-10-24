@@ -265,7 +265,9 @@ serves: `plan_ref` / `own_branch` / `identical` / `accepted`, §6) instead.
 
 Rules: every fact is **re-derivable** — prep supports `--refresh` and is re-run at the points
 where currency matters (e.g. pre-merge PR state); `--refresh` re-derives only the volatile facts
-named in the calling step's DoD (for the evaluator: PR state, `ci`, `health_cache`) and does
+named in the calling step's DoD (for the evaluator: PR state, `ci`, `health_cache`, `merge_guard` —
+compared against the opening run's head, passed back as `--gated-head <sha>`; `null` on a PR that
+isn't open) and does
 **not** re-assert the workspace, re-run the setup hooks, or re-read the four gate-config blocks —
 a `--refresh` envelope therefore omits `workspace` entirely and reports `config: {}`, relying on
 the caller's prior full-run facts block for those (the opening assertion stands for the session). Values the flow needs (`base_ref`, branch name, merge

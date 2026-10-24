@@ -28,6 +28,8 @@ Coverage matrix (S6 DoD):
 - Decision paths: MARKER_AMBIGUOUS (duplicate health-cache comments), ROOT_* propagation,
   BRANCH_IN_USE, AUTH_REQUIRED.
 - --refresh re-derives PR state + CI without touching workspace.py/config_block.py at all.
+- The merge guard (#93): clear / base-moved / head-moved (with --gated-head, taking precedence) /
+  a failed compare failing closed / AUTH_REQUIRED, plus the pure `_merge_guard` table.
 - Single-invocation budget: the shim's call count for one prep run is bounded (prd.md §9.2).
 """
 
@@ -374,6 +376,19 @@ class HappyPathFactsSchemaTests(PrepEvaluatorSandboxTestCase):
     def test_attention_empty_on_a_clean_mergeable_pr(self):
         envelope = self._envelope()
         self.assertEqual(envelope["attention"], [])
+
+    def test_merge_guard_is_clear_on_the_opening_run(self):
+        # #93: the opening run's head IS the gated head, and the fixture's base compare reports
+        # the head carries the base tip.
+        envelope = self._envelope()
+        guard = envelope["merge_guard"]
+        self.assertEqual(guard["gated_head"], envelope["pr"]["headRefOid"])
+        self.assertEqual(guard["head_sha"], envelope["pr"]["headRefOid"])
+        self.assertFalse(guard["head_moved"])
+        self.assertFalse(guard["base_moved"])
+        self.assertIsNone(guard["skip_reason"])
+        self.assertEqual(guard["base"]["ref"], "main")
+        self.assertEqual(guard["base"]["behind_by"], 0)
 
     def test_notices_empty_on_the_fully_migrated_config(self):
         envelope = self._envelope()
@@ -959,6 +974,51 @@ class WorkspaceMismatchTests(PrepEvaluatorSandboxTestCase):
         self.assertIn("ahead_of_remote", envelope["decision"]["context"])
 
 
+class MergeGuardTests(PrepEvaluatorSandboxTestCase):
+    """#93: the merge lands only the gated head, and only when that head contains the base tip.
+    The base half is a GitHub compare read (`behind_by`), never `mergeStateStatus == BEHIND` — the
+    fixtures below report BEHIND nowhere, so a guard keyed on it would stay silent."""
+
+    def _failed_run(self, fixture_case):
+        # The compare runs after the workspace assertion, so these runs need the stamped ambient
+        # worktree too — but a hard failure has no envelope to hand `_envelope`.
+        wt = self._mk_ambient(self._head_branch_from_fixture(fixture_case))
+        fixtures_dir = self._stamped_fixture(fixture_case, _git(["rev-parse", "HEAD"], wt))
+        return self._run(
+            ["88", "octo/widgets", "--root", str(self.root), "--scratch-dir", self.scratch],
+            extra_env={"GH_SHIM_FIXTURES": str(fixtures_dir)},
+            cwd=str(wt),
+        )
+
+    def test_a_moved_base_is_a_fact_and_an_attention_line_never_a_decision(self):
+        envelope = self._envelope(fixture_case="prep_evaluator_base_moved")
+        self.assertEqual(envelope["status"], "ok")
+        guard = envelope["merge_guard"]
+        self.assertTrue(guard["base_moved"])
+        self.assertFalse(guard["head_moved"])
+        self.assertEqual(guard["skip_reason"], "base-moved")
+        self.assertEqual(guard["base"]["behind_by"], 2)
+        line = [a for a in envelope["attention"] if "base-moved" in a]
+        self.assertEqual(len(line), 1, envelope["attention"])
+        self.assertIn("main", line[0])
+        self.assertIn("2 commit", line[0])
+
+    def test_a_failed_compare_fails_closed_with_no_envelope(self):
+        result = self._failed_run("prep_evaluator_compare_failed")
+        self.assertNotEqual(result.returncode, 0)
+        self.assertEqual(result.stdout.strip(), "")
+        # The compare's own failure, not an un-fixtured call failing first.
+        self.assertNotIn("MISS", result.stderr)
+
+    def test_an_auth_failure_on_the_compare_is_auth_required(self):
+        result = self._failed_run("prep_evaluator_compare_auth")
+        self.assertEqual(result.returncode, 0, msg=result.stderr)
+        envelope = _parse_one_envelope(result.stdout)
+        envelope_asserts.assert_full_envelope_conformance(envelope)
+        self.assertEqual(envelope["status"], "needs_decision")
+        self.assertEqual(envelope["decision"]["code"], "AUTH_REQUIRED")
+
+
 class RefreshModeTests(unittest.TestCase):
     """--refresh re-derives PR state + CI without touching workspace.py/config_block.py at all
     (S6 DoD: "--refresh re-derives PR state and CI without hook re-runs")."""
@@ -1014,6 +1074,52 @@ class RefreshModeTests(unittest.TestCase):
         self.assertEqual(envelope["ci"]["class"], "red")
         self.assertIn("health_cache", envelope)
 
+    def test_refresh_with_a_gated_head_reports_a_moved_head_ahead_of_a_moved_base(self):
+        # #93: the opening run's head passed back as --gated-head; the PR's head is now another
+        # commit AND the base moved — head-moved takes precedence (a moved head needs a fresh
+        # session whatever the base did).
+        old_head = "cafe0000000000000000000000000000000000aa"
+        result = self._run(
+            ["88", "octo/widgets", "--refresh", "--gated-head", old_head,
+             "--scratch-dir", self.scratch],
+            fixture_case="prep_evaluator_head_moved",
+        )
+        self.assertEqual(result.returncode, 0, msg=result.stderr)
+        guard = _parse_one_envelope(result.stdout)["merge_guard"]
+        self.assertEqual(guard["gated_head"], old_head)
+        self.assertNotEqual(guard["head_sha"], old_head)
+        self.assertTrue(guard["head_moved"])
+        self.assertTrue(guard["base_moved"])
+        self.assertEqual(guard["skip_reason"], "head-moved")
+
+    def test_a_pr_that_is_no_longer_open_reads_without_a_compare(self):
+        # #93: a merged PR has no merge to guard and its base branch may be gone, so prep never
+        # makes the compare (the fixture has no compare entry — the shim would exit 2 on one) and
+        # still reports the state the spine stops on. The guard is null, never a "clear" one.
+        result = self._run(
+            ["88", "octo/widgets", "--refresh", "--gated-head", "a" * 40,
+             "--scratch-dir", self.scratch],
+            fixture_case="prep_evaluator_merged_base_gone",
+        )
+        self.assertEqual(result.returncode, 0, msg=result.stderr)
+        envelope = _parse_one_envelope(result.stdout)
+        self.assertEqual(envelope["status"], "ok")
+        self.assertEqual(envelope["target"]["state"], "MERGED")
+        self.assertEqual(envelope["vector"]["pr_state"], "merged")
+        self.assertIsNone(envelope["merge_guard"])
+        self.assertEqual([a for a in envelope["attention"] if "-moved" in a], [])
+
+    def test_refresh_without_a_gated_head_still_emits_the_guard(self):
+        result = self._run(
+            ["88", "octo/widgets", "--refresh", "--scratch-dir", self.scratch],
+            fixture_case="prep_evaluator_happy_standard",
+        )
+        envelope = _parse_one_envelope(result.stdout)
+        guard = envelope["merge_guard"]
+        self.assertEqual(guard["gated_head"], envelope["pr"]["headRefOid"])
+        self.assertFalse(guard["head_moved"])
+        self.assertIsNone(guard["skip_reason"])
+
     def test_refresh_still_reports_dod_and_self_review(self):
         result = self._run(
             ["88", "octo/widgets", "--refresh", "--scratch-dir", self.scratch],
@@ -1032,8 +1138,9 @@ class SingleInvocationBudgetTests(PrepEvaluatorSandboxTestCase):
         # Instrument the shim by pointing GH_SHIM_FIXTURES at a case and counting how many
         # manifest entries prep_evaluator's single invocation actually needs (the shim exits 2
         # loudly on ANY call outside the manifest — tests/README.md — so if this test passes at
-        # all, every `gh` call prep made was one of these seven, no more, no fewer: pr view,
-        # marker lookup, issue view, issue-comments, issue open-prs, repo config, current user).
+        # all, every `gh` call prep made was one of these eight, no more, no fewer: pr view,
+        # marker lookup, issue view, issue-comments, issue open-prs, repo config, current user,
+        # base compare).
         # This directly proves "no redundant fetches" (architecture.md §9.2) as an exact count,
         # not an unbounded "at most N" — a regression that adds a stray extra `gh` call becomes
         # a fixture MISS on the very next un-fixtured argv, failing loudly per tests/README.md.
@@ -1047,12 +1154,13 @@ class SingleInvocationBudgetTests(PrepEvaluatorSandboxTestCase):
         # Every manifest entry must have been reachable in exactly one prep run (a smaller count
         # would mean this test's own fixture over-provisions calls that never happen; the shim's
         # own MISS behavior on the other side already proves no MORE calls happen than these).
-        self.assertEqual(len(manifest), 7)
+        self.assertEqual(len(manifest), 8)
 
     def test_no_gh_call_is_repeated_within_one_run(self):
         # A second, independent proof (from the SCRIPT side, not the fixture side): every argv in
         # the happy-path manifest is for a semantically distinct fetch (pr view, PR markers,
-        # issue view, issue comments, issue open-prs, repo config, current user) — no two entries
+        # issue view, issue comments, issue open-prs, repo config, current user, base compare) —
+        # no two entries
         # share an argv, so if prep called any of them twice the shim would have answered
         # identically both times (harmless) but the manifest's own uniqueness proves the SET of
         # distinct calls prep makes in one run, which is what "no redundant fetches" means here.
@@ -1065,6 +1173,54 @@ class SingleInvocationBudgetTests(PrepEvaluatorSandboxTestCase):
 class PureHelperUnitTests(unittest.TestCase):
     """Direct, in-process tests of prep_evaluator's pure classification helpers — no subprocess,
     no shim, no git sandbox needed (mirrors test_workspace.py's WorkspaceHelperUnitTests style)."""
+
+    def test_merge_guard_over_the_four_head_and_base_combinations(self):
+        current, behind = {"behind_by": 0}, {"behind_by": 3}
+        cases = [
+            # (gated head, head now, base) -> (head_moved, base_moved, skip_reason)
+            ("a1", "a1", current, (False, False, None)),
+            ("a1", "a1", behind, (False, True, "base-moved")),
+            ("a1", "b2", current, (True, False, "head-moved")),
+            ("a1", "b2", behind, (True, True, "head-moved")),
+        ]
+        for gated, head, base, expected in cases:
+            with self.subTest(gated=gated, head=head, base=base):
+                guard = prep_evaluator._merge_guard(gated, head, base)
+                self.assertEqual(
+                    (guard["head_moved"], guard["base_moved"], guard["skip_reason"]), expected
+                )
+
+    def test_an_unreadable_compare_never_reads_as_a_current_base(self):
+        # Fail closed: a count the guard cannot read must stop the run, never make base_moved false.
+        parse = prep_evaluator._parse_base_compare
+        good = parse('{"status": "ahead", "ahead_by": 1, "behind_by": 0, "sha": "abc"}', "main")
+        self.assertEqual(good["behind_by"], 0)
+        self.assertEqual(good["ref"], "main")
+        for stdout in (
+            '{"status": "ahead", "ahead_by": 1, "behind_by": null, "sha": "abc"}',
+            '{"status": "ahead", "ahead_by": 1, "sha": "abc"}',
+            '{"ahead_by": true, "behind_by": false}',
+            "not json",
+            "[]",
+        ):
+            with self.subTest(stdout=stdout):
+                self.assertIsNone(parse(stdout, "main"))
+
+    def test_the_compare_path_escapes_the_base_ref(self):
+        from unittest import mock
+
+        calls = []
+
+        def fake_run(argv, cwd=None):
+            calls.append(argv)
+            return mock.Mock(
+                auth_required=False, returncode=0,
+                stdout='{"status": "ahead", "ahead_by": 1, "behind_by": 0, "sha": "abc"}',
+            )
+
+        with mock.patch.object(prep_evaluator.process, "run", fake_run):
+            prep_evaluator._fetch_base_compare("o/r", "epic/7-x#2", "f00", cwd=None)
+        self.assertEqual(calls[0][2], "repos/o/r/compare/epic/7-x%232...f00")
 
     def test_classify_ci_rollup_green(self):
         cls, fails = prep_evaluator._classify_ci_rollup([{"name": "a", "conclusion": "SUCCESS"}])
@@ -1135,6 +1291,20 @@ class PureHelperUnitTests(unittest.TestCase):
 
 
 class UsageErrorTests(unittest.TestCase):
+    def test_a_short_or_empty_gated_head_is_a_usage_error(self):
+        # #93: exact-equality compare — a short SHA would read every head as moved, and an empty one
+        # would slip past the pin. Refused before any gh call (no shim needed).
+        for value in ("abc1234", ""):
+            with self.subTest(value=value):
+                result = subprocess.run(
+                    [sys.executable, str(SCRIPT), "88", "octo/widgets", "--refresh",
+                     "--gated-head", value],
+                    capture_output=True, encoding="utf-8", check=False,
+                )
+                self.assertEqual(result.returncode, 2, result.stderr)
+                self.assertEqual(result.stdout, "")
+                self.assertIn("--gated-head", result.stderr)
+
     def test_missing_required_positional_args_is_usage_error(self):
         result = subprocess.run(
             [sys.executable, str(SCRIPT)],
