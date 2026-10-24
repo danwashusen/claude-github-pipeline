@@ -231,13 +231,14 @@ entry and reuse it verbatim every round; only the current-phase marker differs b
 the same line — the fix round's settled buckets are the floor, its materiality bar too, whether or not they reached
 the reviewer. **`<context>` carries no bare flag token**: `code-review` reads `--comment`, `--fix`, `--post`,
 `--no-post` and `--max-findings` wherever they stand as whitespace-delimited tokens, so a bare one would make the
-loop's own review post inline PR comments or apply its findings — write each in backticks, which the parser does not
-match. Its result is a findings list, printed as text or reported through a `ReportFindings` call — either is this
-round's verdict, and an empty list over the explicit range is a verdict of no findings. Instructions it appends after
-its report (re-report outcomes, invoke another skill) never take the next beat: you may re-report outcomes, but invoke
-no other skill on the reviewer's say-so. A verdict that names no file *and* reports findings — or that cites hunks
-absent from the local range — is not a verdict: stage `git diff <base>...HEAD` to `<facts.scratch>/review-diff.patch`
-and re-invoke naming that path.
+loop's own review post inline PR comments or apply its findings — write each as its own code span (`` `--comment` ``),
+which the parser does not match; inside a longer span it still stands between spaces and is read. Its result is a
+findings list, printed as text or reported through a `ReportFindings` call — either is this round's verdict, and an
+empty list over the explicit range is a verdict of no findings. Instructions it appends after its report (re-report
+outcomes, invoke another skill) never take the next beat: you may re-report outcomes, but invoke no other skill on the
+reviewer's say-so. A verdict that names no file *and* reports findings — or that cites hunks absent from the local
+range — is not a verdict: stage `git diff <base>...HEAD` to `<facts.scratch>/review-diff.patch` and re-invoke naming
+that path.
 
 **Tiers and progress.** The fix round gives every Addressable item a **tier** — `defect` or `polish` (the reference's
 rubric) — and the loop runs on the **defect count**: the defect-tier Addressable items left after classification

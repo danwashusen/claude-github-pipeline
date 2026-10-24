@@ -32,11 +32,11 @@ is needed, read it in **bounded slices**: enumerate changed files first (`grep '
 against the spilled diff), then read only the implicated hunks — never load a 100 KB diff whole.
 
 **Prior `/code-review` signal.** A `/code-review` run reaches the PR (`facts.sections` reviews/thread) as: the
-marketplace `code-review` command's comment, "Found N issues:" with a numbered scored list or "No issues found.
-Checked for bugs and CLAUDE.md compliance."; the bundled skill's inline PR comments (only with `--comment`); or its
-ultra review's single findings comment (only with `--post`). The resolver's review loop passes none — its record is
-the loop comment. "No issues found" (or all below threshold) → quality blessed. Open issues no later commit addresses
-→ rejection signals cited in your verdict. No `/code-review` output → note it, don't refuse. Don't re-invoke it.
+marketplace `code-review` command's comment, "Found N issues:" with a scored list or "No issues found. Checked for
+bugs and CLAUDE.md compliance."; the bundled skill's inline PR comments (only with `--comment`); or its ultra review's
+single findings comment (only with `--post`). The resolver's review loop passes none — its record is the loop comment.
+"No issues found" (or all below threshold) → code quality passes. Open issues no later commit addresses → rejection
+signals cited in your verdict. No `/code-review` output → note it, don't refuse. Don't re-invoke it.
 
 **No `closingIssuesReferences`** → ask (`header: "Issue link"`): **Name the issue** (Other free-text →
 run scope evaluation against it) / **Intentionally standalone** (skip the scope-against-issue check).

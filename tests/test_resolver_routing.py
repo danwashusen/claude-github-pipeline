@@ -2503,7 +2503,8 @@ class ReviewerNameTests(unittest.TestCase):
         self.assertIn("**`<context>` carries no bare flag token**", self.flat)
         for flag in ("`--comment`", "`--fix`", "`--post`", "`--no-post`", "`--max-findings`"):
             self.assertIn(flag, self.flat)
-        self.assertIn("in backticks, which the parser does not match", self.flat)
+        self.assertIn("write each as its own code span", self.flat)
+        self.assertIn("inside a longer span it still stands between spaces and is read", self.flat)
 
     def test_the_result_is_a_findings_list_and_appended_instructions_never_drive(self):
         self.assertIn("reported through a `ReportFindings` call", self.flat)
