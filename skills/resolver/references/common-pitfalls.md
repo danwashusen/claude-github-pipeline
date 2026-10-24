@@ -175,7 +175,7 @@ its §review-loop, its S6 DoD projection) that carry the same numbering v1 used,
 - **Don't stop at any turn-boundary beat in the review loop.** S5.1 has three beats where the
   model can summarize-and-stop before the run finishes; all three are the *PR #416 failure mode* and the
   *#653 missing-handoff failure mode* re-imported one layer up. (a) **After `Skill(code-review)` returns** — the
-  verdict text reads like a finished deliverable, but `code-review`'s job is only to emit the verdict, not to
+  verdict reads like a finished deliverable, but `code-review`'s job is only to emit the verdict, not to
   close the loop. Your next beats in the same turn are the classification, the fix plan, and the fix
   edits — or, on a settled verdict, staging the scope diff and dispatching the cold read per S5.1 step 4. (b) **After the fix round's
   commit** — the next beat is re-invoking `Skill(skill="code-review")` with S5.1's Invocation arguments, not a recap of what you fixed. (c) **After

@@ -15,8 +15,8 @@ This is **not** a sub-agent prompt: no placeholders, no JSON return, and every g
 
 ## What you hold at round entry
 
-- **The verdict text** — this round's `code-review` output, or the cold read's `## Findings` when S5.1 step 4
-  fed you one. Classify it; act on it.
+- **The verdict** — this round's `code-review` output (text or a `ReportFindings` call), or the cold read's
+  `## Findings` when S5.1 step 4 fed you one. Classify it; act on it.
 - **PR** number, URL, and `<owner/repo>` in continue mode — in fresh mode the PR does not exist until
   S5.2 and you hold the staged `<facts.scratch>/pr.md` instead; the originating issue and its parent epic (or none);
   `facts.audit_ref` (bare) as the integration target.

@@ -211,7 +211,7 @@ waits for every phase ("Return to the routed playbook"). A revision run (S4) is 
 is the PR's **cumulative diff**, read from the local branch as `origin/<facts.workspace.base_ref>...HEAD` — nothing is
 pushed until S5.2, so the PR on GitHub still shows the last session's state: a correct-but-partial class fix reads as
 correct every round when only the delta since the last fix is re-read, so a delta-scoped loop converges on its own
-blind spot instead of on the code. Non-final → the **phase delta**: base = `facts.tracker.last_shipped. commit_sha`
+blind spot instead of on the code. Non-final → the **phase delta**: base = `facts.tracker.last_shipped.commit_sha`
 when `reachable` (the shipped phase nearest HEAD — phases ship in `depends-on` order, not numeric order), else
 `facts.workspace.base_ref` (phase 1, where the two coincide; or a force-pushed-away SHA); after an S4 **Rebuild
 un-ticked**, treat `last_shipped` as unreachable — the un-ticked work is what needs re-reading. The blind spot the
@@ -248,8 +248,8 @@ never keeps the loop running; what a round leaves goes to the PR's `## Polish` l
 not tell a round of nits from a round of new bugs.
 
 1. Run `Skill(skill="code-review")` with the Invocation arguments above, **in this main conversation** (the
-   built-in command is unreachable from inside an `Agent`-dispatched sub-agent — that design consistently
-   failed on PR #607, forcing prose instead of a real verdict). Its verdict text is this round's input.
+   bundled `code-review` skill is unreachable from inside an `Agent`-dispatched sub-agent — that design consistently
+   failed on PR #607, forcing prose instead of a real verdict). Its verdict is this round's input.
 2. Run one **fix round** on it per the reference, in this conversation: classify and tier every listed
    item (iteration 1 also folds in human PR comments and reviews, seeds the refuted-items list from prior
    rounds' `Settled (not addressed):` blocks, and treats every `facts.polish` entry marked `apply` as
@@ -286,8 +286,8 @@ not tell a round of nits from a round of new bugs.
    - Settled and the cold read has **not** run on this phase — in this pass, nor per step 4's PR record
      at this HEAD → step 4. Settled and it **has** → S5.1 is done; go to S5.2.
 
-   After `code-review`'s verdict text lands, your next emissions are the round's **operational beats** (the
-   classification, the fix plan, the edits, the gate), not a recap — stopping at the verdict text is
+   After `code-review`'s verdict lands, your next emissions are the round's **operational beats** (the
+   classification, the fix plan, the edits, the gate), not a recap — stopping at the verdict is
    the PR #416/#653 missing-handoff failure mode. **Stall card** (`header: "Loop stall"`), showing each
    round's defect count and the churn share as evidence for you to judge: **Continue** (free-text count
    N: the stall check pauses for the next N `code-review` runs, then applies again; at the ceiling, Continue

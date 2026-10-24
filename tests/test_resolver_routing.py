@@ -888,7 +888,7 @@ class ReRouteHandoffMarkerTests(unittest.TestCase):
     _shared/handoff-format.md's actual field definitions, evaluator-owned — see the D1 annotation):
     `not run` is the conformant value on EVERY resolver-authored handoff, forward or re-route alike,
     because those two fields denote the evaluator's posted verdict / health-cache result, never "the
-    resolver's own /review loop or §8 gate ran." These tests assert every rendered PR-line in
+    resolver's own `code-review` loop or §8 gate ran." These tests assert every rendered PR-line in
     handoff-renderings.md stays on the closed set, and that the intro states the unconditional scope."""
 
     RENDERINGS = REFERENCES_DIR / "handoff-renderings.md"
@@ -1038,7 +1038,7 @@ class WorkspaceModelV3Tests(unittest.TestCase):
 
 class MainLoopReviewFixRoundTests(unittest.TestCase):
     """4.11.0: the per-iteration fix sub-agent is retired — the fix round runs in the main
-    conversation, and exactly one cold-read audit sub-agent runs after `review` settles.
+    conversation, and exactly one cold-read audit sub-agent runs after `code-review` settles.
 
     The sub-agent's per-iteration cold start plus its JSON -> card -> re-dispatch serialization was
     the loop's dominant latency, and its tool calls never streamed, so the operator could not see
@@ -1707,7 +1707,7 @@ class PushOnceAfterSettleTests(unittest.TestCase):
 
     Every fix round used to push, so one phase started CI up to six times on code the next round was
     about to change. Deferring the push makes the PR stale during the loop, which is why every phase
-    now hands `review` an explicit local range: a `review` left to find its own target reads the
+    now hands `code-review` an explicit local range: a `code-review` left to find its own target reads the
     stale PR and approves the previous session's diff, with real file names in the verdict.
     """
 
