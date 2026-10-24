@@ -63,11 +63,11 @@ This is **not** a sub-agent prompt: no placeholders, no JSON return, and every g
   addressed):` block in prior round replies (step 8) — each phase starts fresh (a new session, or an
   in-session continuation after a fresh prep — `phase-continuation.md`), and that block is the only
   carrier of what earlier phases refuted — **except** a `deferred-by-plan` entry whose phase is the
-  current phase or a ticked tracker row (its deferral has come due, and the finding classifies
-  fresh), and an entry whose item a later round's section records `check: overturned`, unless that
-  round's block or a later one lists it again (the operator kept it) — the check reopened it, so it is
-  live. Seed the defect-fix record from every `Defect fixes: phase <N>` line for the current phase. Note any `Cold read: phase <N> @ <sha>` line for the
-  current phase and whether its `<sha>` is HEAD or an ancestor of it (S5.1 step 4 reads both).
+  current phase or a ticked tracker row (its deferral has come due, and the finding classifies fresh), and an
+  entry whose item a later round's section records `check: overturned`, unless that round's block or a later
+  one lists it again (the operator kept it) — the check reopened it, so it is live. Seed the defect-fix record
+  from every `Defect fixes: phase <N>` line for the current phase. Note any `Cold read: phase <N> @ <sha>`
+  line for the current phase and whether its `<sha>` is HEAD or an ancestor of it (S5.1 step 4 reads both).
 
 ## Classification rubric
 
@@ -280,14 +280,15 @@ materiality is never a defect. Under-tiering a claim skips the check, so the rec
    same claim, carrying no reproduction, instance, or case the settled entry did not answer — is
    re-settled silently on its second occurrence: no card, no second reply beyond a dismissal-check verdict
    line (step 8), only the entry's repeat count bumped — in the bucket the entry records, never re-bucketed.
-   Whether it goes to step 4's dismissal check again is step 4's rule — an entry carrying `check: upheld`
-   or marked `kept` does not. An entry marked `kept` (the operator answered **Keep settled**, this session
-   or an earlier one) is re-settled silently on **every** verbatim occurrence: that question is answered. A repeat that
-   **brings new evidence** is classified fresh on the merits — a `kept` one included, its mark dropped, and
-   a refuted-items entry's ` — check: upheld` dropped too: the prior settlement, the operator's answer to it
-   and the check's verdict on it are not a citation for evidence they never saw. A **recurrence that stays
-   settled** — the third occurrence in one run, or a fresh classification that lands on Plan-settled again —
-   bumps the count and takes step 4's **settled-item pre-check** this same round (never waiting for another
+   Whether it goes to step 4's dismissal check again is step 4's rule — an entry carrying `check: upheld` or
+   marked `kept` does not. An entry marked `kept` (the operator answered **Keep settled**, or chose the
+   decision as it stands on a `Decision` card — step 8 — this session or an earlier one) is re-settled
+   silently on **every** verbatim occurrence: that question is answered. A repeat that **brings new evidence**
+   is classified fresh on the merits — a `kept` one included, its mark dropped, and a refuted-items entry's
+   ` — check: upheld` dropped too: the prior settlement, the operator's answer to it and the check's verdict on
+   it are not a citation for evidence they never saw. A **recurrence that stays settled** — the third
+   occurrence in one run, or a fresh classification that lands on Plan-settled again — bumps the count and
+   takes step 4's **settled-item pre-check** this same round (never waiting for another
    occurrence, so a reviewer widening the finding cannot cycle it), then the `Settled item` card only if
    that check leaves it standing — the reviewer's persistence is evidence the citation may not answer it. An
    item already recorded for the ledger — held this pass, or on the PR's `## Polish` ledger — is not
@@ -297,13 +298,13 @@ materiality is never a defect. Under-tiering a claim skips the check, so the rec
    **Dismissal check** — first, once per round (plus one re-dispatch, for an unparsed
    verdict's items only), whenever at least one item this round dismissed
    qualifies, a round with nothing else to fix included: there it matters most. An item qualifies when
-   step 1 classified it **Refuted**, **Plan-settled** or **No shown cost** and its **claim tier** is
-   `defect` (the rubric's "Claim tier"), including a verbatim repeat step 3 re-settled silently. An item
-   already checked is not dispatched again: a refuted-items entry carrying `check: upheld`, or a verbatim
-   repeat of an item recorded for the ledger whose note ends ` — check: upheld` — held this pass or on the PR's `## Polish`
-   ledger, read with any note rewrite held for it (step 8). One without the suffix (recorded before the
-   check existed, or never given a verdict) is. An entry marked `kept` is not dispatched either: its
-   operator answered **Keep settled**, or kept the decision as it stands on a `Decision` card (step 8),
+   step 1 classified it **Refuted**, **Plan-settled** or **No shown cost** and its **claim tier** is `defect`
+   (the rubric's "Claim tier"), including a verbatim repeat step 3 re-settled silently. An item already
+   checked is not dispatched again: a refuted-items entry carrying `check: upheld`, or a verbatim repeat of an
+   item recorded for the ledger whose note ends ` — check: upheld` — held this pass or on the PR's `## Polish`
+   ledger, read with any note rewrite held for it (step 8). One without the suffix (recorded before the check
+   existed, or never given a verdict) is. An entry marked `kept` is not dispatched either: its operator
+   answered **Keep settled**, or kept the decision as it stands on a `Decision` card (step 8),
    and a machine read must not re-raise an answered question — on an item the check raised, it
    would put the same card up again. A repeat that brings new evidence drops the mark (step 3) and is
    checked if it lands dismissed again. **Scope**, and
@@ -571,12 +572,12 @@ red) and **Abort** / **Abort loop** (the operator asked to stop) take no pass.
   **Accept + defer**: a plan question is not a follow-up.
 - **Decision required.** The verdict flags an architectural choice, an API break, or a scope-change
   tradeoff. Don't guess. `header: "Decision"`, with one option per candidate path the reviewer named, each
-  `description` carrying the reviewer's framing for that path — or, when step 4's fix plan raised it, the
-  plan decision as it stands and **Re-plan** — or, when step 4's dismissal check raised it (an overturned
-  Plan-settled item), the plan decision as it stands (the item stays Plan-settled on that answer, marked
-  `kept`) and **Re-plan**, recommended — or, when fix design returned `## Needs a plan decision`,
-  its candidate designs (each `description` naming the intent it serves) plus **Re-plan**, and
-  **File as follow-up** for an out-of-scope entry, with step 4's recommendation first. For an
+  `description` carrying the reviewer's framing for that path — or, when step 4's fix plan raised it, the plan
+  decision as it stands (the item settles Plan-settled, marked `kept`) and **Re-plan** — or, when step 4's
+  dismissal check raised it (an overturned Plan-settled item), the plan decision as it stands (the item stays
+  Plan-settled on that answer, marked `kept`) and **Re-plan**, recommended — or, when fix design returned
+  `## Needs a plan decision`, its candidate designs (each `description` naming the intent it serves) plus
+  **Re-plan**, and **File as follow-up** for an out-of-scope entry, with step 4's recommendation first. For an
   **introduced** item no deferral path is offered — no **File as follow-up**, no reviewer-named "defer
   it" — and **Re-plan** is recommended when the plan leaves the behaviour open (the rubric's
   Decision-required bucket).
