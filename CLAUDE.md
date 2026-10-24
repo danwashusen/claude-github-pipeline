@@ -196,7 +196,8 @@ per [architecture.md §7](docs/architecture.md)'s mapping table).
   fitness audit (*code and docs* at a pinned ref), the planner's plan reviewer, the drafter's issue
   reviewer, the researcher's dossier validator, the test-selection sub-agent, the cold-read audit, the
   resolver's fix design (a fix round's seam re-derivation, before the edit), the resolver's dismissal
-  check (a fix round's serious dismissals, re-derived at head), and the question-status reader. All are
+  check (a fix round's serious dismissals, re-derived at head), the security review (a PR's cumulative
+  diff, read for exploitable flaws by the evaluator's S4.5), and the question-status reader. All are
   context-blind, receive **workspace paths and prep-staged files** (never refs), cannot call
   `AskUserQuestion` (they return a §3 decision code instead), and never write to GitHub.
 
@@ -316,7 +317,9 @@ per [architecture.md §7](docs/architecture.md)'s mapping table).
   kind (one batched `gh api graphql` read), and the `file` entries no `Filed:` line covers (4.37.0). The
   stories' deferrals stay on their own PRs; the residue reads them there rather than copying them into
   the integration PR, which is why the evaluator's residual filing weaves `Filed:` lines into the body's
-  `## Follow-ups` instead of a comment.
+  `## Follow-ups` instead of a comment. And `scan_security` — a PR body's `## Security review` record
+  (`skills/_shared/security-review.md`; `SECURITY_DISPOSITIONS`, a `Reviewed:` SHA that counts only at
+  40 hex; never raising), which `prep_evaluator` emits as `facts.security` with `covers_head`.
 - `plan_parts.py` — one implementation plan, three comments (`skills/_shared/plan-parts.md`): the
   main `<!-- implementation-plan:v1 -->` comment plus a `build` part (`## Changes` / `## Data model` /
   `## Test plan` / `## Coverage gap`) and a `references` part (`## Doc grounding` / `## External
@@ -535,6 +538,12 @@ now the same rule everything else follows rather than an exception.
   finalisation proposes `apply` for anything in scope, true at head and clearly right (applying costs a
   fix round), the evaluator only for the ledger's "Apply criteria" (applying costs a session). Never
   restate the card's options outside it.
+- `security-review.md` — the security pass's PR-body `## Security review` record (a `Reviewed:` SHA plus
+  `SEC-<n>` entries, `open` / `fixed (commit <sha>)` / `dismissed`) and the one procedure both callers
+  run: stage the cumulative diff, dispatch the sub-agent, match findings to entries (a recorded dismissal
+  is not re-asked), re-check at head, and put every dismiss proposal on a `Security` consent card — only
+  the operator dismisses. The evaluator never approves while an entry is `open`, and skips its pass only
+  when the record covers the gated head on a PR its own account opened.
 
 When changing behavior that touches handoffs, the plan summary, the plan's parts, DoD annotations, the worktree block
 format, the epic delivery log, the follow-ups section, or the open-question contracts, edit the `_shared` file (the single

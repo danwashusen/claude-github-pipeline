@@ -538,6 +538,41 @@ class PolishLedgerFactTests(PrepEvaluatorSandboxTestCase):
         self.assertEqual(polish, {"present": False, "entries": [], "unparsed": []})
 
 
+class SecurityRecordFactTests(PrepEvaluatorSandboxTestCase):
+    """`facts.security` — the `## Security review` record S4.5 reads (skills/_shared/security-review.md).
+    `covers_head` lets S4.5 skip its pass, so it must need BOTH a `Reviewed:` line at the PR head and a
+    PR this account opened: the record is body text anyone with edit rights could write."""
+
+    def test_a_record_at_head_on_an_own_account_pr_covers_the_head(self):
+        envelope = self._envelope(fixture_case="prep_evaluator_security_covered")
+        security = envelope["security"]
+        self.assertTrue(envelope["self_review"])
+        self.assertEqual(security["reviewed_sha"], envelope["pr"]["headRefOid"])
+        self.assertTrue(security["covers_head"])
+        self.assertEqual(
+            [(e["id"], e["disposition"]) for e in security["entries"]], [("SEC-1", "fixed"), ("SEC-2", "dismissed")]
+        )
+
+    def test_a_record_at_head_on_another_accounts_pr_does_not_cover_it(self):
+        envelope = self._envelope(fixture_case="prep_evaluator_security_other_author")
+        self.assertFalse(envelope["self_review"])
+        self.assertEqual(envelope["security"]["reviewed_sha"], envelope["pr"]["headRefOid"])
+        self.assertFalse(envelope["security"]["covers_head"])
+
+    def test_a_record_at_another_sha_does_not_cover_the_head(self):
+        envelope = self._envelope(fixture_case="prep_evaluator_security_stale")
+        self.assertTrue(envelope["self_review"])
+        self.assertNotEqual(envelope["security"]["reviewed_sha"], envelope["pr"]["headRefOid"])
+        self.assertFalse(envelope["security"]["covers_head"])
+
+    def test_no_record_does_not_cover_the_head(self):
+        security = self._envelope(fixture_case="prep_evaluator_happy_standard")["security"]
+        self.assertEqual(
+            security,
+            {"present": False, "reviewed_sha": None, "entries": [], "unparsed": [], "covers_head": False},
+        )
+
+
 class CiRollupClassificationTests(PrepEvaluatorSandboxTestCase):
     """Four CI states — S6 DoD: "Fixtures: four CI states.\""""
 

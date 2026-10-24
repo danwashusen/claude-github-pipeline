@@ -485,6 +485,7 @@ result or a typed §3 decision code, cannot call `AskUserQuestion`, and never wr
 | cold-read audit | resolver | staged scope diff (path — the phase delta on a non-final phase, cumulative on the final) + workspace + the plan's phase list | whole-diff findings verdict |
 | fix design | resolver | a fix round's findings on a seam the review loop already changed, or a recurring settled finding + staged scope diff (path) + workspace + the loop-changed file list + the plan's decision bullets and phase list + the plan, shipped-record and issue-body paths (scope) | seam map + class-level change set (plan conflicts, needs-a-plan-decision entries, out-of-reach items); the main loop edits |
 | dismissal check | resolver | a fix round's Refuted / Plan-settled / No shown cost dismissals of defect-tier claims, each with its citation + staged scope diff (path) + workspace + the plan's decision bullets, its `## Changes` and its phase list | `upheld` / `overturned` per item, with evidence |
+| security review | resolver, evaluator | staged cumulative diff (path) + workspace + declared catalogue entries | findings with site, category, severity, claim, exploit path, or `AMBIGUOUS` |
 | question-status reader | question-sweep, question-resolver | question thread (path) | status or `AMBIGUOUS` |
 
 Skill frontmatter carries no `model:` or `effort:` keys — every skill inherits the invoking
@@ -556,6 +557,18 @@ suggestions and nits unapplied at its filing gate, the lean tier's posture. The 
 the issue reviewer's changed-since-last-pass input, so passes 2+ verify only what changed plus the prior
 BLOCKERs' resolutions, re-running a whole-plan check (coverage, sequencing, section ownership, the size
 cap) only when a change touches its inputs (#88).
+
+**A security review blocks approval on open findings (#95).** No stage looked for security flaws, and
+nothing blocked approval on one. The **security review** sub-agent reads a PR's cumulative diff, staged
+against its real base (on a story PR, the epic branch, which the host's built-in security command cannot
+take), and reports each finding with a site, a category, a severity and an exploit path. Its findings land
+in the PR body's `## Security review` record (`skills/_shared/security-review.md`), each `open`, `fixed` or
+`dismissed`, and a `dismissed` entry is written only as the **operator's** answer on a consent card, with
+its reason. The evaluator never approves while an entry is `open`. It runs the pass at S4.5 unless
+`facts.security.covers_head` holds: the record's `Reviewed:` SHA is the gated head **and** this account
+opened the PR. The record is self-declared body text, so a `Reviewed:` line alone would make the gate
+skippable by editing one line. The resolver runs the same pass first, at finalisation, so a finding is
+fixed in the session that wrote the code rather than in a revision session.
 
 ## §9 Skill anatomy
 

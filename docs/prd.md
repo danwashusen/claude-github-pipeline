@@ -169,6 +169,9 @@ ground these are produced by implementation step S1. Lettered items are individu
   - (c) Verifies DoD ticks against their annotations, un-ticking with a sticky veto on mismatch.
   - (d) Judges scope match, doc grounding, and plan adherence.
   - (e) Issues APPROVE or COMMENT review actions and never approves its own PR.
+    It never approves while a security finding is open: each finding clears only by a fix or by
+    an operator dismissal with a recorded reason, and it reruns the security pass unless the PR
+    body records one at the gated head on a PR the evaluator's own account opened.
   - (f) Merges per the configured per-PR-type policy (default `ask`) and the strategy rules for
     the PR's shape — and only the head SHA it gated and reviewed, and only when that head contained
     the base tip at its last pre-merge refresh (`--match-head-commit` pins the head through the

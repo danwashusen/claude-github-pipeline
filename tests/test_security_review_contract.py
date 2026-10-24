@@ -1,0 +1,84 @@
+"""#95: the security review's shared contract (skills/_shared/security-review.md) and its sub-agent
+prompt (skills/evaluator/references/security-review-prompt.md).
+
+The record is script-parsed (`parse.scan_security`), so its disposition table must name exactly the
+scanner's closed set. The prompt must stay stack-agnostic (CLAUDE.md "Validators" 5) and carry its inputs
+and output grammar. And DoD 3 — a dismissal reaches the operator, a finding is never silently dropped — is
+prose, so its load-bearing sentences are pinned here.
+"""
+
+import re
+import unittest
+from pathlib import Path
+
+from scripts import parse
+
+REPO_ROOT = Path(__file__).resolve().parent.parent
+CONTRACT = REPO_ROOT / "skills" / "_shared" / "security-review.md"
+PROMPT = REPO_ROOT / "skills" / "evaluator" / "references" / "security-review-prompt.md"
+
+# CLAUDE.md "Validators" 5, and the stacks a labelled example may name.
+_STACK_RE = re.compile(r"swift|xcode|xcb\.sh|foodjournal|rails|rspec|pytest", re.IGNORECASE)
+_STACK_NAMES = ("python", "rails", "ruby", "swift", "node", "go", "java", "kotlin", "php", "rust")
+
+
+def _flat(path):
+    return " ".join(path.read_text(encoding="utf-8").split())
+
+
+class SecurityContractTests(unittest.TestCase):
+    def test_the_disposition_table_names_exactly_the_scanners_set(self):
+        text = CONTRACT.read_text(encoding="utf-8")
+        table = text[text.index("## Dispositions (closed set)"):text.index("## The procedure")]
+        rows = re.findall(r"^\| `([a-z]+)", table, re.MULTILINE)
+        self.assertEqual(tuple(rows), parse.SECURITY_DISPOSITIONS)
+
+    def test_a_dismissal_is_the_operators_answer_on_a_consent_card(self):
+        flat = _flat(CONTRACT)
+        self.assertIn('`header: "Security"`', flat)
+        self.assertIn("**only as the operator's answer**", flat)
+        self.assertIn("the note led by `operator: <reason>`", flat)
+        self.assertIn('"Consent vs judgment"', flat)
+
+    def test_nothing_leaves_the_record_silently(self):
+        flat = _flat(CONTRACT)
+        self.assertIn("`premise false: <evidence>`. It **still goes on the card**", flat)
+        self.assertIn("**An `unparsed` line counts as `open`**", flat)
+        self.assertIn("never fixed silently", flat)
+        self.assertIn("**never approves while an entry is `open`**", flat)
+
+    def test_a_re_reported_finding_keeps_its_id_and_a_dismissal_is_not_re_asked(self):
+        flat = _flat(CONTRACT)
+        self.assertIn("Same anchor and same claim → the same finding, which keeps its id", flat)
+        self.assertIn("A recorded dismissal is not re-asked", flat)
+        self.assertIn("**Matching errs toward asking**", flat)
+        self.assertIn("an id is never reused or renumbered", flat)
+
+    def test_the_skip_needs_the_head_and_the_own_account(self):
+        flat = _flat(CONTRACT)
+        self.assertIn("`Reviewed:` equals the gated head **and** `facts.self_review` is true", flat)
+        self.assertIn("Never write it after a fix commit", flat)
+
+
+class SecurityPromptTests(unittest.TestCase):
+    def test_the_prompt_carries_its_four_inputs_and_findings_grammar(self):
+        text = PROMPT.read_text(encoding="utf-8")
+        for placeholder in ("<<workspace_path>>", "<<diff_path>>", "<<base_ref>>", "<<catalogue_entries>>"):
+            self.assertIn(placeholder, text)
+        self.assertIn("## Findings\n1. <path>:<line> — <category> — <high|medium> — <claim> — <exploit path>", text)
+        self.assertIn("code: AMBIGUOUS", text)
+
+    def test_every_stack_mention_is_a_labelled_multi_stack_example(self):
+        for line in PROMPT.read_text(encoding="utf-8").splitlines():
+            if _STACK_RE.search(line):
+                named = [n for n in _STACK_NAMES if re.search(r"\b%s\b" % n, line, re.IGNORECASE)]
+                self.assertGreaterEqual(len(named), 2, line)
+
+    def test_the_prompt_names_none_of_the_built_ins_stack_specifics(self):
+        lower = PROMPT.read_text(encoding="utf-8").lower()
+        for token in ("pickle", "flask", "jinja", "escape()"):
+            self.assertNotIn(token, lower)
+
+
+if __name__ == "__main__":
+    unittest.main()

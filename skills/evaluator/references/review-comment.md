@@ -3,7 +3,8 @@
 The PR review is a GitHub-native review object (no marker; the body is prose), posted via
 `gh_persist.py comment … pr-review <PR> --review-action <approve|comment>`. The body always leads with
 `HEALTH_BODY`, then a dimension-by-dimension assessment (spine S5). Two structured fragments have a
-fixed shape and are byte-compatible with the S1 baseline behavior.
+fixed shape and are byte-compatible with the S1 baseline behavior; the `## Security review` fragment (#95)
+postdates that baseline.
 
 ## `## DoD verification` section
 
@@ -28,6 +29,22 @@ Each un-ticked bullet must already have been written to the issue body via the s
 (`gh_persist.py edit-body`) **before** the review posts — a reader following this section to the issue
 must see the un-tick already in place. `<short-sha>` values are 7-char, matching
 [`../../_shared/dod-annotations.md`](../../_shared/dod-annotations.md).
+
+## `## Security review` section
+
+Included **only** when the PR body's `## Security review` record
+([`../../_shared/security-review.md`](../../_shared/security-review.md)) holds an entry still `open` after
+S4.5's card (an `unparsed` `SEC-` line counts as open): an open entry is what made the verdict COMMENT, and the reader needs each one to fix it. Omit
+the section when no entry is open; a `fixed` or `dismissed` entry stays in the PR body's record only. Per
+open entry:
+
+```markdown
+- **SEC-<n>** — <claim> — <anchor>
+  - **Exploit path:** <how attacker-controlled input reaches it: this run's finding, else the entry's note>
+```
+
+The record must already have been written to the PR body (S4.5's `edit-pr-body`) **before** the review
+posts, so a reader following an id from the review finds the entry in place.
 
 ## Operator-attribution header (S7-gate step 3)
 
