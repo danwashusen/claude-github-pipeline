@@ -55,6 +55,24 @@ class SecurityContractTests(unittest.TestCase):
         self.assertIn("**Matching errs toward asking**", flat)
         self.assertIn("an id is never reused or renumbered", flat)
 
+    def test_only_a_dismiss_proposal_takes_a_question(self):
+        # Cold read: steps 4 and 5 disagreed on whether a fix proposal gets a question.
+        flat = _flat(CONTRACT)
+        self.assertIn("One question per dismiss proposal", flat)
+        self.assertIn("so it takes no question", flat)
+        self.assertNotIn("One question per finding", flat)
+        self.assertIn("a duplicated id must never let a `dismissed` or `fixed` line shadow an `open` one", flat)
+
+    def test_the_one_record_write_is_what_later_restages_start_from(self):
+        # Cold read: the S5.5 write and the post-merge restage did not carry S4.5's record.
+        flat = _flat(CONTRACT)
+        self.assertIn("when it has none, S4.5's write stands alone", flat)
+        self.assertIn("a playbook's post-merge restage starts from it", flat)
+        evaluator = REPO_ROOT / "skills" / "evaluator"
+        self.assertIn("the one S4.5/S5.5 record write", _flat(evaluator / "playbooks" / "standard.md"))
+        self.assertIn("and the `## Security review` section when S4.5 ran the pass or changed an entry",
+                      _flat(evaluator / "references" / "polish-adjudication.md"))
+
     def test_the_skip_needs_the_head_and_the_own_account(self):
         flat = _flat(CONTRACT)
         self.assertIn("`Reviewed:` equals the gated head **and** `facts.self_review` is true", flat)

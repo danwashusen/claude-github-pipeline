@@ -51,9 +51,13 @@ because the format is stack-neutral:
   `dismissed`, where it leads `operator: <reason>`. Severity is informational: every `open` entry blocks,
   whatever its severity.
 
-`scripts/parse.py`'s `scan_security` reads the section. It never raises; a malformed `SEC-` line lands in
-`unparsed`. **An `unparsed` line counts as `open`**: it blocks approval, is re-proposed under its id, and is
-rewritten in grammar on the next write. A typo must never turn a finding into one nobody sees.
+`scripts/parse.py`'s `scan_security` reads the section. It never raises; a `SEC-`-led line that does not
+parse (any case, any bullet or none) lands in `unparsed`, and so does a second line carrying an id an
+earlier line already used, whatever its disposition. **An `unparsed` line counts as `open`**: it blocks
+approval, is treated as an `open` entry in steps 2–4 (claim and anchor read from the line as written), is
+re-proposed under its readable `SEC-<n>` (else, or when that id is taken, the next id), and is rewritten in
+grammar under that id on the next write. A typo must never turn a finding into one nobody sees, and a
+duplicated id must never let a `dismissed` or `fixed` line shadow an `open` one.
 
 ## Dispositions (closed set)
 
@@ -98,17 +102,19 @@ sections at the end of this file give each one's values.
    **dismiss** with a one-line reason. A finding whose claim is false at head is proposed for dismissal
    as `premise false: <evidence>`. It **still goes on the card**, because nothing leaves the record
    silently. A fix proposal is announced, not asked (`Did X because Y; say if you'd rather Z`): fixing an
-   introduced security flaw is the author's job, so it has one credible action. Every dismiss proposal
-   goes on the card. `resolver/references/dismissal-check-prompt.md` does not run on these findings,
+   introduced security flaw is the author's job, so it has one credible action, and recording it overrides
+   no blocker, so it takes no question. If the operator redirects from that line, the finding becomes a
+   dismiss proposal with their reason. Every dismiss proposal goes on the card. `resolver/references/dismissal-check-prompt.md` does not run on these findings,
    because the operator dismisses them, not the code's author.
 5. **Ask** (`header: "Security"`). A consent card: dismissing a finding overrides a gate blocker
    ([`asking-the-user.md`](asking-the-user.md) "Consent vs judgment"). Before it, print each finding's
    claim, anchor, exploit path and the code at the anchor, as the brief's evidence. One question per
-   finding, its question opening `<stage> · #<N> · security` per that file's "Relayed cards", options
-   **Dismiss — <proposed reason>** and **Fix**, ordered by the proposal. A reason the operator types in
+   dismiss proposal, its question opening `<stage> · #<N> · security` per that file's "Relayed cards",
+   options **Dismiss — <proposed reason>** (the proposal, first) and **Fix**. A reason the operator types in
    Other replaces the proposed one. A card holds up to four questions; further findings take further
    cards.
-6. **Record.** **Dismiss** → `dismissed`, the note `operator: <reason>`. **Fix** → the caller's Fix. A new
+6. **Record.** **Dismiss** → `dismissed`, the note `operator: <reason>`. **Fix**, or an announced fix
+   proposal → the caller's Fix. A new
    `open` entry's note takes the finding's category, severity and exploit path. Rewrite `Reviewed:` to the
    pass SHA when a pass completed, and write the section through the caller's write (every write goes
    through `gh_persist.py`).
@@ -143,7 +149,9 @@ sections at the end of this file give each one's values.
 - **Fix:** the entry is recorded `open`. Any entry still `open` makes the verdict COMMENT, routed to the
   resolver (`#<issue>`), and the review body lists it (`review-comment.md`). The card is asked under
   either merge policy, before the S7-gate card, which never carries it.
-- **Write:** whenever S4.5 ran the pass or changed an entry, write the section once with
-  `gh_persist.py edit-pr-body`, after the last card answer (S4.5's or S5.5's) and before the review posts.
-  `Reviewed:` becomes the gated head when the pass ran. When S5.5 has dispositions to record, it is the
-  same write.
+- **Write:** whenever S4.5 ran the pass or changed an entry, stage the whole PR body with the rewritten
+  section to `<facts.scratch>/pr-body-polish.md` and write it once with `gh_persist.py edit-pr-body`,
+  after the last card answer (S4.5's or S5.5's) and before the review posts. `Reviewed:` becomes the gated
+  head when the pass completed. When S5.5 has dispositions to record, it is the same write; when it has
+  none, S4.5's write stands alone. It is the run's last pre-merge PR-body write, and a playbook's
+  post-merge restage starts from it.

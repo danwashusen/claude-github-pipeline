@@ -1126,6 +1126,30 @@ class SecurityRecordParseTests(unittest.TestCase):
         )
         self.assertIsNone(scan["reviewed_sha"])
 
+    def test_a_duplicated_id_never_shadows_an_open_entry(self):
+        # Operator-raised (review round 3 re-examined): keyed by id, a later `dismissed` line hid an
+        # `open` one with the same id. A repeat of an id lands in `unparsed`, which counts as open.
+        for first, second in (("open", "dismissed"), ("dismissed", "open"), ("open", "fixed (commit abc1234)")):
+            note = " — operator: x" if "dismissed" in (first, second) else ""
+            body = (
+                "## Security review\n"
+                "- SEC-2 · %s — token in log — lib/log.rb / Log#write%s\n"
+                "- SEC-2 · %s — token in log — lib/log.rb / Log#write%s\n"
+                % (first, note if first == "dismissed" else "", second, note if second == "dismissed" else "")
+            )
+            scan = parse.scan_security(body)
+            self.assertEqual([e["disposition"] for e in scan["entries"]], [first.split()[0]], body)
+            self.assertEqual(len(scan["unparsed"]), 1, body)
+            blocking = any(e["disposition"] == "open" for e in scan["entries"]) or scan["unparsed"]
+            self.assertTrue(blocking, body)
+
+    def test_any_sec_led_line_that_does_not_parse_is_unparsed(self):
+        for line in ("* SEC-3 · open — c — a.py / f", "SEC-3 · open — c — a.py / f",
+                     "- sec-3 · open — c — a.py / f", "1. SEC-3 · open — c — a.py / f"):
+            scan = parse.scan_security("## Security review\n%s\n" % line)
+            self.assertEqual(scan["entries"], [], line)
+            self.assertEqual(scan["unparsed"], [line], line)
+
     def test_absent_section_is_not_present(self):
         self.assertEqual(parse.scan_security("no record"), parse.absent_security())
         self.assertEqual(

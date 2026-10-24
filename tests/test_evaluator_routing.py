@@ -1002,7 +1002,7 @@ class SecurityReviewStepTests(unittest.TestCase):
         self.assertIn("no `## Security review` entry is `open`", approve)
         # Audit F1/F4 + review round 1: an unparsed line or an incomplete pass blocks too.
         self.assertIn("(an unparsed line or a pass that did not complete counts as one)", approve)
-        self.assertIn("an open security finding (S4.5)", comment)
+        self.assertIn("an open security finding (S4.5), as APPROVE counts it", comment)
 
 
 if __name__ == "__main__":

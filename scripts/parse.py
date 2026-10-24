@@ -1457,7 +1457,7 @@ SECURITY_DISPOSITIONS = ("open", "fixed", "dismissed")
 _SECURITY_ROW_RE = re.compile(
     r"^-\s*SEC-(\d+)\s*·\s*([a-z]+)(?:\s*\(commit\s+([0-9a-f]{7,40})\))?\s*—\s*(.+)$"
 )
-_SECURITY_ROWLIKE_RE = re.compile(r"^-\s*SEC-")
+_SECURITY_ROWLIKE_RE = re.compile(r"^(?:[-*+]|\d+[.)])?\s*SEC-", re.IGNORECASE)
 _SECURITY_REVIEWED_RE = re.compile(r"^-\s*Reviewed:(.*)$")
 _SECURITY_FIELD_SEP = " — "
 _FULL_SHA_RE = re.compile(r"[0-9a-f]{40}")
@@ -1472,9 +1472,11 @@ def scan_security(pr_body_text):
         else `None` (a short or malformed SHA never claims a head was reviewed).
       - `entries` — `{"id", "seq", "disposition", "commit_sha", "claim", "anchor", "note"}` dicts in
         source order. `commit_sha` is set only on `fixed`; `note` is `None` when absent.
-      - `unparsed` — `SEC-`-led finding lines that did not parse, verbatim: an off-vocabulary disposition, a
-        missing anchor, a `fixed` without `(commit …)` or a `(commit …)` on anything else, a
-        `dismissed` whose note does not lead `operator:`.
+      - `unparsed` — finding lines led by `SEC-` (any case, any or no bullet) that did not parse,
+        verbatim: an off-vocabulary disposition, a missing anchor, a `fixed` without `(commit …)` or a
+        `(commit …)` on anything else, a `dismissed` whose note does not lead `operator:` — and every
+        line after the first that carries an already-used id, so a `dismissed` or `fixed` duplicate
+        never shadows an `open` one for a reader that keys entries by id.
 
     Never raises.
     """
@@ -1484,7 +1486,7 @@ def scan_security(pr_body_text):
         return absent_security()
     start, end = found
 
-    reviewed_sha, entries, unparsed = None, [], []
+    reviewed_sha, entries, unparsed, seen_ids = None, [], [], set()
     for raw_line in lines[start:end]:
         stripped = raw_line.strip()
         if not stripped:
@@ -1511,7 +1513,10 @@ def scan_security(pr_body_text):
             and all(part.strip() for part in fields[:2])
             and (disposition != "dismissed" or (note or "").startswith("operator:"))
         )
-        if valid:
+        if valid and int(match.group(1)) in seen_ids:
+            unparsed.append(stripped)
+        elif valid:
+            seen_ids.add(int(match.group(1)))
             entries.append(
                 {
                     "id": "SEC-%s" % match.group(1),

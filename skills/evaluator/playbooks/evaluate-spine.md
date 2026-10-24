@@ -215,8 +215,8 @@ Run the pass per the evaluator section of [`../../_shared/security-review.md`](.
 approves; lead the body with `HEALTH_BODY`, name the failing command, link the cache comment); any dimension
 fails (list each gap with the evidence that closes it); an S4-untick fired; a `## Follow-ups` entry judged an
 in-scope violation; an open native blocker; an operator-confirmed polish `apply` (S5.5); an open security
-finding (S4.5). Use `--comment`, never `--request-changes` (the project's soft-reject convention;
-`--request-changes` only on explicit user ask). When `HEALTH_OK == null` (skipped), proceed with the
+finding (S4.5), as APPROVE counts it. Use `--comment`, never `--request-changes` (the project's soft-reject
+convention; `--request-changes` only on explicit user ask). When `HEALTH_OK == null` (skipped), proceed with the
 dimension-only verdict and carry `HEALTH_BODY` verbatim at the top of the review body.
 
 Compose the review body: `HEALTH_BODY`, the dimension-by-dimension assessment, then the `## DoD verification`

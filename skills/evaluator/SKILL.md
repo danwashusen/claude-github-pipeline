@@ -98,7 +98,7 @@ Universal across every route:
   `--refresh --gated-head` re-runs §1 lists — external-action detection, not self-verification.
 - **Gates only for genuine decisions** (per [`../_shared/asking-the-user.md`](../_shared/asking-the-user.md)):
   the merge-approval decision, a CI-vs-local discrepancy, a missing health-config, an unlinked PR, a security-finding dismissal —
-  never to confirm a fact prep derived. A judgment gate left with one credible option is announced, not asked; every card opens with its brief. A sub-agent (test-selection `Explore`, the Apple builder)
+  never to confirm a fact prep derived. A judgment gate left with one credible option is announced, not asked; every card opens with its brief. A sub-agent (test-selection `Explore`, the security review, the Apple builder)
   never calls `AskUserQuestion`; it returns its typed result to this loop, which asks.
 - **Faithful reporting.** Lead with the outcome; report failures verbatim with evidence; declare
   skipped work. A red health gate is an **unconditional hard block** — a red branch never approves.

@@ -2,9 +2,9 @@
 
 The PR review is a GitHub-native review object (no marker; the body is prose), posted via
 `gh_persist.py comment … pr-review <PR> --review-action <approve|comment>`. The body always leads with
-`HEALTH_BODY`, then a dimension-by-dimension assessment (spine S5). Two structured fragments have a
-fixed shape and are byte-compatible with the S1 baseline behavior; the `## Security review` fragment (#95)
-postdates that baseline.
+`HEALTH_BODY`, then a dimension-by-dimension assessment (spine S5).
+Three structured fragments have a fixed shape: the `## DoD verification` section and the operator-attribution
+header are byte-compatible with the S1 baseline behavior; the `## Security review` fragment (#95) postdates it.
 
 ## `## DoD verification` section
 
@@ -37,7 +37,8 @@ Included **only** when the PR body's `## Security review` record
 S4.5's card (an `unparsed` `SEC-` line counts as open), or when S4.5's pass did not complete: either is
 what made the verdict COMMENT, and the reader needs each one to fix it. Omit the section when neither holds;
 a `fixed` or `dismissed` entry stays in the PR body's record only. A pass that did not complete is one line,
-`- **Security pass did not complete** — <the sub-agent's evidence>`. Per open entry:
+`- **Security pass did not complete** — <the sub-agent's evidence>`. An unparsed line renders under the id
+S4.5's write gave it (`security-review.md` "Format"). Per open entry:
 
 ```markdown
 - **SEC-<n>** — <claim> — <anchor>
