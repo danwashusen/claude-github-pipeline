@@ -30,8 +30,10 @@ reaches the flaw. Do not edit anything.
 - **Base (name)**: `<<base_ref>>`, the branch the diff was taken against. It is informational, for naming
   it.
 - **Declared project docs**: `<<catalogue_entries>>`, one `path — role — authority — summary` line each,
-  paths relative to the workspace, or empty. Read any entry that sets security rules (a threat model, a
-  security policy, a trust-boundary description) before judging, and cite it when a finding rests on it.
+  paths relative to the workspace, or empty. An entry naming a directory is followed by its member files,
+  one indented `- <path>` line each; read and cite the member, never the directory. Read any entry that
+  sets security rules (a threat model, a security policy, a trust-boundary description) before judging,
+  and cite it when a finding rests on it.
   Never invent a doc path.
 
 ## Scope

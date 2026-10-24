@@ -1117,7 +1117,8 @@ class SecurityRecordParseTests(unittest.TestCase):
             scan = parse.scan_security("## Security review\n- Reviewed: %s\n" % value)
             self.assertTrue(scan["present"])
             self.assertIsNone(scan["reviewed_sha"], value)
-            self.assertEqual(len(scan["unparsed"]), 1, value)
+            # `unparsed` holds findings, and each one blocks approval; a bad SHA is not a finding.
+            self.assertEqual(scan["unparsed"], [], value)
 
     def test_a_malformed_later_reviewed_line_resets_a_stale_valid_one(self):
         scan = parse.scan_security(

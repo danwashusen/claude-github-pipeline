@@ -1469,11 +1469,10 @@ def scan_security(pr_body_text):
 
       - `present` — the section exists (independent of whether any line parsed).
       - `reviewed_sha` — the last `Reviewed:` value when it is exactly 40 lowercase hex characters,
-        else `None` (a short or malformed SHA never claims a head was reviewed, and lands in
-        `unparsed`).
+        else `None` (a short or malformed SHA never claims a head was reviewed).
       - `entries` — `{"id", "seq", "disposition", "commit_sha", "claim", "anchor", "note"}` dicts in
         source order. `commit_sha` is set only on `fixed`; `note` is `None` when absent.
-      - `unparsed` — `SEC-`-led lines that did not parse, verbatim: an off-vocabulary disposition, a
+      - `unparsed` — `SEC-`-led finding lines that did not parse, verbatim: an off-vocabulary disposition, a
         missing anchor, a `fixed` without `(commit …)` or a `(commit …)` on anything else, a
         `dismissed` whose note does not lead `operator:`.
 
@@ -1493,11 +1492,11 @@ def scan_security(pr_body_text):
         reviewed = _SECURITY_REVIEWED_RE.match(stripped)
         if reviewed:
             # The last `Reviewed:` line wins, and a malformed one resets it: a stale valid SHA left
-            # above a hand-edited line must never claim the head was reviewed.
+            # above a hand-edited line must never claim the head was reviewed. It never goes to
+            # `unparsed`, which holds findings (an unparsed line counts as an open one): a bad SHA
+            # only costs the evaluator's skip, so the pass reruns and rewrites it.
             value = reviewed.group(1).strip()
             reviewed_sha = value if _FULL_SHA_RE.fullmatch(value) else None
-            if reviewed_sha is None:
-                unparsed.append(stripped)
             continue
         match = _SECURITY_ROW_RE.match(stripped)
         fields = match.group(4).split(_SECURITY_FIELD_SEP) if match else []

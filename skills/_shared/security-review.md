@@ -73,14 +73,15 @@ sections at the end of this file give each one's values.
 
 1. **Stage and dispatch.** Fetch the base first (`git -C <checkout> fetch origin <base>`), so a stale
    `origin/<base>` never widens the diff to base commits the branch merged in. Then stage
-   `git diff origin/<base>...HEAD` in the caller's checkout to `<facts.scratch>/security-diff.patch`. Note HEAD as the **pass SHA**. Dispatch the prompt with
-   `subagent_type: Explore` from the main conversation, filling `<<workspace_path>>`, `<<diff_path>>`,
-   `<<base_ref>>` and `<<catalogue_entries>>` (`facts.grounding_docs`, one `path — role — authority —
-   summary` line each). It is a sub-agent, not a skill, so it never touches the one `code-review` call
-   site. `code: AMBIGUOUS` (a missing or empty staged diff) → repair the staging and re-dispatch once. If
-   it still fails, surface the failure. A pass that did not complete writes no `Reviewed:` line and
-   counts as a blocking finding, so the evaluator does not approve. Never read it as "no findings". Print
-   the `## Findings` list.
+   `git diff origin/<base>...HEAD` in the caller's checkout to `<facts.scratch>/security-diff.patch`, and
+   note HEAD as the **pass SHA**. Dispatch the prompt with `subagent_type: Explore` from the main
+   conversation, filling `<<workspace_path>>`, `<<diff_path>>`, `<<base_ref>>` and `<<catalogue_entries>>`
+   (`facts.grounding_docs`, one `path — role — authority — summary` line each, a `kind: dir` entry's
+   `members` listed under it one `- <path>` line each, a `present: false` entry omitted). It is a
+   sub-agent, not a skill, so it never touches the one `code-review` call site. `code: AMBIGUOUS` (a
+   missing or empty staged diff) → repair the staging and re-dispatch once. If it still fails, surface the
+   failure. A pass that did not complete writes no `Reviewed:` line and counts as a blocking finding, so
+   the evaluator does not approve. Never read it as "no findings". Print the `## Findings` list.
 2. **Match** each reported finding against the record's entries. Same anchor and same claim → the same
    finding, which keeps its id. Doubt → a new finding with the next id. **Matching errs toward asking**:
    a false match silently skips a real finding, while a false miss only re-asks the operator.

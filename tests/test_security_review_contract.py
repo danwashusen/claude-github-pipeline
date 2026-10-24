@@ -68,6 +68,9 @@ class SecurityPromptTests(unittest.TestCase):
             self.assertIn(placeholder, text)
         self.assertIn("## Findings\n1. <path>:<line> — <category> — <high|medium> — <claim> — <exploit path>", text)
         self.assertIn("code: AMBIGUOUS", text)
+        # Review round 2: a directory catalogue entry reaches the pass with its member files.
+        self.assertIn("read and cite the member, never the directory", " ".join(text.split()))
+        self.assertIn("a `kind: dir` entry's `members` listed under it", _flat(CONTRACT))
 
     def test_every_stack_mention_is_a_labelled_multi_stack_example(self):
         for line in PROMPT.read_text(encoding="utf-8").splitlines():
