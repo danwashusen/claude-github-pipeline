@@ -484,6 +484,7 @@ result or a typed §3 decision code, cannot call `AskUserQuestion`, and never wr
 | test-selection | resolver, evaluator | diff scope + the ambient checkout's test config | `COMMAND:` + `RATIONALE:` |
 | cold-read audit | resolver | staged scope diff (path — the phase delta on a non-final phase, cumulative on the final) + workspace + the plan's phase list | whole-diff findings verdict |
 | fix design | resolver | a fix round's findings on a seam the review loop already changed, or a recurring settled finding + staged scope diff (path) + workspace + the loop-changed file list + the plan's decision bullets and phase list + the plan, shipped-record and issue-body paths (scope) | seam map + class-level change set (plan conflicts, needs-a-plan-decision entries, out-of-reach items); the main loop edits |
+| dismissal check | resolver | a fix round's Refuted / Plan-settled / No shown cost dismissals of defect-tier claims, each with its citation + staged scope diff (path) + workspace + the plan's decision bullets, its `## Changes` and its phase list | `upheld` / `overturned` per item, with evidence |
 | question-status reader | question-sweep, question-resolver | question thread (path) | status or `AMBIGUOUS` |
 
 Skill frontmatter carries no `model:` or `effort:` keys — every skill inherits the invoking
@@ -503,7 +504,7 @@ cold read; it decides fix-or-defer only.
 
 **The review loop's exit is a tier, not a sub-agent (4.21.0).** The resolver's fix round tiers every
 Addressable finding `defect` or `polish`, and the loop runs while the defect count keeps falling (one
-grace round, then a stall card; an emergency ceiling of 8 `review` runs). This reintroduces a severity
+grace round, then a stall card; an emergency ceiling of 8 `code-review` runs). This reintroduces a severity
 axis on purpose, and it is **not** the convergence machinery 4.11.0 removed (`finding_provenance`,
 severity decay, one-shot suppression): that decided *when to cold-read*, and the cold read is still
 unconditional once per phase; this decides *when the loop ends*, replacing a fixed 2/4 cap that could not
@@ -518,6 +519,22 @@ code's author judged at finalisation), and asks about any entry still `open` —
 stays its one PR-body write, through `gh_persist.py edit-pr-body`. Since 4.34.0 the card groups entries by theme
 with one proposal per group and follows a digest that shows the code behind each entry; no-shown-cost
 findings are recorded `drop` by the loop and never reach it.
+
+**The author's serious dismissals get an independent check (#94).** `code-review`'s own verifiers check
+the reviewer's findings before they are reported; after that, the main conversation — the code's author —
+classifies them, and until #94 nobody checked a dismissal it made. Now, when a fix round dismisses a
+finding as Refuted, Plan-settled or No shown cost and the finding's *claim*, read as if true, is
+defect-tier, the **dismissal check** sub-agent re-tests the dismissal's citation against the code at head:
+one dispatch per round (re-dispatched once for the items of an unparsed verdict), before the fix plan,
+returning `upheld` or `overturned` per item. `overturned` requires a cited site and evidence — a path that
+reaches the claimed failure, or for a Plan-settled item the decision bullet still true after the fix or the
+decision producing the wrong behaviour — so doubt alone upholds; an overturned item re-enters the rubric
+(Addressable when introduced or adjacent, Explicitly-deferred when pre-existing, Decision-required when it
+shows a plan decision defective), and the round reply records every verdict. Scope: No shown cost dismissals
+are checked, because on a defect-tier claim they set aside a possibly real defect with no evidence it is
+false; Deferred-by-plan ones are not, because the deferral comes due when its phase is current, and the
+final phase's cumulative review and cold read read it there. The check is not a `code-review` run and counts
+toward no loop limit.
 
 **Doc findings pass a materiality bar (4.40.0).** Before its bucket, every finding on a doc file or a
 code comment, in any PR, is tested for materiality: would the text as it stands mislead a builder,

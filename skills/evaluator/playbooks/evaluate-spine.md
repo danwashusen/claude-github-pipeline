@@ -31,11 +31,12 @@ plan and its records, and any reviews before forming a verdict — the thread ca
 is needed, read it in **bounded slices**: enumerate changed files first (`grep '^diff --git ' <path>`
 against the spilled diff), then read only the implicated hunks — never load a 100 KB diff whole.
 
-**Prior `/review` signal.** The marketplace `/review` command posts a numbered scored-issues list or
-"No issues found" as a PR comment (in `facts.sections` reviews/thread). "No issues found" (or all
-below threshold) → code quality is blessed. Open issues with no later commit addressing them → they
-become rejection signals cited in your verdict body. No `/review` comment → note it, don't refuse.
-Don't re-invoke `/review`.
+**Prior `/code-review` signal.** A `/code-review` run reaches the PR (`facts.sections` reviews/thread) as: the
+marketplace `code-review` command's comment, "Found N issues:" with a scored list or "No issues found. Checked for
+bugs and CLAUDE.md compliance."; the bundled skill's inline PR comments (only with `--comment`); or its ultra review's
+single findings comment (only with `--post`). The resolver's review loop passes none — its record is the loop comment.
+"No issues found" (or all below threshold) → code quality passes. Open issues no later commit addresses → rejection
+signals cited in your verdict. No `/code-review` output → note it, don't refuse. Don't re-invoke it.
 
 **No `closingIssuesReferences`** → ask (`header: "Issue link"`): **Name the issue** (Other free-text →
 run scope evaluation against it) / **Intentionally standalone** (skip the scope-against-issue check).
@@ -203,24 +204,23 @@ dimensions.
 
 ## S5 — Verdict
 
-**APPROVE** when `HEALTH_OK == true`, every dimension passes, no unresolved `/review` issues remain,
+**APPROVE** when `HEALTH_OK == true`, every dimension passes, no unresolved `/code-review` issues remain,
 and `reviewDecision` isn't `REVIEW_REQUIRED` owed to another named reviewer.
 
-**COMMENT (soft-reject)** when any of: `HEALTH_OK == false` (**unconditional hard block** — a red
-branch never approves; lead the body with `HEALTH_BODY`, name the failing command, link the cache
-comment); any dimension fails (list each gap with the evidence that closes it); an S4-untick fired; a
-`## Follow-ups` entry judged an in-scope violation; an open native blocker; an operator-confirmed
-polish `apply` (S5.5). Use `--comment`, never
-`--request-changes` (the project's soft-reject convention; `--request-changes` only on explicit user
-ask). When `HEALTH_OK == null` (skipped), proceed with the dimension-only verdict and carry
-`HEALTH_BODY` verbatim at the top of the review body.
+**COMMENT (soft-reject)** when any of: `HEALTH_OK == false` (**unconditional hard block** — a red branch never
+approves; lead the body with `HEALTH_BODY`, name the failing command, link the cache comment); any dimension fails
+(list each gap with the evidence that closes it); an S4-untick fired; a `## Follow-ups` entry judged an in-scope
+violation; an open native blocker; an operator-confirmed polish `apply` (S5.5). Use `--comment`, never
+`--request-changes` (the project's soft-reject convention; `--request-changes` only on explicit user ask). When
+`HEALTH_OK == null` (skipped), proceed with the dimension-only verdict and carry `HEALTH_BODY` verbatim at the top of
+the review body.
 
 Compose the review body starting with `HEALTH_BODY`, then the dimension-by-dimension assessment. When
 per-phase verification ran, include a `## DoD verification` section per
 [`../references/review-comment.md`](../references/review-comment.md) (omit it when no per-phase
 verification ran or every tick verified clean with nothing to surface).
 
-**Other gates** in this dimension (ask only when genuine): unresolved `/review` issues (`header: "Open
+**Other gates** in this dimension (ask only when genuine): unresolved `/code-review` issues (`header: "Open
 review"`: **Hard rejection** / **Note + proceed**); a `REVIEW_REQUIRED` owed to a named reviewer
 (`header: "Reviewer"`: **Proceed anyway** / **Wait for reviewer**); an epic-integration DoD item not
 evidently met by the accumulated diff (surface before approval).

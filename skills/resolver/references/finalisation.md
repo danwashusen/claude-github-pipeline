@@ -39,7 +39,8 @@ Skip an `open` entry whose note is `operator: leave for evaluator`: an earlier f
 already chose to leave it for S5.5, and asking again would override that answer. An `apply` entry is not
 triaged: it is decided, and iteration 1 already treated it as Addressable — one this pass left unfixed
 stays `apply`, and the evaluator re-proposes it. `file`, `drop` and `applied` entries are decided
-records.
+records. An entry with a note rewrite held for this pass's S5.2 write (`review-fix-round.md` step 8) is
+read with that note.
 
 ## 3. Triage
 
@@ -71,11 +72,14 @@ whatever its tier and built to its note's `intent:` when it carries one. The rou
 plan checked as a set, fix design on a hot seam, defect injection, the §10.6 gate, one commit, the staged
 reply. Then continue at S5.1 step 3:
 
-- **Every fix was polish** → the round settles and takes step 3's one **light re-review** (`review` at
+- **Every fix was polish** → the round settles and takes step 3's one **light re-review** (`code-review` at
   `medium` over the round's commit). Polish it finds goes to the ledger `open`, unfixed — for the
   evaluator, never back to this card — except a no-shown-cost item, which goes in as `drop` like any other
-  (`review-fix-round.md` "No shown cost"). A defect it finds:
-  - after a **settle** exit, re-enters the loop at step 2 under step 3's **Reset** rule (a fresh baseline);
+  (`review-fix-round.md` "No shown cost") unless step 4 would check it. A defect it finds, or a dismissal
+  step 4's dismissal check would dispatch (a defect-tier claim — `review-fix-round.md` "Claim tier" — not
+  already `check: upheld` or `kept`; only a fix round's step 4 clears one):
+  - after a **settle** exit, re-enters the loop at step 2 under step 3's **Reset** rule (a fresh baseline); a
+    dismissal is checked in that round's step 4;
   - after an **Accept current** exit, does **not** reopen the loop the operator closed. Revert the round's
     commit — it is local, and a revert keeps the record where a reset would erase it:
 
@@ -83,7 +87,8 @@ reply. Then continue at S5.1 step 3:
     git -C "<facts.workspace.path>" revert --no-edit <round sha>
     ```
 
-    The round's entries stay `apply`, each note gaining `reverted: <the defect, one line>`, and the
+    The round's entries stay `apply`, each note gaining `reverted: <the defect, one line>` (for a
+    dismissal, its claim), and the
     evaluator re-proposes them (its unfixed-`apply` rule).
 - **The round fixed a reclassified defect** → step 3's ordinary rules under its **Reset** rule: the loop
   runs on until it settles.

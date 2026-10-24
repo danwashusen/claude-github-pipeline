@@ -963,5 +963,27 @@ class MergeGuardTests(unittest.TestCase):
         self.assertIn("**Workspace:**", block)
 
 
+
+class ReviewerSignalTests(unittest.TestCase):
+    """#94: S2 reads a `/code-review` run's signal, in both shapes it can post.
+
+    The negatives pin backticked literals because `/review.md` and `review-comment.md` paths legitimately
+    contain the substring `/review`.
+    """
+
+    def test_s2_names_code_review_and_both_shapes(self):
+        flat = " ".join((PLAYBOOKS_DIR / "evaluate-spine.md").read_text(encoding="utf-8").split())
+        self.assertIn("**Prior `/code-review` signal.**", flat)
+        self.assertIn('"Found N issues:"', flat)
+        self.assertIn("the bundled skill's inline PR comments (only with `--comment`)", flat)
+        self.assertIn("its ultra review's single findings comment (only with `--post`)", flat)
+        self.assertIn("The resolver's review loop passes none — its record is the loop comment", flat)
+
+    def test_no_evaluator_file_names_the_retired_command(self):
+        for path in sorted(SKILL_DIR.rglob("*.md")):
+            text = " ".join(path.read_text(encoding="utf-8").split())
+            self.assertNotIn("`/review`", text, path.name)
+            self.assertNotIn("/review` command", text, path.name)
+
 if __name__ == "__main__":
     unittest.main()
