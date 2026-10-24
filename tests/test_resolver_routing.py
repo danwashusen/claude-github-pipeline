@@ -2564,6 +2564,21 @@ class DismissalCheckTests(unittest.TestCase):
         self.assertIn("Record `claim tier: defect` or `claim tier: polish` beside every such item's", claim_tier)
         # The defect list is the rubric's, test gaps included — a dismissed test-gap claim is checked.
         self.assertIn("a test gap that would let a real bug through", claim_tier)
+        # The #94 revise: an unfinished-`## Changes` claim is checked too — a wrong refutation of it ships
+        # a planned change undelivered. The one exclusion left is the non-material doc or comment finding.
+        self.assertIn("an unfinished `## Changes` entry of the phase being built", claim_tier)
+        self.assertNotIn("never dismissible", claim_tier)
+        self.assertIn("The one exclusion: a doc or comment finding that fails materiality", claim_tier)
+
+    def test_a_kept_entry_is_not_dispatched(self):
+        # The operator answered it; a machine read must not re-raise it. Step 3's pointer names both marks.
+        self.assertIn("An entry marked `kept` is not dispatched either", self.step4)
+        self.assertIn("an entry carrying `check: upheld` or marked `kept` does not", self.flat)
+
+    def test_the_check_receives_the_plans_changes(self):
+        self.assertIn("**Plan changes**: `<<plan_changes>>`", self.prompt)
+        self.assertIn("as `<<plan_changes>>` writes it", self.prompt)
+        self.assertIn("`<<plan_changes>>` with the plan's `## Changes (file-level)` section verbatim", self.step4)
 
     def test_step_5_is_judged_after_the_check_and_stages_its_records(self):
         self.assertIn("judged after the dismissal check returns", self.step5)
@@ -2600,7 +2615,7 @@ class DismissalCheckTests(unittest.TestCase):
         self.assertIn("continue the round with each in its bucket, its reply line saying the check returned no verdict", self.step4)
 
     def test_the_spine_names_the_check_and_s52_rewrites_the_ledger_note(self):
-        self.assertIn("send each defect-tier dismissal not yet upheld to the **dismissal check**", self.spine)
+        self.assertIn("send step 4's qualifying dismissals to the **dismissal check**", self.spine)
         self.assertIn("each note rewrite the dismissal check's verdicts call for (`review-fix-round.md` step 8)", self.spine)
         # A suffix rewrite alone is a body change, so continue mode stages `edit-pr-body` for it.
         self.assertIn("loop changed the PR body (outstanding settled items, ledger entries or note rewrites", self.spine)

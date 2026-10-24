@@ -38,6 +38,8 @@ Do not edit anything.
   line, the verbatim plan-decision bullet, or the `no shown cost: <why>` note.
 - **Plan decisions**: `<<plan_decisions>>` — the plan's `## Architecture decisions` / `## UI decisions` /
   `## Deviations from project docs` bullets, verbatim.
+- **Plan changes**: `<<plan_changes>>` — the plan's `## Changes (file-level)` section, verbatim: plan text,
+  not history, like the decision bullets. It says what each planned change must deliver.
 - **Phase context**: `<<phase_context>>` — the plan's `## Phases` list with the phase under review marked.
   A seam a **later** phase ships is not a failure of this phase.
 
@@ -48,6 +50,8 @@ plus one sentence naming what was missing, and stop.
 
 - **refuted** — does the cited guard, call site or run actually make the claim false? Read it. Look for a
   path around it: another caller, an input it does not cover, an order of events it does not hold for.
+  For a claim that a `## Changes` entry is undelivered, does the cited site deliver that entry as
+  `<<plan_changes>>` writes it — not as the finding or the citation paraphrases it?
 - **plan-settled** — two tests. **Still-true:** imagine the finding's fix done and re-read the cited
   decision bullet as written. Still true → the finding does not contest the decision, and the dismissal
   is wrong. A list of required behaviour is a minimum (a case it did not name leaves it true) unless it

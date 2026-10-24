@@ -253,7 +253,7 @@ not tell a round of nits from a round of new bugs.
 2. Run one **fix round** on it per the reference, in this conversation: classify and tier every listed
    item (iteration 1 also folds in human PR comments and reviews, seeds the refuted-items list from prior
    rounds' `Settled (not addressed):` blocks, and treats every `facts.polish` entry marked `apply` as
-   Addressable whatever its tier), deadlock-check against both lists, send each defect-tier dismissal not yet upheld
+   Addressable whatever its tier), deadlock-check against both lists, send step 4's qualifying dismissals
    to the **dismissal check**, list the **fix plan** for every item it will fix (the **fix-design** sub-agent
    designs a hot seam's lines) and check it as a set before the first edit, fix them, defect-inject every new
    or changed assertion, run the §10.6 pre-push gate (test-selection diff-base override = HEAD), commit, and

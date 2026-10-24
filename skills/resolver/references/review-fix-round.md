@@ -252,12 +252,11 @@ adjacent findings none of them fits.
 **Claim tier** — for a dismissal. An item classified Refuted, Plan-settled or No shown cost takes no tier,
 but its **claim**, read as if true, does: `defect` when it falls in the Addressable bucket's **defect** tier
 (correctness, a broken contract or invariant, data loss or corruption, security, a test gap that would let
-a real bug through — a test or control that cannot fail included), and when that is unclear — the tier
-tie-break, applied to the claim; otherwise `polish`. Record `claim tier: defect` or `claim tier: polish`
-beside every such item's provenance in the round reply; step 4's dismissal check reads it. Two claims are
-never defect-tier here: a doc or comment finding that fails materiality (never a defect), and an
-unfinished-`## Changes` claim (never dismissible — the plan requires it). Under-tiering a claim skips the
-check, so the recorded tier is the audit trail.
+a real bug through — a test or control that cannot fail included — or an unfinished `## Changes` entry of
+the phase being built), and when that is unclear — the tier tie-break, applied to the claim; otherwise
+`polish`. Record `claim tier: defect` or `claim tier: polish` beside every such item's provenance in the
+round reply; step 4's dismissal check reads it. The one exclusion: a doc or comment finding that fails
+materiality is never a defect. Under-tiering a claim skips the check, so the recorded tier is the audit trail.
 
 ## Steps (one round — no inner loop)
 
@@ -282,7 +281,7 @@ check, so the recorded tier is the audit trail.
    re-settled silently on its second occurrence: no card, no second reply beyond a dismissal-check verdict
    line (step 8), only the entry's repeat count bumped — in the bucket the entry records, never re-bucketed.
    Whether it goes to step 4's dismissal check again is step 4's rule — an entry carrying `check: upheld`
-   does not. An entry marked `kept` (the operator answered **Keep settled**, this session or an earlier one)
+   or marked `kept` does not. An entry marked `kept` (the operator answered **Keep settled**, this session or an earlier one)
    is re-settled silently on **every** verbatim occurrence: that question is answered. A repeat that
    **brings new evidence** is classified fresh on the merits — a `kept` one included, its mark dropped, and
    a refuted-items entry's ` — check: upheld` dropped too: the prior settlement, the operator's answer to it
@@ -303,7 +302,11 @@ check, so the recorded tier is the audit trail.
    already checked is not dispatched again: a refuted-items entry carrying `check: upheld`, or an item
    recorded for the ledger whose note ends ` — check: upheld` — held this pass or on the PR's `## Polish`
    ledger, read with any note rewrite held for it (step 8). One without the suffix (recorded before the
-   check existed, or never given a verdict) is. **Scope**, and
+   check existed, or never given a verdict) is. An entry marked `kept` is not dispatched either: its
+   operator answered **Keep settled**, or kept the decision as it stands on the check's own `Decision`
+   card, and a machine read must not re-raise an answered question — on an item the check raised, it
+   would put the same card up again. A repeat that brings new evidence drops the mark (step 3) and is
+   checked if it lands dismissed again. **Scope**, and
    why: No shown cost dismissals are checked — such an item "may be true and still not worth doing", so
    on a defect-tier claim it sets aside a possibly real defect with no evidence it is false, the rubric's
    own "a bypass with no instance" being a security claim. **Deferred-by-plan** ones
@@ -317,7 +320,9 @@ check, so the recorded tier is the audit trail.
    none when none qualifies — filling `<<items>>` with each item numbered: the finding verbatim with its
    site, its bucket, and its citation exactly as the round reply will record it (the Refuted evidence line,
    the verbatim decision bullet, the `no shown cost: <why>` note); `<<plan_decisions>>` with the plan's
-   decision bullets; `<<phase_context>>` as for the cold read; `<<base_ref>>` with the scope base. Never
+   decision bullets; `<<plan_changes>>` with the plan's `## Changes (file-level)` section verbatim (plan
+   text, so a refutation of an unfinished-`## Changes` claim is tested against the entry as the plan writes
+   it); `<<phase_context>>` as for the cold read; `<<base_ref>>` with the scope base. Never
    the round history, prior verdicts or your reasoning. Print its `## Verdicts`, then route each item:
    - `upheld` → it stays in its bucket, recorded `check: upheld` (step 8).
    - `overturned` → it re-enters classification with the check's evidence as new evidence, and the
