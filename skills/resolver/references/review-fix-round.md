@@ -248,13 +248,14 @@ adjacent findings none of them fits.
   or Decision-required.
 
 **Claim tier** — for a dismissal. An item classified Refuted, Plan-settled or No shown cost takes no tier,
-but its **claim**, read as if true, does: `defect` when it falls in the defect tier's list (correctness, a
-broken contract or invariant, data loss or corruption, security, a test or control that cannot fail), and
-when that is unclear — the tier tie-break, applied to the claim. Record `claim tier: defect` beside the
-item's provenance in the round reply; step 4's dismissal check reads it. Two claims are never defect-tier
-here: a doc or comment finding that fails materiality (never a defect), and an unfinished-`## Changes`
-claim (never dismissible — the plan requires it). Under-tiering a claim skips the check, so the recorded
-tier is the audit trail.
+but its **claim**, read as if true, does: `defect` when it falls in the **defect** tier's list (Addressable)
+(correctness, a broken contract or invariant, data loss or corruption, security, a test gap that would let
+a real bug through — a test or control that cannot fail included), and when that is unclear — the tier
+tie-break, applied to the claim; otherwise `polish`. Record `claim tier: defect` or `claim tier: polish`
+beside every such item's provenance in the round reply; step 4's dismissal check reads it. Two claims are
+never defect-tier here: a doc or comment finding that fails materiality (never a defect), and an
+unfinished-`## Changes` claim (never dismissible — the plan requires it). Under-tiering a claim skips the
+check, so the recorded tier is the audit trail.
 
 ## Steps (one round — no inner loop)
 
@@ -275,9 +276,10 @@ tier is the audit trail.
    for these addressed-item deadlocks only. An item matching the **refuted-items list** verbatim — the
    same claim, carrying no reproduction, instance, or case the settled entry did not answer — is
    re-settled silently on its second occurrence: no card, no second reply, only the entry's repeat count
-   bumped — in the bucket the entry records, never re-bucketed — and an entry carrying `check: upheld`
-   is not sent to step 4's dismissal check again. An entry marked `kept` (the operator
-   answered **Keep settled**, this session or an earlier one) is re-settled silently on **every**
+   bumped — in the bucket the entry records, never re-bucketed. An entry carrying `check: upheld` is not
+   sent to step 4's dismissal check again; one without it whose claim is defect-tier (seeded from before
+   the check existed) is, once, the same rule as an unsuffixed ledger entry. An entry marked `kept` (the
+   operator answered **Keep settled**, this session or an earlier one) is re-settled silently on **every**
    verbatim occurrence: that question is answered. A repeat that **brings new evidence** is classified
    fresh on the merits — a `kept` one included, its mark dropped: the prior settlement, and the
    operator's answer to it, are not a citation for evidence they never saw. A **recurrence that stays
@@ -292,12 +294,13 @@ tier is the audit trail.
    **Dismissal check** — first, once per round, whenever at least one item this round dismissed
    qualifies, a round with nothing else to fix included: there it matters most. An item qualifies when
    step 1 classified it **Refuted**, **Plan-settled** or **No shown cost** and its **claim tier** is
-   `defect` (the rubric's "Claim tier"). Step 3's silent re-settles are already out, and an item recorded
-   for the ledger whose note ends ` — check: upheld` — held this pass or on the PR's `## Polish` ledger —
-   is not dispatched again; one without the suffix (recorded before the check existed, or never checked)
-   is. **Scope**, and why: No shown cost dismissals are checked — such an item "may be true and still not
-   worth doing", so on a defect-tier claim it sets aside a possibly real defect with no evidence it is
-   false, the rubric's own "a bypass with no instance" being a security claim. **Deferred-by-plan** ones
+   `defect` (the rubric's "Claim tier"), including a verbatim repeat step 3 re-settled silently. An item
+   already checked is not dispatched again: a refuted-items entry carrying `check: upheld`, or an item
+   recorded for the ledger whose note ends ` — check: upheld` — held this pass or on the PR's `## Polish`
+   ledger. One without the suffix (recorded before the check existed, or never checked) is. **Scope**, and
+   why: No shown cost dismissals are checked — such an item "may be true and still not worth doing", so
+   on a defect-tier claim it sets aside a possibly real defect with no evidence it is false, the rubric's
+   own "a bypass with no instance" being a security claim. **Deferred-by-plan** ones
    are not: the deferral comes due when its phase is current (the resume hint classifies it fresh), and
    the final phase's cumulative review and cold read read it there — checking it now would verify a seam
    this phase deliberately leaves unbuilt. Explicitly-deferred and Pre-existing items are filed or
@@ -306,7 +309,7 @@ tier is the audit trail.
    S5.1's scope rule) and dispatch the dismissal-check `Explore` sub-agent per
    [`dismissal-check-prompt.md`](dismissal-check-prompt.md) — **one** dispatch for every qualifying item,
    none when none qualifies — filling `<<items>>` with each item numbered: the finding verbatim with its
-   site, its bucket, and its citation exactly as the round reply records it (the Refuted evidence line,
+   site, its bucket, and its citation exactly as the round reply will record it (the Refuted evidence line,
    the verbatim decision bullet, the `no shown cost: <why>` note); `<<plan_decisions>>` with the plan's
    decision bullets; `<<phase_context>>` as for the cold read; `<<base_ref>>` with the scope base. Never
    the round history, prior verdicts or your reasoning. Print its `## Verdicts`, then route each item:
@@ -315,10 +318,13 @@ tier is the audit trail.
      rubric places it: **introduced** or **adjacent** → Addressable, tier `defect`, into this round's
      fix plan; **pre-existing** → Explicitly-deferred (a check never widens the PR's scope); a
      Plan-settled item whose decision the evidence shows is defective → Decision-required, **Re-plan**
-     recommended — render step 2's `Decision` card now. Recorded `check: overturned`.
+     recommended — render step 2's `Decision` card now. Recorded `check: overturned`. An overturned item
+     is no longer settled, so it skips step 3's settled-item pre-check and its `Settled item` card; an
+     upheld recurring one still takes them.
    - `code: AMBIGUOUS`, or an item with no parseable verdict line → repair the staging and re-dispatch
-     once (those items only); still unparsed → render the failure to the operator. Never read it as
-     `upheld`.
+     once (those items only); still unparsed → tell the operator in one line naming those items, and
+     continue the round with each in its bucket, its reply line saying the check returned no verdict.
+     Never read it as `upheld`, so it carries no ` — check: upheld` suffix and is checked on recurrence.
 
    The check is not a `code-review` run: it counts toward no ceiling and resets nothing in S5.1 step 3.
    An overturned defect counts in this round's defect count, and the loop-induced test applies to it
@@ -451,7 +457,7 @@ tier is the audit trail.
 
    A round whose **dismissal check** ran (step 4) records each verdict in two places. Every checked item's
    line in the round's section carries `check: upheld` or `check: overturned` beside its provenance and
-   `claim tier: defect`. An upheld Refuted or Plan-settled item's `Settled (not addressed):` entry carries
+   claim tier. An upheld Refuted or Plan-settled item's `Settled (not addressed):` entry carries
    ` — check: upheld` before its repeat count, so the next session's seed re-settles a verbatim repeat
    without another dispatch. An upheld No shown cost item's ledger note is `no shown cost: <why> — check:
    upheld` — the `no shown cost:` lead finalisation's digest keys on is unchanged — and an existing ledger

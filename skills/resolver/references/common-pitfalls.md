@@ -162,9 +162,9 @@ its §review-loop, its S6 DoD projection) that carry the same numbering v1 used,
   the skill inline or forked from that call, and either way its result returns to the main conversation,
   which is not the dispatched-sub-agent case — and since 4.11.0 the fix round does too. The loop's own
   steps run in main; the sub-agents it dispatches (test selection at the gates, fix design on a hot seam,
-  the dismissal check on a round's serious dismissals, the post-settle cold read) are judgment reads that never invoke `code-review`. Don't reintroduce a
-  dispatched `code-review` thinking "this time stronger emphasis will work" — the constraint is the
-  harness, not the model.
+  the dismissal check on a round's serious dismissals, the post-settle cold read) are judgment reads that
+  never invoke `code-review`. Don't reintroduce a dispatched `code-review` thinking "this time stronger
+  emphasis will work" — the constraint is the harness, not the model.
 - **Don't reach for Plan-settled, Deferred-by-plan or Refuted without the citation or evidence the
   rubric requires.** The buckets exist to stop re-litigation, not to dismiss findings — a Refuted item
   needs a cited code read or run, never a disagreement, and a fix that leaves the decision bullet true as

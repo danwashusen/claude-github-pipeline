@@ -352,14 +352,14 @@ ${CLAUDE_PLUGIN_ROOT}/scripts/gh_persist.py create-pr <owner/repo> "<facts.scrat
 ```
 
 `--base`/`--head` are always explicit facts from the workspace (never inferred from cwd). Continue mode: when the
-loop added PR-body items (outstanding settled items, ledger entries, an `Accept current` override, `## Known
-failures`), stage the updated body and apply it with `edit-pr-body`. Both writes take one `--attach` per
+loop changed the PR body (outstanding settled items, ledger entries or note suffixes, an `Accept current` override,
+`## Known failures`), stage the updated body and apply it with `edit-pr-body`. Both writes take one `--attach` per
 screenshot ([`pr-screenshots.md`](../references/pr-screenshots.md) §4). Either mode, the `## Polish` ledger
 ([`../../_shared/polish-ledger.md`](../../_shared/polish-ledger.md)) gains one entry per polish item the loop left
 — `open`, `drop` if no shown cost, or finalisation's answer — and `applied (commit <sha>)` on each `apply` item it
 fixed, ` — check: upheld` appended to the note of each entry the dismissal check upheld on recurrence. Then post
-the staged `loop-comment.md` — every round's reply, in order, one `comment` on the PR, the record the next session's
-resume re-read seeds from; a `BODY_TOO_LONG` decision splits it one comment per round. Delete the file once posted.
+`<facts.scratch>/loop-comment.md` — every round's reply, in order, one `comment` on the PR, the record the next
+session's resume re-read seeds from; a `BODY_TOO_LONG` decision splits it one comment per round. Then delete it.
 
 ## S6 — DoD projection on the push that shipped the phase
 

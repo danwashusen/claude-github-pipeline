@@ -196,9 +196,9 @@ per [architecture.md §7](docs/architecture.md)'s mapping table).
   fitness audit (*code and docs* at a pinned ref), the planner's plan reviewer, the drafter's issue
   reviewer, the researcher's dossier validator, the test-selection sub-agent, the cold-read audit, the
   resolver's fix design (a fix round's seam re-derivation, before the edit), the resolver's dismissal
-  check (a fix round's serious dismissals, re-derived at head), and the question-status reader. All are context-blind, receive **workspace paths and prep-staged
-  files** (never refs), cannot call `AskUserQuestion` (they return a §3 decision code instead), and
-  never write to GitHub.
+  check (a fix round's serious dismissals, re-derived at head), and the question-status reader. All are
+  context-blind, receive **workspace paths and prep-staged files** (never refs), cannot call
+  `AskUserQuestion` (they return a §3 decision code instead), and never write to GitHub.
 
 ### The scripts encode the cross-skill contract
 
