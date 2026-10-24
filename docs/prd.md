@@ -147,7 +147,8 @@ ground these are produced by implementation step S1. Lettered items are individu
     the resolver dismisses as refuted, plan-settled or of no shown cost is checked by a context-blind
     pass, and an overturned dismissal returns to the loop. On the final pass, before the push, it
     runs the security pass: each finding is fixed in one more reviewed round or dismissed on the
-    operator's word with a recorded reason, and is recorded in the PR body.
+    operator's word with a recorded reason, and is recorded in the PR body; one left unfixed (an
+    accepted stall) is recorded open, and the evaluator blocks on it.
   - (f) Multi-phase issues ship their phases onto one PR, one push per phase, tracked in a
     `## Phase tracker` section of the PR body (§7). One session ships phases in turn — each with
     its own push, tick, and review — until a phase the plan marks `checkpoint: pause` (the

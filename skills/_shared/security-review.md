@@ -63,7 +63,7 @@ duplicated id must never let a `dismissed` or `fixed` line shadow an `open` one.
 
 | Disposition | Written by | Meaning |
 |---|---|---|
-| `open` | the evaluator, for an entry the operator sent back to fix; the resolver, only on an **Accept current** exit | still to fix: it **blocks approval** |
+| `open` | the evaluator, for an entry the operator sent back to fix; the resolver, on an **Accept current** exit, or for a finding sent to fix that no round fixed by its push | still to fix: it **blocks approval** |
 | `fixed (commit <sha>)` | the resolver, with the commit of the fix round that fixed it; either caller, with the head SHA its pass ran at and the note `not reported at <short-sha>`, for an `open` entry its pass no longer reports and whose claim the re-check finds false at head | no longer true at head |
 | `dismissed` | either caller, **only as the operator's answer** on the `Security` card, the note led by `operator: <reason>` | the operator accepts the finding; it never blocks again |
 
@@ -128,7 +128,8 @@ sections at the end of this file give each one's values.
   turns it `fixed (commit <sha>)`. A round that fixed a security finding runs the loop on until it
   settles. On an **Accept current** exit no fix round runs, because the operator closed the loop: each
   finding not dismissed is recorded `open`, the evaluator blocks on it, and the handoff's `Why:` names
-  each one by id.
+  each one by id. A finding sent to fix that no round fixed by the push is recorded `open` the same way.
+  The fix round never settles one as refuted or of no shown cost: only the operator dismisses.
 - **Write:** at S5.2 with the ledger, in the staged `pr.md` in fresh mode and through `edit-pr-body` in
   continue mode. On a revision run, the pass re-reports an evaluator-written `open` entry under its own
   id, and the fix round turns it `fixed`.

@@ -665,6 +665,9 @@ class EpicIntegrationPrGateDowngradeTests(PrepResolverSandboxTestCase):
         # The workspace assertion is the thing the gate would have suppressed — S1-S3 need it.
         self.assertIn("workspace", envelope)
         self.assertFalse(envelope["epic"]["integration_pr"]["is_yours"])
+        # The row was gated when step 4b skipped the prior-PR fetch, so the security record comes
+        # from the staged integration-PR body — else finalisation would re-mint SEC-1.
+        self.assertEqual([e["id"] for e in envelope["security"]["entries"]], ["SEC-1"])
         self.assertTrue(
             any("someone-else" in item for item in envelope["attention"]),
             envelope["attention"],

@@ -2135,6 +2135,13 @@ class FinalisationTests(unittest.TestCase):
         self.assertIn("each security finding a defect-tier item", self.flat)
         self.assertIn("The round fixed a reclassified defect or a security finding", self.flat)
         self.assertIn("asked before the `Polish` card", self.flat)
+        # Round 1 review: the fix round never dismisses a finding, and an unfixed one keeps a disposition.
+        self.assertIn("§4's round never settles a security finding as Refuted, Plan-settled or of no shown cost", self.flat)
+        self.assertIn("no round has fixed by the push — a terminating guard-rail answer, a revert — is recorded `open`", self.flat)
+        shared = " ".join((self.SHARED / "security-review.md").read_text(encoding="utf-8").split())
+        self.assertIn("or for a finding sent to fix that no round fixed by its push |", shared)
+        # §1's "no loop-comment line" is the polish triage's; the security pass still records itself.
+        self.assertIn("This is the polish triage's rule: the security pass (§1.5) records itself at §6", self.flat)
         # Reviewed: is the HEAD the pass was dispatched at, never a later fix commit.
         self.assertIn("the pass SHA is that HEAD, before any commit §4's round adds", self.flat)
         # PR #106 Follow-ups note: S5.2's pinned trigger list names no security change.

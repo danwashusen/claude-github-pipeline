@@ -22,7 +22,8 @@ session.
 - **Once per pass.** When finalisation's round re-enters S5.1 (§4) and S5.1 exits again, go straight to
   the push — never a second finalisation.
 - **Nothing to triage → no card**, and no loop-comment line. Print only the digest's dropped list, when it
-  has entries (`polish-triage.md` §4 "When nothing is left to ask").
+  has entries (`polish-triage.md` §4 "When nothing is left to ask"). This is the polish triage's rule:
+  the security pass (§1.5) records itself at §6 whatever the ledger holds.
 
 ## 1.5. The security pass
 
@@ -37,6 +38,11 @@ pass. Run [`../../_shared/security-review.md`](../../_shared/security-review.md)
   as `open`, per that file's "Format"); none in fresh mode;
 - **Fix** — the finding joins §4's round as a defect-tier item. After **Accept current** no round runs for
   it: it is recorded `open`, the evaluator blocks on it, and the handoff's `Why:` names it by id.
+
+Only the operator dismisses: §4's round never settles a security finding as Refuted, Plan-settled or of no
+shown cost. One its re-check finds false at head goes on the `Security` card as `premise false`, and one
+no round has fixed by the push — a terminating guard-rail answer, a revert — is recorded `open`, named by
+id in the handoff's `Why:` like an Accept-current one.
 
 The `Security` card is a consent card SKILL.md "Gates only for genuine decisions" names, asked before the
 `Polish` card; when S5.1 exited on **Accept current**, its first question says so, since a finding the
