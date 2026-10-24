@@ -442,8 +442,8 @@ check, so the recorded tier is the audit trail.
    here: S5.2 pushes once and posts the whole file as the loop comment, because every per-round push
    started CI on code the next round was about to change. That comment is the GitHub-side record — how
    a reviewer, and the next session, follows what this loop did without replaying the conversation. When the round settled anything new,
-   or the dismissal check upheld an existing entry (re-listed with its suffix and count), the reply ends
-   with this fixed block — the next session's resume re-read seeds its refuted-items list from it (each
+   or the dismissal check upheld an existing refuted-items entry (re-listed with its suffix and count), the
+   reply ends with this fixed block — the next session's resume re-read seeds its refuted-items list from it (each
    phase starts fresh, in a new session or an in-session continuation; this comment is the
    only carrier):
 

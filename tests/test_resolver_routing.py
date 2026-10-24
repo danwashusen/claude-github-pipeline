@@ -2586,6 +2586,10 @@ class DismissalCheckTests(unittest.TestCase):
     def test_an_overturned_ledger_entry_is_rewritten_as_a_reclassified_drop(self):
         self.assertIn("rewrite in place to `drop` with the note `reclassified: defect — see loop comment`", self.step8)
         self.assertIn("A note rewrite held for S5.2 is the entry's note for every reader this pass", self.step8)
+        # Only a refuted-items entry is re-listed in the Settled block; a ledger entry carries its verdict in its note.
+        self.assertIn("upheld an existing refuted-items entry (re-listed with its suffix and count)", self.step8)
+        ledger = " ".join((SKILL_DIR.parent / "_shared" / "polish-ledger.md").read_text(encoding="utf-8").split())
+        self.assertIn("or, for an entry found to be a defect, the resolver (finalisation, or S5.2 for an overturned dismissal) or the evaluator (S4)", ledger)
         finalisation = " ".join((REFERENCES_DIR / "finalisation.md").read_text(encoding="utf-8").split())
         self.assertIn("An entry with a note rewrite held for this pass's S5.2 write", finalisation)
 
@@ -2597,7 +2601,7 @@ class DismissalCheckTests(unittest.TestCase):
 
     def test_the_spine_names_the_check_and_s52_rewrites_the_ledger_note(self):
         self.assertIn("send each defect-tier dismissal not yet upheld to the **dismissal check**", self.spine)
-        self.assertIn("each note rewrite the dismissal check's verdicts call for (the reference's step 8)", self.spine)
+        self.assertIn("each note rewrite the dismissal check's verdicts call for (`review-fix-round.md` step 8)", self.spine)
         # A suffix rewrite alone is a body change, so continue mode stages `edit-pr-body` for it.
         self.assertIn("loop changed the PR body (outstanding settled items, ledger entries or note rewrites", self.spine)
 
