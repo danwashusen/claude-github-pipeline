@@ -1167,17 +1167,17 @@ def build_facts(issue_number, repo, root=".", scratch_dir=None, refresh=False, c
         ):
             mode = MODE_CONTINUE
             gate = None
-        # The `## Security review` record finalisation matches against lives on the integration PR.
-        # Read it from the body staged above rather than the prior-PR fetch: a teammate-opened PR was
-        # still a gated row when step 4b chose `_absent_pr_extras()`, so that fetch never ran, and a
-        # record read as absent would re-mint SEC ids the body already carries.
+        # The `## Polish` ledger and `## Security review` record finalisation reads live on the
+        # integration PR. Read them from the body staged above rather than the prior-PR fetch: a
+        # teammate-opened PR was still a gated row when step 4b chose `_absent_pr_extras()`, so that
+        # fetch never ran, and a section read as absent would re-mint ids the body already carries.
         integration_body_path = (epic_facts.get("integration_pr") or {}).get("body_path")
         if integration_body_path:
+            integration_body = Path(integration_body_path).read_text(encoding="utf-8")
             pr_extras = dict(
                 pr_extras,
-                security=parse.scan_security(
-                    Path(integration_body_path).read_text(encoding="utf-8")
-                ),
+                polish=parse.scan_polish(integration_body),
+                security=parse.scan_security(integration_body),
             )
     else:
         # Hierarchy lookup gated on HAVING a parent, not on the lexical type (#31) — the same gate

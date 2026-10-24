@@ -2153,7 +2153,7 @@ class FinalisationTests(unittest.TestCase):
         self.assertIn("the finalisation `Polish` card and `Security` card", router)
         self.assertIn("cold-read audit, security review) never calls `AskUserQuestion`", router)
         renderings = " ".join((REFERENCES_DIR / "handoff-renderings.md").read_text(encoding="utf-8").split())
-        self.assertIn("each entry an **Accept current** exit left `open`", renderings)
+        self.assertIn("each entry left `open` — by an **Accept current** exit, or a fix no round landed", renderings)
 
     def test_the_loop_rules_cover_finalisations_round(self):
         # PR #71 review: Reset named only the light re-review and the cold read; and the ceiling counted
