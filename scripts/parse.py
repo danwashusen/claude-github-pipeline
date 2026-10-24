@@ -1447,7 +1447,8 @@ def absent_polish():
 # skills/_shared/security-review.md: the security pass's record, one `Reviewed:` line (the full HEAD
 # SHA the latest pass was dispatched at) plus one line per finding. Like the polish ledger it is a
 # rendering the resolver and evaluator rewrite, so it never raises: a `SEC-`-led line that does not
-# parse lands in `unparsed`. Read by `prep_evaluator` (the S4.5 gate and its `covers_head` skip).
+# parse lands in `unparsed`. Read by `prep_evaluator` (the S4.5 gate and its `covers_head` skip) and
+# `prep_resolver` (finalisation's security pass).
 
 # The closed disposition set (security-review.md "Dispositions"). `fixed` always carries
 # `(commit <sha>)`; `dismissed` is the operator's answer, so its note must lead `operator:`.

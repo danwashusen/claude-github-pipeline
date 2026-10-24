@@ -2140,6 +2140,12 @@ class FinalisationTests(unittest.TestCase):
         self.assertIn("no round has fixed by the push — a terminating guard-rail answer, a revert — is recorded `open`", self.flat)
         shared = " ".join((self.SHARED / "security-review.md").read_text(encoding="utf-8").split())
         self.assertIn("or for a finding sent to fix that no round fixed by its push |", shared)
+        # Cold read: a finding the round itself finds false at head has a defined card point, and the
+        # carve-out lives where classification happens.
+        self.assertIn("renders its own `Security` card within the round, before its commit, as `premise false`", self.flat)
+        fix_round = " ".join((REFERENCES_DIR / "review-fix-round.md").read_text(encoding="utf-8").split())
+        self.assertIn("never takes the Refuted, Plan-settled or No shown cost bucket and never reaches step 4's "
+                      "dismissal check", fix_round)
         # §1's "no loop-comment line" is the polish triage's; the security pass still records itself.
         self.assertIn("This is the polish triage's rule: the security pass (§1.5) records itself at §6", self.flat)
         # Reviewed: is the HEAD the pass was dispatched at, never a later fix commit.

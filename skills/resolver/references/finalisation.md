@@ -40,7 +40,8 @@ pass. Run [`../../_shared/security-review.md`](../../_shared/security-review.md)
   it: it is recorded `open`, the evaluator blocks on it, and the handoff's `Why:` names it by id.
 
 Only the operator dismisses: §4's round never settles a security finding as Refuted, Plan-settled or of no
-shown cost. One its re-check finds false at head goes on the `Security` card as `premise false`, and one
+shown cost. One that round finds false at head renders its own `Security` card within the round, before
+its commit, as `premise false` (the card's answer stands: Dismiss, or Fix in this round), and one
 no round has fixed by the push — a terminating guard-rail answer, a revert — is recorded `open`, named by
 id in the handoff's `Why:` like an Accept-current one.
 

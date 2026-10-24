@@ -63,7 +63,7 @@ duplicated id must never let a `dismissed` or `fixed` line shadow an `open` one.
 
 | Disposition | Written by | Meaning |
 |---|---|---|
-| `open` | the evaluator, for an entry the operator sent back to fix; the resolver, on an **Accept current** exit, or for a finding sent to fix that no round fixed by its push | still to fix: it **blocks approval** |
+| `open` | the evaluator, for an entry sent back to fix (the operator's answer, or an announced fix proposal) and for an `unparsed` line rewritten in grammar; the resolver, on an **Accept current** exit, or for a finding sent to fix that no round fixed by its push | still to fix: it **blocks approval** |
 | `fixed (commit <sha>)` | the resolver, with the commit of the fix round that fixed it; either caller, with the head SHA its pass ran at and the note `not reported at <short-sha>`, for an `open` entry its pass no longer reports and whose claim the re-check finds false at head | no longer true at head |
 | `dismissed` | either caller, **only as the operator's answer** on the `Security` card, the note led by `operator: <reason>` | the operator accepts the finding; it never blocks again |
 

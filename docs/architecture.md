@@ -485,7 +485,7 @@ result or a typed §3 decision code, cannot call `AskUserQuestion`, and never wr
 | cold-read audit | resolver | staged scope diff (path — the phase delta on a non-final phase, cumulative on the final) + workspace + the plan's phase list | whole-diff findings verdict |
 | fix design | resolver | a fix round's findings on a seam the review loop already changed, or a recurring settled finding + staged scope diff (path) + workspace + the loop-changed file list + the plan's decision bullets and phase list + the plan, shipped-record and issue-body paths (scope) | seam map + class-level change set (plan conflicts, needs-a-plan-decision entries, out-of-reach items); the main loop edits |
 | dismissal check | resolver | a fix round's Refuted / Plan-settled / No shown cost dismissals of defect-tier claims, each with its citation + staged scope diff (path) + workspace + the plan's decision bullets, its `## Changes` and its phase list | `upheld` / `overturned` per item, with evidence |
-| security review | resolver, evaluator | staged cumulative diff (path) + workspace + declared catalogue entries | findings with site, category, severity, claim, exploit path, or `AMBIGUOUS` |
+| security review | resolver, evaluator | staged cumulative diff (path) + its base ref + workspace + declared catalogue entries | findings with site, category, severity, claim, exploit path, or `AMBIGUOUS` |
 | question-status reader | question-sweep, question-resolver | question thread (path) | status or `AMBIGUOUS` |
 
 Skill frontmatter carries no `model:` or `effort:` keys — every skill inherits the invoking
