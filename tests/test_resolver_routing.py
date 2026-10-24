@@ -1125,7 +1125,7 @@ class MainLoopReviewFixRoundTests(unittest.TestCase):
 
     def test_a_reopened_loop_starts_a_fresh_baseline(self):
         self.assertIn(
-            "the next round counts as round 1 again: a fresh baseline and an unused grace round "
+            "the next round counts as round 1: a fresh baseline, an unused grace round "
             "(the ceiling's count carries on)",
             self.flat,
         )
@@ -2647,6 +2647,8 @@ class DismissalCheckTests(unittest.TestCase):
         # C4: a light re-review's dismissal of a defect-tier claim goes through a fix round.
         # Only a dismissal step 4 would dispatch re-enters: a `kept` or `check: upheld` repeat does not.
         self.assertIn("or a dismissal step 4 would check, re-enters this loop at step 2", self.spine)
+        # That re-entry resets the progress baseline, as finalisation §4's does.
+        self.assertIn("reopens a settled loop with a defect or a dismissal to check, the next round counts as round 1", self.spine)
         finalisation = " ".join((REFERENCES_DIR / "finalisation.md").read_text(encoding="utf-8").split())
         self.assertIn("unless step 4 would check it. A defect it finds, or a dismissal step 4's dismissal check would dispatch", finalisation)
         self.assertIn("not already `check: upheld` or `kept`", finalisation)

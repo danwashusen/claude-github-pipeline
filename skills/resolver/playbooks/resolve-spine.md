@@ -281,7 +281,7 @@ not tell a round of nits from a round of new bugs.
      card's evidence and adds its **Re-plan** option. A round that rendered the `Review loop` or
      `Settled item` card does not also render the stall card — the repeated item is the more specific signal.
    - **Reset** — when a light re-review, the cold read or finalisation's round reopens a settled loop with
-     a defect, the next round counts as round 1 again: a fresh baseline and an unused grace round (the
+     a defect or a dismissal to check, the next round counts as round 1: a fresh baseline, an unused grace round (the
      ceiling's count carries on).
    - Settled and the cold read has **not** run on this phase — in this pass, nor per step 4's PR record
      at this HEAD → step 4. Settled and it **has** → S5.1 is done; go to S5.2.
