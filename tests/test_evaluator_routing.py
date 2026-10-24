@@ -975,8 +975,9 @@ class ReviewerSignalTests(unittest.TestCase):
         flat = " ".join((PLAYBOOKS_DIR / "evaluate-spine.md").read_text(encoding="utf-8").split())
         self.assertIn("**Prior `/code-review` signal.**", flat)
         self.assertIn('"Found N issues:"', flat)
-        self.assertIn("the bundled `code-review` skill posts inline PR comments, only with `--comment`", flat)
-        self.assertIn("The resolver's review loop passes neither — its record is the loop comment", flat)
+        self.assertIn("the bundled skill's inline PR comments (only with `--comment`)", flat)
+        self.assertIn("its ultra review's single findings comment (only with `--post`)", flat)
+        self.assertIn("The resolver's review loop passes none — its record is the loop comment", flat)
 
     def test_no_evaluator_file_names_the_retired_command(self):
         for path in sorted(SKILL_DIR.rglob("*.md")):
