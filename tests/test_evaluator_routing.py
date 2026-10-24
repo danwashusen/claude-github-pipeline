@@ -1000,6 +1000,8 @@ class SecurityReviewStepTests(unittest.TestCase):
         approve = flat[flat.index("**APPROVE** when"):flat.index("**COMMENT (soft-reject)** when")]
         comment = flat[flat.index("**COMMENT (soft-reject)** when"):flat.index("Compose the review body")]
         self.assertIn("no `## Security review` entry is `open`", approve)
+        # Audit F1/F4 + review round 1: an unparsed line or an incomplete pass blocks too.
+        self.assertIn("(an unparsed line or a pass that did not complete counts as one)", approve)
         self.assertIn("an open security finding (S4.5)", comment)
 
 

@@ -208,8 +208,8 @@ Run the pass per the evaluator section of [`../../_shared/security-review.md`](.
 ## S5 — Verdict
 
 **APPROVE** when `HEALTH_OK == true`, every dimension passes, no unresolved `/code-review` issues remain, no
-`## Security review` entry is `open`, and `reviewDecision` isn't `REVIEW_REQUIRED` owed to another named
-reviewer.
+`## Security review` entry is `open` (an unparsed line or a pass that did not complete counts as one), and
+`reviewDecision` isn't `REVIEW_REQUIRED` owed to another named reviewer.
 
 **COMMENT (soft-reject)** when any of: `HEALTH_OK == false` (**unconditional hard block** — a red branch never
 approves; lead the body with `HEALTH_BODY`, name the failing command, link the cache comment); any dimension

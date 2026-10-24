@@ -34,9 +34,10 @@ must see the un-tick already in place. `<short-sha>` values are 7-char, matching
 
 Included **only** when the PR body's `## Security review` record
 ([`../../_shared/security-review.md`](../../_shared/security-review.md)) holds an entry still `open` after
-S4.5's card (an `unparsed` `SEC-` line counts as open): an open entry is what made the verdict COMMENT, and the reader needs each one to fix it. Omit
-the section when no entry is open; a `fixed` or `dismissed` entry stays in the PR body's record only. Per
-open entry:
+S4.5's card (an `unparsed` `SEC-` line counts as open), or when S4.5's pass did not complete: either is
+what made the verdict COMMENT, and the reader needs each one to fix it. Omit the section when neither holds;
+a `fixed` or `dismissed` entry stays in the PR body's record only. A pass that did not complete is one line,
+`- **Security pass did not complete** — <the sub-agent's evidence>`. Per open entry:
 
 ```markdown
 - **SEC-<n>** — <claim> — <anchor>

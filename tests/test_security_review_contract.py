@@ -19,7 +19,8 @@ PROMPT = REPO_ROOT / "skills" / "evaluator" / "references" / "security-review-pr
 
 # CLAUDE.md "Validators" 5, and the stacks a labelled example may name.
 _STACK_RE = re.compile(r"swift|xcode|xcb\.sh|foodjournal|rails|rspec|pytest", re.IGNORECASE)
-_STACK_NAMES = ("python", "rails", "ruby", "swift", "node", "go", "java", "kotlin", "php", "rust")
+# Names only: no stack whose name is also a common English word ("go", "rust"), which would count as a stack.
+_STACK_NAMES = ("python", "rails", "ruby", "swift", "node", "java", "kotlin", "php", "javascript", "typescript")
 
 
 def _flat(path):

@@ -71,8 +71,9 @@ counts as a dismissal.
 Each caller supplies four things: its checkout, its base, what **Fix** means, and its write. The caller
 sections at the end of this file give each one's values.
 
-1. **Stage and dispatch.** Stage `git diff origin/<base>...HEAD` in the caller's checkout to
-   `<facts.scratch>/security-diff.patch`. Note HEAD as the **pass SHA**. Dispatch the prompt with
+1. **Stage and dispatch.** Fetch the base first (`git -C <checkout> fetch origin <base>`), so a stale
+   `origin/<base>` never widens the diff to base commits the branch merged in. Then stage
+   `git diff origin/<base>...HEAD` in the caller's checkout to `<facts.scratch>/security-diff.patch`. Note HEAD as the **pass SHA**. Dispatch the prompt with
    `subagent_type: Explore` from the main conversation, filling `<<workspace_path>>`, `<<diff_path>>`,
    `<<base_ref>>` and `<<catalogue_entries>>` (`facts.grounding_docs`, one `path — role — authority —
    summary` line each). It is a sub-agent, not a skill, so it never touches the one `code-review` call

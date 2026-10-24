@@ -1458,7 +1458,8 @@ _SECURITY_ROW_RE = re.compile(
     r"^-\s*SEC-(\d+)\s*·\s*([a-z]+)(?:\s*\(commit\s+([0-9a-f]{7,40})\))?\s*—\s*(.+)$"
 )
 _SECURITY_ROWLIKE_RE = re.compile(r"^-\s*SEC-")
-_SECURITY_REVIEWED_RE = re.compile(r"^-\s*Reviewed:\s*(\S*)\s*$")
+_SECURITY_REVIEWED_RE = re.compile(r"^-\s*Reviewed:(.*)$")
+_SECURITY_FIELD_SEP = " — "
 _FULL_SHA_RE = re.compile(r"[0-9a-f]{40}")
 
 
@@ -1467,8 +1468,9 @@ def scan_security(pr_body_text):
     `{"present", "reviewed_sha", "entries", "unparsed"}`:
 
       - `present` — the section exists (independent of whether any line parsed).
-      - `reviewed_sha` — the `Reviewed:` value when it is exactly 40 lowercase hex characters, else
-        `None` (a short or malformed SHA never claims a head was reviewed).
+      - `reviewed_sha` — the last `Reviewed:` value when it is exactly 40 lowercase hex characters,
+        else `None` (a short or malformed SHA never claims a head was reviewed, and lands in
+        `unparsed`).
       - `entries` — `{"id", "seq", "disposition", "commit_sha", "claim", "anchor", "note"}` dicts in
         source order. `commit_sha` is set only on `fixed`; `note` is `None` when absent.
       - `unparsed` — `SEC-`-led lines that did not parse, verbatim: an off-vocabulary disposition, a
@@ -1490,14 +1492,18 @@ def scan_security(pr_body_text):
             continue
         reviewed = _SECURITY_REVIEWED_RE.match(stripped)
         if reviewed:
-            value = reviewed.group(1)
+            # The last `Reviewed:` line wins, and a malformed one resets it: a stale valid SHA left
+            # above a hand-edited line must never claim the head was reviewed.
+            value = reviewed.group(1).strip()
             reviewed_sha = value if _FULL_SHA_RE.fullmatch(value) else None
+            if reviewed_sha is None:
+                unparsed.append(stripped)
             continue
         match = _SECURITY_ROW_RE.match(stripped)
-        fields = match.group(4).split(_POLISH_FIELD_SEP) if match else []
+        fields = match.group(4).split(_SECURITY_FIELD_SEP) if match else []
         disposition = match.group(2) if match else None
         commit_sha = match.group(3) if match else None
-        note = _POLISH_FIELD_SEP.join(fields[2:]).strip() or None
+        note = _SECURITY_FIELD_SEP.join(fields[2:]).strip() or None
         valid = (
             match is not None
             and disposition in SECURITY_DISPOSITIONS

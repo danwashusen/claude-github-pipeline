@@ -1113,10 +1113,17 @@ class SecurityRecordParseTests(unittest.TestCase):
         self.assertEqual(len(scan["unparsed"]), 6)
 
     def test_only_a_full_sha_is_a_reviewed_head(self):
-        for value in ("abc1234", self.HEAD.upper(), self.HEAD + "0", ""):
+        for value in ("abc1234", self.HEAD.upper(), self.HEAD + "0", "", self.HEAD + " (phase 2)"):
             scan = parse.scan_security("## Security review\n- Reviewed: %s\n" % value)
             self.assertTrue(scan["present"])
             self.assertIsNone(scan["reviewed_sha"], value)
+            self.assertEqual(len(scan["unparsed"]), 1, value)
+
+    def test_a_malformed_later_reviewed_line_resets_a_stale_valid_one(self):
+        scan = parse.scan_security(
+            "## Security review\n- Reviewed: %s\n- Reviewed: %s (phase 2)\n" % (self.HEAD, self.HEAD)
+        )
+        self.assertIsNone(scan["reviewed_sha"])
 
     def test_absent_section_is_not_present(self):
         self.assertEqual(parse.scan_security("no record"), parse.absent_security())
