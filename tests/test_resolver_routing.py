@@ -2612,6 +2612,27 @@ class DismissalCheckTests(unittest.TestCase):
         self.assertIn("The verdict set is closed: `upheld` | `overturned`.", self.prompt)
         self.assertIn("`code: AMBIGUOUS`", self.prompt)
 
+    def test_cold_read_round_closes_the_checks_edges(self):
+        # C1: a Re-plan answer to the check's own card has a case in the independent-defect pass.
+        self.assertIn("**A `Decision` card raised by step 4's dismissal check**", self.flat)
+        self.assertIn("the dismissal check has already run this round and is not dispatched again", self.flat)
+        # C10: that card's paths, and the `kept` record of choosing the decision as it stands.
+        self.assertIn("when step 4's dismissal check raised it (an overturned Plan-settled item), the plan decision as it stands", self.flat)
+        self.assertIn("or kept by choosing the decision as it stands on a dismissal check's `Decision` card", self.step8)
+        # C5: an overturned entry leaves the refuted-items list and is not re-seeded.
+        self.assertIn("one the dismissal check overturned removed", self.flat)
+        self.assertIn("a later round's section records `check: overturned`", self.flat)
+        # C6: new evidence drops the verdict as it drops `kept`.
+        self.assertIn("a refuted-items entry's ` — check: upheld` dropped too", self.flat)
+        # C13: a no-verdict line is staged in a no-edit round.
+        self.assertIn("or returned none for an item", self.step5)
+        # C4: a light re-review's dismissal of a defect-tier claim goes through a fix round.
+        self.assertIn("or a dismissal of a defect-tier claim, re-enters this loop at step 2, which checks it", self.spine)
+        finalisation = " ".join((REFERENCES_DIR / "finalisation.md").read_text(encoding="utf-8").split())
+        self.assertIn("unless its claim is defect-tier. A defect it finds, or a dismissal of a defect-tier claim", finalisation)
+        # C2: the prompt renders the rubric's still-true exception in full.
+        self.assertIn('says "only" / "exactly" or records the omission as a choice', self.prompt)
+
     def test_the_prompt_is_context_blind(self):
         self.assertIn(
             "**Do not include the review-loop history, prior `code-review` verdicts, prior round replies, "

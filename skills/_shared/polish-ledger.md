@@ -95,7 +95,7 @@ proposes `apply` against a lower bar — in scope, true at head, clearly right
   between the two skills indefinitely.
 - **Items are never deleted.** A dispositioned item stays as the record of the decision; a stale one is
   `drop`ped with its reason, not removed, and an entry found to be a defect stays as its
-  `reclassified: defect` `drop`, the defect fixed or escalated as one.
+  `reclassified: defect` `drop`, the defect fixed, deferred with a filed follow-up, or escalated as one.
 - **The operator decides every disposition.** The skill running the triage
   ([`polish-triage.md`](polish-triage.md)) proposes `apply` / `file` / `drop` (or a re-plan, recorded as
   `apply`) with a reason; the operator answers each entry on a `Polish` card — the resolver's at

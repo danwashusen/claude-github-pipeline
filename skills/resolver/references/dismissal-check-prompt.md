@@ -51,8 +51,9 @@ plus one sentence naming what was missing, and stop.
 - **plan-settled** — two tests. **Still-true:** imagine the finding's fix done and re-read the cited
   decision bullet as written. Still true → the finding does not contest the decision, and the dismissal
   is wrong. A list of required behaviour is a minimum (a case it did not name leaves it true) unless it
-  says "only" / "exactly"; a definition ("X means …") gaining a case is made false. **Plan-defect:** applied
-  as written, does the decision itself produce the wrong behaviour the finding shows?
+  says "only" / "exactly" or records the omission as a choice; a definition ("X means …") gaining a case is
+  made false. **Plan-defect:** applied as written, does the decision itself produce the wrong behaviour the
+  finding shows?
 - **no shown cost** — is there a reachable path to the claimed failure, or a demonstrated cost? Trace an
   input or caller that reaches it in the code at head.
 

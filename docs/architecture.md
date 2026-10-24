@@ -525,14 +525,16 @@ the reviewer's findings before they are reported; after that, the main conversat
 classifies them, and until #94 nobody checked a dismissal it made. Now, when a fix round dismisses a
 finding as Refuted, Plan-settled or No shown cost and the finding's *claim*, read as if true, is
 defect-tier, the **dismissal check** sub-agent re-tests the dismissal's citation against the code at head:
-one dispatch per round, before the fix plan, returning `upheld` or `overturned` per item. `overturned`
-requires a cited site and a reaching path, so doubt alone upholds; an overturned item re-enters the rubric
+one dispatch per round (re-dispatched once for the items of an unparsed verdict), before the fix plan,
+returning `upheld` or `overturned` per item. `overturned` requires a cited site and evidence — a path that
+reaches the claimed failure, or for a Plan-settled item the decision bullet still true after the fix or the
+decision producing the wrong behaviour — so doubt alone upholds; an overturned item re-enters the rubric
 (Addressable when introduced or adjacent, Explicitly-deferred when pre-existing, Decision-required when it
-shows a plan decision defective), and the round reply records every verdict. Scope: No shown cost
-dismissals are checked, because on a defect-tier claim they set aside a possibly real defect with no
-evidence it is false; Deferred-by-plan ones are not, because the later phase that ships the seam — its
-cumulative review and its cold read — reads them when they come due. The check is not a `code-review` run
-and counts toward no loop limit.
+shows a plan decision defective), and the round reply records every verdict. Scope: No shown cost dismissals
+are checked, because on a defect-tier claim they set aside a possibly real defect with no evidence it is
+false; Deferred-by-plan ones are not, because the deferral comes due when its phase is current, and the
+final phase's cumulative review and cold read read it there. The check is not a `code-review` run and counts
+toward no loop limit.
 
 **Doc findings pass a materiality bar (4.40.0).** Before its bucket, every finding on a doc file or a
 code comment, in any PR, is tested for materiality: would the text as it stands mislead a builder,

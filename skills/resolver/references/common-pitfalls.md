@@ -169,8 +169,9 @@ its §review-loop, its S6 DoD projection) that carry the same numbering v1 used,
   rubric requires.** The buckets exist to stop re-litigation, not to dismiss findings — a Refuted item
   needs a cited code read or run, never a disagreement, and a fix that leaves the decision bullet true as
   written is not settled (the rubric's still-true test); `review-fix-round.md`'s classification rubric
-  owns the rule and its escape hatches. A dismissal of a defect-tier claim goes to the dismissal check
-  (step 4), so its citation must survive a cold reader.
+  owns the rule and its escape hatches. A Refuted, Plan-settled or No shown cost dismissal of a defect-tier
+  claim goes to the dismissal check (`review-fix-round.md` step 4; a Deferred-by-plan one does not), so its
+  citation must survive a cold reader.
 - **Don't scale down verification with the review scope.** Scope narrows the adversarial review only;
   the deterministic gates stay at full strength on every phase, per S5.1 "Scope".
 - **Don't stop at any turn-boundary beat in the review loop.** S5.1 has three beats where the
@@ -179,9 +180,10 @@ its §review-loop, its S6 DoD projection) that carry the same numbering v1 used,
   verdict reads like a finished deliverable, but `code-review`'s job is only to emit the verdict, not to
   close the loop. Your next beats in the same turn are the classification, the fix plan, and the fix
   edits — or, on a settled verdict, staging the scope diff and dispatching the cold read per S5.1 step 4. (b) **After the fix round's
-  commit** — the next beat is re-invoking `Skill(skill="code-review")` with S5.1's Invocation arguments, not a recap of what you fixed. (c) **After
-  the cold-read sub-agent returns** — the next beat is a fix round on its findings, or S6 when it found
-  nothing. Treat every one of these as a step inside S5.1, not the end of it.
+  commit** — the next beat is re-invoking `Skill(skill="code-review")` with S5.1's Invocation arguments, not
+  a recap of what you fixed. (c) **After the cold-read sub-agent returns** — the next beat is a fix round on
+  its findings, or S6 when it found nothing. Treat every one of these as a step inside S5.1, not the end of
+  it.
 - **Don't post review feedback on the issue.** Review feedback on a PR goes on the PR, not on the
   originating issue.
 - **Don't mis-route comments between issue and PR.** Problem questions go on the issue, solution questions
