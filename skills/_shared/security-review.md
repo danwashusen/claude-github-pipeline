@@ -102,10 +102,11 @@ sections at the end of this file give each one's values.
    **dismiss** with a one-line reason. A finding whose claim is false at head is proposed for dismissal
    as `premise false: <evidence>`. It **still goes on the card**, because nothing leaves the record
    silently. A fix proposal is announced, not asked (`Did X because Y; say if you'd rather Z`): fixing an
-   introduced security flaw is the author's job, so it has one credible action, and recording it overrides
-   no blocker, so it takes no question. If the operator redirects from that line, the finding becomes a
-   dismiss proposal with their reason. Every dismiss proposal goes on the card. `resolver/references/dismissal-check-prompt.md` does not run on these findings,
-   because the operator dismisses them, not the code's author.
+   introduced security flaw is the author's job, so it has one credible action, and recording it
+   overrides no blocker, so it takes no question. If the operator redirects from that line, the finding
+   becomes a dismiss proposal with their reason. Every dismiss proposal goes on the card.
+   `resolver/references/dismissal-check-prompt.md` does not run on these findings, because the operator
+   dismisses them, not the code's author.
 5. **Ask** (`header: "Security"`). A consent card: dismissing a finding overrides a gate blocker
    ([`asking-the-user.md`](asking-the-user.md) "Consent vs judgment"). Before it, print each finding's
    claim, anchor, exploit path and the code at the anchor, as the brief's evidence. One question per
@@ -114,10 +115,9 @@ sections at the end of this file give each one's values.
    Other replaces the proposed one. A card holds up to four questions; further findings take further
    cards.
 6. **Record.** **Dismiss** → `dismissed`, the note `operator: <reason>`. **Fix**, or an announced fix
-   proposal → the caller's Fix. A new
-   `open` entry's note takes the finding's category, severity and exploit path. Rewrite `Reviewed:` to the
-   pass SHA when a pass completed, and write the section through the caller's write (every write goes
-   through `gh_persist.py`).
+   proposal → the caller's Fix. A new `open` entry's note takes the finding's category, severity and
+   exploit path. Rewrite `Reviewed:` to the pass SHA when a pass completed, and write the section through
+   the caller's write (every write goes through `gh_persist.py`).
 
 ## Resolver (finalisation)
 
