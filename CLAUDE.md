@@ -197,7 +197,8 @@ per [architecture.md §7](docs/architecture.md)'s mapping table).
   reviewer, the researcher's dossier validator, the test-selection sub-agent, the cold-read audit, the
   resolver's fix design (a fix round's seam re-derivation, before the edit), the resolver's dismissal
   check (a fix round's serious dismissals, re-derived at head), the security review (a PR's cumulative
-  diff, read for exploitable flaws by the evaluator's S4.5), and the question-status reader. All are
+  diff, read for exploitable flaws by the resolver's finalisation and the evaluator's S4.5), and the
+  question-status reader. All are
   context-blind, receive **workspace paths and prep-staged files** (never refs), cannot call
   `AskUserQuestion` (they return a §3 decision code instead), and never write to GitHub.
 
@@ -319,7 +320,8 @@ per [architecture.md §7](docs/architecture.md)'s mapping table).
   the integration PR, which is why the evaluator's residual filing weaves `Filed:` lines into the body's
   `## Follow-ups` instead of a comment. And `scan_security` — a PR body's `## Security review` record
   (`skills/_shared/security-review.md`; `SECURITY_DISPOSITIONS`, a `Reviewed:` SHA that counts only at
-  40 hex; never raising), which `prep_evaluator` emits as `facts.security` with `covers_head`.
+  40 hex; never raising), which `prep_evaluator` emits as `facts.security` with `covers_head` and
+  `prep_resolver` as `facts.security` (continue mode, from the PR body it already fetches).
 - `plan_parts.py` — one implementation plan, three comments (`skills/_shared/plan-parts.md`): the
   main `<!-- implementation-plan:v1 -->` comment plus a `build` part (`## Changes` / `## Data model` /
   `## Test plan` / `## Coverage gap`) and a `references` part (`## Doc grounding` / `## External

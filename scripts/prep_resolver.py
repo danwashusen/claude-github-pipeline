@@ -658,7 +658,11 @@ def review_at_head(reviews, head_oid):
 def _absent_pr_extras():
     """What `_build_tracker` reports beside the tracker when there is no PR fetch to read. A factory,
     for `_absent_tracker`'s reason."""
-    return {"polish": parse.absent_polish(), "review_at_head": False}
+    return {
+        "polish": parse.absent_polish(),
+        "security": parse.absent_security(),
+        "review_at_head": False,
+    }
 
 
 def _absent_revision():
@@ -795,6 +799,9 @@ def _build_tracker(prior_pr_fact, phases, repo, scratch_dir=None, cwd=None):
         tracker["body_path"] = str(staged)
     extras = {
         "polish": parse.scan_polish(pr_body),
+        # The `## Security review` record (skills/_shared/security-review.md) — finalisation's
+        # security pass matches its findings against these entries.
+        "security": parse.scan_security(pr_body),
         # A soft-reject flips the PR back to draft; the evaluator's self-approval downgrade (an
         # APPROVE posted as a COMMENTED review on a self-authored PR) leaves it ready. The draft
         # flag is what tells the two apart — the review objects look the same.
@@ -1377,6 +1384,8 @@ def build_facts(issue_number, repo, root=".", scratch_dir=None, refresh=False, c
         # The `## Polish` ledger (skills/_shared/polish-ledger.md) and the revision-run fact
         # (spine S4) — both read from the continue-mode PR fetch above, no extra call.
         "polish": pr_extras["polish"],
+        # The `## Security review` record, from the same fetch; `absent_security()` in fresh mode.
+        "security": pr_extras["security"],
         "revision": build_revision(
             mode, phases, tracker, prior_pr_fact, dod_vetoes(dod), pr_extras["polish"],
             pr_extras["review_at_head"],

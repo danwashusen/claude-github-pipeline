@@ -2119,6 +2119,35 @@ class FinalisationTests(unittest.TestCase):
         self.assertIn("skip straight to the routed playbook's re-route handoff — no ready flip", ret)
         self.assertLess(ret.index("On a re-route exit"), ret.index("gh pr ready"))
 
+    def test_the_security_pass_runs_before_the_triage(self):
+        # #95 phase 2: the resolver runs the evaluator's security prompt at finalisation, before the
+        # polish triage, so a finding costs one fix round, not a revision session.
+        prompt_link = "[`../../evaluator/references/security-review-prompt.md`](../../evaluator/references/security-review-prompt.md)"
+        self.assertIn(prompt_link, self.flat)
+        self.assertTrue((REFERENCES_DIR / "../../evaluator/references/security-review-prompt.md").resolve().is_file())
+        self.assertIn("[`../../_shared/security-review.md`](../../_shared/security-review.md)", self.flat)
+        self.assertLess(self.text.index("## 1.5. The security pass"), self.text.index("## 2. The entries"))
+        self.assertLess(self.text.index(prompt_link), self.text.index("## 3. Triage"))
+        # review-fix-round.md cites "3. Triage" by number: the new section renumbers nothing.
+        for heading in ("## 1. When it runs", "## 2. The entries", "## 3. Triage", "## 4. Apply",
+                        "## 5. Re-plan", "## 6. The record"):
+            self.assertIn(heading, self.text)
+        self.assertIn("each security finding a defect-tier item", self.flat)
+        self.assertIn("The round fixed a reclassified defect or a security finding", self.flat)
+        self.assertIn("asked before the `Polish` card", self.flat)
+        # Reviewed: is the HEAD the pass was dispatched at, never a later fix commit.
+        self.assertIn("the pass SHA is that HEAD, before any commit §4's round adds", self.flat)
+        # PR #106 Follow-ups note: S5.2's pinned trigger list names no security change.
+        self.assertIn("a `Reviewed:`-only change included, triggers S5.2's `edit-pr-body` by itself", self.flat)
+        self.assertIn("`Security review: @ <short pass sha> — fixed <ids>; dismissed <ids>; open <ids>`", self.flat)
+        push = self.spine.split("### S5.2 — Push the phase, once", 1)[1].split("## S6 —", 1)[0]
+        self.assertLess(push.index("the security pass, then the polish triage"), push.index("finalisation.md"))
+        router = " ".join((SKILL_DIR / "SKILL.md").read_text(encoding="utf-8").split())
+        self.assertIn("the finalisation `Polish` card and `Security` card", router)
+        self.assertIn("cold-read audit, security review) never calls `AskUserQuestion`", router)
+        renderings = " ".join((REFERENCES_DIR / "handoff-renderings.md").read_text(encoding="utf-8").split())
+        self.assertIn("each entry an **Accept current** exit left `open`", renderings)
+
     def test_the_loop_rules_cover_finalisations_round(self):
         # PR #71 review: Reset named only the light re-review and the cold read; and the ceiling counted
         # finalisation's light re-review, re-firing the ceiling card after an Accept current at the ceiling.

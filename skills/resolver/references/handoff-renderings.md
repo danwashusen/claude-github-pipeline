@@ -40,7 +40,9 @@ value in the closed set for "ran internally, no formal verdict yet" — `not run
 **Finalisation in the `Why:`.** When the final pass ran finalisation ([`finalisation.md`](finalisation.md)),
 the forward handoff's `Why:` names its outcome by ledger id — applied, filed (by group), dropped, left
 open for the evaluator — so whoever starts the evaluator knows what is already decided and what S5.5 will
-still ask. A finalisation **Re-plan** takes **Re-route → planner** instead: its `Why:` quotes each re-plan
+still ask. It names the security pass's outcome by `SEC-<n>` id the same way — fixed, dismissed — and
+each entry an **Accept current** exit left `open`, which the evaluator blocks on, or that the pass did
+not complete ([`finalisation.md`](finalisation.md) §1.5). A finalisation **Re-plan** takes **Re-route → planner** instead: its `Why:` quotes each re-plan
 entry by id and the decision its note names (or the two intents), in place of a locked decision and a
 `file:line`. Its PR line carries the PR's actual state — `draft` on a multi-phase PR, `open` on a
 single-phase one (S5.2 opens only a multi-phase PR as a draft) — and the `Workspace:` line points at this
