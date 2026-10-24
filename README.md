@@ -73,7 +73,7 @@ the skills invoke — the `gh`/git executors, `workspace.py`, `branching.py`,
 ## Install
 
 ```
-/plugin marketplace add danwashusen/claude-github-pipeline
+/plugin marketplace add reactive-org/ctrl-freaq
 /plugin install github-pipeline@reactive-tools
 ```
 
