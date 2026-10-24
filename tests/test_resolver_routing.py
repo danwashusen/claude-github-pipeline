@@ -2636,7 +2636,14 @@ class DismissalCheckTests(unittest.TestCase):
         self.assertIn("the dismissal check has already run this round and is not dispatched again", self.flat)
         # C10: that card's paths, and the `kept` record of choosing the decision as it stands.
         self.assertIn("when step 4's dismissal check raised it (an overturned Plan-settled item), the plan decision as it stands", self.flat)
-        self.assertIn("or kept by choosing the decision as it stands on a dismissal check's `Decision` card", self.step8)
+        self.assertIn("or kept by choosing the decision as it stands on a `Decision` card (step 4's fix plan, fix design's or the dismissal check's)", self.step8)
+        # Cold read (resumed loop): a kept overturned item is re-listed, so the next session's seed keeps it.
+        self.assertIn("unless the operator kept it on the `Decision` card, when it is re-listed marked `kept`", self.step8)
+        self.assertIn("unless that round's block or a later one lists it again (the operator kept it)", self.flat)
+        # The fix plan's own "decision as it stands" answer is kept too, so the check never re-raises it.
+        self.assertIn("settles Plan-settled, citing it, marked `kept` — step 8", self.step4)
+        # New evidence reopens a ledger item's verdict: only a verbatim repeat skips the check.
+        self.assertIn("or a verbatim repeat of an item recorded for the ledger whose note ends ` — check: upheld`", self.step4)
         # C5: an overturned entry leaves the refuted-items list and is not re-seeded.
         self.assertIn("one the dismissal check overturned removed", self.flat)
         self.assertIn("a later round's section records `check: overturned`", self.flat)

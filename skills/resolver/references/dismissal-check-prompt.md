@@ -1,8 +1,8 @@
 # Dismissal-check sub-agent prompt (an independent read of the author's serious dismissals)
 
-Dispatched from `review-fix-round.md` step 4, "Dismissal check", once per round, before the fix plan, when
-the round dismissed at least one finding whose claim would be defect-tier if true: classified **Refuted**,
-**Plan-settled** or **No shown cost**. `code-review`'s own verifiers check the *reviewer's* findings before
+Dispatched from `review-fix-round.md` step 4, "Dismissal check", once per round (plus one re-dispatch for an
+unparsed verdict's items), before the fix plan, when the round dismissed at least one finding whose claim
+would be defect-tier if true: classified **Refuted**, **Plan-settled** or **No shown cost**. `code-review`'s own verifiers check the *reviewer's* findings before
 they are reported. After that, the main conversation, which wrote the code, classifies them, and nobody
 checked a dismissal it made. This sub-agent is that check: an `Explore`-type judgment sub-agent
 (architecture.md §8) that re-tests each dismissal's citation against the code at head. It judges; the main

@@ -64,9 +64,9 @@ This is **not** a sub-agent prompt: no placeholders, no JSON return, and every g
   in-session continuation after a fresh prep — `phase-continuation.md`), and that block is the only
   carrier of what earlier phases refuted — **except** a `deferred-by-plan` entry whose phase is the
   current phase or a ticked tracker row (its deferral has come due, and the finding classifies
-  fresh), and an entry whose item a later round's section records `check: overturned`, unless a still
-  later block lists it again — the check reopened it, so it is live. Seed the defect-fix record from every
-  `Defect fixes: phase <N>` line for the current phase. Note any `Cold read: phase <N> @ <sha>` line for the
+  fresh), and an entry whose item a later round's section records `check: overturned`, unless that
+  round's block or a later one lists it again (the operator kept it) — the check reopened it, so it is
+  live. Seed the defect-fix record from every `Defect fixes: phase <N>` line for the current phase. Note any `Cold read: phase <N> @ <sha>` line for the
   current phase and whether its `<sha>` is HEAD or an ancestor of it (S5.1 step 4 reads both).
 
 ## Classification rubric
@@ -299,12 +299,12 @@ materiality is never a defect. Under-tiering a claim skips the check, so the rec
    qualifies, a round with nothing else to fix included: there it matters most. An item qualifies when
    step 1 classified it **Refuted**, **Plan-settled** or **No shown cost** and its **claim tier** is
    `defect` (the rubric's "Claim tier"), including a verbatim repeat step 3 re-settled silently. An item
-   already checked is not dispatched again: a refuted-items entry carrying `check: upheld`, or an item
-   recorded for the ledger whose note ends ` — check: upheld` — held this pass or on the PR's `## Polish`
+   already checked is not dispatched again: a refuted-items entry carrying `check: upheld`, or a verbatim
+   repeat of an item recorded for the ledger whose note ends ` — check: upheld` — held this pass or on the PR's `## Polish`
    ledger, read with any note rewrite held for it (step 8). One without the suffix (recorded before the
    check existed, or never given a verdict) is. An entry marked `kept` is not dispatched either: its
-   operator answered **Keep settled**, or kept the decision as it stands on the check's own `Decision`
-   card, and a machine read must not re-raise an answered question — on an item the check raised, it
+   operator answered **Keep settled**, or kept the decision as it stands on a `Decision` card (step 8),
+   and a machine read must not re-raise an answered question — on an item the check raised, it
    would put the same card up again. A repeat that brings new evidence drops the mark (step 3) and is
    checked if it lands dismissed again. **Scope**, and
    why: No shown cost dismissals are checked — such an item "may be true and still not worth doing", so
@@ -357,7 +357,7 @@ materiality is never a defect. Under-tiering a claim skips the check, so the rec
      drop the other from this round's edits (it stays listed; the PR reply says why).
    - A fix that reverses a plan decision → that item is not a fix: reclassify it Decision-required and
      render step 2's `Decision` card now, before any edit, its paths the decision as it stands (the item
-     settles Plan-settled, citing it) and **Re-plan**.
+     settles Plan-settled, citing it, marked `kept` — step 8) and **Re-plan**.
    An empty list (nothing to fix, after the dismissal check returns) needs no plan — step 5 owns that
    round.
 
@@ -467,15 +467,16 @@ materiality is never a defect. Under-tiering a claim skips the check, so the rec
 
    `(×<repeats>)` is omitted on a first occurrence; carrying it is what lets the count survive a phase
    boundary. An entry the operator answered **Keep settled** on, or kept by choosing the decision as it
-   stands on a dismissal check's `Decision` card, carries `kept` in the same parenthetical
-   (`(×3, kept)`), so the next session's seed never asks the question again.
+   stands on a `Decision` card (step 4's fix plan, fix design's or the dismissal check's), carries `kept`
+   in the same parenthetical (`(×3, kept)`), so the next session's seed never asks the question again.
 
    A round whose **dismissal check** ran (step 4) records each verdict in two places. Every checked item's
    line in the round's section carries `check: upheld` or `check: overturned` beside its provenance and
    claim tier. An upheld Refuted or Plan-settled item's `Settled (not addressed):` entry carries
    ` — check: upheld` before its repeat count, so the next session's seed re-settles a verbatim repeat
    without another dispatch; an overturned one is not re-listed — its `check: overturned` line in the
-   round's section is what the next session's seed reads to drop it (the resume hint). An upheld No shown
+   round's section is what the next session's seed reads to drop it (the resume hint) — unless the
+   operator kept it on the `Decision` card, when it is re-listed marked `kept`. An upheld No shown
    cost item's ledger note is `no shown cost: <why> — check: upheld` — the `no shown cost:` lead
    finalisation's digest keys on is unchanged — and an existing ledger entry without the suffix that was
    upheld on recurrence is held for S5.2 to rewrite in place, appending ` — check: upheld` to its note, so
