@@ -2575,10 +2575,19 @@ class DismissalCheckTests(unittest.TestCase):
         self.assertIn("`no shown cost: <why> — check: upheld`", self.step8)
 
     def test_a_checked_settled_entry_is_not_dispatched_again(self):
-        self.assertIn("An entry carrying `check: upheld` is not sent to step 4's dismissal check again", self.flat)
-        # An unsuffixed settled entry is checked once, as an unsuffixed ledger entry is.
-        self.assertIn("one without it whose claim is defect-tier (seeded from before the check existed) is, once", self.flat)
+        # Step 4 owns the exclusion; step 3 points at it.
+        self.assertIn("Whether it goes to step 4's dismissal check again is step 4's rule", self.flat)
         self.assertIn("including a verbatim repeat step 3 re-settled silently", self.step4)
+        self.assertIn("One without the suffix (recorded before the check existed, or never given a verdict) is", self.step4)
+        # The in-session list carries the verdict, so a round-1 upheld item is not re-dispatched in round 2.
+        self.assertIn("in its `Settled (not addressed):` line's form (step 8)", self.flat)
+        self.assertIn("each as its `Settled (not addressed):` line", self.flat)
+
+    def test_an_overturned_ledger_entry_is_rewritten_as_a_reclassified_drop(self):
+        self.assertIn("rewrite in place to `drop` with the note `reclassified: defect — see loop comment`", self.step8)
+        self.assertIn("A note rewrite held for S5.2 is the entry's note for every reader this pass", self.step8)
+        finalisation = " ".join((REFERENCES_DIR / "finalisation.md").read_text(encoding="utf-8").split())
+        self.assertIn("An entry with a note rewrite held for this pass's S5.2 write", finalisation)
 
     def test_an_overturned_item_skips_the_settled_item_pre_check(self):
         self.assertIn("it skips step 3's settled-item pre-check and its `Settled item` card", self.step4)
@@ -2587,10 +2596,10 @@ class DismissalCheckTests(unittest.TestCase):
         self.assertIn("continue the round with each in its bucket, its reply line saying the check returned no verdict", self.step4)
 
     def test_the_spine_names_the_check_and_s52_rewrites_the_ledger_note(self):
-        self.assertIn("to the **dismissal check**", self.spine)
-        self.assertIn("` — check: upheld` appended to the note of each entry the dismissal check upheld", self.spine)
+        self.assertIn("send each defect-tier dismissal not yet upheld to the **dismissal check**", self.spine)
+        self.assertIn("each note rewrite the dismissal check's verdicts call for (the reference's step 8)", self.spine)
         # A suffix rewrite alone is a body change, so continue mode stages `edit-pr-body` for it.
-        self.assertIn("loop changed the PR body (outstanding settled items, ledger entries or note suffixes", self.spine)
+        self.assertIn("loop changed the PR body (outstanding settled items, ledger entries or note rewrites", self.spine)
 
     def test_the_prompt_returns_the_closed_verdict_set(self):
         self.assertIn("`## Verdicts`", self.prompt)

@@ -39,7 +39,8 @@ Skip an `open` entry whose note is `operator: leave for evaluator`: an earlier f
 already chose to leave it for S5.5, and asking again would override that answer. An `apply` entry is not
 triaged: it is decided, and iteration 1 already treated it as Addressable — one this pass left unfixed
 stays `apply`, and the evaluator re-proposes it. `file`, `drop` and `applied` entries are decided
-records.
+records. An entry with a note rewrite held for this pass's S5.2 write (`review-fix-round.md` step 8) is
+read with that note.
 
 ## 3. Triage
 

@@ -35,10 +35,11 @@ This is **not** a sub-agent prompt: no placeholders, no JSON return, and every g
   `<path>:<symbol>` site of every **defect** it fixed. The record also carries a prior session's lines on
   this phase, seeded by the resume hint, so a re-entered phase keeps its history. You append to it in
   step 9; the deadlock check in step 3 reads it, and so does the rubric's **loop-induced** test.
-- **The refuted-items list** — one line per Plan-settled / Deferred-by-plan / Refuted item with its
-  citation or evidence, from every prior round this run and (seeded on iteration 1 — "Resume hint") from
-  earlier phases' rounds. Appended in step 9; the deadlock check reads it too, and treats a match
-  differently from an addressed match.
+- **The refuted-items list** — one line per Plan-settled / Deferred-by-plan / Refuted item, in its
+  `Settled (not addressed):` line's form (step 8): its citation or evidence, ` — check: upheld` when the
+  dismissal check upheld it, its repeat count and any `kept` mark — from every prior round this run and
+  (seeded on iteration 1 — "Resume hint") from earlier phases' rounds. Appended and updated in step 9; the
+  deadlock check reads it too, and treats a match differently from an addressed match.
 - **The plan and the phase list** — the verified plan comment (`facts.plan.url`; its body is the
   `marker_comment_*` entry of `facts.sections`) and `facts.phases`, with the current phase's number
   (the S4 cursor) and its `depends-on`. The plan-anchored settled buckets cite these.
@@ -248,7 +249,7 @@ adjacent findings none of them fits.
   or Decision-required.
 
 **Claim tier** — for a dismissal. An item classified Refuted, Plan-settled or No shown cost takes no tier,
-but its **claim**, read as if true, does: `defect` when it falls in the **defect** tier's list (Addressable)
+but its **claim**, read as if true, does: `defect` when it falls in the Addressable bucket's **defect** tier
 (correctness, a broken contract or invariant, data loss or corruption, security, a test gap that would let
 a real bug through — a test or control that cannot fail included), and when that is unclear — the tier
 tie-break, applied to the claim; otherwise `polish`. Record `claim tier: defect` or `claim tier: polish`
@@ -275,10 +276,10 @@ check, so the recorded tier is the audit trail.
    fell short: fix it per the class discipline, and it counts as loop-induced. The `Review loop` card is
    for these addressed-item deadlocks only. An item matching the **refuted-items list** verbatim — the
    same claim, carrying no reproduction, instance, or case the settled entry did not answer — is
-   re-settled silently on its second occurrence: no card, no second reply, only the entry's repeat count
-   bumped — in the bucket the entry records, never re-bucketed. An entry carrying `check: upheld` is not
-   sent to step 4's dismissal check again; one without it whose claim is defect-tier (seeded from before
-   the check existed) is, once, the same rule as an unsuffixed ledger entry. An entry marked `kept` (the
+   re-settled silently on its second occurrence: no card, no second reply beyond a dismissal-check verdict
+   line (step 5), only the entry's repeat count bumped — in the bucket the entry records, never
+   re-bucketed. Whether it goes to step 4's dismissal check again is step 4's rule — an entry carrying
+   `check: upheld` does not. An entry marked `kept` (the
    operator answered **Keep settled**, this session or an earlier one) is re-settled silently on **every**
    verbatim occurrence: that question is answered. A repeat that **brings new evidence** is classified
    fresh on the merits — a `kept` one included, its mark dropped: the prior settlement, and the
@@ -297,7 +298,8 @@ check, so the recorded tier is the audit trail.
    `defect` (the rubric's "Claim tier"), including a verbatim repeat step 3 re-settled silently. An item
    already checked is not dispatched again: a refuted-items entry carrying `check: upheld`, or an item
    recorded for the ledger whose note ends ` — check: upheld` — held this pass or on the PR's `## Polish`
-   ledger. One without the suffix (recorded before the check existed, or never checked) is. **Scope**, and
+   ledger, read with any note rewrite held for it (step 8). One without the suffix (recorded before the
+   check existed, or never given a verdict) is. **Scope**, and
    why: No shown cost dismissals are checked — such an item "may be true and still not worth doing", so
    on a defect-tier claim it sets aside a possibly real defect with no evidence it is false, the rubric's
    own "a bypass with no instance" being a security claim. **Deferred-by-plan** ones
@@ -440,8 +442,9 @@ check, so the recorded tier is the audit trail.
    here: S5.2 pushes once and posts the whole file as the loop comment, because every per-round push
    started CI on code the next round was about to change. That comment is the GitHub-side record — how
    a reviewer, and the next session, follows what this loop did without replaying the conversation. When the round settled anything new,
-   the reply ends with this fixed block — the next session's resume re-read seeds its refuted-items list
-   from it (each phase starts fresh, in a new session or an in-session continuation; this comment is the
+   or the dismissal check upheld an existing entry (re-listed with its suffix and count), the reply ends
+   with this fixed block — the next session's resume re-read seeds its refuted-items list from it (each
+   phase starts fresh, in a new session or an in-session continuation; this comment is the
    only carrier):
 
    ```
@@ -462,8 +465,14 @@ check, so the recorded tier is the audit trail.
    without another dispatch. An upheld No shown cost item's ledger note is `no shown cost: <why> — check:
    upheld` — the `no shown cost:` lead finalisation's digest keys on is unchanged — and an existing ledger
    entry without the suffix that was upheld on recurrence is held for S5.2 to rewrite in place, appending
-   ` — check: upheld` to its note, so it is checked once. An overturned item leaves the ledger as a live
-   item.
+   ` — check: upheld` to its note, so it is checked once. A note rewrite held for S5.2 is the entry's note
+   for every reader this pass — step 4's exclusion and finalisation's digest included. An overturned item
+   leaves the ledger as a live item: held this pass, it is not recorded; already on the PR's `## Polish`
+   ledger, its entry is held for S5.2 to rewrite in place to `drop` with the note `reclassified: defect —
+   see loop comment` — finalisation's record for an entry found to be a defect
+   ([`finalisation.md`](finalisation.md) "3. Triage"), kept rather than deleted. Its note no longer leads
+   `no shown cost:`, so finalisation's digest stops listing it as dropped, and the evaluator leaves a
+   `reclassified: defect` drop to its S4.
 
    A round that fixed a defect also carries one `Defect fixes: phase <N> @ <sha> — <path>:<symbol>;
    <path>:<symbol>` line: the round's commit and every defect fix's site, never a polish site. `<N>` is
@@ -474,9 +483,11 @@ check, so the recorded tier is the audit trail.
    round that dispatched the fix design names the seam it re-derived in one line, so a reviewer sees why a
    fix reached past the finding's own site.
 9. **Record.** Append this round's one-line item summaries to the addressed-items list, and its
-   `Defect fixes:` line to the defect-fix record, and its settled items, with citations or
-   evidence, to the refuted-items list; keep its defect count for the next round's comparison. Hold the filed
-   follow-up URLs for the PR body and the handoff. Carry any **procedural note** (something the next
+   `Defect fixes:` line to the defect-fix record, and its settled items to the refuted-items list, each
+   as its `Settled (not addressed):` line — a new item appended, an existing entry this round re-settled,
+   upheld or marked `kept` updated in place — so a later round's steps 3 and 4 read the verdict; keep its
+   defect count for the next round's comparison. Hold the filed follow-up URLs for the PR body and the
+   handoff. Carry any **procedural note** (something the next
    session should know that is not worth an issue) as a capture-not-file item per
    `follow-up-tracking.md` — it lands in the PR body or the handoff `Why:`, never as a filed issue.
 

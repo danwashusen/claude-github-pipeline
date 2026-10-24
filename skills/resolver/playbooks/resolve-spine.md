@@ -253,7 +253,7 @@ not tell a round of nits from a round of new bugs.
 2. Run one **fix round** on it per the reference, in this conversation: classify and tier every listed
    item (iteration 1 also folds in human PR comments and reviews, seeds the refuted-items list from prior
    rounds' `Settled (not addressed):` blocks, and treats every `facts.polish` entry marked `apply` as
-   Addressable whatever its tier), deadlock-check against both lists, send every dismissed defect-tier claim
+   Addressable whatever its tier), deadlock-check against both lists, send each defect-tier dismissal not yet upheld
    to the **dismissal check**, list the **fix plan** for every item it will fix (the **fix-design** sub-agent
    designs a hot seam's lines) and check it as a set before the first edit, fix them, defect-inject every new
    or changed assertion, run the §10.6 pre-push gate (test-selection diff-base override = HEAD), commit, and
@@ -352,12 +352,12 @@ ${CLAUDE_PLUGIN_ROOT}/scripts/gh_persist.py create-pr <owner/repo> "<facts.scrat
 ```
 
 `--base`/`--head` are always explicit facts from the workspace (never inferred from cwd). Continue mode: when the
-loop changed the PR body (outstanding settled items, ledger entries or note suffixes, an `Accept current` override,
+loop changed the PR body (outstanding settled items, ledger entries or note rewrites, an `Accept current` override,
 `## Known failures`), stage the updated body and apply it with `edit-pr-body`. Both writes take one `--attach` per
 screenshot ([`pr-screenshots.md`](../references/pr-screenshots.md) §4). Either mode, the `## Polish` ledger
 ([`../../_shared/polish-ledger.md`](../../_shared/polish-ledger.md)) gains one entry per polish item the loop left
 — `open`, `drop` if no shown cost, or finalisation's answer — and `applied (commit <sha>)` on each `apply` item it
-fixed, ` — check: upheld` appended to the note of each entry the dismissal check upheld on recurrence. Then post
+fixed, plus each note rewrite the dismissal check's verdicts call for (the reference's step 8). Then post
 `<facts.scratch>/loop-comment.md` — every round's reply, in order, one `comment` on the PR, the record the next
 session's resume re-read seeds from; a `BODY_TOO_LONG` decision splits it one comment per round. Then delete it.
 
